@@ -36,10 +36,31 @@ tools/package.sh
 stellt in `build/sdcard/` die Ordner für die SD-Karte zusammen (`Cores/Chainy.Screamer/`,
 `Platforms/`). Den Inhalt auf die oberste Ebene der SD-Karte kopieren.
 
+## Spieldaten für die SD-Karte
+
+Was der Core aus den Spieldaten braucht, wird auf dem PC umgewandelt und landet in
+`build/assets/` (nie im Repository), `tools/package.sh` kopiert es nach `Assets/`.
+Zurzeit ist das ein Bild für den Framebuffer-Test:
+
+```sh
+python tools/make_screen.py "C:/GOG Games/Screamer/GFX/GRAF.DAT" LOAD2L.PCX \
+    build/assets/screamer/Chainy.Screamer/screen.bin build/preview/LOAD2L.png
+```
+
+## Simulation
+
+Verilator läuft in Docker (`verilator/verilator:v5.050`). Jede Testbench liegt in
+`sim/<modul>/tb.cpp` und prüft das Modul `core/src/fpga/core/<modul>.v`:
+
+```sh
+tools/sim.sh fb_video build/assets/screamer/Chainy.Screamer/screen.bin build/sim/fb_video.rgb
+```
+
 ## Werkzeuge
 
 - `tools/dat_sizes.py <datei.DAT>...` listet den Inhalt der Spiel-Container mit
   entpackten Größen (`-v` für jede Datei einzeln).
+- `tools/datfile.py` liest die Container (gemeinsam genutzt von den anderen Skripten).
 
 ## Lizenz
 

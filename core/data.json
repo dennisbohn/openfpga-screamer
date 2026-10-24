@@ -1,6 +1,17 @@
 {
     "data": {
         "magic": "APF_VER_1",
-        "data_slots": []
+        "data_slots": [
+            {
+                "name": "Screen",
+                "id": 0,
+                "required": true,
+                "parameters": "0x02",
+                "filename": "screen.bin",
+                "extensions": ["bin"],
+                "size_exact": 65024,
+                "address": "0x00000000"
+            }
+        ]
     }
 }
