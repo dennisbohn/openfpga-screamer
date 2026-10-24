@@ -19,3 +19,9 @@ gamedata/
 core/output/*.rbf_r
 core/src/fpga/output_files/*
 !core/src/fpga/output_files/.gitignore
+
+# Python bytecode
+__pycache__/
+
+# Written by apf/build_id_gen.tcl before every build (build date and time)
+core/src/fpga/apf/build_id.mif
