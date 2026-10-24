@@ -75,6 +75,13 @@ braucht. 27 Dateien (Grenze: 32 Slots):
 
 Knapp wird die Logik, nicht Speicher oder DSP.
 
+## Entschieden
+
+- **Sprache:** eigener Code in Verilog (wie das Template). Der VexRiscv wird einmalig aus
+  einer Scala-Konfiguration als Verilog erzeugt, eigene CPU-Befehle laufen über sein
+  CFU-Plugin. Gleiche Leistung wie SpinalHDL, leichter zu lesen.
+- **Spieldaten:** Originaldateien flach in `Assets/screamer/common/` (siehe oben).
+
 ## Offene Entscheidungen
 
 - **Sichtbarkeit:** Das Original malt ganze Objekte von hinten nach vorne (Maler-Algorithmus,
