@@ -42,6 +42,17 @@ Audio: JTOPL (OPL2) + PCM-Mixer für die Effekte aus SOUND.DAT
 | Effekte (8-Bit-PCM) | `DATA/SOUND.DAT` | 1,9 MB |
 | Tabellen | `TABS/*.TAB` | ca. 410 KB |
 
+## Spieldaten auf der SD-Karte
+
+Die originalen Dateien, unverändert und flach in `Assets/screamer/common/` (die Namen sind
+über `DATA`, `GFX` und `TABS` hinweg eindeutig). Je Datei ein Data-Slot mit `deferload`:
+der Core liest das Inhaltsverzeichnis am Dateiende und holt sich die Einträge, die er
+braucht. 27 Dateien (Grenze: 32 Slots):
+
+- `DATA/`: alle 16 (`GEN`, `LOCAL`, `MUSIC`, `SOUND`, `MAP1`–`MAP6`, `MAP1I`–`MAP6I`)
+- `GFX/`: `GAME`, `GRAF`, `MENU`, `MAP1L`–`MAP6L` (die H-Dateien sind für 640×400, nicht nötig)
+- `TABS/`: `PERSP01.TAB`, `VIS.TAB`
+
 ## Geschätzte Belegung
 
 | Komponente | ALMs | M10K | DSP |
