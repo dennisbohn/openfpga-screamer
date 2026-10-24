@@ -51,10 +51,12 @@ python tools/make_screen.py "C:/GOG Games/Screamer/GFX/GRAF.DAT" LOAD2L.PCX \
 ## Simulation
 
 Verilator läuft in Docker (`verilator/verilator:v5.050`). Jede Testbench liegt in
-`sim/<modul>/tb.cpp` und prüft das Modul `core/src/fpga/core/<modul>.v`:
+`sim/<name>/`: `files.f` nennt das oberste Modul und die Quellen, `tb.cpp` treibt sie.
 
 ```sh
-tools/sim.sh fb_video build/assets/screamer/Chainy.Screamer/screen.bin build/sim/fb_video.rgb
+# Framebuffer im PSRAM: Laden über die Bridge, ein Bild Pixel für Pixel prüfen.
+# Letzte Zahl: Abstand der Bridge-Wörter in Takten (88 = schnellste echte APF-Rate).
+tools/sim.sh fb_system build/assets/screamer/Chainy.Screamer/screen.bin build/sim/fb_system.rgb 88
 ```
 
 ## Werkzeuge
