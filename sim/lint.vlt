@@ -1,0 +1,6 @@
+`verilator_config
+// Power-up values on registers are intentional: Quartus loads them at configuration,
+// and the bridge-side logic runs before reset_n is released.
+lint_off -rule PROCASSINIT
+// Third-party IP, kept unmodified
+lint_off -file "core/src/fpga/core/ip/*"
