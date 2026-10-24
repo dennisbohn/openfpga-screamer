@@ -34,7 +34,8 @@ tools/package.sh
 ```
 
 stellt in `build/sdcard/` die Ordner für die SD-Karte zusammen (`Cores/Chainy.Screamer/`,
-`Platforms/`). Den Inhalt auf die oberste Ebene der SD-Karte kopieren.
+`Platforms/`). Den Inhalt auf die oberste Ebene der SD-Karte kopieren, oder direkt
+mit `tools/deploy.sh /i` (SD-Karte bzw. Pocket im USB-Modus als Laufwerk I:).
 
 ## Spieldaten für die SD-Karte
 
