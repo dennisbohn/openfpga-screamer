@@ -40,3 +40,8 @@ stellt in `build/sdcard/` die Ordner für die SD-Karte zusammen (`Cores/Chainy.S
 
 - `tools/dat_sizes.py <datei.DAT>...` listet den Inhalt der Spiel-Container mit
   entpackten Größen (`-v` für jede Datei einzeln).
+
+## Lizenz
+
+GPL-3.0, siehe `LICENSE`. Die Dateien aus dem Core-Template von Analogue (`core/src/fpga/apf/`
+und die Vorlagen in `core/`) stammen von Analogue.
