@@ -1,7 +1,9 @@
 # Architektur
 
-Stand: 2026-10-25, noch nichts davon gebaut. Alle Zahlen sind Schätzungen, bis die
-Synthese echte liefert.
+Stand: 2026-10-25. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 aus einem
+8-Bit-Framebuffer im PSRAM (`cram1`) über Zeilenpuffer und Palette, geladen über einen
+Data-Slot (586 ALMs, 6 M10K). Alles Weitere sind Schätzungen, bis die Synthese echte
+Zahlen liefert.
 
 ## Hardware des Pocket (Haupt-FPGA)
 
