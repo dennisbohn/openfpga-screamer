@@ -1,0 +1,21 @@
+# Build output (Quartus artefacts under core/src/fpga have their own .gitignore)
+build/
+
+# Game data must never be committed: the original files and anything made from them
+gamedata/
+*.DAT
+*.TAB
+*.PCX
+*.PKC
+*.SPR
+*.MLB
+*.UNR
+*.3DX
+*.RAW
+*.HMP
+*.ppm
+
+# Bitstreams are build output; releases carry them
+core/output/*.rbf_r
+core/src/fpga/output_files/*
+!core/src/fpga/output_files/.gitignore
