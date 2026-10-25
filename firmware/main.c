@@ -16,6 +16,7 @@
 #include "selftest.h"
 #include "memtest.h"
 #include "raster.h"
+#include "texdemo.h"
 
 uint32_t frames_shown;             /* read by the trap handler */
 
@@ -31,6 +32,10 @@ static int (*const tests[3])(void) = { selftest_int, selftest_float, selftest_cf
 static const char *const test_names[3] = { "Ganzzahl", "Fliesskomma", "CFU" };
 static const char *const log_names[3] = { "integer", "float", "cfu" };
 static volatile uint8_t *progress_fb;
+static int textures;            /* textures loaded into the SDRAM (data slot 3) */
+static uint8_t col_bg = COL_BG, col_text = COL_TEXT, col_dim = COL_DIM, col_alert = COL_ALERT;
+
+#define TEX_FILE    ((const volatile uint8_t *)(SDRAM_BASE + 0x2100000))  /* core/data.json */
 
 /* CRC-32 as zlib computes it, half a byte at a time: names the build and checks the load */
 uint32_t crc32(const uint8_t *p, const uint8_t *end)
@@ -100,15 +105,20 @@ static void draw_band(volatile uint8_t *fb)
 /* Everything but the parts that change: band, background, title, self-test results */
 static void draw_frame(volatile uint8_t *fb, const char *title)
 {
-    pal_write();
+    if (textures) {
+        const volatile uint32_t *pal = texdemo_palette();
+        for (int i = 0; i < 256; i++) VID_PAL[i] = pal[i];
+    } else {
+        pal_write();
+    }
     draw_band(fb);
-    fb_fill(fb, 0, BAND_H, FB_W, FB_H - BAND_H, COL_BG);
-    fb_fill(fb, 0, 2 * 8 - 3, FB_W, 8 + 6, COL_TEXT);  /* title bar, 3 pixels around the text */
-    con_text(fb, 1, 2, title, COL_BG, COL_TEXT);
-    int col = con_text(fb, 1, 4, "CPU", COL_DIM, COL_BG) + 1;
+    fb_fill(fb, 0, BAND_H, FB_W, FB_H - BAND_H, col_bg);
+    fb_fill(fb, 0, 2 * 8 - 3, FB_W, 8 + 6, col_text);  /* title bar, 3 pixels around the text */
+    con_text(fb, 1, 2, title, col_bg, col_text);
+    int col = con_text(fb, 1, 4, "CPU", col_dim, col_bg) + 1;
     for (int i = 0; i < 3; i++) {
-        col = con_text(fb, col, 4, test_names[i], COL_TEXT, COL_BG) + 1;
-        col = con_text(fb, col, 4, ok[i] ? "ok" : "XX", COL_TEXT, ok[i] ? COL_BG : COL_ALERT) + 1;
+        col = con_text(fb, col, 4, test_names[i], col_text, col_bg) + 1;
+        col = con_text(fb, col, 4, ok[i] ? "ok" : "XX", col_text, ok[i] ? col_bg : col_alert) + 1;
     }
 }
 
@@ -117,8 +127,8 @@ static void progress(const char *what, uint32_t addr)
 {
     char buf[DLOG_HEAD + 16];
     fmt_hex(fmt_str(fmt_str(fmt_str(buf, "teste "), what), " bei "), addr, 8);
-    fb_fill(progress_fb, 0, 8 * 8, FB_W, 8, COL_BG);
-    con_text(progress_fb, 1, 8, buf, COL_TEXT, COL_BG);
+    fb_fill(progress_fb, 0, 8 * 8, FB_W, 8, col_bg);
+    con_text(progress_fb, 1, 8, buf, col_text, col_bg);
     fmt_hex(fmt_str(fmt_str(fmt_str(buf, "Screamer Pocket step 3, "), what), " @"), addr, 8);
     dlog_head(buf);
 }
@@ -128,9 +138,9 @@ static void draw_results(volatile uint8_t *fb)
     char rows[MT_ROWS][41];
     uint8_t fail[MT_ROWS];
     int n = memtest_rows(rows, fail);
-    con_text(fb, 1, 6, "Speicher", COL_DIM, COL_BG);
+    con_text(fb, 1, 6, "Speicher", col_dim, col_bg);
     for (int i = 0; i < n; i++)
-        con_text(fb, 1, 7 + i, rows[i], COL_TEXT, fail[i] ? COL_ALERT : COL_BG);
+        con_text(fb, 1, 7 + i, rows[i], col_text, fail[i] ? col_alert : col_bg);
 }
 
 /*
@@ -230,7 +240,7 @@ static void raster_check(volatile uint8_t *fb, const struct demo_tri t[DEMO_TRIS
 {
     volatile uint8_t *m = CHECK_BUF;
     uint32_t pixels = 0, differ = 0, first = 0;
-    fb_fill(m, demo_clip.x0, demo_clip.y0, demo_clip.x1 - demo_clip.x0, demo_clip.y1 - demo_clip.y0, COL_BG);
+    fb_fill(m, demo_clip.x0, demo_clip.y0, demo_clip.x1 - demo_clip.x0, demo_clip.y1 - demo_clip.y0, col_bg);
     for (int i = 0; i < DEMO_TRIS; i++) pixels += rs_triangle(m, &demo_clip, t[i].v, t[i].colour);
     for (int y = demo_clip.y0; y < demo_clip.y1; y++)
         for (int x = demo_clip.x0; x < demo_clip.x1; x++)
@@ -256,20 +266,43 @@ static void raster_check(volatile uint8_t *fb, const struct demo_tri t[DEMO_TRIS
     dlog_char('\n');
 }
 
+/* the palette entry nearest to an RGB colour, for text on the track's palette */
+static uint8_t nearest(const volatile uint32_t *pal, int r, int g, int b)
+{
+    uint32_t best = ~0u;
+    uint8_t n = 0;
+    for (int i = 0; i < 256; i++) {
+        int dr = (int)(pal[i] >> 16 & 255) - r, dg = (int)(pal[i] >> 8 & 255) - g, db = (int)(pal[i] & 255) - b;
+        uint32_t d = (uint32_t)(dr * dr + dg * dg + db * db);
+        if (d < best) { best = d; n = (uint8_t)i; }
+    }
+    return n;
+}
+
+/* the texture demo, drawn by the CPU with the C model */
+static struct demo_stats draw_texdemo(volatile uint8_t *fb, uint32_t frame)
+{
+    struct demo_stats d;
+    uint32_t t0 = rdcycle();
+    d.pixels = texdemo_draw(fb, &demo_clip, frame, &d.triangles);
+    d.cycles = rdcycle() - t0;
+    return d;
+}
+
 static void draw_status(volatile uint8_t *fb, uint32_t st, uint32_t drawn, const struct demo_stats *d)
 {
     char buf[CON_COLS + 1];
     int mem_ok = ((results >> MT_BIT_FIRST) & ((1u << MT_BITS) - 1)) == (1u << MT_BITS) - 1;
-    con_text(fb, 1, 5, mem_ok ? "Speicher ok" : "Speicher FEHLER", COL_TEXT, mem_ok ? COL_BG : COL_ALERT);
-    con_text(fb, 17, 5, "Select: Details", COL_DIM, COL_BG);
+    con_text(fb, 1, 5, mem_ok ? "Speicher ok" : "Speicher FEHLER", col_text, mem_ok ? col_bg : col_alert);
+    con_text(fb, 17, 5, "Select: Details", col_dim, col_bg);
     if (d) {
         char *p = fmt_udec(fmt_str(buf, "Dreiecke "), d->triangles);
         p = fmt_udec(fmt_str(p, " Pixel "), d->pixels);
         fmt_udec(fmt_str(p, " Takte "), d->cycles);
-        con_text(fb, 1, 22, buf, COL_TEXT, COL_BG);
+        con_text(fb, 1, 22, buf, col_text, col_bg);
     }
     fmt_udec(fmt_str(fmt_udec(fmt_str(buf, "Bild "), VID_FRAME(st)), "  gezeichnet "), drawn);
-    con_text(fb, 1, 23, buf, COL_TEXT, COL_BG);
+    con_text(fb, 1, 23, buf, col_text, col_bg);
 }
 
 int main(void)
@@ -310,6 +343,19 @@ int main(void)
     VID_SWAP = 1;
     wait_swap_done();
     results |= memtest_run(crc, (IN_KEY & KEY_SELECT) != 0, progress);
+    textures = texdemo_init(TEX_FILE);
+    if (textures) {
+        const volatile uint32_t *pal = texdemo_palette();
+        col_bg = nearest(pal, 0, 0, 0);
+        col_text = nearest(pal, 255, 255, 255);
+        col_dim = nearest(pal, 120, 200, 120);
+        col_alert = nearest(pal, 230, 25, 178);
+        dlog_str("textures: ");
+        dlog_dec(textures);
+        dlog_str(" from data slot 3, drawn by the CPU (C model)\n");
+    } else {
+        dlog_str("textures: none (data slot 3 not loaded), flat triangles by the rasterizer\n");
+    }
 
     sin_init();
     uint32_t drawn = 0;
@@ -326,10 +372,14 @@ int main(void)
         }
         uint32_t keys = IN_KEY;
         volatile uint8_t *fb = FB(!(st & VID_FRONT));  /* the back buffer */
-        draw_frame(fb, "SCREAMER POCKET - DREIECKE");
+        draw_frame(fb, textures ? "SCREAMER POCKET - TEXTUREN" : "SCREAMER POCKET - DREIECKE");
         if (keys & KEY_SELECT) {
             draw_results(fb);
             draw_status(fb, st, drawn, 0);
+        } else if (textures) {
+            fb_fill(fb, demo_clip.x0, demo_clip.y0, demo_clip.x1 - demo_clip.x0, demo_clip.y1 - demo_clip.y0, col_bg);
+            struct demo_stats d = draw_texdemo(fb, drawn);
+            draw_status(fb, st, drawn, &d);
         } else {
             struct demo_tri tris[DEMO_TRIS];
             demo_list(tris, drawn, keys);

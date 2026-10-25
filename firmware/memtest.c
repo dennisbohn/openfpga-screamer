@@ -292,8 +292,10 @@ static void t_patterns(const struct memory *m)
         xs = 0x2468ACE1u;
         for(int i = 0; i < 256; i++) {
             uint32_t o = next_random() & (m->size - 32) & ~31u, v = xs ^ 0x55AA55AAu, g;
+            uint32_t old = V32(m->ubase + o);   /* put back: data slots loaded into the SDRAM stay */
             V32(m->base + o) = v;
             if((g = V32(m->ubase + o)) != v) fail(m, o, v, g);
+            V32(m->base + o) = old;
         }
     }
     end(m, m->first_bit + 3, before, t0);

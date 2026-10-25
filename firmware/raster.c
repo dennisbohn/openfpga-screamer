@@ -1,6 +1,6 @@
 /*
- * Rasterizer C model (raster.h). Integer arithmetic only, so the hardware can match it bit
- * for bit:
+ * Rasterizer C model (raster.h). Which pixels a triangle covers is integer arithmetic only,
+ * so the hardware can match it bit for bit (the texture lookup is still floating point):
  *
  * - Rows: pixel row r has its centre at yc = 16r + 8; a triangle with vertices sorted by y
  *   (a.y <= b.y <= c.y) covers the rows with a.y <= yc < c.y.
@@ -40,8 +40,13 @@ static int col_from(int64_t x, int lo, int hi)
     return c < lo ? lo : c > hi ? hi : (int)c;
 }
 
-static uint32_t span(volatile uint8_t *row, int x0, int x1, uint8_t colour)
+/* a row's pixels [x0, x1) of row r */
+typedef uint32_t (*span_fn)(volatile uint8_t *fb, int r, int x0, int x1, const void *ctx);
+
+static uint32_t span_flat(volatile uint8_t *fb, int r, int x0, int x1, const void *ctx)
 {
+    volatile uint8_t *row = fb + r * FB_STRIDE;
+    uint8_t colour = *(const uint8_t *)ctx;
     uint32_t n = (uint32_t)(x1 - x0), c4 = colour * 0x01010101u;
     int x = x0;
     while(x < x1 && (x & 3)) row[x++] = colour;
@@ -50,8 +55,9 @@ static uint32_t span(volatile uint8_t *row, int x0, int x1, uint8_t colour)
     return n;
 }
 
-uint32_t rs_triangle(volatile uint8_t *fb, const struct rs_clip *clip,
-                     const struct rs_vertex v[3], uint8_t colour)
+/* the rows and spans of a triangle; span() draws each */
+static uint32_t walk(volatile uint8_t *fb, const struct rs_clip *clip, const struct rs_vertex v[3],
+                     span_fn span, const void *ctx)
 {
     const struct rs_vertex *a = &v[0], *b = &v[1], *c = &v[2], *t;
     if(b->y < a->y) { t = a; a = b; b = t; }
@@ -74,9 +80,86 @@ uint32_t rs_triangle(volatile uint8_t *fb, const struct rs_clip *clip,
         if(r == rb && r > r0) s = edge_at(b->x, b->y, c->x, c->y, r);
         int64_t left = l.x < s.x ? l.x : s.x, right = l.x < s.x ? s.x : l.x;
         int x0 = col_from(left, clip->x0, clip->x1), x1 = col_from(right, clip->x0, clip->x1);
-        if(x0 < x1) n += span(fb + r * FB_STRIDE, x0, x1, colour);
+        if(x0 < x1) n += span(fb, r, x0, x1, ctx);
         l.x += l.slope;
         s.x += s.slope;
     }
     return n;
+}
+
+uint32_t rs_triangle(volatile uint8_t *fb, const struct rs_clip *clip,
+                     const struct rs_vertex v[3], uint8_t colour)
+{
+    return walk(fb, clip, v, span_flat, &colour);
+}
+
+/*
+ * Textured: q, u q and v q are planes over the screen, a(px, py) = a0 + ax (px - x0) +
+ * ay (py - y0) around vertex 0, sampled at pixel centres
+ */
+struct plane { float a0, ax, ay; };
+
+struct tex_ctx {
+    float x0, y0;                       /* vertex 0 in pixels */
+    struct plane q, uq, vq;
+    const struct rs_texture *tex;
+};
+
+static struct plane plane_of(const float x[3], const float y[3], float a0, float a1, float a2, float det)
+{
+    struct plane p;
+    p.a0 = a0;
+    p.ax = ((a1 - a0) * (y[2] - y[0]) - (a2 - a0) * (y[1] - y[0])) / det;
+    p.ay = ((a2 - a0) * (x[1] - x[0]) - (a1 - a0) * (x[2] - x[0])) / det;
+    return p;
+}
+
+static uint32_t span_tex(volatile uint8_t *fb, int r, int x0, int x1, const void *ctx)
+{
+    const struct tex_ctx *s = ctx;
+    const struct rs_texture *t = s->tex;
+    volatile uint8_t *row = fb + r * FB_STRIDE;
+    float fx = (float)x0 + 0.5f - s->x0, fy = (float)r + 0.5f - s->y0;
+    float q = s->q.a0 + s->q.ax * fx + s->q.ay * fy;
+    float uq = s->uq.a0 + s->uq.ax * fx + s->uq.ay * fy;
+    float vq = s->vq.a0 + s->vq.ax * fx + s->vq.ay * fy;
+    uint32_t n = 0;
+    for(int x = x0; x < x1; x++) {
+        float z = 1.0f / q;
+        int u = (int)(uq * z), v = (int)(vq * z);
+        u = u < 0 ? 0 : u >= t->width ? t->width - 1 : u;
+        v = v < 0 ? 0 : v >= t->height ? t->height - 1 : v;
+        uint8_t c = t->data[v * 256 + u];
+        if(c || t->routine != 64) {
+            row[x] = c;
+            n++;
+        }
+        q += s->q.ax;
+        uq += s->uq.ax;
+        vq += s->vq.ax;
+    }
+    return n;
+}
+
+uint32_t rs_textured(volatile uint8_t *fb, const struct rs_clip *clip,
+                     const struct rs_tvertex v[3], const struct rs_texture *tex)
+{
+    struct rs_vertex pos[3];
+    float x[3], y[3];
+    for(int i = 0; i < 3; i++) {
+        pos[i].x = v[i].x;
+        pos[i].y = v[i].y;
+        x[i] = (float)v[i].x / 16.0f;
+        y[i] = (float)v[i].y / 16.0f;
+    }
+    float det = (x[1] - x[0]) * (y[2] - y[0]) - (x[2] - x[0]) * (y[1] - y[0]);
+    if(det == 0.0f) return 0;           /* no area, no pixel centre inside */
+    struct tex_ctx s;
+    s.x0 = x[0];
+    s.y0 = y[0];
+    s.q = plane_of(x, y, v[0].q, v[1].q, v[2].q, det);
+    s.uq = plane_of(x, y, v[0].uq, v[1].uq, v[2].uq, det);
+    s.vq = plane_of(x, y, v[0].vq, v[1].vq, v[2].vq, det);
+    s.tex = tex;
+    return walk(fb, clip, pos, span_tex, &s);
 }

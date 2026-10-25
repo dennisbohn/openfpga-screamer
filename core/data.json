@@ -32,6 +32,16 @@
                 "extensions": ["bin"],
                 "size_maximum": 32768,
                 "address": "0x10000000"
+            },
+            {
+                "name": "Textures",
+                "id": 3,
+                "required": false,
+                "parameters": "0x02",
+                "filename": "textures.bin",
+                "extensions": ["bin"],
+                "size_maximum": 4194304,
+                "address": "0x12100000"
             }
         ]
     }
