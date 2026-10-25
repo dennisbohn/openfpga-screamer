@@ -12,7 +12,10 @@ etwas daran ändert, ändert beide Seiten und dieses Dokument.
 - **Reset:** Die CPU steht im Reset, solange `reset_n` aus `core_bridge_cmd` low ist. Der
   Pocket lädt alle Data-Slots vor „Reset Exit“, die Firmware liegt beim Start also schon im
   Boot-RAM. Beim Neuladen der Firmware aus dem Menü setzt der Pocket den Core zurück
-  (Parameter-Bit 6).
+  (Parameter-Bit 6), lädt aber keinen neuen Bitstream. Nach jedem Reset ist Puffer 0 vorn,
+  kein Tausch steht aus und `SYS_SIM` ist 0. Bis zum ersten Tausch zeigt `video_out` Puffer 0
+  mit Palette 0: nach dem Laden des Cores schwarz, nach einem Neuladen der Firmware, was der
+  vorige Lauf dort hinterlassen hat.
 - **Firmware:** Data-Slot `firmware.bin` (höchstens 16 KB) an Bridge-Adresse `0x00000000`,
   geschrieben ins Boot-RAM. Die Bridge liefert 32-Bit-Wörter big-endian (das erste Byte der
   Datei in Bit 31:24), die CPU ist little-endian: `soc.v` dreht die Byte-Reihenfolge beim
@@ -66,12 +69,16 @@ auch; little-endian wie sonst auch, Zeilen mit `\n`, der Rest bleibt `\0`). Der 
 der nichtflüchtige Data-Slot `debug.txt` (id 1, Bridge-Adresse `0x0010_0000`): Beim Beenden
 des Cores im Menü („Quit“) und beim Ausschalten liest der Pocket ihn über die Bridge aus und
 speichert ihn als `/Saves/screamer/Chainy.Screamer/debug.txt` (Ruhezustand unterstützt der
-Core nicht, `core.json`: `sleep_supported: false`). Gibt es die Datei noch nicht, füllt der
-Pocket den Bereich beim Laden mit `0xFF`; läuft die CPU gar nicht los, steht genau das in der
-gespeicherten Datei. Das klappt auch nach einem Absturz der
+Core nicht, `core.json`: `sleep_supported: false`). Das klappt auch nach einem Absturz der
 CPU, weil das Auslesen reine Hardware ist. `soc.v` dreht dabei die Byte-Reihenfolge, damit
 die Datei lesbarer Text ist, und trägt nach dem Start die Größe 4096 für den Slot in die
 Slot-Tabelle des Cores ein (die sonst nur beim Laden einer vorhandenen Datei gesetzt wird).
+
+Beim Laden schreibt der Pocket die alte `debug.txt` (oder `0xFF`, wenn es sie nicht gibt) in
+den Bereich; `soc.v` ignoriert das. Nach dem Laden des Cores steht dort also `0`, bis die
+Firmware schreibt; läuft die CPU gar nicht los, besteht die gespeicherte Datei aus Nullen
+statt aus dem alten Protokoll. Ein Neuladen der Firmware aus dem Menü ist nur ein Reset: Bis
+die neue Firmware den Bereich löscht, steht dort noch das Protokoll des vorigen Laufs.
 
 Die Firmware löscht den Bereich beim Start, schreibt eine Kopfzeile, die Ergebnisse der
 Selbsttests und Messwerte; der Trap-Handler schreibt Ursache und Adresse eines Absturzes
@@ -82,6 +89,12 @@ dazu (`mcause`, `mepc`, `mtval`).
 - `reset` des VexRiscv ist aktiv high und asynchron; `soc.v` gibt ihn synchron zu `clk` frei.
 - Es gibt kein `mscratch`; nicht vorhandene CSRs lösen keinen Trap aus, `ebreak` einen
   Trap wegen illegalen Befehls.
+- Der Befehls-Cache (`InstructionCache.scala`) löscht seine Fehlermarke `hadError` zwar,
+  wenn eine Zeile fertig geladen ist, setzt sie aber im selben Takt wieder, wenn das letzte
+  Wort der Zeile einen Fehler meldet; dann gilt auch die nächste geladene Zeile als fehlerhaft,
+  und der Trap-Handler läuft in einen zweiten Trap. `soc.v` meldet den Fehler einer Zeile
+  außerhalb des Boot-RAMs deshalb nur mit den ersten sieben Wörtern; die Zeile ist damit
+  trotzdem als fehlerhaft markiert. Der Daten-Cache hat das Problem nicht.
 - Das fused multiply-add der FPU rundet das Produkt vor der Addition (`FpuCore.scala`:
   „FMA Precision lost“). GCC macht aus `a*b+c` standardmäßig `fmadd.s`; wo Ergebnisse bitgleich
   zu einem PC-Build sein müssen (Physik von OpenScreamer), mit `-ffp-contract=off` übersetzen.
@@ -115,3 +128,22 @@ Die Testbench lädt `firmware.bin` über die Bridge, lässt die CPU laufen und p
   Spalte x < 256 den Palettenindex x, und die Palette jedes Bildes ist
   `pal[i] = (i << 16) | ((255 - i) << 8) | ((i * 3) & 255)`. Die Testbench vergleicht diese
   Pixel im angezeigten Bild.
+- **Protokoll:** Die Testbench liest es über die Bridge so aus wie der Pocket (ein Wort mehr,
+  die erste Antwort verworfen) und erwartet die Kopfzeile. Vor dem Start prüft sie, dass
+  `soc.v` das Laden des Slots ignoriert.
+- **Reset mitten im Lauf**, wie beim Neuladen der Firmware aus dem Menü: Sobald Puffer 1 vorn
+  ist und kein Tausch aussteht, setzt die Testbench den Core zurück, lädt `firmware.bin` neu
+  und gibt ihn frei. Im Reset müssen Tausch-Anforderung, vorderer Puffer und `SYS_SIM` 0 sein,
+  danach darf vor der ersten Anforderung der CPU nichts tauschen; dann wird der neue Lauf wie
+  der erste geprüft.
+
+Fehlertests: `tools/fw.sh FAULT=IFETCH` baut eine Firmware, die nach den Selbsttests an
+`0x0000_4000` springt, hinter das Boot-RAM (nach `build/firmware-IFETCH/`, nicht auf die
+SD-Karte). Erwartet: `SYS_SIM = 0xC0000001` (Zugriffsfehler beim Befehlsabruf), der Kasten des
+Trap-Handlers im Bild und die Zeile `TRAP mcause=00000001` im Protokoll. Das prüft auch, dass
+der Trap-Handler nach dem Fehler aus dem Befehls-Cache läuft (siehe „Eigenheiten der CPU“):
+
+```sh
+tools/fw.sh FAULT=IFETCH
+tools/sim.sh soc build/firmware-IFETCH/firmware.bin build/sim/soc_ifetch 20 c0000001
+```

@@ -43,6 +43,7 @@ module display (
 
 fb_bridge fbb (
     .clk_74a        ( clk_74a ),
+    .reset_n        ( reset_n ),
     .bridge_wr      ( bridge_wr ),
     .bridge_addr    ( bridge_addr ),
     .bridge_wr_data ( bridge_wr_data ),

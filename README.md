@@ -41,14 +41,8 @@ mit `tools/deploy.sh /i` (SD-Karte bzw. Pocket im USB-Modus als Laufwerk I:).
 
 Was der Core aus den Spieldaten braucht, wird auf dem PC umgewandelt und landet in
 `build/assets/` (nie im Repository), `tools/package.sh` kopiert es nach `Assets/`.
-Zurzeit sind das zwei Bilder für den Framebuffer-Test (Taste A tauscht sie):
-
-```sh
-python tools/make_screen.py "C:/GOG Games/Screamer/GFX/GRAF.DAT" LOAD2L.PCX \
-    build/assets/screamer/Chainy.Screamer/screen.bin build/preview/LOAD2L.png
-python tools/make_screen.py "C:/GOG Games/Screamer/GFX/GRAF.DAT" LOAD1L.PCX \
-    build/assets/screamer/Chainy.Screamer/screen2.bin build/preview/LOAD1L.png
-```
+Zurzeit liegt dort nur `firmware.bin` aus `tools/fw.sh` (siehe `firmware/README.md`); der
+Core braucht noch keine Spieldaten.
 
 ## Simulation
 
@@ -56,10 +50,23 @@ Verilator läuft in Docker (`verilator/verilator:v5.050`). Jede Testbench liegt 
 `sim/<name>/`: `files.f` nennt das oberste Modul und die Quellen, `tb.cpp` treibt sie.
 
 ```sh
-# Zwei Framebuffer: beide Bilder über die Bridge laden, mit Taste A tauschen,
-# acht Bilder Pixel für Pixel prüfen (Tausch nur an der Bildgrenze, Palette je Puffer).
-tools/sim.sh display build/assets/screamer/Chainy.Screamer/screen.bin \
-    build/assets/screamer/Chainy.Screamer/screen2.bin build/sim/display_frame
+# Zwei Framebuffer: zwei Bilder aus den Spieldaten über die Bridge laden, per Taste
+# tauschen, 13 Bilder aufnehmen und 12 davon Pixel für Pixel prüfen (eines unterbricht ein
+# Reset): Tausch nur in der Austastlücke, Palette je Puffer, nach dem Reset Puffer 0 ohne
+# Tausch. Dann der Zeichen-Port (Lesen, Byte-Enables).
+python tools/make_screen.py "C:/GOG Games/Screamer/GFX/GRAF.DAT" LOAD2L.PCX \
+    build/sim/screen.bin build/preview/LOAD2L.png
+python tools/make_screen.py "C:/GOG Games/Screamer/GFX/GRAF.DAT" LOAD1L.PCX \
+    build/sim/screen2.bin build/preview/LOAD1L.png
+tools/sim.sh display build/sim/screen.bin build/sim/screen2.bin build/sim/display_frame
+
+# CPU-System mit Firmware (docs/soc.md): Selbsttests, Prüfstreifen, Protokoll über die
+# Bridge, dann ein Reset mitten im Lauf mit neu geladener Firmware.
+tools/fw.sh
+tools/sim.sh soc build/firmware/firmware.bin build/sim/soc
+# Fehlertest: Befehlsabruf hinter dem Boot-RAM, der Trap-Handler muss ihn melden.
+tools/fw.sh FAULT=IFETCH
+tools/sim.sh soc build/firmware-IFETCH/firmware.bin build/sim/soc_ifetch 20 c0000001
 ```
 
 `sim/models/psram_model.v` ist ein Verhaltensmodell des PSRAM (prüft die 70-ns-Zugriffszeit),

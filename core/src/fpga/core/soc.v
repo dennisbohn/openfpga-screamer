@@ -24,7 +24,7 @@ module soc (
     input   wire            clk,
     input   wire            reset_n,
 
-    // APF bridge (firmware into the boot RAM, debug log in and out), synchronous to clk
+    // APF bridge (firmware into the boot RAM, debug log out), synchronous to clk
     input   wire            bridge_wr,
     input   wire            bridge_rd,
     input   wire    [31:0]  bridge_addr,
@@ -182,14 +182,17 @@ cfu_fixmul cfu (
     endgenerate
 
 //
-// debug log: 1024 words, port A for the dBus, port B for the bridge
+// debug log: 1024 words, port A for the dBus, port B for the bridge. Port B only reads:
+// the APF loads the old debug.txt (or 0xFF) into the slot at boot, and ignoring that
+// keeps the log as it was until the firmware clears it. That is zeros after the
+// bitstream is loaded, so a run in which the CPU never starts saves zeros, not the old
+// file; a firmware reload from the menu (a reset only) leaves the previous run's log.
 //
     reg  [9:0]  log_addr_a;
     reg  [3:0]  log_we_a;
     reg  [31:0] log_wdata_a;
     wire [31:0] log_q_a, log_q_b;
     wire        bridge_log = bridge_addr[31:12] == 20'h00100;
-    wire [31:0] bridge_wdata_le = swap32(bridge_wr_data);
 
     generate
         for(lane = 0; lane < 4; lane = lane + 1) begin : log_lanes
@@ -201,8 +204,8 @@ cfu_fixmul cfu (
                 .q_a        ( log_q_a[lane*8 +: 8] ),
                 .clk_b      ( clk ),
                 .addr_b     ( bridge_addr[11:2] ),
-                .we_b       ( bridge_wr & bridge_log ),
-                .wdata_b    ( bridge_wdata_le[lane*8 +: 8] ),
+                .we_b       ( 1'b0 ),
+                .wdata_b    ( 8'h00 ),
                 .q_b        ( log_q_b[lane*8 +: 8] )
             );
         end
@@ -214,7 +217,11 @@ always @(posedge clk) begin
 end
 
 //
-// iBus: line reads from the boot RAM, one word a clock
+// iBus: line reads from the boot RAM, one word a clock. A line outside the boot RAM
+// answers with the error flag on its first seven words but not on the eighth: VexRiscv's
+// InstructionCache sets its hadError after clearing it on the completing word, so an
+// error there would stick and mark the next line bad as well, the trap handler's
+// included. The line is marked bad by the first seven alone.
 //
     reg         ib_busy = 0;
     reg         ib_ok;                      // the line is inside the boot RAM
@@ -222,6 +229,7 @@ end
     reg  [2:0]  ib_cnt;
     reg         ib_issued = 0;              // a word was addressed last clock
     reg         ib_issued_ok;
+    reg         ib_issued_last;
 
     assign ibus_cmd_ready = !ib_busy && !cpu_reset;
 
@@ -232,7 +240,7 @@ end
 always @(posedge clk) begin
     ibus_rsp_valid <= ib_issued;
     ibus_rsp_data <= boot_q_a;
-    ibus_rsp_error <= !ib_issued_ok;
+    ibus_rsp_error <= !ib_issued_ok && !ib_issued_last;
     ib_issued <= 0;
     if(cpu_reset) begin
         ib_busy <= 0;
@@ -246,6 +254,7 @@ always @(posedge clk) begin
     end else begin
         ib_issued <= 1;
         ib_issued_ok <= ib_ok;
+        ib_issued_last <= ib_cnt == 3'd7;
         ib_cnt <= ib_cnt + 1'b1;
         if(ib_cnt == 3'd7) ib_busy <= 0;
     end
@@ -346,6 +355,8 @@ always @(posedge clk) begin
 
     if(cpu_reset) begin
         d_state <= D_IDLE;
+        swap_req_toggle <= 0;               // video_out's acknowledge restarts at 0 too
+        sim_status <= 0;
     end else begin
         // a command: remember it; a write happens next clock, a read blocks
         if(d_fire) begin

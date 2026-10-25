@@ -1,6 +1,6 @@
 //
-// Test path until the CPU exists: two pictures from the data slots into the two
-// framebuffers, and button A swaps them
+// Test writer for sim/display in place of the CPU: two pictures from the bridge into the
+// two framebuffers, and button A swaps them. Its swap request resets like soc.v's.
 //
 // Bridge window (each file is screen.bin's layout, see tools/make_screen.py):
 //   0x0000_0000  buffer 0: palette 0x000-0x3FF (R,G,B,0 words), pixels from 0x400
@@ -10,6 +10,7 @@
 
 module fb_bridge (
     input   wire            clk_74a,
+    input   wire            reset_n,
 
     input   wire            bridge_wr,
     input   wire    [31:0]  bridge_addr,
@@ -55,11 +56,14 @@ end
 
     reg [1:0]   ack_s = 0;
     reg         button_d = 0;
+    reg         reset = 1;                  // as soc.v's cpu_reset
 
 always @(posedge clk_74a) begin
     ack_s <= {ack_s[0], swap_ack_toggle};
     button_d <= swap_button;
-    if(swap_button && !button_d && swap_req_toggle == ack_s[1])
+    reset <= ~reset_n;
+    if(reset) swap_req_toggle <= 0;
+    else if(swap_button && !button_d && swap_req_toggle == ack_s[1])
         swap_req_toggle <= ~swap_req_toggle;
 end
 

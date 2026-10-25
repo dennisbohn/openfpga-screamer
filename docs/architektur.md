@@ -1,12 +1,11 @@
 # Architektur
 
 Stand: 2026-10-25. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 aus zwei
-8-Bit-Framebuffern im Block-RAM, je mit eigener Palette, getauscht in der Austastlücke;
-bis die CPU zeichnet, füllen zwei Data-Slots die Puffer und Taste A tauscht sie. Seitdem
-nur in der Simulation geprüft: Lese-/Schreibport mit Byte-Enables für den Zeichner, Tausch
-in jeder Zeile der Austastlücke (492 ALMs, 132 M10K). Davor lief der Framebuffer im PSRAM
-`cram1` (Commit `b148783`). VexRiscv und FPU sind einzeln für diesen FPGA synthetisiert;
-alles Weitere sind Schätzungen, bis die Synthese echte Zahlen liefert.
+8-Bit-Framebuffern im Block-RAM, je mit eigener Palette, getauscht in der Austastlücke, und
+die CPU (VexRiscv RV32IMF mit FPU und CFU, `docs/soc.md`), die in Schritt 1 selbst in die
+Framebuffer zeichnet und ein Protokoll auf die SD-Karte schreibt. Belegung: 3.679 ALMs,
+176 M10K, 11 DSP-Blöcke. Davor lief der Framebuffer im PSRAM `cram1` (Commit `b148783`).
+Alles Weitere sind Schätzungen, bis die Synthese echte Zahlen liefert.
 
 ## Hardware des Pocket (Haupt-FPGA)
 
@@ -148,7 +147,8 @@ Aus der Gegenprüfung der Framebuffer-Platzierung:
   denn sie ist schon ein Bild weiter.
 - Der Zeichner kennt seinen hinteren Puffer aus seinem eigenen Toggle (hinten = nicht
   `req`) und wartet nur auf die Quittung; er liest `front` nicht über die Taktdomäne.
-- Ein Reset darf keinen Tausch vortäuschen (in der Simulation geprüft).
+- Ein Reset darf keinen Tausch vortäuschen: Er setzt Anforderung und Quittung auf 0, danach
+  ist Puffer 0 vorn, bis der Zeichner tauscht (in `sim/display` und `sim/soc` geprüft).
 
 ## Offene Entscheidungen
 

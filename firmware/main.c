@@ -170,6 +170,13 @@ int main(void)
     dlog_dec((int32_t)s.cyc_int);
     dlog_char('\n');
 
+#ifdef FAULT_IFETCH
+    /* fault test for sim/soc (make FAULT=IFETCH): code past the end of the boot RAM. The
+       trap handler has to run from lines the cache loads after the bad one (docs/soc.md). */
+    dlog_str("fault test: jump to 00004000\n");
+    ((void (*)(void))0x00004000u)();
+#endif
+
     int x = (FB_W - SQ) / 2, y = 160;
     uint32_t drawn = 0;
     for (;;) {

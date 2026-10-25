@@ -23,7 +23,7 @@ module video_out (
     // swap request, from another clock domain
     input   wire            swap_req_toggle,
     output  reg             swap_ack_toggle,
-    output  reg             front,
+    output  wire            front,              // the buffer on screen: always swap_ack_toggle
     output  reg             frame_toggle,       // flips at the start of every frame
 
     // framebuffer read port, data one clock after the address
@@ -31,7 +31,7 @@ module video_out (
     output  wire    [13:0]  fb_rd_addr,
     input   wire    [31:0]  fb_rd_data,
 
-    // video out, synchronous to clk_vid
+    // video out, synchronous to clk_vid; reset_n may come from another clock domain
     input   wire            clk_vid,
     input   wire            reset_n,
     output  reg     [23:0]  vid_rgb,
@@ -68,7 +68,21 @@ end
     wire        blank_line = y_count < V_BPORCH || y_count >= V_BPORCH + V_ACTIVE;
     reg         swap_armed;
 
-    assign fb_rd_buf = front;
+    // reset_n comes from clk_74a: it takes effect at once but ends on a clk_vid edge
+    reg         rst_meta = 0, rst_n = 0;
+always @(posedge clk_vid or negedge reset_n) begin
+    if(~reset_n) begin
+        rst_meta <= 0;
+        rst_n <= 0;
+    end else begin
+        rst_meta <= 1;
+        rst_n <= rst_meta;
+    end
+end
+
+    // front and the acknowledge flip together, so one flop is both
+    assign front = swap_ack_toggle;
+    assign fb_rd_buf = swap_ack_toggle;
     assign fb_rd_addr = pix_addr[15:2];
 
     reg [1:0]   sel_a;
@@ -76,12 +90,11 @@ end
     reg [23:0]  pal_q;
     reg [2:0]   de_d, hs_d, vs_d;
 
-always @(posedge clk_vid or negedge reset_n) begin
-    if(~reset_n) begin
+always @(posedge clk_vid or negedge rst_n) begin
+    if(~rst_n) begin
         x_count <= 0;
         y_count <= 0;
         pix_addr <= 0;
-        front <= 0;
         swap_ack_toggle <= 0;
         swap_armed <= 1;
         frame_toggle <= 0;
@@ -110,7 +123,6 @@ always @(posedge clk_vid or negedge reset_n) begin
         // blanking: re-armed by the first visible line
         if(x_count == 0 && y_count == V_BPORCH) swap_armed <= 1;
         if(x_count == 0 && blank_line && swap_armed && swap_s[1] != swap_ack_toggle) begin
-            front <= ~front;
             swap_ack_toggle <= swap_s[1];
             swap_armed <= 0;
         end
@@ -142,7 +154,7 @@ always @(posedge clk_vid) begin
         2'd3: index <= fb_rd_data[7:0];
     endcase
     // stage 3: palette entry of the front buffer
-    pal_q <= pal[{front, index}];
+    pal_q <= pal[{swap_ack_toggle, index}];
 end
 
 endmodule

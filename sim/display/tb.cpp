@@ -1,6 +1,7 @@
 // display testbench: two pictures into the two framebuffers through the bridge, button
-// presses that swap them, a reset; every frame is compared pixel by pixel. Then the
-// framebuffer's drawing port: read back, and byte-enable writes.
+// presses that swap them, a reset; every frame but the one cut short by the reset is
+// compared pixel by pixel. Then the framebuffer's drawing port: read back, and byte-enable
+// writes.
 //
 // Usage: Vdisplay <screen.bin> <screen2.bin> <out prefix>
 // Writes <prefix>N.rgb (raw 320x200 RGB) for every captured frame.
@@ -14,12 +15,13 @@
 //   frame 6          A, pressed at line 20 and again at line 120 while the first is pending
 //   frame 7, 8       B, B (the second press was ignored)
 //   frame 9          B, reset_n held low from line 100 for 500 pixel clocks (cut short, not checked)
-//   frame 10         B (a reset must not swap), pressed at line 50
-//   frame 11         A, pressed in the blanking after the last line: the swap must follow
+//   frame 10         A: after a reset buffer 0 is in front and nothing swaps (fb_bridge
+//                    resets its request as soc.v does), pressed at line 50
+//   frame 11         B, pressed in the blanking after the last line: the swap must follow
 //                    within two lines; pressed again 2000 clocks later, still in the same
 //                    blanking: that swap must wait for the next blanking
-//   frame 12         B
-//   frame 13         A
+//   frame 12         A
+//   frame 13         B
 
 #include <cstdio>
 #include <cstdint>
@@ -93,7 +95,7 @@ int main(int argc, char **argv) {
     const Press presses[] = { {2, 100, 0}, {4, 50, 0}, {6, 20, 0}, {6, 120, 0}, {10, 50, 0},
                               {11, 200, 0}, {-1, -1, 2000} };
     const int NPRESS = sizeof presses / sizeof presses[0];
-    const int expect[] = { -1, 0, 0, 1, 1, 0, 0, 1, 1, -1, 1, 0, 1, 0 };   // picture per frame 1..13, -1: not checked
+    const int expect[] = { -1, 0, 0, 1, 1, 0, 0, 1, 1, -1, 0, 1, 0, 1 };   // picture per frame 1..13, -1: not checked
     const int FRAMES = 13;
     const int RESET_FRAME = 9, RESET_LINE = 100, RESET_CLOCKS = 500;
     const int BLANK_PRESS = 5;                  // index of the press in the blanking
@@ -188,6 +190,6 @@ int main(int argc, char **argv) {
 
     if (fails) { printf("FAIL\n"); return 1; }
     printf("PASS: swaps only in the blanking and at most once per blanking, each picture with its own palette, "
-           "a press while a swap is pending ignored, a reset keeps the picture, drawing port reads and writes\n");
+           "a press while a swap is pending ignored, after a reset buffer 0 without a swap, drawing port reads and writes\n");
     return 0;
 }

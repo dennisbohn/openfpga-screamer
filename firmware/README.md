@@ -42,9 +42,12 @@ Skript beim ersten Mal selbst. Ergebnis in `build/firmware/`: `firmware.bin` (h�
 Der Pocket speichert den Protokollbereich, wenn man den Core im Menü beendet („Quit“) oder
 ausschaltet, auch nach einem Absturz der CPU. Danach den Pocket per USB als Laufwerk
 anschließen (oder die SD-Karte einstecken) und `/Saves/screamer/Chainy.Screamer/debug.txt`
-öffnen. Eine alte `debug.txt` lädt der Pocket beim Start wieder in den Bereich; vor einem
-Test löschen, dann stammt der Inhalt sicher von diesem Lauf (steht danach kein Text darin,
-ist die CPU gar nicht losgelaufen). Beispiel:
+öffnen. Die alte `debug.txt` lädt der Pocket beim Start zwar in den Bereich, der Core
+ignoriert das aber: Nach dem Start des Cores stammt der Inhalt von diesem Lauf (besteht die
+Datei nur aus Nullen, ist die CPU gar nicht losgelaufen). Ausnahme: Lädt man die Firmware im
+Menü neu, ist das nur ein Reset, und das Protokoll des vorigen Laufs bleibt stehen, bis die
+neue Firmware es löscht; welche Firmware es geschrieben hat, zeigt die Prüfsumme in der
+zweiten Zeile. Beispiel:
 
 ```
 Screamer Pocket step 1, frames drawn: 6

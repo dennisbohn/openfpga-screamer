@@ -3,7 +3,7 @@
 # riscv64-unknown-elf-gcc and picolibc are installed.
 # Output in $(OUT): firmware.elf, .bin, .lst (objdump -d), .map
 CROSS   ?= riscv64-unknown-elf-
-OUT     ?= ../build/firmware
+OUT     ?= ../build/firmware$(if $(FAULT),-$(FAULT))
 CC       = $(CROSS)gcc
 OBJCOPY  = $(CROSS)objcopy
 OBJDUMP  = $(CROSS)objdump
@@ -19,6 +19,13 @@ LDFLAGS  = $(ARCH) --specs=picolibc.specs -nostartfiles -T link.ld -Wl,--gc-sect
 
 # Size and CRC-32 of a file, in the words of the firmware's debug log
 CRC32    = python3 -c 'import os, sys, zlib; d = open(sys.argv[1], "rb").read(); print(f"{os.path.basename(sys.argv[1])}: {len(d)} bytes, crc32 {zlib.crc32(d):08x}")'
+
+# Fault tests for the simulation: make FAULT=IFETCH builds a firmware that jumps out of
+# the boot RAM after its self-tests (an instruction access fault, mcause 1). Each variant
+# has its own OUT (../build/firmware-IFETCH), because the objects do not depend on CFLAGS.
+ifneq ($(FAULT),)
+CFLAGS  += -DFAULT_$(FAULT)
+endif
 
 SRCS     = start.S main.c selftest.c console.c dlog.c trap.c
 OBJS     = $(patsubst %,$(OUT)/obj/%.o,$(basename $(SRCS)))

@@ -6,6 +6,7 @@ screen.bin (65,024 bytes), loaded by the Pocket to bridge address 0:
   0x0000-0x03FF  palette, 256 x 4 bytes: R, G, B, 0 (8 bits each)
   0x0400-...     pixels, 320 x 200 palette indices, row by row
 """
+import os
 import struct
 import sys
 import zlib
@@ -54,6 +55,8 @@ def write_png(path, pixels, palette):
 def main():
     graf, name, out = sys.argv[1:4]
     pixels, palette = decode_pcx(datfile.extract(datfile.read(graf), name))
+    for path in sys.argv[3:5]:
+        os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     with open(out, "wb") as fh:
         for i in range(256):
             fh.write(palette[i * 3:i * 3 + 3] + b"\0")

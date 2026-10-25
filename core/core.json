@@ -6,7 +6,7 @@
                 "screamer"
             ],
             "shortname": "Screamer",
-            "description": "Screamer (1995): RISC-V softcore with a hardware 3D renderer. Work in progress.",
+            "description": "Screamer (1995): RISC-V softcore + hardware 3D renderer, WIP",
             "author": "Chainy",
             "url": "",
             "version": "0.1.0",

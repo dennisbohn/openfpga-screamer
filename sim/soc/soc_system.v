@@ -22,7 +22,9 @@ module soc_system (
     output  wire            vid_vs,
 
     output  wire    [31:0]  sim_status,
-    output  wire    [31:0]  log_slot_size      // size word of the debug log's slot table entry
+    output  wire    [31:0]  log_slot_size,     // size word of the debug log's slot table entry
+    output  wire            swap_req,          // soc's swap request toggle
+    output  wire            front              // video_out: the buffer in front
 );
 
     wire            fb_wr_en, fb_buf;
@@ -32,7 +34,7 @@ module soc_system (
     wire            pal_wr, pal_buf;
     wire    [7:0]   pal_addr;
     wire    [23:0]  pal_data;
-    wire            swap_req_toggle, swap_ack_toggle, frame_toggle, front;
+    wire            swap_req_toggle, swap_ack_toggle, frame_toggle;
     wire            fb_rd_buf;
     wire    [13:0]  fb_rd_addr;
     wire    [31:0]  vid_fb_data;
@@ -125,5 +127,6 @@ always @(posedge clk_74a) begin                 // address and output registered
     dt_q <= dt_r;
 end
     assign log_slot_size = dt[3];
+    assign swap_req = swap_req_toggle;
 
 endmodule
