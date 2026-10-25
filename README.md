@@ -45,7 +45,8 @@ Dort liegen `firmware.bin` aus `tools/fw.sh` (siehe `firmware/README.md`) und f√
 Textur-Vorf√ºhrung `textures.bin`, ein paar Texturen und die Palette von Strecke 1 (Data-Slot 3):
 
 ```sh
-python tools/make_textures.py "C:/GOG Games/Screamer/GFX/MAP1L.DAT"     build/assets/screamer/Chainy.Screamer/textures.bin build/preview/textures.png 26 45 36 20 0
+python tools/make_textures.py "C:/GOG Games/Screamer/GFX/MAP1L.DAT" \
+    build/assets/screamer/Chainy.Screamer/textures.bin build/preview/textures.png 26 45 36 20 0
 ```
 
 Ohne diese Datei zeigt der Core einfarbige Dreiecke.
