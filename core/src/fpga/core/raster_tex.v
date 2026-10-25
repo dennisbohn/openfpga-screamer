@@ -30,13 +30,15 @@ module raster_tex (
     input   wire    [13:0]  in_word,
     input   wire    [1:0]   in_lane,
 
-    // the triangle's texture: page at byte address base << 8, rows of 256 bytes
-    input   wire    [17:0]  tex_base,
+    // the triangle's texture: SDRAM byte address of texel (0, 0), rows of 256 bytes
+    input   wire    [25:0]  tex_base,
     input   wire    [8:0]   tex_w,              // 1..256
     input   wire    [8:0]   tex_h,
     input   wire            tex_cut,            // texel 0 is see-through
 
     output  wire            busy,
+    output  reg     [31:0]  misses = 0,         // lines fetched since the last clear
+    input   wire            clear_misses,
 
     // framebuffer writes, one pixel each
     output  reg             out_wr = 0,
@@ -200,7 +202,7 @@ always @(posedge clk) begin
         tu9 <= tu_lim; tv9 <= tv_lim;
         // C1: texel address, cache read
         c1 <= v9; wc1 <= w9;
-        a_c1 <= {tex_base + {10'd0, tv9}, tu9};
+        a_c1 <= tex_base + {10'd0, tv9, tu9};
         // C2: compare
         c2 <= c1; wc2 <= wc1; a_c2 <= a_c1;
         // out
@@ -222,6 +224,7 @@ always @(posedge clk) begin
         if(inval_cnt == 9'd511) mstate <= M_NORMAL;
     end
     M_NORMAL: if(c2 && !hit) begin
+        misses <= misses + 1'b1;
         mem_valid <= 1;
         mem_addr <= a_c2[25:5];
         mstate <= M_REQ;
@@ -246,6 +249,7 @@ always @(posedge clk) begin
     default: mstate <= M_NORMAL;            // M_REPLAY: one clock
     endcase
 
+    if(clear_misses) misses <= 0;
     if(reset || invalidate) begin
         mstate <= M_INVAL;
         inval_cnt <= 0;

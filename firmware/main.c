@@ -103,7 +103,7 @@ static void player(struct rs_vertex v[3], uint32_t keys)
 static uint32_t hw_textured(const struct rs_vertex pos[3], const struct rs_tex_setup *s, const struct rs_texture *t)
 {
     for (int k = 0; k < 3; k++) RS_V(k) = RS_XY(pos[k].x, pos[k].y);
-    RS_TEX = (uint32_t)((uintptr_t)t->data - SDRAM_BASE) >> 8;
+    RS_TEX = (uint32_t)((uintptr_t)t->data - SDRAM_BASE);
     RS_TEXSIZE = (uint32_t)t->width | (uint32_t)t->height << 16 | (t->routine == 64 ? RS_CUT : 0);
     RS_REF = RS_XY(s->xr, s->yr);
     for (int k = 0; k < 3; k++) {

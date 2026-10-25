@@ -80,6 +80,8 @@ Alle Register sind 32 Bit, Zugriff als Wort.
 | `0xF000_300C`, `3010` | `RS_CLIP0`, `RS_CLIP1` | W | Clip-Rechteck in Pixeln: x0/y0, x1/y1 (ausschließlich), Bit 15..0 x, Bit 31..16 y |
 | `0xF000_3014` | `RS_DRAW` | R/W | Schreiben: Bit 7..0 Farbe, Bit 8 Puffer, startet das Dreieck; der Schreibzugriff wartet, solange der Rasterizer zeichnet, Framebuffer-Zugriffe der CPU ebenso. Lesen: Bit 0 zeichnet noch |
 | `0xF000_3018` | `RS_PIXELS` | R/W | gezeichnete Pixel; Schreiben löscht |
+| `0xF000_301C`–`304C` | `RS_TEX` … `RS_CTRL` | W | Texturen (`firmware/hw.h`): Byte-Adresse von Texel (0, 0) im SDRAM, Größe und Durchsichtigkeit, Bezugspixel, Q, U, V mit Änderung je Pixel; `RS_CTRL` leert den Textur-Cache; `RS_DRAW` Bit 9 zeichnet texturiert |
+| `0xF000_3050` | `RS_MISSES` | R/W | Textur-Zeilen aus dem SDRAM nachgeladen (Cache-Fehltreffer); Schreiben löscht |
 
 ## Framebuffer
 

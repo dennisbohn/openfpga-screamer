@@ -21,12 +21,13 @@
 //   5     draw: [7:0] colour, [8] buffer, [9] textured; starts the triangle (soc.v holds
 //         this write back while busy)
 //   6     clears the pixel counter
-//   7     texture page: SDRAM byte address >> 8 (rows of 256 bytes)
+//   7     texture: SDRAM byte address of texel (0, 0), rows of 256 bytes
 //   8     texture: [8:0] width, [24:16] height (1..256), [31] texel 0 see-through
 //   9     reference pixel: [15:0] x, [31:16] y
 //   10..12  Q, U, V at the reference pixel's centre (signed)
 //   13..15  their change per pixel in x, 8 fraction bits    16..18  the same in y
 //   19    write: forget the cached texture lines (after the CPU changed textures)
+//   20    texture lines fetched from the SDRAM (cache misses); write: clear
 //
 
 module raster (
@@ -38,6 +39,7 @@ module raster (
     input   wire    [31:0]  wr_data,
     output  wire            busy,
     output  reg     [31:0]  pixels = 0,         // pixels drawn since the last clear
+    output  wire    [31:0]  misses,             // texture cache misses since the last clear
 
     // framebuffer drawing port, a word of four pixels; be[3] is the leftmost pixel
     output  wire            fb_wr,
@@ -142,7 +144,7 @@ end
 
     // textured
     reg         textured;
-    reg  [17:0] t_base;
+    reg  [25:0] t_base;
     reg  [8:0]  t_w, t_h;
     reg         t_cut;
     reg signed [15:0] t_xr, t_yr;
@@ -178,6 +180,8 @@ raster_tex rt (
     .tex_h              ( t_h ),
     .tex_cut            ( t_cut ),
     .busy               ( tex_busy ),
+    .misses             ( misses ),
+    .clear_misses       ( wr && wr_addr == 5'd20 ),
     .out_wr             ( tex_wr ),
     .out_word           ( tex_word ),
     .out_be             ( tex_be ),
@@ -256,7 +260,7 @@ always @(posedge clk) begin
         colour <= wr_data[7:0];
         fb_buf <= wr_data[8];
         textured <= wr_data[9];
-        t_base <= tex_reg[17:0];
+        t_base <= tex_reg[25:0];
         t_w <= size_reg[8:0];
         t_h <= size_reg[24:16];
         t_cut <= size_reg[31];
