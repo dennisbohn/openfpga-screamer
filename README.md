@@ -41,15 +41,16 @@ mit `tools/deploy.sh /i` (SD-Karte bzw. Pocket im USB-Modus als Laufwerk I:).
 
 Was der Core aus den Spieldaten braucht, wird auf dem PC umgewandelt und landet in
 `build/assets/` (nie im Repository), `tools/package.sh` kopiert es nach `Assets/`.
-Dort liegen `firmware.bin` aus `tools/fw.sh` (siehe `firmware/README.md`) und für die
-Textur-Vorführung `textures.bin`, ein paar Texturen und die Palette von Strecke 1 (Data-Slot 3):
+Dort liegen `firmware.bin` und `program.bin` aus `tools/fw.sh` (siehe `firmware/README.md`)
+und für den Streckendurchflug `track1.bin` (Data-Slot 3): Materialien, Texturen und Bauteile
+von Strecke 1 unverändert aus den Spieldateien, dazu Platzierungen, Palette und Kamerapfad:
 
 ```sh
-python tools/make_textures.py "C:/GOG Games/Screamer/GFX/MAP1L.DAT" \
-    build/assets/screamer/Chainy.Screamer/textures.bin build/preview/textures.png 26 45 36 20 0
+python tools/make_track.py "C:/GOG Games/Screamer/GFX/MAP1L.DAT" "C:/GOG Games/Screamer/DATA/MAP1.DAT" \
+    build/assets/screamer/Chainy.Screamer/track1.bin build/preview/track1_map.png
 ```
 
-Ohne diese Datei zeigt der Core einfarbige Dreiecke.
+Ohne diese Datei zeigt der Core eine kleine Szene mit Testmustern.
 
 ## Simulation
 

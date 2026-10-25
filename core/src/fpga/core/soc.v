@@ -532,7 +532,7 @@ psram32 ps0 (
 // Until it is done, the CPU's framebuffer accesses and the next draw command wait.
 //
     wire        rs_busy, rs_fb_wr, rs_fb_buf;
-    wire [31:0] rs_pixels, rs_misses, rs_fb_data;
+    wire [31:0] rs_pixels, rs_misses, rs_busy_clocks, rs_fb_data;
     wire [13:0] rs_fb_addr;
     wire [3:0]  rs_fb_be;
     wire        rs_wr = d_write && d_region == R_REG && d_addr[15:7] == 9'h060;   // 0x3000-0x307C
@@ -549,6 +549,7 @@ raster rs (
     .busy               ( rs_busy ),
     .pixels             ( rs_pixels ),
     .misses             ( rs_misses ),
+    .busy_clocks        ( rs_busy_clocks ),
     .fb_wr              ( rs_fb_wr ),
     .fb_buf             ( rs_fb_buf ),
     .fb_addr            ( rs_fb_addr ),
@@ -631,6 +632,7 @@ always @(posedge clk) begin
         16'h3014: reg_q <= {31'd0, rs_busy};
         16'h3018: reg_q <= rs_pixels;
         16'h3050: reg_q <= rs_misses;
+        16'h3054: reg_q <= rs_busy_clocks;
         default:  reg_q <= 32'd0;
     endcase
 end

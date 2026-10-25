@@ -34,13 +34,13 @@
                 "address": "0x13000000"
             },
             {
-                "name": "Textures",
+                "name": "Track",
                 "id": 3,
                 "required": false,
                 "parameters": "0x02",
-                "filename": "textures.bin",
+                "filename": "track1.bin",
                 "extensions": ["bin"],
-                "size_maximum": 4194304,
+                "size_maximum": 8388608,
                 "address": "0x12100000"
             }
         ]

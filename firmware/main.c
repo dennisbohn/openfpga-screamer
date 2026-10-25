@@ -1,7 +1,9 @@
 /*
  * The program (program.bin, data slot 2) in the SDRAM, started by the boot loader with its
- * results (docs/soc.md). Draws the texture scene with the hardware rasterizer (raster.v),
- * checked once a run against its C model (raster.c), and a triangle moved with the d-pad.
+ * results (docs/soc.md). With a track in data slot 3 (tools/make_track.py) a flythrough of
+ * it as a benchmark: the CPU does the geometry (track.c), the rasterizer draws; the d-pad
+ * sets the speed. Without one, the texture scene with test patterns, checked once a run
+ * against the rasterizer's C model (raster.c), and a triangle moved with the d-pad.
  * Every frame into the back buffer: palette, test band, background, the scene, the counts
  * and FPS; then a swap. After the third completed swap the results go to SYS_SIM once
  * (0x801FFFFF when everything passed).
@@ -13,6 +15,7 @@
 #include "raster.h"
 #include "texdemo.h"
 #include "screen.h"
+#include "track.h"
 
 uint32_t frames_shown;             /* read by the trap handler */
 
@@ -23,7 +26,7 @@ static uint32_t results;        /* SYS_SIM bits 20..0, from the boot loader */
 static int textures;            /* textures in the SDRAM (data slot 3, or test patterns) */
 static uint8_t col_bg = COL_BG, col_text = COL_TEXT, col_dim = COL_DIM, col_alert = COL_ALERT;
 
-#define TEX_FILE    ((const volatile uint8_t *)(SDRAM_BASE + 0x2100000))  /* core/data.json */
+#define TEX_FILE    ((const volatile uint8_t *)(SDRAM_BASE + 0x2100000))  /* data slot 3 (core/data.json) */
 
 /* Mark the free stack in the boot RAM up to 256 bytes below the stack pointer, find how
    deep it was used later */
@@ -115,6 +118,17 @@ static uint32_t hw_textured(const struct rs_vertex pos[3], const struct rs_tex_s
     return 0;
 }
 
+static void hw_track_tex(const struct rs_vertex pos[3], const struct rs_tex_setup *s, const struct rs_texture *t)
+{
+    hw_textured(pos, s, t);
+}
+
+static void hw_track_flat(const struct rs_vertex pos[3], uint8_t colour)
+{
+    for (int k = 0; k < 3; k++) RS_V(k) = RS_XY(pos[k].x, pos[k].y);
+    RS_DRAW = colour | draw_buf << 8;
+}
+
 static struct demo_stats draw_demo(uint32_t frame, const struct rs_vertex pv[3], int buf)
 {
     struct demo_stats d;
@@ -203,6 +217,104 @@ static void draw_status(volatile uint8_t *fb, uint32_t st, uint32_t drawn, const
     con_text(fb, 1, 23, buf, col_text, col_bg);
 }
 
+/*
+ * The flythrough: the camera drives the player's line; every frame the counts on screen,
+ * every 250 frames a line in the log
+ */
+static const struct rs_clip track_clip = { 0, 30, FB_W, 176 };
+
+static void __attribute__((noreturn)) run_track(void)
+{
+    const uint32_t *pal = track_palette();
+    uint8_t col_sky = nearest((const volatile uint32_t *)pal, 110, 150, 210);
+    uint32_t lap = track_path_length() << 8, pos = 0, speed = 512, drawn = 0;
+    uint32_t fps = 0, fps_drawn = 0, fps_frame = 0;
+    track_mode = TRACK_HW;
+    track_hw_tex = hw_track_tex;
+    track_hw_flat = hw_track_flat;
+    for (;;) {
+        uint32_t st = wait_swap_done(), keys = IN_KEY;
+        frames_shown = drawn;
+        if (drawn == 3) {
+            SYS_SIM = SIM_DONE | results;
+            dlog_str("stack used ");
+            dlog_dec((int32_t)stack_used());
+            dlog_str(" bytes\nSYS_SIM=");
+            dlog_hex(SIM_DONE | results);
+            dlog_char('\n');
+        }
+        if ((keys & KEY_UP) && speed < 4096) speed += 16;
+        if ((keys & KEY_DOWN) && speed >= 16) speed -= 16;
+
+        volatile uint8_t *fb = FB(!(st & VID_FRONT));
+        for (int i = 0; i < 256; i++) VID_PAL[i] = pal[i];
+        draw_band(fb);
+        fb_fill(fb, 0, BAND_H, FB_W, track_clip.y0 - BAND_H, col_bg);
+        fb_fill(fb, 0, track_clip.y0, FB_W, track_clip.y1 - track_clip.y0, col_sky);
+        fb_fill(fb, 0, track_clip.y1, FB_W, FB_H - track_clip.y1, col_bg);
+        con_text(fb, 1, 2, "SCREAMER POCKET - STRECKE 1", col_text, col_bg);
+
+        /* the geometry on the CPU, the triangles to the rasterizer */
+        struct track_stats ts;
+        uint32_t t0 = rdcycle();
+        draw_buf = !(st & VID_FRONT);
+        RS_PIXELS = 0;
+        RS_MISSES = 0;
+        RS_CLOCKS = 0;
+        RS_CLIP0 = RS_XY(track_clip.x0, track_clip.y0);
+        RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
+        track_draw(0, &track_clip, pos, &ts);
+        while (RS_DRAW & RS_BUSY)
+            ;
+        uint32_t cycles = rdcycle() - t0, raster = RS_CLOCKS, pixels = RS_PIXELS, misses = RS_MISSES;
+
+        if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
+            fps = drawn - fps_drawn;
+            fps_drawn = drawn;
+            fps_frame = VID_FRAME(st);
+        }
+        char buf[CON_COLS + 1], *p;
+        p = fmt_udec(fmt_str(buf, "Teile "), ts.pieces);
+        p = fmt_udec(fmt_str(p, " Flaechen "), ts.faces);
+        fmt_udec(fmt_str(p, " Dreiecke "), ts.triangles);
+        con_text(fb, 1, 22, buf, col_text, col_bg);
+        p = fmt_udec(fmt_str(buf, "CPU "), cycles);
+        p = fmt_udec(fmt_str(p, " Raster "), raster);
+        fmt_udec(fmt_str(p, " Miss "), misses);
+        con_text(fb, 1, 23, buf, col_text, col_bg);
+        p = fmt_udec(fmt_str(buf, "Pixel "), pixels);
+        p = fmt_udec(fmt_str(p, " FPS "), fps);
+        fmt_udec(fmt_str(p, " Tempo "), speed >> 4);
+        con_text(fb, 1, 24, buf, col_text, col_bg);
+        if (drawn % 250 == 2) {
+            dlog_str("track frame ");
+            dlog_dec((int32_t)drawn);
+            dlog_str(": point ");
+            dlog_dec((int32_t)(pos >> 8));
+            dlog_str(", ");
+            dlog_dec((int32_t)ts.pieces);
+            dlog_str(" pieces, ");
+            dlog_dec((int32_t)ts.faces);
+            dlog_str(" faces, ");
+            dlog_dec((int32_t)ts.triangles);
+            dlog_str(" tris, ");
+            dlog_dec((int32_t)pixels);
+            dlog_str(" px, cpu ");
+            dlog_dec((int32_t)cycles);
+            dlog_str(", raster ");
+            dlog_dec((int32_t)raster);
+            dlog_str(", misses ");
+            dlog_dec((int32_t)misses);
+            dlog_str(", fps ");
+            dlog_dec((int32_t)fps);
+            dlog_char('\n');
+        }
+        VID_SWAP = 1;
+        log_head("frames drawn: ", ++drawn);
+        pos = (pos + speed) % lap;
+    }
+}
+
 void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
 {
     results = boot_results;
@@ -211,6 +323,21 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     log_head("frames drawn: ", 0);
     dlog_str("program.bin: running in the SDRAM\n");
 
+    int placements = track_init(TEX_FILE);
+    if (placements) {
+        const volatile uint32_t *pal = (const volatile uint32_t *)track_palette();
+        col_bg = nearest(pal, 0, 0, 0);
+        col_text = nearest(pal, 255, 255, 255);
+        col_dim = nearest(pal, 120, 200, 120);
+        col_alert = nearest(pal, 230, 25, 178);
+        dlog_str("track: ");
+        dlog_dec(placements);
+        dlog_str(" placements, ");
+        dlog_dec((int32_t)track_path_length());
+        dlog_str(" path points (data slot 3)\n");
+        RS_CTRL = 1;
+        run_track();
+    }
     textures = texdemo_init(TEX_FILE);
     if (textures) {
         const volatile uint32_t *pal = texdemo_palette();

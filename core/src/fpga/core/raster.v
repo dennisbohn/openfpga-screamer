@@ -28,6 +28,7 @@
 //   13..15  their change per pixel in x, 8 fraction bits    16..18  the same in y
 //   19    write: forget the cached texture lines (after the CPU changed textures)
 //   20    texture lines fetched from the SDRAM (cache misses); write: clear
+//   21    clocks the rasterizer was busy; write: clear
 //
 
 module raster (
@@ -40,6 +41,7 @@ module raster (
     output  wire            busy,
     output  reg     [31:0]  pixels = 0,         // pixels drawn since the last clear
     output  wire    [31:0]  misses,             // texture cache misses since the last clear
+    output  reg     [31:0]  busy_clocks = 0,    // clocks with busy since the last clear
 
     // framebuffer drawing port, a word of four pixels; be[3] is the leftmost pixel
     output  wire            fb_wr,
@@ -249,6 +251,8 @@ end
 
 always @(posedge clk) begin
     flat_wr <= 0;
+    if(wr && wr_addr == 5'd21) busy_clocks <= 0;
+    else if(busy) busy_clocks <= busy_clocks + 1'b1;
     if(wr && wr_addr == 5'd6) pixels <= 0;
     else if(fb_wr) pixels <= pixels + fb_be[0] + fb_be[1] + fb_be[2] + fb_be[3];
 

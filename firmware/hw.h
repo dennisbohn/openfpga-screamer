@@ -108,6 +108,7 @@
 #define RS_DY(k)        REG32(0xF0003040u + 4u * (k))   /* ... in y */
 #define RS_CTRL         REG32(0xF000304Cu)  /* W: any value forgets the cached texture lines */
 #define RS_MISSES       REG32(0xF0003050u)  /* R: texture lines fetched from the SDRAM; W: clears */
+#define RS_CLOCKS       REG32(0xF0003054u)  /* R: clocks the rasterizer was busy; W: clears */
 #define RS_BUSY         (1u << 0)
 #define RS_TEXTURED     (1u << 9)           /* RS_DRAW: textured with RS_TEX ... RS_DY */
 #define RS_CUT          (1u << 31)          /* RS_TEXSIZE: texel 0 is see-through */
