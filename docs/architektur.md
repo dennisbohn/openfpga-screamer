@@ -124,7 +124,12 @@ danach noch Reserve, DSP ebenso. Einen Tiefenpuffer gibt es nicht, siehe „Ents
 
 ## Vorgehen
 
-1. Grundgerüst: Template bauen, dann Video aus 8-Bit-Framebuffer mit Palette, Eingabe, JTOPL.
-2. VexRiscv mit FPU, Spiellogik von OpenScreamer bare-metal, erst mit Software-Renderer.
+1. Grundgerüst: Template, zwei Framebuffer mit Palette, Eingabe (erledigt, auf dem Pocket
+   getestet); JTOPL fehlt noch.
+2. VexRiscv mit FPU und SDRAM. Das erste Programm ist ein Speichertest: SDRAM, SRAM und
+   PSRAM mit Mustern beschreiben, zurücklesen, Ergebnis auf dem Bildschirm. Damit werden
+   die externen Speicher geprüft, bevor etwas auf sie baut (das SRAM erst hier, nicht
+   vorher einzeln). Danach die Spiellogik von OpenScreamer bare-metal, erst mit
+   Software-Renderer.
 3. Bitgenaue C-Modelle von Rasterizer und Geometrie-Einheit, dann die Hardware dazu,
    jeweils in Verilator gegen das Modell geprüft.
