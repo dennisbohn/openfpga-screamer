@@ -13,15 +13,12 @@ Getrennte Speicherbusse: SDRAM 64 MB, PSRAM `cram0` und `cram1` je 16 MB, SRAM 2
 
 ## Aufteilung
 
-```
-VexRiscv RV32IMF ──Befehlsliste──▶ Geometrie-Einheit ──Dreiecke──▶ Rasterizer
- (Spiellogik, Physik,                (Transformation,                (Spans, Texturen,
-  KI, Menüs, Objekt-                  Projektion, Clipping,           Schattierung)
-  Sichtbarkeit)                       Dreiecks-Setup)                      │
-                                                                           ▼
-                                             Framebuffer (cram1) → Palette → Video
-Audio: JTOPL (OPL2) + PCM-Mixer für die Effekte aus SOUND.DAT
-```
+![Geplante Architektur: Datenfluss vom RISC-V über Geometrie-Einheit und Rasterizer in den Framebuffer, Speicher und Ein-/Ausgänge des Pocket](architektur.svg)
+
+Durchgezogen: gebaut und auf dem Pocket getestet. Gestrichelt: geplant. Der RISC-V schickt
+Objekte mit ihren Matrizen an die Geometrie-Einheit, die liefert Dreiecke an den
+Rasterizer; der liest Texel aus `cram0` und schreibt 8-Bit-Pixel in den Framebuffer in
+`cram1`, aus dem `video_out` jede Zeile vor ihrer Ausgabe holt.
 
 | Speicher | Inhalt |
 |---|---|
@@ -57,23 +54,29 @@ braucht. 27 Dateien (Grenze: 32 Slots):
 
 ## Geschätzte Belegung
 
+![Platzbudget im FPGA: Logik geplant 53–79 %, Block-RAM 23–31 % (55–63 % mit Tiefenpuffer), DSP 35–56 %](ressourcen.svg)
+
+Die Grafik erzeugt `tools/make_budget_svg.py` aus denselben Zahlen wie diese Tabelle; wenn
+die Synthese eine Schätzung ersetzt, beides anpassen.
+
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
 | Analogue-Rahmen (**gemessen**, unverändertes Template) | 414 | 2 | 0 |
+| Framebuffer + Video (**gemessen**: `fb_psram`, `video_out`, PSRAM-Controller) | 172 | 4 | 0 |
 | VexRiscv RV32IM + 2× 8 KB Cache | 1.200–1.600 | 18–22 | 4 |
 | FPU (RV32F) | 1.500–2.200 | 0–2 | 2–4 |
-| Speicher-Controller + Arbiter | 900–1.400 | 2–4 | 0 |
+| Speicher-Controller (SDRAM, `cram0`) + Arbiter | 900–1.400 | 2–4 | 0 |
 | Geometrie-Einheit | 2.500–4.000 | 4–8 | 12–18 |
 | Rasterizer (Logik) | 2.000–3.000 | 3–6 | 4–8 |
-| Tiefenpuffer 320×200×16 (nur Variante B) | – | 100 | – |
 | Textur-Cache 16 KB | 100–200 | 16 | – |
 | Schattierungs-/Transparenztabellen | – | 16–24 | – |
-| Video-Ausgabe | 200–300 | 3 | 0 |
 | JTOPL | 800–1.200 | 3–5 | 0–1 |
 | PCM-Mixer | 300–500 | 2 | 1–2 |
-| **Summe** | **9.900–14.800 (54–80 %)** | **169–194 (55–63 %)** | **23–37 (35–56 %)** |
+| **Summe** | **9.886–14.686 (53–79 %)** | **70–95 (23–31 %)** | **23–37 (35–56 %)** |
+| Tiefenpuffer 320×200×16 (nur Variante B) | – | +100 (dann 55–63 %) | – |
 
-Knapp wird die Logik, nicht Speicher oder DSP.
+Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
+Taktfrequenz zu halten. Block-RAM und DSP haben Reserve, auch mit Tiefenpuffer.
 
 ## Entschieden
 

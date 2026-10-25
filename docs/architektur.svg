@@ -1,0 +1,194 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 770" width="1440" height="770" role="img" aria-label="Geplante Architektur: Der RISC-V-Prozessor im FPGA schickt Objekte an die Geometrie-Einheit, die Dreiecke an den Rasterizer liefert. Der Rasterizer liest Texturen aus PSRAM cram0 und schreibt Pixel in den Framebuffer in PSRAM cram1, aus dem video_out das Bild für den Pocket-Bildschirm liest. Code, Daten und Meshes liegen im SDRAM, die Dateien kommen von der SD-Karte über die APF-Bridge.">
+  <title>Screamer auf dem Analogue Pocket – geplante Architektur</title>
+  <desc>Gebaut und auf dem Pocket getestet: APF-Bridge mit Data-Slots, fb_psram mit PSRAM cram1, video_out. Geplant: VexRiscv RV32IMF, Geometrie-Einheit, Rasterizer, Audio, SDRAM-Controller, Textur-Speicher in cram0.</desc>
+  <defs>
+    <marker id="built" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2e7d32"/>
+    </marker>
+    <marker id="plan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555555"/>
+    </marker>
+    <marker id="ext" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#888888"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #1f1f1f; }
+    .h { font-size: 20px; font-weight: 700; }
+    .t { font-size: 13px; font-weight: 600; }
+    .b { font-size: 11.5px; }
+    .l { font-size: 11px; fill: #444444; }
+    .c { text-anchor: middle; }
+    .r { text-anchor: end; }
+    .built { fill: #e8f5e9; stroke: #2e7d32; stroke-width: 1.6; }
+    .plan { fill: #ffffff; stroke: #555555; stroke-width: 1.4; stroke-dasharray: 6 4; }
+    .ext { fill: #eeeeee; stroke: #999999; stroke-width: 1.2; }
+    .free { fill: #ffffff; stroke: #aaaaaa; stroke-width: 1.2; stroke-dasharray: 3 3; }
+    .wb { fill: none; stroke: #2e7d32; stroke-width: 1.8; }
+    .wp { fill: none; stroke: #555555; stroke-width: 1.4; stroke-dasharray: 6 4; }
+    .we { fill: none; stroke: #888888; stroke-width: 1.4; }
+  </style>
+
+  <rect width="1440" height="770" fill="#ffffff"/>
+
+  <!-- title and legend -->
+  <text x="40" y="44" class="h">Screamer auf dem Analogue Pocket – geplante Architektur</text>
+  <text x="40" y="66" class="l">Datenfluss beim Laden und pro Bild · Stand 25.10.2026</text>
+
+  <rect x="1130" y="26" width="22" height="14" rx="3" class="built"/>
+  <text x="1160" y="37" class="l">gebaut, auf dem Pocket getestet</text>
+  <rect x="1130" y="46" width="22" height="14" rx="3" class="plan"/>
+  <text x="1160" y="57" class="l">geplant</text>
+  <rect x="1130" y="66" width="22" height="14" rx="3" class="ext"/>
+  <text x="1160" y="77" class="l">Bauteil des Pocket</text>
+
+  <!-- outside the FPGA, left -->
+  <rect x="40" y="120" width="70" height="40" rx="6" class="ext"/>
+  <text x="75" y="145" class="b c">SD-Karte</text>
+  <rect x="120" y="120" width="70" height="40" rx="6" class="ext"/>
+  <text x="155" y="145" class="b c">Tasten</text>
+  <path d="M75,160 V188" class="we" marker-end="url(#ext)"/>
+  <path d="M155,160 V188" class="we" marker-end="url(#ext)"/>
+
+  <rect x="40" y="190" width="150" height="56" rx="6" class="ext"/>
+  <text x="115" y="214" class="t c">Pocket-Controller</text>
+  <text x="115" y="231" class="b c">(APF)</text>
+
+  <rect x="40" y="300" width="150" height="40" rx="6" class="ext"/>
+  <text x="115" y="325" class="b c">Audio-DAC</text>
+
+  <!-- outside the FPGA, right -->
+  <rect x="1270" y="160" width="140" height="56" rx="6" class="ext"/>
+  <text x="1340" y="184" class="t c">Scaler-FPGA</text>
+  <text x="1340" y="201" class="b c">+ Display</text>
+
+  <!-- the FPGA -->
+  <rect x="230" y="92" width="1000" height="478" rx="14" fill="#fbfbfb" stroke="#333333" stroke-width="1.5"/>
+  <text x="248" y="116" class="t">Haupt-FPGA · Cyclone V 5CEBA4</text>
+  <text x="1212" y="116" class="l r">Takte: Bridge 74,25 MHz · System ~100 MHz (offen) · Pixel 12,288 MHz</text>
+
+  <!-- row A: bridge, CPU, geometry, raster, video -->
+  <rect x="250" y="140" width="130" height="96" rx="8" class="built"/>
+  <text x="315" y="172" class="t c">APF-Bridge</text>
+  <text x="315" y="192" class="b c">Data-Slots,</text>
+  <text x="315" y="208" class="b c">Tasten, Befehle</text>
+
+  <rect x="460" y="140" width="180" height="96" rx="8" class="plan"/>
+  <text x="550" y="172" class="t c">VexRiscv RV32IMF</text>
+  <text x="550" y="192" class="b c">I-/D-Cache · FPU · CFU</text>
+  <text x="550" y="208" class="b c">Spiellogik, Physik, KI</text>
+
+  <rect x="700" y="140" width="150" height="96" rx="8" class="plan"/>
+  <text x="775" y="172" class="t c">Geometrie-Einheit</text>
+  <text x="775" y="192" class="b c">Transformieren,</text>
+  <text x="775" y="208" class="b c">Projizieren, Clipping</text>
+
+  <rect x="910" y="140" width="150" height="96" rx="8" class="plan"/>
+  <text x="985" y="172" class="t c">Rasterizer</text>
+  <text x="985" y="192" class="b c">Spans, Texturen,</text>
+  <text x="985" y="208" class="b c">Schattierung</text>
+
+  <rect x="1100" y="140" width="110" height="96" rx="8" class="built"/>
+  <text x="1155" y="172" class="t c">video_out</text>
+  <text x="1155" y="192" class="b c">Zeilenpuffer,</text>
+  <text x="1155" y="208" class="b c">Palette, Timing</text>
+
+  <!-- row B: audio -->
+  <rect x="460" y="290" width="110" height="60" rx="8" class="plan"/>
+  <text x="515" y="312" class="t c">Audio</text>
+  <text x="515" y="328" class="b c">JTOPL (OPL2)</text>
+  <text x="515" y="342" class="b c">PCM-Mixer</text>
+
+  <!-- row C: memory controllers -->
+  <rect x="460" y="460" width="390" height="70" rx="8" class="plan"/>
+  <text x="655" y="489" class="t c">SDRAM-Controller</text>
+  <text x="655" y="509" class="b c">Bursts für Cache-Zeilen · zweiter Port für die Bridge</text>
+
+  <rect x="910" y="460" width="150" height="70" rx="8" class="plan"/>
+  <text x="985" y="484" class="t c">Textur-Speicher</text>
+  <text x="985" y="502" class="b c">cram0-Controller</text>
+  <text x="985" y="517" class="b c">+ Textur-Cache</text>
+
+  <rect x="1100" y="460" width="110" height="70" rx="8" class="built"/>
+  <text x="1155" y="484" class="t c">fb_psram</text>
+  <text x="1155" y="502" class="b c">cram1-Controller</text>
+  <text x="1155" y="517" class="b c">liest Zeilen vor</text>
+
+  <!-- external memory chips -->
+  <rect x="250" y="630" width="130" height="56" rx="6" class="free"/>
+  <text x="315" y="654" class="t c" fill="#666666">SRAM · 256 KB</text>
+  <text x="315" y="671" class="b c">noch frei</text>
+
+  <rect x="540" y="630" width="230" height="56" rx="6" class="ext"/>
+  <text x="655" y="654" class="t c">SDRAM · 64 MB</text>
+  <text x="655" y="671" class="b c">Code, Daten, Meshes, Sounds</text>
+
+  <rect x="900" y="630" width="170" height="56" rx="6" class="ext"/>
+  <text x="985" y="654" class="t c">PSRAM cram0 · 16 MB</text>
+  <text x="985" y="671" class="b c">Texturen</text>
+
+  <rect x="1085" y="630" width="140" height="56" rx="6" class="ext"/>
+  <text x="1155" y="654" class="t c">PSRAM cram1 · 16 MB</text>
+  <text x="1155" y="671" class="b c">Framebuffer</text>
+
+  <!-- built connections -->
+  <path d="M190,218 H248" class="wb" marker-end="url(#built)"/>
+  <text x="220" y="197" class="l c">max.</text>
+  <text x="220" y="210" class="l c">3,4 MB/s</text>
+
+  <path d="M1155,460 V238" class="wb" marker-end="url(#built)"/>
+  <text x="1162" y="384" class="l">Zeilen</text>
+
+  <path d="M1210,188 H1268" class="wb" marker-end="url(#built)"/>
+  <text x="1240" y="180" class="l c">320×200</text>
+  <text x="1240" y="202" class="l c">60 Hz</text>
+
+  <path d="M1155,532 V628" class="wb" marker-start="url(#built)" marker-end="url(#built)"/>
+  <text x="1162" y="606" class="l">16 Bit</text>
+
+  <!-- planned connections -->
+  <path d="M382,182 H458" class="wp" marker-start="url(#plan)" marker-end="url(#plan)"/>
+  <text x="420" y="158" class="l c">Tasten,</text>
+  <text x="420" y="171" class="l c">Lade-Befehle</text>
+
+  <path d="M640,188 H698" class="wp" marker-end="url(#plan)"/>
+  <text x="670" y="166" class="l c">Objekte,</text>
+  <text x="670" y="179" class="l c">Matrizen</text>
+
+  <path d="M850,188 H908" class="wp" marker-end="url(#plan)"/>
+  <text x="880" y="179" class="l c">Dreiecke</text>
+
+  <path d="M515,236 V288" class="wp" marker-end="url(#plan)"/>
+  <text x="522" y="266" class="l">Register</text>
+
+  <path d="M350,236 V495 H458" class="wp" marker-end="url(#plan)"/>
+  <text x="342" y="400" class="l r">Firmware,</text>
+  <text x="342" y="414" class="l r">Spieldaten</text>
+
+  <path d="M460,320 H358 A8,8 0 0 0 342,320 H192" class="wp" marker-end="url(#plan)"/>
+  <text x="270" y="312" class="l c">I²S</text>
+
+  <path d="M610,238 V458" class="wp" marker-start="url(#plan)" marker-end="url(#plan)"/>
+  <text x="617" y="384" class="l">Code, Daten</text>
+  <text x="617" y="398" class="l">(Cache-Zeilen)</text>
+
+  <path d="M775,460 V238" class="wp" marker-end="url(#plan)"/>
+  <text x="782" y="384" class="l">Meshes</text>
+
+  <path d="M985,460 V238" class="wp" marker-end="url(#plan)"/>
+  <text x="992" y="384" class="l">Texel</text>
+
+  <path d="M1060,215 H1080 V495 H1098" class="wp" marker-end="url(#plan)"/>
+  <text x="1087" y="384" class="l">Pixel</text>
+  <text x="1087" y="398" class="l">(8 Bit)</text>
+
+  <path d="M655,532 V628" class="wp" marker-start="url(#plan)" marker-end="url(#plan)"/>
+  <text x="662" y="606" class="l">16 Bit</text>
+
+  <path d="M985,532 V628" class="wp" marker-start="url(#plan)" marker-end="url(#plan)"/>
+  <text x="992" y="606" class="l">16 Bit</text>
+
+  <!-- notes -->
+  <text x="40" y="728" class="l">Heute schreibt die Bridge zum Testen noch direkt in den Framebuffer (screen.bin); später lädt der RISC-V die Spieldaten selbst in den SDRAM.</text>
+  <text x="40" y="746" class="l">Logik heute: 586 von 18.480 ALMs (3 %), 6 von 308 M10K · geplant insgesamt etwa 53–79 % der Logik.</text>
+</svg>
