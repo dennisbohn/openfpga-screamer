@@ -47,7 +47,7 @@
   <!-- SRAM above the FPGA -->
   <rect x="590" y="94" width="170" height="52" rx="6" class="ext"/>
   <text x="675" y="115" class="t c">SRAM · 256 KB</text>
-  <text x="675" y="133" class="b c">Befehlslisten ×2</text>
+  <text x="675" y="133" class="b c">Befehlslisten ×2 · Rest Reserve</text>
 
   <!-- outside the FPGA, left -->
   <rect x="40" y="200" width="70" height="40" rx="6" class="ext"/>
@@ -116,7 +116,7 @@
   <rect x="1075" y="400" width="135" height="70" rx="8" class="built"/>
   <text x="1142" y="424" class="t c">Framebuffer ×2</text>
   <text x="1142" y="442" class="b c">Block-RAM</text>
-  <text x="1142" y="458" class="b c">Tausch bei VSync</text>
+  <text x="1142" y="458" class="b c">Tausch in Austastung</text>
 
   <!-- row C: memory controllers -->
   <rect x="460" y="540" width="390" height="70" rx="8" class="plan"/>
@@ -170,9 +170,9 @@
   <path d="M850,310 H908" class="wp" marker-end="url(#plan)"/>
   <text x="880" y="301" class="l c">Dreiecke</text>
 
-  <path d="M1060,340 H1085 V398" class="wp" marker-end="url(#plan)"/>
-  <text x="1078" y="384" class="l r">Pixel</text>
-  <text x="1070" y="397" class="l r">1 pro Takt</text>
+  <path d="M1060,340 H1085 V398" class="wp" marker-start="url(#plan)" marker-end="url(#plan)"/>
+  <text x="1078" y="384" class="l r">Pixel lesen/</text>
+  <text x="1070" y="397" class="l r">schreiben</text>
 
   <path d="M515,362 V398" class="wp" marker-end="url(#plan)"/>
   <text x="522" y="386" class="l">Register</text>
@@ -202,5 +202,5 @@
 
   <!-- notes -->
   <text x="40" y="798" class="l">Bild N+1, N und N−1: CPU, Grafik und Anzeige arbeiten gleichzeitig an drei aufeinanderfolgenden Bildern; Befehlslisten und Framebuffer sind doppelt gepuffert.</text>
-  <text x="40" y="816" class="l">Heute füllen zwei Data-Slots die beiden Framebuffer, Taste A tauscht sie; später zeichnet der Rasterizer. Logik heute: 482 von 18.480 ALMs (3 %), Block-RAM 132 von 308 M10K.</text>
+  <text x="40" y="816" class="l">Heute füllen zwei Data-Slots die beiden Framebuffer, Taste A tauscht sie; später zeichnet der Rasterizer. Logik heute: 492 von 18.480 ALMs (3 %), Block-RAM 132 von 308 M10K.</text>
 </svg>

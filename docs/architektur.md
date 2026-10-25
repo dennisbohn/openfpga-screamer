@@ -1,10 +1,12 @@
 # Architektur
 
 Stand: 2026-10-25. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 aus zwei
-8-Bit-Framebuffern im Block-RAM, je mit eigener Palette, getauscht zu Beginn eines Bildes;
-bis die CPU zeichnet, füllen zwei Data-Slots die Puffer und Taste A tauscht sie (482 ALMs,
-132 M10K). Davor lief der Framebuffer im PSRAM `cram1` (Commit `b148783`). Alles Weitere
-sind Schätzungen, bis die Synthese echte Zahlen liefert.
+8-Bit-Framebuffern im Block-RAM, je mit eigener Palette, getauscht in der Austastlücke;
+bis die CPU zeichnet, füllen zwei Data-Slots die Puffer und Taste A tauscht sie. Seitdem
+nur in der Simulation geprüft: Lese-/Schreibport mit Byte-Enables für den Zeichner, Tausch
+in jeder Zeile der Austastlücke (492 ALMs, 132 M10K). Davor lief der Framebuffer im PSRAM
+`cram1` (Commit `b148783`). VexRiscv und FPU sind einzeln für diesen FPGA synthetisiert;
+alles Weitere sind Schätzungen, bis die Synthese echte Zahlen liefert.
 
 ## Hardware des Pocket (Haupt-FPGA)
 
@@ -14,23 +16,22 @@ Getrennte Speicherbusse: SDRAM 64 MB, PSRAM `cram0` und `cram1` je 16 MB, SRAM 2
 
 ## Aufteilung
 
-![Geplante Architektur: Datenfluss vom RISC-V über Geometrie-Einheit und Rasterizer in den Framebuffer, Speicher und Ein-/Ausgänge des Pocket](architektur.svg)
+![Geplante Architektur: Die CPU schreibt die Objektliste von Bild N+1 ins SRAM, die Geometrie-Einheit liest die von Bild N und gibt Dreiecke an den Rasterizer, der Bild N in den hinteren Framebuffer im Block-RAM zeichnet, während video_out den vorderen zeigt](architektur.svg)
 
 Grün: gebaut und auf dem Pocket getestet. Grau gestrichelt: geplant. Drei Bilder sind
 gleichzeitig in Arbeit: Die CPU berechnet Bild N+1 und schreibt dessen nach Abstand
 sortierte Objektliste ins SRAM, die Geometrie-Einheit liest die Liste von Bild N und
 liefert Dreiecke an den Rasterizer, der Texel aus `cram0` liest und Bild N in den
 hinteren Framebuffer zeichnet, während `video_out` den vorderen zeigt (Bild N−1).
-Getauscht wird zu Beginn eines Bildes; Befehlslisten und Framebuffer sind doppelt
-gepuffert.
+Getauscht wird in der Austastlücke; Befehlslisten und Framebuffer sind doppelt gepuffert.
 
 | Speicher | Inhalt |
 |---|---|
 | SDRAM | Programm, Geometrie, Spielzustand, Sounds |
-| SRAM | Befehlslisten der Geometrie-Einheit, doppelt gepuffert (je ~20–30 KB) |
+| SRAM | Befehlslisten der Geometrie-Einheit, doppelt gepuffert (je ≤ 26 KB), Rest Reserve |
 | cram0 | Texturen der aktuellen Strecke (`MAPn.MLB`, ≤ 3 MB), später im Burst-Modus |
 | cram1 | frei |
-| Block-RAM | zwei Framebuffer (2 × 64 KB) und zwei Paletten, CPU-Caches, Textur-Cache, Schattierungstabellen |
+| Block-RAM | zwei Framebuffer (2 × 64 KB) und zwei Paletten, Boot-RAM, CPU-Caches, Textur-Cache, Schattierungstabellen |
 
 ## Speicherbedarf eines Rennens (gemessen, entpackt)
 
@@ -59,7 +60,7 @@ braucht. 27 Dateien (Grenze: 32 Slots):
 
 ## Geschätzte Belegung
 
-![Platzbudget im FPGA: Logik geplant 53–79 %, Block-RAM 23–31 %, DSP 35–56 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik geplant 55–77 %, Block-RAM 67–77 %, DSP 42–61 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py` aus denselben Zahlen wie diese Tabelle; wenn
 die Synthese eine Schätzung ersetzt, beides anpassen.
@@ -67,9 +68,11 @@ die Synthese eine Schätzung ersetzt, beides anpassen.
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
 | Analogue-Rahmen (**gemessen**, unverändertes Template) | 414 | 2 | 0 |
-| Framebuffer ×2 + Video (**gemessen**: `framebuffer`, `video_out`, `fb_bridge`) | 68 | 130 | 0 |
-| VexRiscv RV32IM + 2× 8 KB Cache | 1.200–1.600 | 18–22 | 4 |
-| FPU (RV32F) | 1.500–2.200 | 0–2 | 2–4 |
+| Framebuffer ×2 + Video (**gemessen**: `framebuffer`, `video_out`, `fb_bridge`) | 78 | 130 | 0 |
+| VexRiscv RV32IM + 2× 8 KB Cache (einzeln synthetisiert: 1.268–1.278) | 1.250–1.300 | 19 | 4 |
+| FPU (RV32F, einzeln synthetisiert: ~1.780) | 1.750–1.800 | 5 | 4 |
+| CFU (eigene Befehle, z. B. 16.16-Multiplikation) | 30–100 | – | 3 |
+| Boot-RAM 4–16 KB (Startcode, Speichertest) | 20–50 | 4–16 | – |
 | Speicher-Controller (SDRAM, `cram0`) + Arbiter | 900–1.400 | 2–4 | 0 |
 | SRAM-Controller (Befehlslisten) | 100–200 | – | 0 |
 | Geometrie-Einheit | 2.500–4.000 | 4–8 | 12–18 |
@@ -78,11 +81,17 @@ die Synthese eine Schätzung ersetzt, beides anpassen.
 | Schattierungs-/Transparenztabellen | – | 16–24 | – |
 | JTOPL | 800–1.200 | 3–5 | 0–1 |
 | PCM-Mixer | 300–500 | 2 | 1–2 |
-| **Summe** | **9.882–14.782 (53–80 %)** | **196–221 (64–72 %)** | **23–37 (35–56 %)** |
+| **Summe** | **10.242–14.242 (55–77 %)** | **206–237 (67–77 %)** | **28–40 (42–61 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
-Taktfrequenz zu halten. Block-RAM trägt jetzt die beiden Framebuffer (128 M10K) und hat
-danach noch Reserve, DSP ebenso. Einen Tiefenpuffer gibt es nicht, siehe „Entschieden“.
+Taktfrequenz zu halten. Block-RAM trägt die beiden Framebuffer (128 M10K); CPU-Caches und
+Textur-Cache teilen sich den Rest und werden später an Messungen ausgerichtet. Einen
+Tiefenpuffer gibt es nicht, siehe „Entschieden“.
+
+VexRiscv und FPU stammen aus einer Synthese der CPU allein für den 5CEBA4F23C8 mit Quartus
+18.1.1 (Recherche 2026-10-25): RV32IM mit 2 × 8 KB Cache 1.268–1.278 ALMs, 19 M10K, 4 DSP,
+Fmax um 115 MHz; mit FPU 3.052–3.061 ALMs, 24 M10K, 8 DSP, Fmax 98–111 MHz (Median 105).
+Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
 
 ## Entschieden
 
@@ -100,8 +109,9 @@ danach noch Reserve, DSP ebenso. Einen Tiefenpuffer gibt es nicht, siehe „Ents
   braucht keinen Rückseitentest. Die Streckendaten verlassen sich auf diese Reihenfolge
   (Grasflächen unter der Straße, zwei Objekte an einer Stelle), OpenScreamer brauchte
   dafür mit seinem Tiefenpuffer Sonderregeln. Nötig bleibt das Clipping an der vorderen
-  Ebene. Es spart 100 M10K; dafür wird jedes verdeckte Pixel erneut geschrieben, was die
-  Bandbreite zum Framebuffer wichtiger macht.
+  Ebene. Es spart rund 125 M10K (320×200×16 Bit passen nur in die 8-Kbit-Modi); dafür
+  wird jedes verdeckte Pixel erneut geschrieben, was die Bandbreite zum Framebuffer
+  wichtiger macht.
 - **Bilder überlappen (Pipeline):** CPU, Grafik und Anzeige arbeiten gleichzeitig an Bild
   N+1, N und N−1, die Zeit pro Bild ist das Maximum statt der Summe. Kosten: ein Bild mehr
   Verzögerung zwischen Eingabe und Anzeige (16,7 ms bei 60 fps).
@@ -109,16 +119,39 @@ danach noch Reserve, DSP ebenso. Einen Tiefenpuffer gibt es nicht, siehe „Ents
   mit einem Pixel pro Takt, Übermalen kostet nichts, und es braucht weder PSRAM-Controller
   noch Arbitrierung für den Framebuffer (spart Logik, die knappe Ressource). Jeder Puffer
   hat seine eigene Palette, Palettenwechsel (Überblendungen) passen damit genau zum Bild.
-  Getauscht wird nur zu Beginn eines Bildes, in der Austastlücke (`video_out.v`). Auf dem
-  Pocket getestet.
+  Die Zeichenseite liest auch (Rauch, Glas, Schatten und Radar verrechnen den Bildinhalt):
+  vier explizite 8-Bit-Speicherbahnen mit Lese-/Schreibport (`fb_lane.v`), weil Quartus
+  18.1 den Speicher mit echten Byte-Enables sonst stillschweigend aus Registern baut;
+  `tools/check_budget.py` prüft bei jedem Build die 128 M10K. Getauscht wird am Anfang
+  jeder Zeile der Austastlücke, höchstens einmal je Lücke (`video_out.v`): Ein Bild, das
+  etwas länger als 16,7 ms braucht, fällt so nicht gleich auf 30 fps. Unabhängig
+  gegengeprüft gegen SRAM, PSRAM und Mischformen (2026-10-25).
 - **SRAM für die Befehlslisten:** AS6C2016-55, 55 ns, laut Analogue kaum schneller als der
   PSRAM und ohne Bursts, also nichts für Pixel. Für die doppelt gepufferten Objektlisten
-  (~20–30 KB je Bild, ~1–2 MB/s) reicht es gut, und die Geometrie-Einheit liest sie über
-  einen eigenen Bus, ohne die CPU im SDRAM zu stören.
+  (je ≤ 26 KB, ~10 % der SRAM-Zeit) reicht es gut, und die Geometrie-Einheit liest sie
+  über einen eigenen Bus, ohne die CPU im SDRAM zu stören. Den Listenzugriff so bauen,
+  dass die Listen in den SDRAM umziehen können, falls die Logik knapp wird.
+- **Perspektivkorrektur exakt pro Pixel:** Eine Kehrwert-Einheit (Tabelle und ein
+  Newton-Schritt, 2–3 DSP) liefert einen Kehrwert pro Takt, also kostet es keine Zeit. Der
+  Software-Renderer von OpenScreamer rechnet nur jedes achte Pixel exakt, daher seine Knicke
+  in nahen Texturen. Die Festkomma-Bitbreiten werden am C-Modell gegen Fließkomma bestimmt.
+
+## Übergabe zwischen den Bildern (Vorgaben für CPU und Grafik)
+
+Aus der Gegenprüfung der Framebuffer-Platzierung:
+
+- Der Tausch wird erst angefordert, wenn der letzte Pixel des Bildes geschrieben ist:
+  Ein Ende-Zeichen läuft durch die ganze Grafik-Pipeline, erst danach kippt
+  `swap_req_toggle`.
+- Palettenwechsel stehen in der Befehlsliste von Bild N und werden beim Beginn von Bild N
+  in die Palette des hinteren Puffers geschrieben. Die CPU schreibt die Palette nie direkt,
+  denn sie ist schon ein Bild weiter.
+- Der Zeichner kennt seinen hinteren Puffer aus seinem eigenen Toggle (hinten = nicht
+  `req`) und wartet nur auf die Quittung; er liest `front` nicht über die Taktdomäne.
+- Ein Reset darf keinen Tausch vortäuschen (in der Simulation geprüft).
 
 ## Offene Entscheidungen
 
-- **Perspektivkorrektur:** pro Pixel oder alle 8/16 Pixel. Entscheidung am C-Modell.
 - **Zahlenformate:** Rasterizer und Geometrie in Festkomma (Bildschirmkoordinaten mit
   mindestens 4 Nachkomma-Bits), die Physik auf der CPU in `float` wie im Original.
 

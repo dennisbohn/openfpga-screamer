@@ -28,9 +28,12 @@ GROUPS = [
 # name, group, measured, ALMs (lo, hi), M10K (lo, hi), DSP (lo, hi)
 COMPONENTS = [
     ("Analogue-Rahmen", "frame", True, (414, 414), (2, 2), (0, 0)),
-    ("Framebuffer ×2 + Video", "frame", True, (68, 68), (130, 130), (0, 0)),
-    ("VexRiscv + 2× 8 KB Cache", "cpu", False, (1200, 1600), (18, 22), (4, 4)),
-    ("FPU (RV32F)", "cpu", False, (1500, 2200), (0, 2), (2, 4)),
+    ("Framebuffer ×2 + Video", "frame", True, (78, 78), (130, 130), (0, 0)),
+    # VexRiscv and FPU: synthesized on their own for this FPGA (research, 2026-10-25)
+    ("VexRiscv + 2× 8 KB Cache", "cpu", False, (1250, 1300), (19, 19), (4, 4)),
+    ("FPU (RV32F)", "cpu", False, (1750, 1800), (5, 5), (4, 4)),
+    ("CFU (eigene Befehle)", "cpu", False, (30, 100), (0, 0), (3, 3)),
+    ("Boot-RAM 4–16 KB", "cpu", False, (20, 50), (4, 16), (0, 0)),
     ("Geometrie-Einheit", "gfx", False, (2500, 4000), (4, 8), (12, 18)),
     ("Rasterizer", "gfx", False, (2000, 3000), (3, 6), (4, 8)),
     ("Textur-Cache 16 KB", "gfx", False, (100, 200), (16, 16), (0, 0)),
@@ -262,6 +265,11 @@ def main():
     with open(out, "w", encoding="utf-8", newline="\n") as fh:
         fh.write("\n".join(doc))
     print(f"{out}: {WIDTH} x {height:.0f}")
+    for res, name, _ in RESOURCES:
+        i = RES_INDEX[res]
+        lo = sum(c[i][0] for c in COMPONENTS)
+        hi = sum(c[i][1] for c in COMPONENTS)
+        print(f"  {name}: {fmt(lo)}-{fmt(hi)} ({pct(lo, CAPACITY[res])}-{pct(hi, CAPACITY[res])} %)")
 
 
 main()
