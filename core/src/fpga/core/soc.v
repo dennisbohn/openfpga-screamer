@@ -440,8 +440,8 @@ end
         else if(a[31:24] == 8'hFA)                          region = R_PSRAM;
         else if(a[31:12] == 20'hF0008)                      region = R_LOG;
         else if(a[31:17] == 15'h7880 && a[15:2] < 14'd16000) region = R_FB;
-        else if(a[31:12] == 20'hF0000 || a[31:12] == 20'hF0001 || a[31:12] == 20'hF0002)
-                                                            region = R_REG;
+        else if(a[31:12] == 20'hF0000 || a[31:12] == 20'hF0001 || a[31:12] == 20'hF0002 ||
+                a[31:12] == 20'hF0003)                      region = R_REG;
         else                                                region = R_NONE;
     endfunction
 
@@ -519,8 +519,36 @@ psram32 ps0 (
 
     wire [2:0]  cmd_region = region(dbus_cmd_addr);
 
+//
+// the rasterizer (raster.v): registers at 0xF000_3000, the framebuffer port while it draws.
+// Until it is done, the CPU's framebuffer accesses and the next draw command wait.
+//
+    wire        rs_busy, rs_fb_wr, rs_fb_buf;
+    wire [31:0] rs_pixels, rs_fb_data;
+    wire [13:0] rs_fb_addr;
+    wire [3:0]  rs_fb_be;
+    wire        rs_wr = d_write && d_region == R_REG && d_addr[15:5] == 11'h180;
+    wire        rs_start = rs_wr && d_addr[4:2] == 3'd5;
+    wire        rs_waits = (rs_busy || rs_start) && (cmd_region == R_FB ||
+                           (dbus_cmd_wr && cmd_region == R_REG && dbus_cmd_addr[15:0] == 16'h3014));
+
+raster rs (
+    .clk                ( clk ),
+    .reset              ( cpu_reset ),
+    .wr                 ( rs_wr ),
+    .wr_addr            ( d_addr[4:2] ),
+    .wr_data            ( d_data ),
+    .busy               ( rs_busy ),
+    .pixels             ( rs_pixels ),
+    .fb_wr              ( rs_fb_wr ),
+    .fb_buf             ( rs_fb_buf ),
+    .fb_addr            ( rs_fb_addr ),
+    .fb_data            ( rs_fb_data ),
+    .fb_be              ( rs_fb_be )
+);
+
     assign dbus_cmd_ready = d_state == D_IDLE && !cpu_reset && sdp_db_cmd_ready &&
-                            !sram_busy && !sram_start && !psram_busy && !psram_start;
+                            !sram_busy && !sram_start && !psram_busy && !psram_start && !rs_waits;
     wire        d_fire = dbus_cmd_valid && dbus_cmd_ready;
     assign sdp_db_cmd_valid = d_fire && cmd_region == R_SDRAM;
 
@@ -530,13 +558,14 @@ psram32 ps0 (
     assign dbus_rsp_last = sdp_db_rsp_valid ? sdp_db_rsp_last : d_rsp_last;
     assign dbus_rsp_error = sdp_db_rsp_valid ? sdp_db_rsp_error : d_rsp_error;
 
-    // the framebuffer port follows the command being worked on, like the RAM ports below:
-    // a posted write goes out in the clock after its command, a read's address too
-    assign fb_wr_en = d_write && d_region == R_FB;
-    assign fb_buf = d_addr[16];
-    assign fb_addr = d_addr[15:2];
-    assign fb_wr_data = swap32(d_data);
-    assign fb_wr_be = {d_mask[0], d_mask[1], d_mask[2], d_mask[3]};
+    // the framebuffer port belongs to the rasterizer while it draws; otherwise it follows the
+    // command being worked on, like the RAM ports below: a posted write goes out in the clock
+    // after its command, a read's address too
+    assign fb_wr_en = rs_busy ? rs_fb_wr : d_write && d_region == R_FB;
+    assign fb_buf = rs_busy ? rs_fb_buf : d_addr[16];
+    assign fb_addr = rs_busy ? rs_fb_addr : d_addr[15:2];
+    assign fb_wr_data = rs_busy ? rs_fb_data : swap32(d_data);
+    assign fb_wr_be = rs_busy ? rs_fb_be : {d_mask[0], d_mask[1], d_mask[2], d_mask[3]};
 
     // the boot RAM's port B: bridge while the CPU is in reset, else the dBus
 always @(*) begin
@@ -585,6 +614,8 @@ always @(posedge clk) begin
         16'h2000: reg_q <= key_r;
         16'h2004: reg_q <= joy_r;
         16'h2008: reg_q <= {16'd0, trig_r};
+        16'h3014: reg_q <= {31'd0, rs_busy};
+        16'h3018: reg_q <= rs_pixels;
         default:  reg_q <= 32'd0;
     endcase
 end

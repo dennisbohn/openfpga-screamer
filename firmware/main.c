@@ -1,6 +1,7 @@
 /*
  * Step-3 firmware (docs/soc.md, docs/speicher.md): the CPU tests itself and the memories,
- * then draws triangles with the rasterizer's C model (raster.c).
+ * then draws triangles with the hardware rasterizer (raster.v), checked once a run
+ * against its C model (raster.c).
  * At boot: CPU self-tests, then the memory test of SDRAM, SRAM and PSRAM cram0 (quick, or
  * over the whole memories while Select is held) with its progress on screen and in the
  * debug log's head line. Then every frame into the back buffer: palette, test band,
@@ -163,27 +164,29 @@ static const struct rs_clip demo_clip = { 0, 48, FB_W, 168 };  /* text rows 6..2
 static int player_x = 160 * 16, player_y = 120 * 16;
 
 struct demo_stats { uint32_t triangles, pixels, cycles; };
+struct demo_tri { struct rs_vertex v[3]; uint8_t colour; };
 
-static struct demo_stats draw_demo(volatile uint8_t *fb, uint32_t frame, uint32_t keys)
+#define DEMO_TRIS   15
+#define CHECK_BUF   ((volatile uint8_t *)(SDRAM_BASE + 0x100000))  /* the C model's picture */
+
+/* this frame's triangles in drawing order */
+static void demo_list(struct demo_tri t[DEMO_TRIS], uint32_t frame, uint32_t keys)
 {
     static const uint8_t left_cols[8] = { 0, 32, 64, 96, 128, 160, 224, 255 };
     static const uint8_t right_cols[6] = { 16, 48, 112, 144, 208, 240 };
-    struct demo_stats d = { 0, 0, 0 };
-    struct rs_vertex v[3];
-    uint32_t t0 = rdcycle();
-    int a = (int)frame;
+    int a = (int)frame, n = 0;
 
-    for (int k = 0; k < 8; k++) {           /* left wheel, clockwise */
-        v[0] = polar(110, 108, 0, 0);
-        v[1] = polar(110, 108, 58, a + 32 * k);
-        v[2] = polar(110, 108, 34, a + 32 * k + 18);
-        d.pixels += rs_triangle(fb, &demo_clip, v, left_cols[k]);
+    for (int k = 0; k < 8; k++, n++) {      /* left wheel, clockwise */
+        t[n].v[0] = polar(110, 108, 0, 0);
+        t[n].v[1] = polar(110, 108, 58, a + 32 * k);
+        t[n].v[2] = polar(110, 108, 34, a + 32 * k + 18);
+        t[n].colour = left_cols[k];
     }
-    for (int k = 0; k < 6; k++) {           /* right wheel, anticlockwise, drawn over the left */
-        v[0] = polar(200, 108, 0, 0);
-        v[1] = polar(200, 108, 56, -a + 43 * k);
-        v[2] = polar(200, 108, 56, -a + 43 * k + 24);
-        d.pixels += rs_triangle(fb, &demo_clip, v, right_cols[k]);
+    for (int k = 0; k < 6; k++, n++) {      /* right wheel, anticlockwise, drawn over the left */
+        t[n].v[0] = polar(200, 108, 0, 0);
+        t[n].v[1] = polar(200, 108, 56, -a + 43 * k);
+        t[n].v[2] = polar(200, 108, 56, -a + 43 * k + 24);
+        t[n].colour = right_cols[k];
     }
 
     /* the player's triangle: 2 pixels a frame, kept inside the demo area */
@@ -195,14 +198,62 @@ static struct demo_stats draw_demo(volatile uint8_t *fb, uint32_t frame, uint32_
     if (player_x > (FB_W - 12) * 16) player_x = (FB_W - 12) * 16;
     if (player_y < 60 * 16) player_y = 60 * 16;
     if (player_y > 156 * 16) player_y = 156 * 16;
-    v[0] = (struct rs_vertex){ player_x, player_y - 12 * 16 };
-    v[1] = (struct rs_vertex){ player_x + 11 * 16, player_y + 10 * 16 };
-    v[2] = (struct rs_vertex){ player_x - 11 * 16, player_y + 10 * 16 };
-    d.pixels += rs_triangle(fb, &demo_clip, v, COL_SQUARE);
+    t[n].v[0] = (struct rs_vertex){ player_x, player_y - 12 * 16 };
+    t[n].v[1] = (struct rs_vertex){ player_x + 11 * 16, player_y + 10 * 16 };
+    t[n].v[2] = (struct rs_vertex){ player_x - 11 * 16, player_y + 10 * 16 };
+    t[n].colour = COL_SQUARE;
+}
 
-    d.triangles = 8 + 6 + 1;
+/* the triangles through the rasterizer into buffer buf; the CPU only writes registers */
+static struct demo_stats draw_demo(const struct demo_tri t[DEMO_TRIS], int buf)
+{
+    struct demo_stats d;
+    uint32_t t0 = rdcycle();
+    RS_PIXELS = 0;
+    RS_CLIP0 = RS_XY(demo_clip.x0, demo_clip.y0);
+    RS_CLIP1 = RS_XY(demo_clip.x1, demo_clip.y1);
+    for (int i = 0; i < DEMO_TRIS; i++) {
+        for (int k = 0; k < 3; k++) RS_V(k) = RS_XY(t[i].v[k].x, t[i].v[k].y);
+        RS_DRAW = t[i].colour | (uint32_t)buf << 8;    /* waits while the previous one draws */
+    }
+    while (RS_DRAW & RS_BUSY)
+        ;
     d.cycles = rdcycle() - t0;
+    d.pixels = RS_PIXELS;
+    d.triangles = DEMO_TRIS;
     return d;
+}
+
+/* Once per run: the same triangles through the C model into the SDRAM, then the demo area
+   of both pictures compared pixel by pixel */
+static void raster_check(volatile uint8_t *fb, const struct demo_tri t[DEMO_TRIS], uint32_t hw_pixels)
+{
+    volatile uint8_t *m = CHECK_BUF;
+    uint32_t pixels = 0, differ = 0, first = 0;
+    fb_fill(m, demo_clip.x0, demo_clip.y0, demo_clip.x1 - demo_clip.x0, demo_clip.y1 - demo_clip.y0, COL_BG);
+    for (int i = 0; i < DEMO_TRIS; i++) pixels += rs_triangle(m, &demo_clip, t[i].v, t[i].colour);
+    for (int y = demo_clip.y0; y < demo_clip.y1; y++)
+        for (int x = demo_clip.x0; x < demo_clip.x1; x++)
+            if (fb[y * FB_W + x] != m[y * FB_W + x] && differ++ == 0) first = (uint32_t)(y * FB_W + x);
+    dlog_str("raster check: ");
+    dlog_str(differ || pixels != hw_pixels ? "FAIL, " : "ok, ");
+    dlog_dec((int32_t)differ);
+    dlog_str(" pixels differ from the C model, pixels drawn ");
+    dlog_dec((int32_t)hw_pixels);
+    dlog_str(" (model ");
+    dlog_dec((int32_t)pixels);
+    dlog_str(")");
+    if (differ) {
+        dlog_str(", first at x ");
+        dlog_dec((int32_t)(first % FB_W));
+        dlog_str(" y ");
+        dlog_dec((int32_t)(first / FB_W));
+        dlog_str(": ");
+        dlog_hex(fb[first]);
+        dlog_str(" model ");
+        dlog_hex(m[first]);
+    }
+    dlog_char('\n');
 }
 
 static void draw_status(volatile uint8_t *fb, uint32_t st, uint32_t drawn, const struct demo_stats *d)
@@ -280,7 +331,10 @@ int main(void)
             draw_results(fb);
             draw_status(fb, st, drawn, 0);
         } else {
-            struct demo_stats d = draw_demo(fb, drawn, keys);
+            struct demo_tri tris[DEMO_TRIS];
+            demo_list(tris, drawn, keys);
+            struct demo_stats d = draw_demo(tris, !(st & VID_FRONT));
+            if (drawn == 2) raster_check(fb, tris, d.pixels);
             draw_status(fb, st, drawn, &d);
             if (drawn == 2) {
                 dlog_str("frame 2: ");

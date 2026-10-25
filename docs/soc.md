@@ -67,6 +67,10 @@ Alle Register sind 32 Bit, Zugriff als Wort.
 | `0xF000_2000` | `IN_KEY` | R | Tasten (`cont1_key`): Bit 0 hoch, 1 runter, 2 links, 3 rechts, 4 A, 5 B, 6 X, 7 Y, 8 L, 9 R, 14 Select, 15 Start |
 | `0xF000_2004` | `IN_JOY` | R | Analogsticks (`cont1_joy`) |
 | `0xF000_2008` | `IN_TRIG` | R | Analog-Trigger (`cont1_trig`) |
+| `0xF000_3000`–`3008` | `RS_V0`–`RS_V2` | W | Rasterizer (`raster.v`, dieselben Pixel wie `firmware/raster.c`): Eckpunkt, Bit 15..0 x, Bit 31..16 y, vorzeichenbehaftet in 1/16 Pixel; darf geschrieben werden, während ein Dreieck gezeichnet wird |
+| `0xF000_300C`, `3010` | `RS_CLIP0`, `RS_CLIP1` | W | Clip-Rechteck in Pixeln: x0/y0, x1/y1 (ausschließlich), Bit 15..0 x, Bit 31..16 y |
+| `0xF000_3014` | `RS_DRAW` | R/W | Schreiben: Bit 7..0 Farbe, Bit 8 Puffer, startet das Dreieck; der Schreibzugriff wartet, solange der Rasterizer zeichnet, Framebuffer-Zugriffe der CPU ebenso. Lesen: Bit 0 zeichnet noch |
+| `0xF000_3018` | `RS_PIXELS` | R/W | gezeichnete Pixel; Schreiben löscht |
 
 ## Framebuffer
 

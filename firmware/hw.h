@@ -86,6 +86,17 @@
 #define PHASE_BUSY      (1u << 0)
 #define PHASE_STEPS(r)  ((int16_t)((r) >> 16))
 
+/* Rasterizer (raster.v): the same pixels as raster.c. Vertices and clip may be written while
+   a triangle is drawn; a write to RS_DRAW waits until the rasterizer is free, and so do the
+   CPU's framebuffer accesses. */
+#define RS_V(n)         REG32(0xF0003000u + 4u * (n))   /* vertex n: [15:0] x, [31:16] y, 1/16 pixel */
+#define RS_CLIP0        REG32(0xF000300Cu)  /* [15:0] x0, [31:16] y0, pixels */
+#define RS_CLIP1        REG32(0xF0003010u)  /* [15:0] x1, [31:16] y1, pixels, exclusive */
+#define RS_DRAW         REG32(0xF0003014u)  /* W: colour | buffer << 8, starts; R: RS_BUSY */
+#define RS_PIXELS       REG32(0xF0003018u)  /* R: pixels drawn; W: clears */
+#define RS_BUSY         (1u << 0)
+#define RS_XY(x, y)     ((uint32_t)(uint16_t)(y) << 16 | (uint16_t)(x))
+
 /* Cache maintenance: invalidate the whole data cache (it is write-through, so nothing is
    lost), and make the instruction cache fetch code written with stores (fence.i, then
    three instructions that may still come from the old line). */

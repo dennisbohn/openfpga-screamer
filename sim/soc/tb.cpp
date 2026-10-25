@@ -199,6 +199,7 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
         if (reported != negative) { printf(negative ? "FAIL: the log reports no failed test\n" : "FAIL: the log reports a failed test\n"); fails++; }
         if (slot_line && text.find(slot_line) == std::string::npos) { printf("FAIL: no \"%s\" in the log\n", slot_line); fails++; }
         if (text.find("windows of 2048 bytes") == std::string::npos) { printf("FAIL: the log does not name the simulation windows\n"); fails++; }
+        if (!negative && text.find("raster check: ok") == std::string::npos) { printf("FAIL: no \"raster check: ok\" in the log\n"); fails++; }
     }
     return fails;
 }

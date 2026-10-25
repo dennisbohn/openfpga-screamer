@@ -98,6 +98,11 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   einer Scala-Konfiguration als Verilog erzeugt, eigene CPU-Befehle laufen über sein
   CFU-Plugin. Gleiche Leistung wie SpinalHDL, leichter zu lesen.
 - **Spieldaten:** Originaldateien flach in `Assets/screamer/common/` (siehe oben).
+- **VGA-Fassung:** 320×200 mit 8-Bit-Palette wie die VGA-Version des Spiels, daher nur die
+  L-Dateien. Cockpit, Renninfos und andere statische Bilder sind Sprites aus dem L-Satz von
+  `GAME.DAT` und kommen 1:1 pixelgenau in den Framebuffer: erst von der CPU gezeichnet,
+  später über einen Sprite-Modus des Rasterizers (Rechteck unverzerrt kopieren, eine Farbe
+  durchsichtig).
 - **Sichtbarkeit wie im Original, ohne Tiefenpuffer** (Maler-Algorithmus): Die CPU
   sortiert ganze Objekte nach dem Abstand ihres Mittelpunkts von der Kamera und gibt sie
   von hinten nach vorn aus (im Original `0x83164`: `dist² >> 2`). Innerhalb eines Objekts

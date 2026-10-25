@@ -12,7 +12,9 @@ ganzen Speicher (gut 45 Sekunden), wenn man beim Start **Select** hält. Danach 
 jedes Bild in den hinteren Puffer: Palette nach der Formel aus `docs/soc.md`, Prüfstreifen in
 den oberen 8 Zeilen, zwei sich drehende Räder aus Dreiecken, die sich überdecken, und ein
 Dreieck, das sich mit dem Steuerkreuz bewegt, dazu Pixel und Takte pro Bild. Die Dreiecke
-zeichnet `raster.c`, das C-Modell des späteren Hardware-Rasterizers. Hält man **Select**,
+zeichnet der Hardware-Rasterizer (`raster.v`); einmal je Lauf zeichnet sein C-Modell `raster.c`
+dieselben Dreiecke ins SDRAM, und die Zeile `raster check` im Protokoll meldet, ob beide
+Bilder Pixel für Pixel gleich sind. Hält man **Select**,
 stehen statt der Dreiecke die Ergebnisse des Speichertests da. Nach drei getauschten Bildern
 meldet sie alle Ergebnisse an `SYS_SIM` (`0x801FFFFF`, wenn alles stimmt). Ein Absturz
 (Trap) landet mit `mcause`, `mepc` und `mtval` im Protokoll und unten auf dem Bildschirm.
@@ -34,7 +36,7 @@ Skript beim ersten Mal selbst. Ergebnis in `build/firmware/`: `firmware.bin` (h�
 |---|---|
 | `start.S`, `link.ld` | Sprung bei `0x0`, Trap-Einsprung bei `0x20`, alles in den 32 KB Boot-RAM |
 | `hw.h` | Adressen und Register aus `docs/soc.md`, `rdcycle`, `fixmul` (CFU), Cache-Befehle |
-| `main.c` | Ablauf: Selbsttests, Speichertest, Dreiecke Bild für Bild |
+| `main.c` | Ablauf: Selbsttests, Speichertest, Dreiecke Bild für Bild (Hardware, einmal gegen `raster.c` geprüft) |
 | `selftest.c` | die drei Selbsttests mit festen Sollwerten |
 | `memtest.c` | der Speichertest (`docs/speicher.md`) |
 | `raster.c` | Rasterizer als C-Modell: Dreiecke mit genauer Pixelregel, Festkomma |

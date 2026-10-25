@@ -744,6 +744,7 @@ set_global_assignment -name VERILOG_FILE core/cpu/VexPocketIMFC.v
 set_global_assignment -name VERILOG_FILE core/cfu_fixmul.v
 set_global_assignment -name VERILOG_FILE core/ram_lane.v
 set_global_assignment -name VERILOG_FILE core/soc.v
+set_global_assignment -name VERILOG_FILE core/raster.v
 set_global_assignment -name VERILOG_FILE core/framebuffer.v
 set_global_assignment -name VERILOG_FILE core/video_out.v
 set_global_assignment -name VERILOG_FILE core/sdram.v
