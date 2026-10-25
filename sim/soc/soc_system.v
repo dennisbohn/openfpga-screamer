@@ -1,6 +1,8 @@
 //
-// Simulation top for step 1: soc + framebuffer + video_out wired as in core_top, and a
-// model of the core side of the APF data slot table (the table core_bridge_cmd keeps)
+// Simulation top: soc + framebuffer + video_out wired as in core_top, models of the
+// SDRAM, SRAM and PSRAM cram0, the SDRAM clock's phase stepper with a PLL that is always
+// done, and a model of the core side of the APF data slot table (the table
+// core_bridge_cmd keeps)
 //
 
 module soc_system (
@@ -22,9 +24,14 @@ module soc_system (
     output  wire            vid_vs,
 
     output  wire    [31:0]  sim_status,
-    output  wire    [31:0]  log_slot_size,     // size word of the debug log's slot table entry
-    output  wire            swap_req,          // soc's swap request toggle
-    output  wire            front              // video_out: the buffer in front
+    output  wire    [31:0]  log_slot_size,      // size word of the debug log's slot table entry
+    output  wire            swap_req,           // soc's swap request toggle
+    output  wire            front,              // video_out: the buffer in front
+    output  wire            sdram_ready,        // what core_top acknowledges data slot writes with
+    output  wire    [31:0]  sdram_errors,       // model error counts
+    output  wire    [31:0]  sram_errors,
+    output  wire    [31:0]  psram_errors,
+    output  wire    [31:0]  sdram_max_refresh   // longest gap between AUTO REFRESH, clocks
 );
 
     wire            fb_wr_en, fb_buf;
@@ -43,9 +50,31 @@ module soc_system (
     wire    [31:0]  dt_data;
     reg     [31:0]  dt_q;
 
+    wire    [12:0]  dram_a;
+    wire    [1:0]   dram_ba, dram_dqm;
+    wire    [15:0]  dram_dq_o, sdm_dq_o;
+    wire            dram_dq_oe, sdm_dq_oe;
+    wire            dram_cke, dram_ras_n, dram_cas_n, dram_we_n;
+    wire    [16:0]  sram_a;
+    wire    [15:0]  sram_dq_o, srm_dq_o;
+    wire            sram_dq_oe, srm_dq_oe, sram_oe_n, sram_we_n, sram_ub_n, sram_lb_n;
+    wire    [21:16] cram0_a;
+    wire    [15:0]  cram0_dq;
+    wire            cram0_clk, cram0_adv_n, cram0_cre, cram0_ce0_n, cram0_ce1_n;
+    wire            cram0_oe_n, cram0_we_n, cram0_ub_n, cram0_lb_n;
+    wire            phase_step, phase_later, phase_busy;
+    wire    [15:0]  phase_count;
+    wire    [4:0]   pll_cntsel;
+    wire            pll_updn, pll_phase_en;
+
+    // the data buses: whoever drives; a poison value when nobody does
+    wire    [15:0]  dram_dq = sdm_dq_oe ? sdm_dq_o : dram_dq_oe ? dram_dq_o : 16'hD1D1;
+    wire    [15:0]  sram_dq = srm_dq_oe ? srm_dq_o : sram_dq_oe ? sram_dq_o : 16'hD2D2;
+
 soc soc (
     .clk                ( clk_74a ),
     .reset_n            ( reset_n ),
+    .sim                ( 1'b1 ),
     .bridge_wr          ( bridge_wr ),
     .bridge_rd          ( bridge_rd ),
     .bridge_addr        ( bridge_addr ),
@@ -71,7 +100,107 @@ soc soc (
     .dt_wren            ( dt_wren ),
     .dt_data            ( dt_data ),
     .dt_q               ( dt_q ),
+    .dram_a             ( dram_a ),
+    .dram_ba            ( dram_ba ),
+    .dram_dq_o          ( dram_dq_o ),
+    .dram_dq_oe         ( dram_dq_oe ),
+    .dram_dq_i          ( dram_dq ),
+    .dram_dqm           ( dram_dqm ),
+    .dram_cke           ( dram_cke ),
+    .dram_ras_n         ( dram_ras_n ),
+    .dram_cas_n         ( dram_cas_n ),
+    .dram_we_n          ( dram_we_n ),
+    .sdram_pll_locked   ( 1'b1 ),
+    .sdram_ready        ( sdram_ready ),
+    .phase_step         ( phase_step ),
+    .phase_later        ( phase_later ),
+    .phase_busy         ( phase_busy ),
+    .phase_count        ( phase_count ),
+    .sram_a             ( sram_a ),
+    .sram_dq_o          ( sram_dq_o ),
+    .sram_dq_oe         ( sram_dq_oe ),
+    .sram_dq_i          ( sram_dq ),
+    .sram_oe_n          ( sram_oe_n ),
+    .sram_we_n          ( sram_we_n ),
+    .sram_ub_n          ( sram_ub_n ),
+    .sram_lb_n          ( sram_lb_n ),
+    .cram0_a            ( cram0_a ),
+    .cram0_dq           ( cram0_dq ),
+    .cram0_wait         ( 1'b0 ),
+    .cram0_clk          ( cram0_clk ),
+    .cram0_adv_n        ( cram0_adv_n ),
+    .cram0_cre          ( cram0_cre ),
+    .cram0_ce0_n        ( cram0_ce0_n ),
+    .cram0_ce1_n        ( cram0_ce1_n ),
+    .cram0_oe_n         ( cram0_oe_n ),
+    .cram0_we_n         ( cram0_we_n ),
+    .cram0_ub_n         ( cram0_ub_n ),
+    .cram0_lb_n         ( cram0_lb_n ),
     .sim_status         ( sim_status )
+);
+
+// no PLL in the simulation: every phase step ends by pll_dps's timeout
+pll_dps pll_sd_dps (
+    .clk                ( clk_74a ),
+    .step               ( phase_step ),
+    .later              ( phase_later ),
+    .busy               ( phase_busy ),
+    .count              ( phase_count ),
+    .cntsel             ( pll_cntsel ),
+    .updn               ( pll_updn ),
+    .phase_en           ( pll_phase_en ),
+    .phase_done         ( 1'b1 )
+);
+
+sdram_model sdm (
+    .clk                ( clk_74a ),
+    .cke                ( dram_cke ),
+    .ras_n              ( dram_ras_n ),
+    .cas_n              ( dram_cas_n ),
+    .we_n               ( dram_we_n ),
+    .ba                 ( dram_ba ),
+    .a                  ( dram_a ),
+    .dqm                ( dram_dqm ),
+    .dq_i               ( dram_dq_o ),
+    .dq_i_en            ( dram_dq_oe ),
+    .dq_o               ( sdm_dq_o ),
+    .dq_o_en            ( sdm_dq_oe ),
+    .error              ( ),
+    .error_count        ( sdram_errors ),
+    .init_done          ( ),
+    .max_refresh_interval ( sdram_max_refresh ),
+    .refresh_count      ( )
+);
+
+sram_model srm (
+    .clk                ( clk_74a ),
+    .a                  ( sram_a ),
+    .dq_i               ( sram_dq_o ),
+    .dq_i_en            ( sram_dq_oe ),
+    .dq_o               ( srm_dq_o ),
+    .dq_o_en            ( srm_dq_oe ),
+    .oe_n               ( sram_oe_n ),
+    .we_n               ( sram_we_n ),
+    .ub_n_pin           ( sram_ub_n ),
+    .lb_n_pin           ( sram_lb_n ),
+    .error              ( ),
+    .error_count        ( sram_errors )
+);
+
+psram_model psm (
+    .clk                ( clk_74a ),
+    .a                  ( cram0_a ),
+    .dq                 ( cram0_dq ),
+    .adv_n              ( cram0_adv_n ),
+    .ce0_n              ( cram0_ce0_n ),
+    .ce1_n              ( cram0_ce1_n ),
+    .oe_n               ( cram0_oe_n ),
+    .we_n               ( cram0_we_n ),
+    .ub_n               ( cram0_ub_n ),
+    .lb_n               ( cram0_lb_n ),
+    .timing_error       ( ),
+    .error              ( ),
+    .error_count        ( psram_errors )
 );
 
 framebuffer fb (
@@ -109,17 +238,20 @@ video_out vo (
     .vid_vs             ( vid_vs )
 );
 
-    // slot table as the APF leaves it after loading: entry 0 = firmware (id 0),
-    // entry 1 = debug log (id 1) with no size, because no debug.txt existed
+    // slot table as the APF leaves it after loading: entry 0 = firmware (id 0), entry 1 =
+    // debug log (id 1) with no size, because no debug.txt existed, entry 2 = the firmware
+    // copy in the SDRAM (id 2)
     reg     [31:0]  dt [0:255];
     reg     [31:0]  dt_r;
     integer i;
     initial begin
         for(i = 0; i < 256; i = i + 1) dt[i] = 32'd0;
         dt[0] = 32'd0;
-        dt[1] = 32'd16384;
+        dt[1] = 32'd32768;
         dt[2] = 32'd1;
         dt[3] = 32'd0;
+        dt[4] = 32'd2;
+        dt[5] = 32'd32768;
     end
 always @(posedge clk_74a) begin                 // address and output registered, like mf_datatable
     if(dt_wren) dt[dt_addr[7:0]] <= dt_data;

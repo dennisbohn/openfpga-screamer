@@ -60,17 +60,27 @@ python tools/make_screen.py "C:/GOG Games/Screamer/GFX/GRAF.DAT" LOAD1L.PCX \
     build/sim/screen2.bin build/preview/LOAD1L.png
 tools/sim.sh display build/sim/screen.bin build/sim/screen2.bin build/sim/display_frame
 
-# CPU-System mit Firmware (docs/soc.md): Selbsttests, Prüfstreifen, Protokoll über die
-# Bridge, dann ein Reset mitten im Lauf mit neu geladener Firmware.
+# CPU-System mit Firmware (docs/soc.md, docs/speicher.md) und Modellen von SDRAM, SRAM und
+# PSRAM: Selbsttests, Speichertest, Prüfstreifen, Protokoll über die Bridge, dann zwei
+# Resets mit neu geladener Firmware (einer mitten im Speichertest).
 tools/fw.sh
 tools/sim.sh soc build/firmware/firmware.bin build/sim/soc
 # Fehlertest: Befehlsabruf hinter dem Boot-RAM, der Trap-Handler muss ihn melden.
 tools/fw.sh FAULT=IFETCH
-tools/sim.sh soc build/firmware-IFETCH/firmware.bin build/sim/soc_ifetch 20 c0000001
+tools/sim.sh soc build/firmware-IFETCH/firmware.bin build/sim/soc_ifetch 80 c0000001
+# Gegenproben: je ein Fehler in einem Speichermodell, der Speichertest muss genau die
+# erwarteten Tests als fehlgeschlagen melden (sieben Läufe parallel).
+tools/sim_faults.sh
+
+# Zufallstest von SDRAM-Port und -Controller gegen das SDRAM-Modell: Seed, Takte.
+tools/sim.sh sdram 1 2000000
+# Selbsttest des SDRAM-Modells: je Regel ein richtiger und ein falscher Ablauf.
+tools/sim.sh sdram_model
 ```
 
-`sim/models/psram_model.v` ist ein Verhaltensmodell des PSRAM (prüft die 70-ns-Zugriffszeit),
-für den späteren Textur-Speicher.
+Die Speichermodelle in `sim/models/` (`sdram_model.v`, `sram_model.v`, `psram_model.v`)
+prüfen die Zeiten aus den Datenblättern in Takten und lassen sich für die Gegenproben mit
+Fehlern bauen (`SIM_DEFINES`, siehe `tools/sim.sh`).
 
 ## Werkzeuge
 
@@ -79,6 +89,10 @@ für den späteren Textur-Speicher.
 - `tools/datfile.py` liest die Container (gemeinsam genutzt von den anderen Skripten).
 - `tools/make_budget_svg.py` zeichnet `docs/ressourcen.svg` aus der Zahlentabelle darin.
 - `tools/deploy.sh /i` packt den Core und kopiert ihn auf die SD-Karte.
+- `tools/gen_pll_sdram.sh` erzeugt die PLL für den SDRAM-Takt neu (Intels `ip-generate` im
+  Quartus-Image).
+- `tools/sta_sdram.tcl` prüft nach jedem Build die vier SDRAM-IO-Übergänge (von
+  `tools/build.sh` aufgerufen), `tools/check_budget.py` Belegung und IO-Register.
 
 ## Lizenz
 

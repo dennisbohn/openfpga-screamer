@@ -8,7 +8,7 @@
 set -e
 root=$(cd "$(dirname "$0")/.." && pwd)
 image="screamer-fw:trixie-20261005"
-limit=16384                         # boot RAM: firmware.bin may have at most 16 KB
+limit=32768                         # boot RAM: firmware.bin may have at most 32 KB
 
 # Git Bash on Windows: hand Docker Windows paths and stop MSYS rewriting /work.
 if command -v cygpath >/dev/null 2>&1; then

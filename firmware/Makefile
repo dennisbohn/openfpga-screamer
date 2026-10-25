@@ -27,7 +27,7 @@ ifneq ($(FAULT),)
 CFLAGS  += -DFAULT_$(FAULT)
 endif
 
-SRCS     = start.S main.c selftest.c console.c dlog.c trap.c
+SRCS     = start.S main.c selftest.c console.c dlog.c trap.c memtest.c
 OBJS     = $(patsubst %,$(OUT)/obj/%.o,$(basename $(SRCS)))
 
 all: $(OUT)/firmware.bin $(OUT)/firmware.lst
@@ -36,7 +36,7 @@ all: $(OUT)/firmware.bin $(OUT)/firmware.lst
 info: all
 	@$(SIZE) -A -x $(OUT)/firmware.elf | awk '$$2 ~ /^0x/ && $$2 != "0x0" && $$1 !~ /^\.(debug|riscv)/ && $$1 != "Total"'
 	@end=$$($(NM) $(OUT)/firmware.elf | awk '$$3 == "__bss_end" { print $$1 }'); \
-	 echo "boot RAM above .bss (stack): $$((16384 - 0x$$end)) bytes"
+	 echo "boot RAM above .bss (stack): $$((32768 - 0x$$end)) bytes"
 	@$(CRC32) $(OUT)/firmware.bin
 
 $(OUT)/obj/%.o: %.c Makefile | $(OUT)/obj

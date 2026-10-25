@@ -6,11 +6,11 @@
 #pragma once
 #include <stdint.h>
 
-#define CPU_HZ          74250000u           /* step 1: the CPU runs on clk_74a */
+#define CPU_HZ          74250000u           /* the CPU runs on clk_74a */
 
 /* Boot RAM: code, data and stack (link.ld), loaded from the data slot firmware.bin */
 #define BOOTRAM_BASE    0x00000000u
-#define BOOTRAM_SIZE    16384u
+#define BOOTRAM_SIZE    32768u
 
 #define REG32(addr)     (*(volatile uint32_t *)(addr))
 
@@ -57,6 +57,47 @@
 #define FB0_BASE        0xF1000000u
 #define FB1_BASE        0xF1010000u
 #define FB(n)           ((volatile uint8_t *)((n) ? FB1_BASE : FB0_BASE))
+
+/* Step 2 memories (docs/speicher.md). The SDRAM is cached for code and data and has an
+   uncached view; the SRAM and PSRAM cram0 are uncached only. Code runs from the boot RAM
+   and the SDRAM; fetching from anywhere else is an instruction access fault. */
+#define SDRAM_BASE      0x10000000u
+#define SDRAM_UBASE     0xF4000000u
+#define SDRAM_SIZE      (64u << 20)
+#define SRAM_BASE       0xF8000000u
+#define SRAM_SIZE       (256u << 10)
+#define PSRAM_BASE      0xFA000000u         /* cram0: die 0, die 1 from PSRAM_BASE + 8 MB */
+#define PSRAM_SIZE      (16u << 20)
+
+#define SYS_FLAGS       REG32(0xF0000008u)  /* R: FLAG_SIM */
+#define MEM_STATUS      REG32(0xF000000Cu)  /* R: MEM_LOCKED ... MEM_WRITES_IDLE */
+#define MEM_BRIDGE_WORDS REG32(0xF0000010u) /* R: bridge words into the SDRAM since Reset Enter */
+#define MEM_REFRESH     REG32(0xF0000014u)  /* R: AUTO REFRESH commands since power-up */
+#define MEM_PHASE       REG32(0xF0000018u)  /* W: PHASE_STEP, PHASE_LATER, PHASE_REINIT; R: PHASE_BUSY, steps in [31:16] */
+#define FLAG_SIM        (1u << 0)           /* running in the simulation */
+#define MEM_LOCKED      (1u << 0)           /* SDRAM PLL locked */
+#define MEM_READY       (1u << 1)           /* SDRAM initialised */
+#define MEM_OVERFLOW    (1u << 2)           /* a bridge word found the buffer full */
+#define MEM_DROPPED     (1u << 3)           /* a bridge word met an SDRAM not ready */
+#define MEM_WRITES_IDLE (1u << 4)           /* every accepted write has been done */
+#define PHASE_STEP      (1u << 0)           /* move dram_clk by one step (168 ps) */
+#define PHASE_LATER     (1u << 1)           /* ... later, else earlier */
+#define PHASE_REINIT    (1u << 8)           /* initialise the SDRAM again */
+#define PHASE_BUSY      (1u << 0)
+#define PHASE_STEPS(r)  ((int16_t)((r) >> 16))
+
+/* Cache maintenance: invalidate the whole data cache (it is write-through, so nothing is
+   lost), and make the instruction cache fetch code written with stores (fence.i, then
+   three instructions that may still come from the old line). */
+static inline void dcache_invalidate(void)
+{
+    __asm__ volatile (".word 0x0000500F" ::: "memory");
+}
+
+static inline void icache_sync(void)
+{
+    __asm__ volatile ("fence.i\n\tnop\n\tnop\n\tnop" ::: "memory");
+}
 
 /* CSRs by name, e.g. csr_read(mcause) */
 #define csr_read(csr)   ({ uint32_t v_; __asm__ volatile ("csrr %0, " #csr : "=r"(v_)); v_; })

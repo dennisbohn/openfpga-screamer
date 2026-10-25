@@ -746,9 +746,49 @@ set_global_assignment -name VERILOG_FILE core/ram_lane.v
 set_global_assignment -name VERILOG_FILE core/soc.v
 set_global_assignment -name VERILOG_FILE core/framebuffer.v
 set_global_assignment -name VERILOG_FILE core/video_out.v
+set_global_assignment -name VERILOG_FILE core/sdram.v
+set_global_assignment -name VERILOG_FILE core/sdram_port.v
+set_global_assignment -name VERILOG_FILE core/sram.v
+set_global_assignment -name SYSTEMVERILOG_FILE core/ip/psram.sv
+set_global_assignment -name VERILOG_FILE core/psram32.v
+set_global_assignment -name VERILOG_FILE core/pll_dps.v
+set_global_assignment -name VERILOG_FILE core/pin_ddio_clk.v
+set_global_assignment -name QIP_FILE core/pll_sdram.qip
 set_global_assignment -name SDC_FILE core/core_constraints.sdc
 set_global_assignment -name SIGNALTAP_FILE core/stp1.stp
 set_global_assignment -name QIP_FILE core/mf_pllbase.qip
+
+# IO registers for the SDRAM, SRAM and PSRAM cram0 (docs/speicher.md; tools/check_budget.py
+# checks in the fit report that they were placed in the IO cells)
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[*]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_ba[*]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dqm[*]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_cke
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_ras_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_cas_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_we_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_dq[*]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to dram_dq[*]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to dram_dq[*]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to sram_a[*]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to sram_oe_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to sram_we_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to sram_ub_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to sram_lb_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to sram_dq[*]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to sram_dq[*]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to sram_dq[*]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to cram0_a[*]
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to cram0_adv_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to cram0_ce0_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to cram0_ce1_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to cram0_oe_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to cram0_we_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to cram0_ub_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to cram0_lb_n
+set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to cram0_dq[*]
+set_instance_assignment -name FAST_OUTPUT_ENABLE_REGISTER ON -to cram0_dq[*]
+set_instance_assignment -name FAST_INPUT_REGISTER ON -to cram0_dq[*]
 set_global_assignment -name SIP_FILE core/mf_pllbase.sip
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to bridge_1wire
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to bridge_spiclk

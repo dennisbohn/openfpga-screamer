@@ -1,17 +1,19 @@
-# Firmware (Schritt 1: die CPU zeichnet)
+# Firmware (Schritt 2: Speichertest)
 
-Das erste Programm für die RISC-V-CPU im Core. Speicherkarte, Register und was die
-Simulation prüft, stehen in [`docs/soc.md`](../docs/soc.md).
+Das Programm für die RISC-V-CPU im Core. Speicherkarte, Register und was die Simulation
+prüft, stehen in [`docs/soc.md`](../docs/soc.md), der Speichertest in
+[`docs/speicher.md`](../docs/speicher.md).
 
 Beim Start löscht die Firmware das Protokoll (`debug.txt`), trägt die Prüfsumme ihres
-eigenen Abbilds ein, prüft die CPU (Ganzzahl-Multiplikation, -Division und Schiebebefehle,
-Fließkomma, CFU) und misst mit `rdcycle`, wie viele Takte 1000 Multiplizier-Additionen in
-Fließkomma und in Ganzzahl brauchen. Danach zeichnet sie jedes Bild in den hinteren Puffer:
-Palette nach der Formel aus `docs/soc.md`, Prüfstreifen in den oberen 8 Zeilen, Text mit den
-Ergebnissen, Bildzähler und Tasten, dazu ein Quadrat, das sich mit dem Steuerkreuz bewegt.
-Nach drei getauschten Bildern meldet sie das Ergebnis der Selbsttests an `SYS_SIM`
-(`0x80000007`, wenn alles stimmt). Ein Absturz (Trap) landet mit `mcause`, `mepc` und
-`mtval` im Protokoll und unten auf dem Bildschirm.
+eigenen Abbilds ein und prüft die CPU (Ganzzahl-Multiplikation, -Division und
+Schiebebefehle, Fließkomma, CFU). Dann läuft einmal der Speichertest über SDRAM, SRAM und
+PSRAM `cram0`, auf dem Pocket über den ganzen Speicher (geschätzt gut eine halbe Minute);
+der Bildschirm zeigt dabei Test und Adresse. Danach zeichnet sie jedes Bild in den hinteren
+Puffer: Palette nach der Formel aus `docs/soc.md`, Prüfstreifen in den oberen 8 Zeilen, die
+Ergebnisse (fehlgeschlagene Tests hervorgehoben), Bildzähler und Tasten, dazu ein Quadrat,
+das sich mit dem Steuerkreuz bewegt. Nach drei getauschten Bildern meldet sie alle Ergebnisse
+an `SYS_SIM` (`0x801FFFFF`, wenn alles stimmt). Ein Absturz (Trap) landet mit `mcause`,
+`mepc` und `mtval` im Protokoll und unten auf dem Bildschirm.
 
 ## Bauen
 
@@ -22,16 +24,17 @@ tools/fw.sh
 GCC 14 und picolibc aus Debian trixie laufen in Docker (`firmware/docker/Dockerfile`,
 Basis-Image und Paketstand festgenagelt); das Image `screamer-fw:trixie-20261005` baut das
 Skript beim ersten Mal selbst. Ergebnis in `build/firmware/`: `firmware.bin` (höchstens
-16 KB, das Skript bricht sonst ab), `firmware.elf`, `firmware.lst` (Disassembly) und
+32 KB, das Skript bricht sonst ab), `firmware.elf`, `firmware.lst` (Disassembly) und
 `firmware.map`. `firmware.bin` wird nach `build/assets/screamer/Chainy.Screamer/` kopiert,
 `tools/package.sh` bzw. `tools/deploy.sh` bringen es von dort auf die SD-Karte.
 
 | Datei | Inhalt |
 |---|---|
-| `start.S`, `link.ld` | Sprung bei `0x0`, Trap-Einsprung bei `0x20`, alles in den 16 KB Boot-RAM |
-| `hw.h` | Adressen und Register aus `docs/soc.md`, `rdcycle`, `fixmul` (CFU) |
-| `main.c` | Ablauf: Selbsttests, Messung, Bild für Bild zeichnen |
+| `start.S`, `link.ld` | Sprung bei `0x0`, Trap-Einsprung bei `0x20`, alles in den 32 KB Boot-RAM |
+| `hw.h` | Adressen und Register aus `docs/soc.md`, `rdcycle`, `fixmul` (CFU), Cache-Befehle |
+| `main.c` | Ablauf: Selbsttests, Speichertest, Bild für Bild zeichnen |
 | `selftest.c` | die drei Selbsttests mit festen Sollwerten |
+| `memtest.c` | der Speichertest (`docs/speicher.md`) |
 | `console.c` | Text (8×8-Font) und Rechtecke im Framebuffer, Zahlen ohne `printf` |
 | `dlog.c` | das Protokoll `debug.txt` |
 | `trap.c` | Trap-Handler |
@@ -47,19 +50,37 @@ ignoriert das aber: Nach dem Start des Cores stammt der Inhalt von diesem Lauf (
 Datei nur aus Nullen, ist die CPU gar nicht losgelaufen). Ausnahme: Lädt man die Firmware im
 Menü neu, ist das nur ein Reset, und das Protokoll des vorigen Laufs bleibt stehen, bis die
 neue Firmware es löscht; welche Firmware es geschrieben hat, zeigt die Prüfsumme in der
-zweiten Zeile. Beispiel:
+zweiten Zeile. Beispiel aus der Simulation (gekürzt; auf dem Pocket steht „the whole memory"
+statt der Fenster, und die Phasenkarte hat 80 Zeichen):
 
 ```
-Screamer Pocket step 1, frames drawn: 6
-firmware.bin: 9992 bytes, crc32 e181cb69
+Screamer Pocket step 2, frames drawn: 6
+firmware.bin: 19968 bytes, crc32 cc055ef4
 SYS_ID=53435231 ok
 selftest integer: ok
 selftest float: ok
 selftest cfu: ok
-cycles: 1000 x fmadd.s 15002, 1000 x mul + add 6004
-frame 3: draw 138935 cycles, background 67614 (15360 word stores)
-SYS_SIM=80000007
+memtest: SYS_FLAGS 00000001, MEM_STATUS 00000013, bridge words 4992
+SDRAM slot: ok, cycles 474618
+phase map ####
+phase: good from step 0, 4 steps of 168 ps, now at step 0
+SDRAM phase: ok, cycles 37292
+SDRAM: simulation, windows of 2048 bytes at the start and end of each die
+SDRAM data bus: ok, cycles 14085
+...
+SDRAM line read: row hit 30 cycles, row miss 34; read 63 MB/s, write 95 MB/s
+...
+cram0 patterns: ok, cycles 1021410
+memtest: errors SDRAM 0, SRAM 0, cram0 0
+stack used 624 bytes
+SYS_SIM=801fffff
 ```
+
+Die Phasenkarte zeigt je Schritt von 168 ps ein `#` (SDRAM arbeitet) oder `.`; die Firmware
+stellt die Mitte der längsten Folge ein. Ein fehlgeschlagener Speichertest nennt je Fehler
+Adresse, Soll, Ist und zweimal nachgelesen (höchstens acht Zeilen je Speicher), zum Beispiel
+`  bytes @10000080 want 5aa5c35e got 5aa55e3c 5aa55e3c 5aa55e3c`, und am Ende der Testzeile
+„FAIL, errors n".
 
 Die erste Zeile schreibt die Firmware nach jedem Bild neu: Steht der Zähler, hing sie dort.
 Die Prüfsumme muss die sein, die `tools/fw.sh` beim Bauen ausgibt, sonst kam nicht genau

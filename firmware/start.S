@@ -30,7 +30,7 @@ reset:
     .option norelax
     la      gp, __global_pointer$
     .option pop
-    la      sp, __stack_top         /* 0x4000, top of the 16 KB; the stack grows down */
+    la      sp, __stack_top         /* 0x8000, top of the 32 KB; the stack grows down */
 
     la      t0, trap_entry          /* direct mode: the entry is 4-byte aligned */
     csrw    mtvec, t0

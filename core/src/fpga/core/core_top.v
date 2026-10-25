@@ -260,19 +260,7 @@ assign port_tran_sck_dir = 1'b0;    // clock direction can change
 assign port_tran_sd = 1'bz;
 assign port_tran_sd_dir = 1'b0;     // SD is input and not used
 
-// tie off the rest of the pins we are not using
-assign cram0_a = 'h0;
-assign cram0_dq = {16{1'bZ}};
-assign cram0_clk = 0;
-assign cram0_adv_n = 1;
-assign cram0_cre = 0;
-assign cram0_ce0_n = 1;
-assign cram0_ce1_n = 1;
-assign cram0_oe_n = 1;
-assign cram0_we_n = 1;
-assign cram0_ub_n = 1;
-assign cram0_lb_n = 1;
-
+// tie off the rest of the pins we are not using (SDRAM, SRAM and cram0: see the CPU system)
 assign cram1_a = 'h0;
 assign cram1_dq = {16{1'bZ}};
 assign cram1_clk = 0;
@@ -284,23 +272,6 @@ assign cram1_oe_n = 1;
 assign cram1_we_n = 1;
 assign cram1_ub_n = 1;
 assign cram1_lb_n = 1;
-
-assign dram_a = 'h0;
-assign dram_ba = 'h0;
-assign dram_dq = {16{1'bZ}};
-assign dram_dqm = 'h0;
-assign dram_clk = 'h0;
-assign dram_cke = 'h0;
-assign dram_ras_n = 'h1;
-assign dram_cas_n = 'h1;
-assign dram_we_n = 'h1;
-
-assign sram_a = 'h0;
-assign sram_dq = {16{1'bZ}};
-assign sram_oe_n  = 1;
-assign sram_we_n  = 1;
-assign sram_ub_n  = 1;
-assign sram_lb_n  = 1;
 
 assign dbg_tx = 1'bZ;
 assign user1 = 1'bZ;
@@ -339,6 +310,12 @@ end
     wire            status_setup_done = pll_core_locked_s; // rising edge triggers a target command
     wire            status_running = reset_n; // we are running as soon as reset_n goes high
 
+    // a slot write waits for the SDRAM to be ready (it may be loaded there), at most 2^21
+    // clocks (28 ms), so an SDRAM that never comes up does not stop the core from loading
+    wire            sdram_ready;
+    reg     [21:0]  slot_wait = 0;
+    wire            slot_wait_done = slot_wait[21];
+
     wire            dataslot_requestread;
     wire    [15:0]  dataslot_requestread_id;
     wire            dataslot_requestread_ack = 1;
@@ -347,7 +324,7 @@ end
     wire            dataslot_requestwrite;
     wire    [15:0]  dataslot_requestwrite_id;
     wire    [31:0]  dataslot_requestwrite_size;
-    wire            dataslot_requestwrite_ack = 1;
+    wire            dataslot_requestwrite_ack = sdram_ready || slot_wait_done;
     wire            dataslot_requestwrite_ok = 1;
 
     wire            dataslot_update;
@@ -356,8 +333,14 @@ end
     
     wire            dataslot_allcomplete;
 
+always @(posedge clk_74a) begin
+    if(!dataslot_requestwrite) slot_wait <= 0;
+    else if(!slot_wait_done) slot_wait <= slot_wait + 1'b1;
+end
+
     wire     [31:0] rtc_epoch_seconds;
     wire     [31:0] rtc_date_bcd;
+
     wire     [31:0] rtc_time_bcd;
     wire            rtc_valid;
 
@@ -497,8 +480,9 @@ core_bridge_cmd icb (
 
 // the CPU system (docs/soc.md) and the video: the CPU draws into the back one of two
 // 320x200 8-bit framebuffers in block RAM, each with its own palette; video_out shows
-// the front one and swaps them in the vertical blanking when the CPU asks.
-// Everything but the video runs on clk_74a in step 1.
+// the front one and swaps them in the vertical blanking when the CPU asks. The CPU
+// system also drives the SDRAM, the SRAM and PSRAM cram0 (docs/speicher.md).
+// Everything but the video runs on clk_74a.
 // ~12,288,000 hz pixel clock, 60 hz
 
 assign video_rgb_clock = clk_core_12288;
@@ -519,10 +503,55 @@ assign video_skip = 0;
     wire            fb_rd_buf;
     wire    [13:0]  fb_rd_addr;
     wire    [31:0]  fb_rd_data;
+    wire    [15:0]  dram_dq_o, sram_dq_o;
+    wire            dram_dq_oe, sram_dq_oe;
+    wire            sdram_pll_locked, clk_sdram;
+    wire            phase_step, phase_later, phase_busy;
+    wire    [15:0]  phase_count;
+    wire    [4:0]   pll_cntsel;
+    wire            pll_updn, pll_phase_en, pll_phase_done;
+
+    // the data buses' tristate drivers; everything else comes from IO registers
+    assign dram_dq = dram_dq_oe ? dram_dq_o : {16{1'bZ}};
+    assign sram_dq = sram_dq_oe ? sram_dq_o : {16{1'bZ}};
+
+// dram_clk: the SDRAM PLL's 74.25 MHz, phase shifted (about 9.9 ns at the start), forwarded
+// through a DDIO register like the command and data outputs
+pll_sdram pll_sd (
+    .refclk         ( clk_74a ),
+    .rst            ( 1'b0 ),
+    .outclk_0       ( clk_sdram ),
+    .locked         ( sdram_pll_locked ),
+    .phase_en       ( pll_phase_en ),
+    .scanclk        ( clk_74a ),
+    .updn           ( pll_updn ),
+    .cntsel         ( pll_cntsel ),
+    .phase_done     ( pll_phase_done )
+);
+
+pll_dps pll_sd_dps (
+    .clk            ( clk_74a ),
+    .step           ( phase_step ),
+    .later          ( phase_later ),
+    .busy           ( phase_busy ),
+    .count          ( phase_count ),
+    .cntsel         ( pll_cntsel ),
+    .updn           ( pll_updn ),
+    .phase_en       ( pll_phase_en ),
+    .phase_done     ( pll_phase_done )
+);
+
+pin_ddio_clk dram_clk_ddio (
+    .datain_h       ( 1'b1 ),
+    .datain_l       ( 1'b0 ),
+    .outclock       ( clk_sdram ),
+    .dataout        ( dram_clk )
+);
 
 soc soc (
     .clk                ( clk_74a ),
     .reset_n            ( reset_n ),
+    .sim                ( 1'b0 ),
     .bridge_wr          ( bridge_wr ),
     .bridge_rd          ( bridge_rd ),
     .bridge_addr        ( bridge_addr ),
@@ -548,6 +577,42 @@ soc soc (
     .dt_wren            ( datatable_wren ),
     .dt_data            ( datatable_data ),
     .dt_q               ( datatable_q ),
+    .dram_a             ( dram_a ),
+    .dram_ba            ( dram_ba ),
+    .dram_dq_o          ( dram_dq_o ),
+    .dram_dq_oe         ( dram_dq_oe ),
+    .dram_dq_i          ( dram_dq ),
+    .dram_dqm           ( dram_dqm ),
+    .dram_cke           ( dram_cke ),
+    .dram_ras_n         ( dram_ras_n ),
+    .dram_cas_n         ( dram_cas_n ),
+    .dram_we_n          ( dram_we_n ),
+    .sdram_pll_locked   ( sdram_pll_locked ),
+    .sdram_ready        ( sdram_ready ),
+    .phase_step         ( phase_step ),
+    .phase_later        ( phase_later ),
+    .phase_busy         ( phase_busy ),
+    .phase_count        ( phase_count ),
+    .sram_a             ( sram_a ),
+    .sram_dq_o          ( sram_dq_o ),
+    .sram_dq_oe         ( sram_dq_oe ),
+    .sram_dq_i          ( sram_dq ),
+    .sram_oe_n          ( sram_oe_n ),
+    .sram_we_n          ( sram_we_n ),
+    .sram_ub_n          ( sram_ub_n ),
+    .sram_lb_n          ( sram_lb_n ),
+    .cram0_a            ( cram0_a ),
+    .cram0_dq           ( cram0_dq ),
+    .cram0_wait         ( cram0_wait ),
+    .cram0_clk          ( cram0_clk ),
+    .cram0_adv_n        ( cram0_adv_n ),
+    .cram0_cre          ( cram0_cre ),
+    .cram0_ce0_n        ( cram0_ce0_n ),
+    .cram0_ce1_n        ( cram0_ce1_n ),
+    .cram0_oe_n         ( cram0_oe_n ),
+    .cram0_we_n         ( cram0_we_n ),
+    .cram0_ub_n         ( cram0_ub_n ),
+    .cram0_lb_n         ( cram0_lb_n ),
     .sim_status         ( soc_sim_status )
 );
 

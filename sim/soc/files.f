@@ -5,7 +5,16 @@ sim/lint.vlt
 core/src/fpga/core/cpu/VexPocketIMFC.v
 core/src/fpga/core/cfu_fixmul.v
 core/src/fpga/core/ram_lane.v
+core/src/fpga/core/sdram.v
+core/src/fpga/core/sdram_port.v
+core/src/fpga/core/sram.v
+core/src/fpga/core/ip/psram.sv
+core/src/fpga/core/psram32.v
+core/src/fpga/core/pll_dps.v
 core/src/fpga/core/soc.v
 core/src/fpga/core/framebuffer.v
 core/src/fpga/core/video_out.v
+sim/models/sdram_model.v
+sim/models/sram_model.v
+sim/models/psram_model.v
 sim/soc/soc_system.v

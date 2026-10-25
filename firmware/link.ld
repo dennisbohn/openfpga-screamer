@@ -1,5 +1,5 @@
 /*
- * Step-1 firmware: code, data, bss and stack all in the 16 KB boot RAM at 0x00000000
+ * The firmware: code, data, bss and stack all in the 32 KB boot RAM at 0x00000000
  * (docs/soc.md). The Pocket writes firmware.bin into the boot RAM before the CPU leaves
  * reset, so .data needs no copy (VMA == LMA); start.S only clears .tbss and .bss.
  * firmware.bin holds exactly __image_start .. __image_end (the Makefile checks this).
@@ -9,7 +9,7 @@ ENTRY(_start)
 
 MEMORY
 {
-    BOOTRAM (rwx) : ORIGIN = 0x00000000, LENGTH = 16K
+    BOOTRAM (rwx) : ORIGIN = 0x00000000, LENGTH = 32K
 }
 
 __stack_min = 2K;                   /* the link fails if less is left for the stack */
@@ -65,7 +65,7 @@ SECTIONS
 
     __stack_top = ORIGIN(BOOTRAM) + LENGTH(BOOTRAM);
     ASSERT(__bss_end + __stack_min <= __stack_top,
-           "firmware and a 2 KB stack do not fit into the 16 KB boot RAM")
+           "firmware and a 2 KB stack do not fit into the 32 KB boot RAM")
 
     /DISCARD/ : { *(.note.GNU-stack) *(.comment) }
 }
