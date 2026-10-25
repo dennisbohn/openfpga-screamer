@@ -1,4 +1,4 @@
-# Firmware (Schritt 2: Speichertest)
+# Firmware (Schritt 3: Dreiecke)
 
 Das Programm für die RISC-V-CPU im Core. Speicherkarte, Register und was die Simulation
 prüft, stehen in [`docs/soc.md`](../docs/soc.md), der Speichertest in
@@ -6,14 +6,16 @@ prüft, stehen in [`docs/soc.md`](../docs/soc.md), der Speichertest in
 
 Beim Start löscht die Firmware das Protokoll (`debug.txt`), trägt die Prüfsumme ihres
 eigenen Abbilds ein und prüft die CPU (Ganzzahl-Multiplikation, -Division und
-Schiebebefehle, Fließkomma, CFU). Dann läuft einmal der Speichertest über SDRAM, SRAM und
-PSRAM `cram0`, auf dem Pocket über den ganzen Speicher (geschätzt gut eine halbe Minute);
-der Bildschirm zeigt dabei Test und Adresse. Danach zeichnet sie jedes Bild in den hinteren
-Puffer: Palette nach der Formel aus `docs/soc.md`, Prüfstreifen in den oberen 8 Zeilen, die
-Ergebnisse (fehlgeschlagene Tests hervorgehoben), Bildzähler und Tasten, dazu ein Quadrat,
-das sich mit dem Steuerkreuz bewegt. Nach drei getauschten Bildern meldet sie alle Ergebnisse
-an `SYS_SIM` (`0x801FFFFF`, wenn alles stimmt). Ein Absturz (Trap) landet mit `mcause`,
-`mepc` und `mtval` im Protokoll und unten auf dem Bildschirm.
+Schiebebefehle, Fließkomma, CFU). Dann läuft der Speichertest über SDRAM, SRAM und PSRAM
+`cram0`: normal kurz (unter einer Sekunde, je Die die ersten und letzten 2 KB), über den
+ganzen Speicher (gut 45 Sekunden), wenn man beim Start **Select** hält. Danach zeichnet sie
+jedes Bild in den hinteren Puffer: Palette nach der Formel aus `docs/soc.md`, Prüfstreifen in
+den oberen 8 Zeilen, zwei sich drehende Räder aus Dreiecken, die sich überdecken, und ein
+Dreieck, das sich mit dem Steuerkreuz bewegt, dazu Pixel und Takte pro Bild. Die Dreiecke
+zeichnet `raster.c`, das C-Modell des späteren Hardware-Rasterizers. Hält man **Select**,
+stehen statt der Dreiecke die Ergebnisse des Speichertests da. Nach drei getauschten Bildern
+meldet sie alle Ergebnisse an `SYS_SIM` (`0x801FFFFF`, wenn alles stimmt). Ein Absturz
+(Trap) landet mit `mcause`, `mepc` und `mtval` im Protokoll und unten auf dem Bildschirm.
 
 ## Bauen
 
@@ -32,9 +34,10 @@ Skript beim ersten Mal selbst. Ergebnis in `build/firmware/`: `firmware.bin` (h�
 |---|---|
 | `start.S`, `link.ld` | Sprung bei `0x0`, Trap-Einsprung bei `0x20`, alles in den 32 KB Boot-RAM |
 | `hw.h` | Adressen und Register aus `docs/soc.md`, `rdcycle`, `fixmul` (CFU), Cache-Befehle |
-| `main.c` | Ablauf: Selbsttests, Speichertest, Bild für Bild zeichnen |
+| `main.c` | Ablauf: Selbsttests, Speichertest, Dreiecke Bild für Bild |
 | `selftest.c` | die drei Selbsttests mit festen Sollwerten |
 | `memtest.c` | der Speichertest (`docs/speicher.md`) |
+| `raster.c` | Rasterizer als C-Modell: Dreiecke mit genauer Pixelregel, Festkomma |
 | `console.c` | Text (8×8-Font) und Rechtecke im Framebuffer, Zahlen ohne `printf` |
 | `dlog.c` | das Protokoll `debug.txt` |
 | `trap.c` | Trap-Handler |

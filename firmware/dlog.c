@@ -78,7 +78,7 @@ void dlog_trap(void)
 {
     if (!limit) {               /* a trap before main: the header line would stay empty */
         dlog_init();
-        dlog_head("Screamer Pocket step 1: trap before main");
+        dlog_head("Screamer Pocket step 3: trap before main");
     }
     limit = DLOG_SIZE;
     if (last != '\n')

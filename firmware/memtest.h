@@ -12,8 +12,10 @@
 #define MT_ALL          (((1u << MT_BITS) - 1) << MT_BIT_FIRST)
 
 /* Run every test once. boot_crc: CRC-32 of the boot image, for the copy the APF loaded
-   into the SDRAM. progress() is called before each test and every 64 KB inside one. */
-uint32_t memtest_run(uint32_t boot_crc, void (*progress)(const char *what, uint32_t addr));
+   into the SDRAM. full: patterns over the whole memories (about 45 s on the Pocket), else
+   over the first and last 2 KB of each die, as always in the simulation (under a second).
+   progress() is called before each test and every 64 KB inside one. */
+uint32_t memtest_run(uint32_t boot_crc, int full, void (*progress)(const char *what, uint32_t addr));
 
 /* The results as text rows for the screen (at most MT_ROWS, each up to 40 characters);
    returns the number of rows. Highlight rows whose fail flag is set. */

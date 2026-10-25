@@ -189,7 +189,7 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
     std::string text = log.substr(0, end);
     printf("---- debug.txt (%zu bytes of text) ----\n%s\n---- end ----\n", text.size(), text.c_str());
     if (end == 0 || end == std::string::npos) { printf("FAIL: the log is empty or not terminated\n"); fails++; }
-    else if (log.compare(0, 22, "Screamer Pocket step 2") != 0) { printf("FAIL: the log does not start with its header line\n"); fails++; }
+    else if (log.compare(0, 22, "Screamer Pocket step 3") != 0) { printf("FAIL: the log does not start with its header line\n"); fails++; }
     if (expect_trap) {
         char line[32];
         snprintf(line, sizeof line, "TRAP mcause=%08x", expect & 0x3FFFFFFFu);

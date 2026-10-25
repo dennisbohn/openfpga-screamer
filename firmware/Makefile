@@ -27,7 +27,7 @@ ifneq ($(FAULT),)
 CFLAGS  += -DFAULT_$(FAULT)
 endif
 
-SRCS     = start.S main.c selftest.c console.c dlog.c trap.c memtest.c
+SRCS     = start.S main.c selftest.c console.c dlog.c trap.c memtest.c raster.c
 OBJS     = $(patsubst %,$(OUT)/obj/%.o,$(basename $(SRCS)))
 
 all: $(OUT)/firmware.bin $(OUT)/firmware.lst
