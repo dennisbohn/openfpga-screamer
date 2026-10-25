@@ -542,6 +542,7 @@ framebuffer fb (
     .wr_addr        ( fb_wr_addr ),
     .wr_data        ( fb_wr_data ),
     .wr_be          ( 4'b1111 ),
+    .sys_rd_data    ( ),
     .clk_vid        ( clk_core_12288 ),
     .rd_buf         ( fb_rd_buf ),
     .rd_addr        ( fb_rd_addr ),

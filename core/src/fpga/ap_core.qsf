@@ -741,6 +741,7 @@ set_global_assignment -name QIP_FILE apf/apf.qip
 set_global_assignment -name VERILOG_FILE core/core_top.v
 set_global_assignment -name VERILOG_FILE core/core_bridge_cmd.v
 set_global_assignment -name VERILOG_FILE core/fb_bridge.v
+set_global_assignment -name VERILOG_FILE core/fb_lane.v
 set_global_assignment -name VERILOG_FILE core/framebuffer.v
 set_global_assignment -name VERILOG_FILE core/video_out.v
 set_global_assignment -name SDC_FILE core/core_constraints.sdc

@@ -28,6 +28,8 @@ python -I "$root/tools/reverse_rbf.py" "$fpga/output_files/ap_core.rbf" "$root/c
 # Short summary: resource usage and the worst slack of each check across all clocks.
 grep -E "Logic utilization|Total RAM Blocks|Total DSP Blocks|Total PLLs" \
     "$fpga/output_files/ap_core.fit.summary"
+python -I "$root/tools/check_budget.py" "$fpga/output_files/ap_core.fit.rpt" || {
+    echo "Block RAM of an entity is not what it should be (see tools/check_budget.py)"; exit 1; }
 awk '/^Type/ { split($0, t, "Model "); split(t[2], k, " ") }
      /^Slack/ { if (!(k[1] in min) || $3 < min[k[1]]) { min[k[1]] = $3; at[k[1]] = t[2] } }
      END { for (c in min) printf "Worst %-22s: %s ns (%s)%s\n", c, min[c], at[c], min[c] < 0 ? "  <-- TIMING FAILED" : "" }' \

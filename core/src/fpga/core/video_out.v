@@ -3,8 +3,9 @@
 //
 // There are two framebuffers (framebuffer.v) and two palettes, one for each. The
 // front one is shown; a writer draws the other and then asks for a swap by flipping
-// swap_req_toggle. The swap happens at the start of the next frame, inside the
-// vertical blanking, so a frame never mixes the two; swap_ack_toggle then follows
+// swap_req_toggle. The swap happens at the start of the next line of the vertical
+// blanking (312 of the 512 lines), at most once per blanking so no drawn frame is
+// skipped; a frame never mixes the two buffers. swap_ack_toggle then follows
 // swap_req_toggle, and the old front buffer is free to draw.
 //
 // Video timing at the 12.288 MHz pixel clock: 400 clocks x 512 lines = 60 Hz,
@@ -63,6 +64,8 @@ end
     wire        active = x_count >= H_BPORCH && x_count < H_BPORCH + H_ACTIVE &&
                          y_count >= V_BPORCH && y_count < V_BPORCH + V_ACTIVE;
     wire        frame_start = x_count == 0 && y_count == 0;
+    wire        blank_line = y_count < V_BPORCH || y_count >= V_BPORCH + V_ACTIVE;
+    reg         swap_armed;
 
     assign fb_rd_buf = front;
     assign fb_rd_addr = pix_addr[15:2];
@@ -79,6 +82,7 @@ always @(posedge clk_vid or negedge reset_n) begin
         pix_addr <= 0;
         front <= 0;
         swap_ack_toggle <= 0;
+        swap_armed <= 1;
         de_d <= 0;
         hs_d <= 0;
         vs_d <= 0;
@@ -97,10 +101,13 @@ always @(posedge clk_vid or negedge reset_n) begin
         if(frame_start) pix_addr <= 0;
         else if(active) pix_addr <= pix_addr + 1'b1;
 
-        // a pending swap takes effect at the frame's first clock, in the blanking
-        if(frame_start && swap_s[1] != swap_ack_toggle) begin
+        // a pending swap takes effect at the start of a blanking line, once per
+        // blanking: re-armed by the first visible line
+        if(x_count == 0 && y_count == V_BPORCH) swap_armed <= 1;
+        if(x_count == 0 && blank_line && swap_armed && swap_s[1] != swap_ack_toggle) begin
             front <= ~front;
             swap_ack_toggle <= swap_s[1];
+            swap_armed <= 0;
         end
 
         // sync and data enable delayed to match the pipeline; VS at the frame's

@@ -1,5 +1,7 @@
 //
-// Simulation top: fb_bridge + framebuffer + video_out wired as in core_top
+// Simulation top: fb_bridge + framebuffer + video_out wired as in core_top, plus a
+// testbench override of the framebuffer's drawing port (tb_sys = 1) to check reads
+// and byte-enable writes
 //
 
 module display (
@@ -11,6 +13,14 @@ module display (
     input   wire    [31:0]  bridge_addr,
     input   wire    [31:0]  bridge_wr_data,
     input   wire            swap_button,
+
+    input   wire            tb_sys,
+    input   wire            tb_we,
+    input   wire            tb_buf,
+    input   wire    [13:0]  tb_addr,
+    input   wire    [3:0]   tb_be,
+    input   wire    [31:0]  tb_wdata,
+    output  wire    [31:0]  sys_rd_data,
 
     output  wire    [23:0]  vid_rgb,
     output  wire            vid_de,
@@ -50,11 +60,12 @@ fb_bridge fbb (
 
 framebuffer fb (
     .clk_sys        ( clk_74a ),
-    .wr_en          ( fb_wr_en ),
-    .wr_buf         ( fb_wr_buf ),
-    .wr_addr        ( fb_wr_addr ),
-    .wr_data        ( fb_wr_data ),
-    .wr_be          ( 4'b1111 ),
+    .wr_en          ( tb_sys ? tb_we : fb_wr_en ),
+    .wr_buf         ( tb_sys ? tb_buf : fb_wr_buf ),
+    .wr_addr        ( tb_sys ? tb_addr : fb_wr_addr ),
+    .wr_data        ( tb_sys ? tb_wdata : fb_wr_data ),
+    .wr_be          ( tb_sys ? tb_be : 4'b1111 ),
+    .sys_rd_data    ( sys_rd_data ),
     .clk_vid        ( clk_vid ),
     .rd_buf         ( fb_rd_buf ),
     .rd_addr        ( fb_rd_addr ),
