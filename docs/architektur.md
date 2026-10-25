@@ -15,9 +15,9 @@ Getrennte Speicherbusse: SDRAM 64 MB, PSRAM `cram0` und `cram1` je 16 MB, SRAM 2
 
 ![Geplante Architektur: Datenfluss vom RISC-V über Geometrie-Einheit und Rasterizer in den Framebuffer, Speicher und Ein-/Ausgänge des Pocket](architektur.svg)
 
-Durchgezogen: gebaut und auf dem Pocket getestet. Gestrichelt: geplant. Der RISC-V schickt
-Objekte mit ihren Matrizen an die Geometrie-Einheit, die liefert Dreiecke an den
-Rasterizer; der liest Texel aus `cram0` und schreibt 8-Bit-Pixel in den Framebuffer in
+Durchgezogen: gebaut und auf dem Pocket getestet. Gestrichelt: geplant. Der RISC-V sortiert
+die Objekte nach Abstand und schickt sie von hinten nach vorn mit ihren Matrizen an die
+Geometrie-Einheit, die liefert Dreiecke an den Rasterizer; der liest Texel aus `cram0` und schreibt 8-Bit-Pixel in den Framebuffer in
 `cram1`, aus dem `video_out` jede Zeile vor ihrer Ausgabe holt.
 
 | Speicher | Inhalt |
@@ -25,7 +25,7 @@ Rasterizer; der liest Texel aus `cram0` und schreibt 8-Bit-Pixel in den Framebuf
 | SDRAM | Programm, Geometrie, Spielzustand, Sounds |
 | cram0 | Texturen der aktuellen Strecke (`MAPn.MLB`, ≤ 3 MB) |
 | cram1 | Framebuffer, 8 Bit, doppelt gepuffert |
-| Block-RAM | CPU-Caches, Textur-Cache, Palette, Schattierungstabellen, ggf. Tiefenpuffer |
+| Block-RAM | CPU-Caches, Textur-Cache, Palette, Schattierungstabellen |
 
 ## Speicherbedarf eines Rennens (gemessen, entpackt)
 
@@ -54,7 +54,7 @@ braucht. 27 Dateien (Grenze: 32 Slots):
 
 ## Geschätzte Belegung
 
-![Platzbudget im FPGA: Logik geplant 53–79 %, Block-RAM 23–31 % (55–63 % mit Tiefenpuffer), DSP 35–56 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik geplant 53–79 %, Block-RAM 23–31 %, DSP 35–56 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py` aus denselben Zahlen wie diese Tabelle; wenn
 die Synthese eine Schätzung ersetzt, beides anpassen.
@@ -73,10 +73,10 @@ die Synthese eine Schätzung ersetzt, beides anpassen.
 | JTOPL | 800–1.200 | 3–5 | 0–1 |
 | PCM-Mixer | 300–500 | 2 | 1–2 |
 | **Summe** | **9.886–14.686 (53–79 %)** | **70–95 (23–31 %)** | **23–37 (35–56 %)** |
-| Tiefenpuffer 320×200×16 (nur Variante B) | – | +100 (dann 55–63 %) | – |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
-Taktfrequenz zu halten. Block-RAM und DSP haben Reserve, auch mit Tiefenpuffer.
+Taktfrequenz zu halten. Block-RAM und DSP haben Reserve. Einen Tiefenpuffer
+(320×200×16 Bit, 100 M10K) gibt es nicht, siehe „Entschieden“.
 
 ## Entschieden
 
@@ -84,13 +84,21 @@ Taktfrequenz zu halten. Block-RAM und DSP haben Reserve, auch mit Tiefenpuffer.
   einer Scala-Konfiguration als Verilog erzeugt, eigene CPU-Befehle laufen über sein
   CFU-Plugin. Gleiche Leistung wie SpinalHDL, leichter zu lesen.
 - **Spieldaten:** Originaldateien flach in `Assets/screamer/common/` (siehe oben).
+- **Sichtbarkeit wie im Original, ohne Tiefenpuffer** (Maler-Algorithmus): Die CPU
+  sortiert ganze Objekte nach dem Abstand ihres Mittelpunkts von der Kamera und gibt sie
+  von hinten nach vorn aus (im Original `0x83164`: `dist² >> 2`). Innerhalb eines Objekts
+  liegt die Reihenfolge in den Daten: Jeder Mesh-Block hat acht vorberechnete
+  Flächenlisten, eine je Oktant der Blickrichtung, ohne die von dort unsichtbaren Flächen
+  (Header +0x28..+0x44, OpenScreamer `docs/NOTES.md`). Die Geometrie-Einheit wählt die
+  Liste über die drei Vorzeichen der Blickrichtung im Objektraum; sie sortiert nicht und
+  braucht keinen Rückseitentest. Die Streckendaten verlassen sich auf diese Reihenfolge
+  (Grasflächen unter der Straße, zwei Objekte an einer Stelle), OpenScreamer brauchte
+  dafür mit seinem Tiefenpuffer Sonderregeln. Nötig bleibt das Clipping an der vorderen
+  Ebene. Es spart 100 M10K; dafür wird jedes verdeckte Pixel erneut geschrieben, was die
+  Bandbreite zum Framebuffer wichtiger macht.
 
 ## Offene Entscheidungen
 
-- **Sichtbarkeit:** Das Original malt ganze Objekte von hinten nach vorne (Maler-Algorithmus,
-  Abstand des Objekt-Mittelpunkts), die Streckendaten verlassen sich darauf (Grasflächen
-  unter der Straße). Variante A: so wie das Original, kein Tiefenpuffer. Variante B:
-  Tiefenpuffer plus Sonderregeln wie in OpenScreamer. Entscheidung am C-Modell.
 - **Perspektivkorrektur:** pro Pixel oder alle 8/16 Pixel. Entscheidung am C-Modell.
 - **Zahlenformate:** Rasterizer und Geometrie in Festkomma (Bildschirmkoordinaten mit
   mindestens 4 Nachkomma-Bits), die Physik auf der CPU in `float` wie im Original.

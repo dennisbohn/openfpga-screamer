@@ -39,7 +39,9 @@ COMPONENTS = [
     ("JTOPL (OPL2)", "audio", False, (800, 1200), (3, 5), (0, 1)),
     ("PCM-Mixer", "audio", False, (300, 500), (2, 2), (1, 2)),
 ]
-OPTIONAL = {"m10k": ("Tiefenpuffer (nur Variante B)", "gfx", 100)}
+# Optional extras drawn as dashed segments, e.g. {"m10k": ("Tiefenpuffer", "gfx", 100)}.
+# The depth buffer was dropped (2026-10-25): painter's algorithm as in the original.
+OPTIONAL = {}
 TIMING_LIMIT = 0.80         # logic utilisation above which timing closure gets hard
 
 RES_INDEX = {"alm": 3, "m10k": 4, "dsp": 5}
@@ -123,8 +125,9 @@ def main():
     svg.add(f'<rect x="40" y="106" width="22" height="12" rx="3" class="f-cpu"/>')
     svg.add(f'<rect x="64" y="106" width="22" height="12" rx="3" class="f-cpu tint"/>')
     svg.text(94, 116.5, "kräftig: untere Schätzung · hell: Spanne bis zur oberen", "s")
-    svg.add('<rect x="430" y="106" width="22" height="12" rx="3" class="opt"/>')
-    svg.text(460, 116.5, "optional", "s")
+    if OPTIONAL:
+        svg.add('<rect x="430" y="106" width="22" height="12" rx="3" class="opt"/>')
+        svg.text(460, 116.5, "optional", "s")
 
     # section 1: share of the FPGA per resource
     y = 156
@@ -159,7 +162,7 @@ def main():
                 svg.add(f'<rect x="{end + GAP:.1f}" y="{y + 0.75:.1f}" width="{ow - GAP:.1f}" height="{h - 1.5}" rx="3" class="opt">'
                         f'<title>{escape(oname)}: +{ov} M10K</title></rect>')
                 end += ow
-                label += f" · mit Tiefenpuffer {fmt(s + ov)} · {pct(s + ov, cap)} %"
+                label += f" · mit {oname} {fmt(s + ov)} · {pct(s + ov, cap)} %"
             svg.text(end + 8, y + 13, label, "v")
             y += 28
         if res == "alm":
@@ -214,8 +217,7 @@ def main():
     lo_d = sum(c[5][0] for c in COMPONENTS)
     hi_d = sum(c[5][1] for c in COMPONENTS)
     aria = (f"Platzbudget im FPGA: Logik geplant {pct(lo_alm, CAPACITY['alm'])} bis {pct(hi_alm, CAPACITY['alm'])} Prozent, "
-            f"knapp an der 80-Prozent-Grenze; Block-RAM {pct(lo_m, CAPACITY['m10k'])} bis {pct(hi_m, CAPACITY['m10k'])} Prozent, "
-            f"mit Tiefenpuffer {pct(lo_m + 100, CAPACITY['m10k'])} bis {pct(hi_m + 100, CAPACITY['m10k'])}; "
+            f"knapp an der 80-Prozent-Grenze; Block-RAM {pct(lo_m, CAPACITY['m10k'])} bis {pct(hi_m, CAPACITY['m10k'])} Prozent; "
             f"DSP {pct(lo_d, CAPACITY['dsp'])} bis {pct(hi_d, CAPACITY['dsp'])} Prozent. "
             "Größte Posten: Geometrie-Einheit, Rasterizer und FPU.")
 

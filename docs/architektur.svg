@@ -152,8 +152,8 @@
   <text x="420" y="171" class="l c">Lade-Befehle</text>
 
   <path d="M640,188 H698" class="wp" marker-end="url(#plan)"/>
-  <text x="670" y="166" class="l c">Objekte,</text>
-  <text x="670" y="179" class="l c">Matrizen</text>
+  <text x="670" y="166" class="l c">sortierte</text>
+  <text x="670" y="179" class="l c">Objekte</text>
 
   <path d="M850,188 H908" class="wp" marker-end="url(#plan)"/>
   <text x="880" y="179" class="l c">Dreiecke</text>
