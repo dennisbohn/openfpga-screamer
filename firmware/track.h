@@ -19,6 +19,10 @@ const uint32_t *track_palette(void);
 /* Path points of the camera's lap */
 uint32_t track_path_length(void);
 
+/* The game's DETAIL option, 0 LOW, 1 MID, 2 HI (the default): how deep faces are drawn.
+   The track file goes with it: the L set at LOW, the H set from MID up. */
+void track_detail(int level);
+
 /* The file's size and its blocks of 256 KB from offset 0x100 on, each with a CRC-32 in the
    header: whether block k (0 .. track_blocks() - 1) arrived as written */
 uint32_t track_size(void);

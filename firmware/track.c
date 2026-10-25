@@ -23,12 +23,16 @@
 #include "crc32.h"
 
 #define BLOCK       0x40000     /* bytes per CRC block (tools/make_track.py) */
-#define MAX_PIECES  1024        /* placements; track 1 has 809 */
+#define MAX_PIECES  2048        /* placements; track 1 has 809 (L set), 1164 (H set) */
 #define MAX_OBJ     512         /* meshes; up to 360 on a track */
 #define MAX_VERT    512         /* vertices of one mesh; at most 189 measured */
-#define MAX_POLY    12          /* corners of a face after cutting at five planes */
+#define MAX_POLY    12          /* corners of a face after cutting at six planes */
 
-#define FAR         60000.0f    /* pieces whose centre is further away are left out */
+/* How far the game draws (openscreamer docs/NOTES.md, DETAIL): a piece only while its
+   position is within 52000 units of the camera (0x83164: dist^2 >> 2 < 676000000), and
+   every face cut at a depth set by the DETAIL option (the table at 0x21d4) */
+#define REACH2      2704000000.0f
+static const float far_depth[3] = { 27808.0f, 27808.0f, 43808.0f };     /* LOW, MID, HI */
 #define NEAR        64.0f
 #define FOCAL       200.0f      /* pixels per unit at distance 1 */
 #define GUARD       9.0f        /* faces are cut where |x| or |y| > GUARD z: 1800 pixels out */
@@ -50,6 +54,7 @@ static const struct pt *path;
 static int npath;
 static const uint32_t *pal;
 static float sin_q[513];                /* sin(2 pi i / 2048) for i = 0..512 */
+static float far_z = 43808.0f;          /* the far plane of the DETAIL level */
 static float radius[MAX_OBJ];           /* of each mesh around its origin */
 
 int track_mode;
@@ -137,6 +142,11 @@ uint32_t track_path_length(void)
     return (uint32_t)npath;
 }
 
+void track_detail(int level)
+{
+    far_z = far_depth[level < 0 ? 0 : level > 2 ? 2 : level];
+}
+
 uint32_t track_size(void)
 {
     return file_size;
@@ -161,7 +171,8 @@ static float plane_dist(const struct cv *v, int p)
     case 1: return GUARD * v->f - v->r;
     case 2: return GUARD * v->f + v->r;
     case 3: return GUARD * v->f - v->u;
-    default: return GUARD * v->f + v->u;
+    case 4: return GUARD * v->f + v->u;
+    default: return far_z - v->f;
     }
 }
 
@@ -200,10 +211,10 @@ static uint32_t polygon(const struct view *w, struct cv *p, int n, const struct 
     uint32_t t0 = now();
     int inside = 1;
     for(int i = 0; i < n && inside; i++)
-        for(int k = 0; k < 5; k++)
+        for(int k = 0; k < 6; k++)
             if(plane_dist(&p[i], k) < 0.0f) inside = 0;
     if(!inside) {
-        for(int k = 0; k < 5 && n >= 3; k++) {
+        for(int k = 0; k < 6 && n >= 3; k++) {
             n = clip(tmp, p, n, k);
             for(int i = 0; i < n; i++) p[i] = tmp[i];
         }
@@ -288,9 +299,9 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
         float dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch, rad = radius[pc->obj];
         float d2 = dx * dx + dy * dy + dh * dh;
         if(d2 < nearest) nearest = d2;
-        if(d2 > FAR * FAR) continue;
+        if(d2 >= REACH2) continue;
         float f = dx * fx + dy * fy + dh * fh, r = dx * rx + dy * ry, u = dx * ux + dy * uy + dh * uh;
-        if(f + rad < NEAR) continue;
+        if(f + rad < NEAR || f - rad > far_z) continue;
         if(r - rad > half_w * (f + rad) || r + rad < -half_w * (f + rad)) continue;
         if(u - rad > half_h * (f + rad) || u + rad < -half_h * (f + rad)) continue;
         vis[nv].d2 = d2;

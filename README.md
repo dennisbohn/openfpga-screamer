@@ -46,9 +46,13 @@ und für den Streckendurchflug `track1.bin` (Data-Slot 3): Materialien, Texturen
 von Strecke 1 unverändert aus den Spieldateien, dazu Platzierungen, Palette und Kamerapfad:
 
 ```sh
-python tools/make_track.py "C:/GOG Games/Screamer/GFX/MAP1L.DAT" "C:/GOG Games/Screamer/DATA/MAP1.DAT" \
+python tools/make_track.py "C:/GOG Games/Screamer/GFX/MAP1H.DAT" "C:/GOG Games/Screamer/DATA/MAP1.DAT" \
     build/assets/screamer/Chainy.Screamer/track1.bin build/preview/track1_map.png
 ```
+
+`L` und `H` sind die Sätze der Option DETAIL, nicht die Auflösung: Das Spiel lädt den
+`L`-Satz nur bei LOW, ab MID den `H`-Satz (mehr Kulisse, dieselben Texturen). Der Durchflug
+zeichnet wie bei HI, der Voreinstellung des Spiels.
 
 Ohne diese Datei zeigt der Core eine kleine Szene mit Testmustern.
 

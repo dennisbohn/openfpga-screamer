@@ -104,7 +104,7 @@ def player_path(spl, step=100.0):
 def main():
     gfx, dat, out, preview = sys.argv[1:5]
     g = datfile.read(gfx)
-    track = os.path.basename(gfx).upper().split("L.DAT")[0]          # MAP1
+    track = os.path.basename(gfx).upper()[:-5]                        # MAP1 from MAP1L.DAT or MAP1H.DAT
     mlb = datfile.extract(g, track + ".MLB")
     unr = datfile.extract(g, track + ".UNR")
     col = datfile.extract(g, track + ".COL")
