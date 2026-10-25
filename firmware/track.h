@@ -10,8 +10,11 @@
 #include <stdint.h>
 #include "raster.h"
 
-/* Check the track file at file; returns the number of placements, 0 if none was loaded. */
-int track_init(const volatile uint8_t *file);
+/* Whether a track file is at file (its header); then its blocks can be checked with
+   track_block_ok() before track_init() reads the rest. track_init() returns the number of
+   placements, 0 if the file does not fit the limits. */
+int track_open(const volatile uint8_t *file);
+int track_init(void);
 
 /* The track's palette, 256 x 0x00RRGGBB */
 const uint32_t *track_palette(void);

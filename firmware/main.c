@@ -358,7 +358,21 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     log_head("frames drawn: ", 0);
     dlog_str("program.bin: running in the SDRAM\n");
 
-    int placements = track_init(TEX_FILE);
+    /* the track file is only read once all its blocks are as written */
+    int placements = 0;
+    if (track_open(TEX_FILE)) {
+        dlog_str("track1.bin: ");
+        dlog_dec((int32_t)track_size());
+        dlog_str(" bytes, CRC of the 256 KB blocks:");
+        int bad = 0;
+        for (int k = 0; k < track_blocks(); k++) {
+            int ok = track_block_ok(k);
+            bad += !ok;
+            dlog_str(ok ? " ok" : " BAD");
+        }
+        dlog_str(bad ? " - damaged in the SDRAM, not used\n" : " (all ok)\n");
+        if (!bad) placements = track_init();
+    }
     if (placements) {
         const volatile uint32_t *pal = (const volatile uint32_t *)track_palette();
         col_bg = nearest(pal, 0, 0, 0);
@@ -369,16 +383,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         dlog_dec(placements);
         dlog_str(" placements, ");
         dlog_dec((int32_t)track_path_length());
-        dlog_str(" path points (data slot 3)\ntrack1.bin: ");
-        dlog_dec((int32_t)track_size());
-        dlog_str(" bytes, CRC of the 256 KB blocks:");
-        int bad = 0;
-        for (int k = 0; k < track_blocks(); k++) {
-            int ok = track_block_ok(k);
-            bad += !ok;
-            dlog_str(ok ? " ok" : " BAD");
-        }
-        dlog_str(bad ? "\n" : " (all ok)\n");
+        dlog_str(" path points (data slot 3)\n");
         RS_CTRL = 1;
         run_track();
     }

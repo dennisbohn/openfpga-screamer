@@ -90,14 +90,20 @@ static const uint8_t *block_of(int k, const uint8_t **obj)
     return *obj + rd32(*obj + 0x18);
 }
 
-int track_init(const volatile uint8_t *file)
+int track_open(const volatile uint8_t *file)
 {
     const uint8_t *f = (const uint8_t *)file;
     if(rd32(f) != 0x4B524353 || rd32(f + 4) != 2) return 0;    /* "SCRK", version 2 */
     file_start = f;
     file_size = (uint32_t)rd32(f + 0x2C);
     nblocks = rd32(f + 0x30);
-    if(nblocks < 0 || 0x34 + 4 * nblocks > 0x100) nblocks = 0;
+    if(nblocks < 1 || 0x34 + 4 * nblocks > 0x100) return 0;
+    return 1;
+}
+
+int track_init(void)
+{
+    const uint8_t *f = file_start;
     mlb = f + rd32(f + 0x08);
     const uint8_t *unr = f + rd32(f + 0x10);
     pal = (const uint32_t *)(f + rd32(f + 0x18));
