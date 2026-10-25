@@ -57,10 +57,11 @@ messbar ausbremsen; sonst ziehen sie in einen eigenen PSRAM um.
 Die originalen Dateien, unverändert und flach in `Assets/screamer/common/` (die Namen sind
 über `DATA`, `GFX` und `TABS` hinweg eindeutig). Je Datei ein Data-Slot mit `deferload`:
 der Core liest das Inhaltsverzeichnis am Dateiende und holt sich die Einträge, die er
-braucht. 27 Dateien (Grenze: 32 Slots):
+braucht. 33 Dateien, eine mehr als die 32 Slots: offen, z. B. zwei Dateien in einem Slot.
 
 - `DATA/`: alle 16 (`GEN`, `LOCAL`, `MUSIC`, `SOUND`, `MAP1`–`MAP6`, `MAP1I`–`MAP6I`)
-- `GFX/`: `GAME`, `GRAF`, `MENU`, `MAP1L`–`MAP6L` (die H-Dateien sind für 640×400, nicht nötig)
+- `GFX/`: `GAME`, `GRAF`, `MENU`, `MAP1L`–`MAP6L`, `MAP1H`–`MAP6H` (L und H sind die Sätze der
+  Option DETAIL: L bei LOW, H ab MID; nicht die Auflösung)
 - `TABS/`: `PERSP01.TAB`, `VIS.TAB`
 
 ## Geschätzte Belegung
@@ -112,8 +113,11 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   besten Rate, ohne Zwischenbilder und ohne Ruckeln. Die Uhr für Countdowns und
   Rundenzeiten tickt im Original mit 100 Hz und bekommt ein eigenes Zählregister. Pro Bild
   stehen 1,485 Millionen Takte zur Verfügung.
-- **VGA-Fassung:** 320×200 mit 8-Bit-Palette wie die VGA-Version des Spiels, daher nur die
-  L-Dateien. Cockpit, Renninfos und andere statische Bilder sind Sprites aus dem L-Satz von
+- **VGA-Fassung:** 320×200 mit 8-Bit-Palette wie die VGA-Version des Spiels. Die Strecken
+  kommen trotzdem aus beiden Sätzen: `MAPnL` bei DETAIL LOW, `MAPnH` ab MID (STARTL.EXE wie
+  STARTH.EXE, OpenScreamer `docs/NOTES2.md` S2-5d). Wie weit gezeichnet wird, legt DETAIL
+  fest wie im Original: Teile bis 52000 Einheiten, Flächen geschnitten in der Tiefe 27808
+  (LOW, MID) oder 43808 (HI). Cockpit, Renninfos und andere statische Bilder sind Sprites aus dem L-Satz von
   `GAME.DAT` und kommen 1:1 pixelgenau in den Framebuffer: erst von der CPU gezeichnet,
   später über einen Sprite-Modus des Rasterizers (Rechteck unverzerrt kopieren, eine Farbe
   durchsichtig).
