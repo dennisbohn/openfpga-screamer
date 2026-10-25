@@ -12,6 +12,9 @@
 //   frame 5          A
 //   frame 6          A, pressed at line 20 and again at line 120 while the first is pending
 //   frame 7, 8       B, B (the second press was ignored)
+//   frame 9          B, reset_n held low from line 100 for 500 pixel clocks (frame cut short, not checked)
+//   frame 10         B (a reset must not swap), pressed at line 50
+//   frame 11         A
 
 #include <cstdio>
 #include <cstdint>
@@ -66,13 +69,27 @@ int main(int argc, char **argv) {
             top.clk_vid = !top.clk_vid; top.eval();
         }
     }
+    // the last word is sampled at the next rising edge; then the bridge goes quiet
+    for (bool rose = false; !rose; ) {
+        if (next_74 <= next_vid) {
+            next_74 += HALF_74;
+            top.clk_74a = !top.clk_74a; top.eval();
+            rose = top.clk_74a;
+        } else {
+            next_vid += HALF_VID;
+            top.clk_vid = !top.clk_vid; top.eval();
+        }
+    }
+    top.bridge_wr = 0; top.eval();
 
     // run the video; capture frames, press the button on schedule
     top.reset_n = 1; top.eval();
     struct Press { int frame, line; };
-    const Press presses[] = { {2, 100}, {4, 50}, {6, 20}, {6, 120} };
-    const int expect[] = { -1, 0, 0, 1, 1, 0, 0, 1, 1 };       // picture per frame 1..8
-    const int FRAMES = 8;
+    const Press presses[] = { {2, 100}, {4, 50}, {6, 20}, {6, 120}, {10, 50} };
+    const int expect[] = { -1, 0, 0, 1, 1, 0, 0, 1, 1, -1, 1, 0 };     // picture per frame 1..11, -1: not checked
+    const int FRAMES = 11;
+    const int RESET_FRAME = 9, RESET_LINE = 100, RESET_CLOCKS = 500;
+    int reset_left = -1;
 
     std::vector<std::vector<uint8_t>> frames(FRAMES + 1);
     int frame = 0, line = 0, prev_de = 0;
@@ -95,6 +112,11 @@ int main(int argc, char **argv) {
             next_vid += HALF_VID;
             top.clk_vid = !top.clk_vid; top.eval();
             if (top.clk_vid) {
+                if (reset_left > 0 && --reset_left == 0) { top.reset_n = 1; top.eval(); }
+                if (reset_left < 0 && frame == RESET_FRAME && line == RESET_LINE) {
+                    top.reset_n = 0; top.eval();
+                    reset_left = RESET_CLOCKS;
+                }
                 if (top.vid_vs) { frame++; line = 0; }
                 if (frame >= 1 && frame <= FRAMES && top.vid_de) {
                     uint32_t c = top.vid_rgb;
@@ -113,6 +135,7 @@ int main(int argc, char **argv) {
         fwrite(frames[k].data(), 1, frames[k].size(), fp);
         fclose(fp);
 
+        if (expect[k] < 0) { printf("frame %d: interrupted by the reset, not checked\n", k); continue; }
         const std::vector<uint8_t> &f = img[expect[k]];
         int bad = 0;
         if (frames[k].size() != size_t(W * H * 3)) bad = W * H;
@@ -124,8 +147,8 @@ int main(int argc, char **argv) {
                bad ? (std::to_string(bad) + " of 64000 pixels wrong").c_str() : "all 64000 pixels match");
         fails += bad != 0;
     }
-    if (fails) { printf("FAIL: %d of %d frames wrong\n", fails, FRAMES); return 1; }
-    printf("PASS: %d frames, swaps only at frame boundaries, each picture with its own palette, "
-           "a press while a swap is pending ignored\n", FRAMES);
+    if (fails) { printf("FAIL: %d frames wrong\n", fails); return 1; }
+    printf("PASS: swaps only at frame boundaries, each picture with its own palette, "
+           "a press while a swap is pending ignored, a reset mid-frame keeps the shown picture\n");
     return 0;
 }

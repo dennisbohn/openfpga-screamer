@@ -23,6 +23,12 @@ module framebuffer (
 
     reg [31:0]  mem [0:32767];
 
+// synthesis translate_off
+    // simulation only: start from a poison pattern, so a lost write shows as a wrong pixel
+    integer i;
+    initial for(i = 0; i < 32768; i = i + 1) mem[i] = 32'hA5A5A5A5;
+// synthesis translate_on
+
     wire [14:0] waddr = {wr_buf, wr_addr};
 
 always @(posedge clk_sys) begin
