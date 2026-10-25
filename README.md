@@ -41,8 +41,14 @@ mit `tools/deploy.sh /i` (SD-Karte bzw. Pocket im USB-Modus als Laufwerk I:).
 
 Was der Core aus den Spieldaten braucht, wird auf dem PC umgewandelt und landet in
 `build/assets/` (nie im Repository), `tools/package.sh` kopiert es nach `Assets/`.
-Zurzeit liegt dort nur `firmware.bin` aus `tools/fw.sh` (siehe `firmware/README.md`); der
-Core braucht noch keine Spieldaten.
+Dort liegen `firmware.bin` aus `tools/fw.sh` (siehe `firmware/README.md`) und für die
+Textur-Vorführung `textures.bin`, ein paar Texturen und die Palette von Strecke 1 (Data-Slot 3):
+
+```sh
+python tools/make_textures.py "C:/GOG Games/Screamer/GFX/MAP1L.DAT"     build/assets/screamer/Chainy.Screamer/textures.bin build/preview/textures.png 26 45 36 20 0
+```
+
+Ohne diese Datei zeigt der Core einfarbige Dreiecke.
 
 ## Simulation
 
