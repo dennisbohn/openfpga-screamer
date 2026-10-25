@@ -1,31 +1,37 @@
 //
-// 320x200 video out from a two-line buffer through a 256-colour palette, at 60 Hz
+// 320x200 video out of the front framebuffer through its palette, at 60 Hz
 //
-// The framebuffer itself lives elsewhere (PSRAM, see fb_psram.v). Ahead of each
-// visible line this module asks for it (line_req_toggle flips, line_req_y holds
-// the line) and fb_psram writes it into one half of the line buffer while the
-// other half is on screen.
+// There are two framebuffers (framebuffer.v) and two palettes, one for each. The
+// front one is shown; a writer draws the other and then asks for a swap by flipping
+// swap_req_toggle. The swap happens at the start of the next frame, inside the
+// vertical blanking, so a frame never mixes the two; swap_ack_toggle then follows
+// swap_req_toggle, and the old front buffer is free to draw.
 //
 // Video timing at the 12.288 MHz pixel clock: 400 clocks x 512 lines = 60 Hz,
 // 320 x 200 of it visible.
 //
 
 module video_out (
-    // palette and line buffer writes, synchronous to clk_74a
+    // palette writes, synchronous to clk_74a
     input   wire            clk_74a,
     input   wire            pal_wr,
+    input   wire            pal_buf,
     input   wire    [7:0]   pal_addr,
     input   wire    [23:0]  pal_data,
-    input   wire            lb_wr,
-    input   wire    [8:0]   lb_addr,        // {line & 1, halfword 0..159}
-    input   wire    [15:0]  lb_data,        // two pixels, the left one in [15:8]
-    input   wire            error,          // shows a red top line when set
+
+    // swap request, from another clock domain
+    input   wire            swap_req_toggle,
+    output  reg             swap_ack_toggle,
+    output  reg             front,
+
+    // framebuffer read port, data one clock after the address
+    output  wire            fb_rd_buf,
+    output  wire    [13:0]  fb_rd_addr,
+    input   wire    [31:0]  fb_rd_data,
 
     // video out, synchronous to clk_vid
     input   wire            clk_vid,
     input   wire            reset_n,
-    output  reg             line_req_toggle,
-    output  reg     [7:0]   line_req_y,
     output  reg     [23:0]  vid_rgb,
     output  reg             vid_de,
     output  reg             vid_hs,
@@ -39,47 +45,43 @@ module video_out (
     localparam  V_BPORCH = 'd10;
     localparam  V_TOTAL  = 'd512;
 
-    reg [15:0]  lb [0:511];
-    reg [23:0]  pal [0:255];
+    reg [23:0]  pal [0:511];
 
 always @(posedge clk_74a) begin
-    if(pal_wr) pal[pal_addr] <= pal_data;
-    if(lb_wr) lb[lb_addr] <= lb_data;
+    if(pal_wr) pal[{pal_buf, pal_addr}] <= pal_data;
 end
 
 //
-// read side: counters, then a 5-stage pipeline
-// (address -> line buffer halfword -> byte -> palette entry -> output)
+// counters, swap, then a 4-stage pipeline
+// (framebuffer word -> byte -> palette entry -> output)
 //
     reg [9:0]   x_count;
     reg [9:0]   y_count;
+    reg [15:0]  pix_addr;
+    reg [1:0]   swap_s;
 
     wire        active = x_count >= H_BPORCH && x_count < H_BPORCH + H_ACTIVE &&
                          y_count >= V_BPORCH && y_count < V_BPORCH + V_ACTIVE;
-    wire [9:0]  vis_x = x_count - H_BPORCH;
-    wire [9:0]  vis_y = y_count - V_BPORCH;
-    wire [9:0]  next_y = y_count - (V_BPORCH-1);
+    wire        frame_start = x_count == 0 && y_count == 0;
 
-    reg [8:0]   lb_raddr;
-    reg         sel_r;
-    reg [15:0]  lb_q;
-    reg         sel_a;
+    assign fb_rd_buf = front;
+    assign fb_rd_addr = pix_addr[15:2];
+
+    reg [1:0]   sel_a;
     reg [7:0]   index;
     reg [23:0]  pal_q;
-    reg [3:0]   de_d, hs_d, vs_d, top_d;
-
-    reg [1:0]   error_s;
+    reg [2:0]   de_d, hs_d, vs_d;
 
 always @(posedge clk_vid or negedge reset_n) begin
     if(~reset_n) begin
         x_count <= 0;
         y_count <= 0;
-        line_req_toggle <= 0;
-        line_req_y <= 0;
+        pix_addr <= 0;
+        front <= 0;
+        swap_ack_toggle <= 0;
         de_d <= 0;
         hs_d <= 0;
         vs_d <= 0;
-        top_d <= 0;
         vid_de <= 0;
         vid_hs <= 0;
         vid_vs <= 0;
@@ -92,40 +94,43 @@ always @(posedge clk_vid or negedge reset_n) begin
             if(y_count == V_TOTAL-1) y_count <= 0;
         end
 
-        // one line ahead: at the start of line y ask for the visible line that follows it
-        if(x_count == 0 && y_count >= V_BPORCH-1 && y_count < V_BPORCH+V_ACTIVE-1) begin
-            line_req_y <= next_y[7:0];
-            line_req_toggle <= ~line_req_toggle;
+        if(frame_start) pix_addr <= 0;
+        else if(active) pix_addr <= pix_addr + 1'b1;
+
+        // a pending swap takes effect at the frame's first clock, in the blanking
+        if(frame_start && swap_s[1] != swap_ack_toggle) begin
+            front <= ~front;
+            swap_ack_toggle <= swap_s[1];
         end
 
         // sync and data enable delayed to match the pipeline; VS at the frame's
         // first clock, HS a few clocks later, both in the back porch
-        de_d <= {de_d[2:0], active};
-        vs_d <= {vs_d[2:0], x_count == 0 && y_count == 0};
-        hs_d <= {hs_d[2:0], x_count == 3};
-        top_d <= {top_d[2:0], vis_y == 0};
+        de_d <= {de_d[1:0], active};
+        vs_d <= {vs_d[1:0], frame_start};
+        hs_d <= {hs_d[1:0], x_count == 3};
 
         // output, black outside the visible area
-        vid_de <= de_d[3];
-        vid_vs <= vs_d[3];
-        vid_hs <= hs_d[3];
-        vid_rgb <= !de_d[3] ? 24'h0 : (error_s[1] && top_d[3]) ? 24'hFF0000 : pal_q;
+        vid_de <= de_d[2];
+        vid_vs <= vs_d[2];
+        vid_hs <= hs_d[2];
+        vid_rgb <= de_d[2] ? pal_q : 24'h0;
     end
 end
 
 // the RAM reads stay out of the reset block so they map onto M10K blocks
 always @(posedge clk_vid) begin
-    error_s <= {error_s[0], error};
-    // stage 0: address
-    lb_raddr <= {vis_y[0], vis_x[8:1]};
-    sel_r <= vis_x[0];
-    // stage 1: halfword
-    lb_q <= lb[lb_raddr];
-    sel_a <= sel_r;
+    swap_s <= {swap_s[0], swap_req_toggle};
+    // stage 1: framebuffer word arrives (read in framebuffer.v)
+    sel_a <= pix_addr[1:0];
     // stage 2: the pixel's byte
-    index <= sel_a ? lb_q[7:0] : lb_q[15:8];
-    // stage 3: palette entry
-    pal_q <= pal[index];
+    case(sel_a)
+        2'd0: index <= fb_rd_data[31:24];
+        2'd1: index <= fb_rd_data[23:16];
+        2'd2: index <= fb_rd_data[15:8];
+        2'd3: index <= fb_rd_data[7:0];
+    endcase
+    // stage 3: palette entry of the front buffer
+    pal_q <= pal[{front, index}];
 end
 
 endmodule

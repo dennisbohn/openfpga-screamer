@@ -3,7 +3,7 @@
         "magic": "APF_VER_1",
         "data_slots": [
             {
-                "name": "Screen",
+                "name": "Screen A",
                 "id": 0,
                 "required": true,
                 "parameters": "0x02",
@@ -11,6 +11,16 @@
                 "extensions": ["bin"],
                 "size_exact": 65024,
                 "address": "0x00000000"
+            },
+            {
+                "name": "Screen B",
+                "id": 1,
+                "required": true,
+                "parameters": "0x02",
+                "filename": "screen2.bin",
+                "extensions": ["bin"],
+                "size_exact": 65024,
+                "address": "0x00100000"
             }
         ]
     }

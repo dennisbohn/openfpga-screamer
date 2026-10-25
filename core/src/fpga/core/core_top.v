@@ -273,7 +273,17 @@ assign cram0_we_n = 1;
 assign cram0_ub_n = 1;
 assign cram0_lb_n = 1;
 
-// cram1 holds the framebuffer, driven by fb_psram below
+assign cram1_a = 'h0;
+assign cram1_dq = {16{1'bZ}};
+assign cram1_clk = 0;
+assign cram1_adv_n = 1;
+assign cram1_cre = 0;
+assign cram1_ce0_n = 1;
+assign cram1_ce1_n = 1;
+assign cram1_oe_n = 1;
+assign cram1_we_n = 1;
+assign cram1_ub_n = 1;
+assign cram1_lb_n = 1;
 
 assign dram_a = 'h0;
 assign dram_ba = 'h0;
@@ -486,66 +496,72 @@ core_bridge_cmd icb (
 
 
 
-// video: 320x200 8-bit framebuffer in PSRAM (cram1), shown through a palette
+// video: two 320x200 8-bit framebuffers in block RAM, each with its own palette;
+// one is shown while the other is drawn, swapped at the start of a frame.
+// Until the CPU draws, the two data slots fill them and button A swaps them.
 // ~12,288,000 hz pixel clock, 60 hz
 
 assign video_rgb_clock = clk_core_12288;
 assign video_rgb_clock_90 = clk_core_12288_90deg;
 assign video_skip = 0;
 
-    wire            pal_wr;
+    wire            fb_wr_en, fb_wr_buf;
+    wire    [13:0]  fb_wr_addr;
+    wire    [31:0]  fb_wr_data;
+    wire            pal_wr, pal_buf;
     wire    [7:0]   pal_addr;
     wire    [23:0]  pal_data;
-    wire            lb_wr;
-    wire    [8:0]   lb_addr;
-    wire    [15:0]  lb_data;
-    wire            line_req_toggle;
-    wire    [7:0]   line_req_y;
-    wire            fb_error;
+    wire            swap_req_toggle, swap_ack_toggle;
+    wire            fb_front;
+    wire            fb_rd_buf;
+    wire    [13:0]  fb_rd_addr;
+    wire    [31:0]  fb_rd_data;
 
-fb_psram fbp (
+fb_bridge fbb (
     .clk_74a        ( clk_74a ),
     .bridge_wr      ( bridge_wr ),
     .bridge_addr    ( bridge_addr ),
     .bridge_wr_data ( bridge_wr_data ),
+    .swap_button    ( cont1_key[4] ),       // face_a
+    .fb_wr_en       ( fb_wr_en ),
+    .fb_wr_buf      ( fb_wr_buf ),
+    .fb_wr_addr     ( fb_wr_addr ),
+    .fb_wr_data     ( fb_wr_data ),
     .pal_wr         ( pal_wr ),
+    .pal_buf        ( pal_buf ),
     .pal_addr       ( pal_addr ),
     .pal_data       ( pal_data ),
-    .line_req_toggle( line_req_toggle ),
-    .line_req_y     ( line_req_y ),
-    .lb_wr          ( lb_wr ),
-    .lb_addr        ( lb_addr ),
-    .lb_data        ( lb_data ),
-    .error          ( fb_error ),
+    .swap_req_toggle( swap_req_toggle ),
+    .swap_ack_toggle( swap_ack_toggle )
+);
 
-    .cram_a         ( cram1_a ),
-    .cram_dq        ( cram1_dq ),
-    .cram_wait      ( cram1_wait ),
-    .cram_clk       ( cram1_clk ),
-    .cram_adv_n     ( cram1_adv_n ),
-    .cram_cre       ( cram1_cre ),
-    .cram_ce0_n     ( cram1_ce0_n ),
-    .cram_ce1_n     ( cram1_ce1_n ),
-    .cram_oe_n      ( cram1_oe_n ),
-    .cram_we_n      ( cram1_we_n ),
-    .cram_ub_n      ( cram1_ub_n ),
-    .cram_lb_n      ( cram1_lb_n )
+framebuffer fb (
+    .clk_sys        ( clk_74a ),
+    .wr_en          ( fb_wr_en ),
+    .wr_buf         ( fb_wr_buf ),
+    .wr_addr        ( fb_wr_addr ),
+    .wr_data        ( fb_wr_data ),
+    .wr_be          ( 4'b1111 ),
+    .clk_vid        ( clk_core_12288 ),
+    .rd_buf         ( fb_rd_buf ),
+    .rd_addr        ( fb_rd_addr ),
+    .rd_data        ( fb_rd_data )
 );
 
 video_out vo (
     .clk_74a        ( clk_74a ),
     .pal_wr         ( pal_wr ),
+    .pal_buf        ( pal_buf ),
     .pal_addr       ( pal_addr ),
     .pal_data       ( pal_data ),
-    .lb_wr          ( lb_wr ),
-    .lb_addr        ( lb_addr ),
-    .lb_data        ( lb_data ),
-    .error          ( fb_error ),
-
+    .swap_req_toggle( swap_req_toggle ),
+    .swap_ack_toggle( swap_ack_toggle ),
+    .front          ( fb_front ),
+    .fb_rd_buf      ( fb_rd_buf ),
+    .fb_rd_addr     ( fb_rd_addr ),
+    .fb_rd_data     ( fb_rd_data ),
     .clk_vid        ( clk_core_12288 ),
     .reset_n        ( reset_n ),
-    .line_req_toggle( line_req_toggle ),
-    .line_req_y     ( line_req_y ),
     .vid_rgb        ( video_rgb ),
     .vid_de         ( video_de ),
     .vid_hs         ( video_hs ),
