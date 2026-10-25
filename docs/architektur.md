@@ -17,6 +17,8 @@ Getrennte Speicherbusse: SDRAM 64 MB, PSRAM `cram0` und `cram1` je 16 MB, SRAM 2
 
 ![Geplante Architektur: Die CPU schreibt die Objektliste von Bild N+1 ins SRAM, die Geometrie-Einheit liest die von Bild N und gibt Dreiecke an den Rasterizer, der Bild N in den hinteren Framebuffer im Block-RAM zeichnet, während video_out den vorderen zeigt](architektur.svg)
 
+Wie der Rasterizer ein Dreieck in Pixel zerlegt und wie der Texturpfad als Fließband geplant ist: [rasterizer.svg](rasterizer.svg).
+
 Grün: gebaut und auf dem Pocket getestet. Grau gestrichelt: geplant. Drei Bilder sind
 gleichzeitig in Arbeit: Die CPU berechnet Bild N+1 und schreibt dessen nach Abstand
 sortierte Objektliste ins SRAM, die Geometrie-Einheit liest die Liste von Bild N und

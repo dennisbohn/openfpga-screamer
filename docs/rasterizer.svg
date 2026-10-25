@@ -1,0 +1,349 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" width="1440" height="900" role="img" aria-label="So zeichnet der Rasterizer ein Dreieck: Ecken nach y sortiert, Zeile für Zeile die Schnittpunkte mit den Kanten, alle Pixel, deren Mitte dazwischen liegt, in Wörtern zu vier Pixeln in den Framebuffer; unten der geplante Texturpfad als Fließband mit einem Pixel pro Takt.">
+  <title>Rasterizer – wie ein Dreieck zu Pixeln wird</title>
+  <desc>Teil 1: Pixelraster mit einem Dreieck a, b, c; ein Pixel gehört dazu, wenn seine Mitte im Dreieck liegt. Teil 2: eine Zeile als Framebuffer-Wörter mit Byte-Enables. Teil 3: Ablauf in raster.v mit Takten. Teil 4: geplanter Texturpfad.</desc>
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#2e7d32"/>
+    </marker>
+    <marker id="arrp" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#555555"/>
+    </marker>
+  </defs>
+  <style>
+    text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #1f1f1f; }
+    .h { font-size: 20px; font-weight: 700; }
+    .s { font-size: 15px; font-weight: 700; }
+    .t { font-size: 13px; font-weight: 600; }
+    .b { font-size: 12px; }
+    .l { font-size: 11px; fill: #444444; }
+    .m { font-size: 11px; font-family: ui-monospace, Consolas, monospace; fill: #1f1f1f; }
+    .c { text-anchor: middle; }
+    .r { text-anchor: end; }
+    .built { fill: #e8f5e9; stroke: #2e7d32; stroke-width: 1.6; }
+    .plan { fill: #ffffff; stroke: #555555; stroke-width: 1.4; stroke-dasharray: 6 4; }
+    .grid { fill: none; stroke: #c8c8c8; stroke-width: 1; }
+    .px { fill: #a5d6a7; }
+    .pxh { fill: #66bb6a; }
+    .tri { fill: none; stroke: #1565c0; stroke-width: 2; }
+    .long { fill: none; stroke: #c62828; stroke-width: 2.4; }
+    .row { stroke: #1f1f1f; stroke-width: 1.2; stroke-dasharray: 4 3; }
+    .wb { fill: none; stroke: #2e7d32; stroke-width: 1.8; }
+    .wp { fill: none; stroke: #555555; stroke-width: 1.4; stroke-dasharray: 6 4; }
+  </style>
+  <rect width="1440" height="900" fill="#ffffff"/>
+  <text x="40" y="44" class="h">Der Rasterizer: wie aus einem Dreieck Pixel werden</text>
+  <text x="40" y="66" class="l">raster.v (Hardware) und raster.c (C-Modell) rechnen genau gleich · einfarbig gebaut und auf dem Pocket getestet, Texturen geplant · Stand 25.10.2026</text>
+  <text x="40" y="104" class="s">1. Welche Pixel gehören dazu?</text>
+  <text x="40" y="124" class="l">Ein Pixel wird gezeichnet, wenn seine Mitte im Dreieck liegt</text>
+  <text x="40" y="138" class="l">(liegt sie genau auf der linken oder oberen Kante, zählt sie mit).</text>
+  <rect x="252" y="182" width="32" height="32" class="px"/>
+  <rect x="284" y="182" width="32" height="32" class="px"/>
+  <rect x="220" y="214" width="32" height="32" class="px"/>
+  <rect x="252" y="214" width="32" height="32" class="px"/>
+  <rect x="284" y="214" width="32" height="32" class="px"/>
+  <rect x="316" y="214" width="32" height="32" class="px"/>
+  <rect x="220" y="246" width="32" height="32" class="px"/>
+  <rect x="252" y="246" width="32" height="32" class="px"/>
+  <rect x="284" y="246" width="32" height="32" class="px"/>
+  <rect x="316" y="246" width="32" height="32" class="px"/>
+  <rect x="348" y="246" width="32" height="32" class="px"/>
+  <rect x="188" y="278" width="32" height="32" class="pxh"/>
+  <rect x="220" y="278" width="32" height="32" class="pxh"/>
+  <rect x="252" y="278" width="32" height="32" class="pxh"/>
+  <rect x="284" y="278" width="32" height="32" class="pxh"/>
+  <rect x="316" y="278" width="32" height="32" class="pxh"/>
+  <rect x="348" y="278" width="32" height="32" class="pxh"/>
+  <rect x="380" y="278" width="32" height="32" class="pxh"/>
+  <rect x="188" y="310" width="32" height="32" class="px"/>
+  <rect x="220" y="310" width="32" height="32" class="px"/>
+  <rect x="252" y="310" width="32" height="32" class="px"/>
+  <rect x="284" y="310" width="32" height="32" class="px"/>
+  <rect x="316" y="310" width="32" height="32" class="px"/>
+  <rect x="156" y="342" width="32" height="32" class="px"/>
+  <rect x="188" y="342" width="32" height="32" class="px"/>
+  <rect x="220" y="342" width="32" height="32" class="px"/>
+  <rect x="252" y="342" width="32" height="32" class="px"/>
+  <rect x="124" y="374" width="32" height="32" class="px"/>
+  <rect x="156" y="374" width="32" height="32" class="px"/>
+  <rect x="188" y="374" width="32" height="32" class="px"/>
+  <rect x="124" y="406" width="32" height="32" class="px"/>
+  <rect x="92" y="438" width="32" height="32" class="px"/>
+  <path d="M60,150 V502 M92,150 V502 M124,150 V502 M156,150 V502 M188,150 V502 M220,150 V502 M252,150 V502 M284,150 V502 M316,150 V502 M348,150 V502 M380,150 V502 M412,150 V502 M444,150 V502 M476,150 V502 M60,150 H476 M60,182 H476 M60,214 H476 M60,246 H476 M60,278 H476 M60,310 H476 M60,342 H476 M60,374 H476 M60,406 H476 M60,438 H476 M60,470 H476 M60,502 H476" class="grid"/>
+  <circle cx="76.0" cy="166.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="108.0" cy="166.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="140.0" cy="166.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="172.0" cy="166.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="204.0" cy="166.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="236.0" cy="166.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="268.0" cy="166.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="300.0" cy="166.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="332.0" cy="166.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="364.0" cy="166.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="396.0" cy="166.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="428.0" cy="166.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="460.0" cy="166.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="76.0" cy="198.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="108.0" cy="198.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="140.0" cy="198.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="172.0" cy="198.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="204.0" cy="198.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="236.0" cy="198.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="268.0" cy="198.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="300.0" cy="198.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="332.0" cy="198.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="364.0" cy="198.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="396.0" cy="198.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="428.0" cy="198.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="460.0" cy="198.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="76.0" cy="230.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="108.0" cy="230.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="140.0" cy="230.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="172.0" cy="230.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="204.0" cy="230.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="236.0" cy="230.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="268.0" cy="230.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="300.0" cy="230.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="332.0" cy="230.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="364.0" cy="230.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="396.0" cy="230.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="428.0" cy="230.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="460.0" cy="230.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="76.0" cy="262.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="108.0" cy="262.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="140.0" cy="262.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="172.0" cy="262.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="204.0" cy="262.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="236.0" cy="262.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="268.0" cy="262.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="300.0" cy="262.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="332.0" cy="262.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="364.0" cy="262.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="396.0" cy="262.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="428.0" cy="262.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="460.0" cy="262.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="76.0" cy="294.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="108.0" cy="294.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="140.0" cy="294.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="172.0" cy="294.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="204.0" cy="294.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="236.0" cy="294.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="268.0" cy="294.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="300.0" cy="294.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="332.0" cy="294.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="364.0" cy="294.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="396.0" cy="294.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="428.0" cy="294.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="460.0" cy="294.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="76.0" cy="326.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="108.0" cy="326.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="140.0" cy="326.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="172.0" cy="326.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="204.0" cy="326.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="236.0" cy="326.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="268.0" cy="326.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="300.0" cy="326.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="332.0" cy="326.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="364.0" cy="326.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="396.0" cy="326.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="428.0" cy="326.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="460.0" cy="326.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="76.0" cy="358.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="108.0" cy="358.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="140.0" cy="358.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="172.0" cy="358.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="204.0" cy="358.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="236.0" cy="358.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="268.0" cy="358.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="300.0" cy="358.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="332.0" cy="358.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="364.0" cy="358.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="396.0" cy="358.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="428.0" cy="358.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="460.0" cy="358.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="76.0" cy="390.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="108.0" cy="390.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="140.0" cy="390.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="172.0" cy="390.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="204.0" cy="390.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="236.0" cy="390.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="268.0" cy="390.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="300.0" cy="390.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="332.0" cy="390.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="364.0" cy="390.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="396.0" cy="390.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="428.0" cy="390.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="460.0" cy="390.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="76.0" cy="422.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="108.0" cy="422.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="140.0" cy="422.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="172.0" cy="422.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="204.0" cy="422.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="236.0" cy="422.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="268.0" cy="422.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="300.0" cy="422.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="332.0" cy="422.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="364.0" cy="422.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="396.0" cy="422.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="428.0" cy="422.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="460.0" cy="422.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="76.0" cy="454.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="108.0" cy="454.0" r="2.2" fill="#1b5e20"/>
+  <circle cx="140.0" cy="454.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="172.0" cy="454.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="204.0" cy="454.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="236.0" cy="454.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="268.0" cy="454.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="300.0" cy="454.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="332.0" cy="454.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="364.0" cy="454.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="396.0" cy="454.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="428.0" cy="454.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="460.0" cy="454.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="76.0" cy="486.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="108.0" cy="486.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="140.0" cy="486.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="172.0" cy="486.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="204.0" cy="486.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="236.0" cy="486.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="268.0" cy="486.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="300.0" cy="486.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="332.0" cy="486.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="364.0" cy="486.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="396.0" cy="486.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="428.0" cy="486.0" r="1.6" fill="#9e9e9e"/>
+  <circle cx="460.0" cy="486.0" r="1.6" fill="#9e9e9e"/>
+  <path d="M261.6,169.2 L424.8,284.4 L98.4,460.4" class="tri"/>
+  <path d="M261.6,169.2 L98.4,460.4" class="long"/>
+  <circle cx="261.6" cy="169.2" r="4.5" fill="#1565c0"/>
+  <text x="269.6" y="163.2" class="t">a</text>
+  <circle cx="424.8" cy="284.4" r="4.5" fill="#1565c0"/>
+  <text x="434.8" y="288.4" class="t">b</text>
+  <circle cx="98.4" cy="460.4" r="4.5" fill="#1565c0"/>
+  <text x="82.4" y="474.4" class="t">c</text>
+  <line x1="54" y1="294.0" x2="482" y2="294.0" class="row"/>
+  <circle cx="191.7" cy="294.0" r="4" fill="#c62828"/>
+  <circle cx="407.0" cy="294.0" r="4" fill="#1565c0"/>
+  <text x="486" y="298.0" class="b">Zeile 4</text>
+  <text x="486" y="312.0" class="l">y = 4,5</text>
+  <text x="40" y="526" class="b"><tspan fill="#c62828" font-weight="600">Rot: lange Kante a–c</tspan>, blau: kurze Kanten a–b, dann b–c.</text>
+  <text x="40" y="544" class="b">Ecken nach y sortiert. Je Kante einmal die Steigung (eine Division):</text>
+  <text x="40" y="562" class="m">Steigung = (x1 − x0) / (y1 − y0)   je Zeile: x = x + Steigung</text>
+  <text x="40" y="580" class="b">Gezeichnet werden in Zeile 4 die Pixel 4 bis 10: ihre Mitten liegen</text>
+  <text x="40" y="598" class="b">zwischen dem roten und dem blauen Schnittpunkt.</text>
+  <text x="540" y="104" class="s">2. Eine Zeile, vier Pixel pro Takt</text>
+  <text x="540" y="124" class="l">Der Framebuffer speichert vier Pixel in einem Wort;</text>
+  <text x="540" y="138" class="l">ein Byte-Enable pro Pixel sagt, welche geschrieben werden.</text>
+  <rect x="560" y="170" width="30" height="30" fill="#ffffff" stroke="#9e9e9e" stroke-width="1"/>
+  <text x="575.0" y="190" class="l c">0</text>
+  <rect x="590" y="170" width="30" height="30" fill="#ffffff" stroke="#9e9e9e" stroke-width="1"/>
+  <text x="605.0" y="190" class="l c">1</text>
+  <rect x="620" y="170" width="30" height="30" fill="#ffffff" stroke="#9e9e9e" stroke-width="1"/>
+  <text x="635.0" y="190" class="l c">2</text>
+  <rect x="650" y="170" width="30" height="30" fill="#ffffff" stroke="#9e9e9e" stroke-width="1"/>
+  <text x="665.0" y="190" class="l c">3</text>
+  <rect x="680" y="170" width="30" height="30" fill="#66bb6a" stroke="#9e9e9e" stroke-width="1"/>
+  <text x="695.0" y="190" class="l c">4</text>
+  <rect x="710" y="170" width="30" height="30" fill="#66bb6a" stroke="#9e9e9e" stroke-width="1"/>
+  <text x="725.0" y="190" class="l c">5</text>
+  <rect x="740" y="170" width="30" height="30" fill="#66bb6a" stroke="#9e9e9e" stroke-width="1"/>
+  <text x="755.0" y="190" class="l c">6</text>
+  <rect x="770" y="170" width="30" height="30" fill="#66bb6a" stroke="#9e9e9e" stroke-width="1"/>
+  <text x="785.0" y="190" class="l c">7</text>
+  <rect x="800" y="170" width="30" height="30" fill="#66bb6a" stroke="#9e9e9e" stroke-width="1"/>
+  <text x="815.0" y="190" class="l c">8</text>
+  <rect x="830" y="170" width="30" height="30" fill="#66bb6a" stroke="#9e9e9e" stroke-width="1"/>
+  <text x="845.0" y="190" class="l c">9</text>
+  <rect x="860" y="170" width="30" height="30" fill="#66bb6a" stroke="#9e9e9e" stroke-width="1"/>
+  <text x="875.0" y="190" class="l c">10</text>
+  <rect x="890" y="170" width="30" height="30" fill="#ffffff" stroke="#9e9e9e" stroke-width="1"/>
+  <text x="905.0" y="190" class="l c">11</text>
+  <text x="560" y="160" class="l">Pixel der Zeile 4 (x = 0 … 11)</text>
+  <path d="M563,210 v8 h114 v-8" fill="none" stroke="#9e9e9e" stroke-width="1.6"/>
+  <text x="620" y="236" class="t c">Wort 0</text>
+  <text x="620" y="252" class="m c">Enables 0000</text>
+  <text x="620" y="268" class="l c">nicht geschrieben</text>
+  <path d="M683,210 v8 h114 v-8" fill="none" stroke="#2e7d32" stroke-width="1.6"/>
+  <text x="740" y="236" class="t c">Wort 1</text>
+  <text x="740" y="252" class="m c">Enables 1111</text>
+  <text x="740" y="268" class="l c">Takt 1</text>
+  <path d="M803,210 v8 h114 v-8" fill="none" stroke="#2e7d32" stroke-width="1.6"/>
+  <text x="860" y="236" class="t c">Wort 2</text>
+  <text x="860" y="252" class="m c">Enables 1110</text>
+  <text x="860" y="268" class="l c">Takt 2</text>
+  <text x="540" y="340" class="b">Zeile 4: sieben Pixel, aber nur zwei Schreibzugriffe (Wort 1 und 2).</text>
+  <text x="540" y="358" class="b">Einfarbige Flächen: bis zu vier Pixel pro Takt. Die CPU brauchte</text>
+  <text x="540" y="376" class="b">etwa 12 Takte pro Pixel, die Hardware braucht für die Vorführung</text>
+  <text x="540" y="394" class="b">rund 6.100 statt 108.000 Takte pro Bild.</text>
+  <text x="540" y="412" class="b"></text>
+  <text x="540" y="430" class="b">Nach der Zeile rücken beide Kanten um ihre Steigung weiter:</text>
+  <text x="540" y="448" class="b">eine Addition, keine Division. An der Zeile von b wechselt die</text>
+  <text x="540" y="466" class="b">rechte Seite von der Kante a–b auf b–c.</text>
+  <text x="540" y="484" class="b"></text>
+  <text x="540" y="502" class="b">Überlappen sich Dreiecke, gewinnt das spätere (Maler-Algorithmus,</text>
+  <text x="540" y="520" class="b">kein Tiefenpuffer): die Reihenfolge kommt aus den Spieldaten.</text>
+  <text x="1010" y="104" class="s">3. Ablauf in raster.v</text>
+  <rect x="1030" y="130" width="330" height="54" rx="8" class="built"/>
+  <text x="1042" y="150" class="t">CPU schreibt Register</text>
+  <text x="1042" y="167" class="b">3 Ecken, Clip, Farbe, DRAW</text>
+  <text x="1350" y="150" class="l r">solange das vorige zeichnet</text>
+  <rect x="1030" y="206" width="330" height="54" rx="8" class="built"/>
+  <text x="1042" y="226" class="t">Sortieren nach y</text>
+  <text x="1042" y="243" class="b">Zeilen a, b, c bestimmen</text>
+  <text x="1350" y="226" class="l r">2 Takte</text>
+  <path d="M1195.0,186 V204" class="wb" marker-end="url(#arr)"/>
+  <rect x="1030" y="282" width="330" height="54" rx="8" class="built"/>
+  <text x="1042" y="302" class="t">Kanten aufsetzen</text>
+  <text x="1042" y="319" class="b">Steigung (Division) und Start-x</text>
+  <text x="1350" y="302" class="l r">je Kante ~35 Takte, 2–3 Kanten</text>
+  <path d="M1195.0,262 V280" class="wb" marker-end="url(#arr)"/>
+  <rect x="1030" y="358" width="330" height="54" rx="8" class="built"/>
+  <text x="1042" y="378" class="t">Zeile: Schnittpunkte</text>
+  <text x="1042" y="395" class="b">links/rechts runden, clippen</text>
+  <text x="1350" y="378" class="l r">3 Takte je Zeile</text>
+  <path d="M1195.0,338 V356" class="wb" marker-end="url(#arr)"/>
+  <rect x="1030" y="434" width="330" height="54" rx="8" class="built"/>
+  <text x="1042" y="454" class="t">Wörter schreiben</text>
+  <text x="1042" y="471" class="b">1 Wort pro Takt, bis 4 Pixel</text>
+  <text x="1350" y="454" class="l r">in den hinteren Framebuffer</text>
+  <path d="M1195.0,414 V432" class="wb" marker-end="url(#arr)"/>
+  <path d="M1364,461.0 H1390 V385.0 H1366" class="wb" marker-end="url(#arr)"/>
+  <text x="1394" y="417.0" class="l">nächste</text>
+  <text x="1394" y="431.0" class="l">Zeile</text>
+  <text x="1010" y="516" class="b">Das C-Modell firmware/raster.c macht exakt dieselben</text>
+  <text x="1010" y="534" class="b">Rechenschritte in Ganzzahlen. Einmal pro Lauf zeichnet die</text>
+  <text x="1010" y="552" class="b">Firmware dieselben Dreiecke mit beiden und vergleicht die</text>
+  <text x="1010" y="570" class="b">Bilder Pixel für Pixel („raster check“ im Protokoll).</text>
+  <line x1="40" y1="630" x2="1400" y2="630" stroke="#dddddd" stroke-width="1"/>
+  <text x="40" y="660" class="s">4. Geplant: Texturen als Fließband – ein Pixel pro Takt</text>
+  <text x="40" y="680" class="l">Jede Stufe arbeitet gleichzeitig an einem anderen Pixel: hintereinander bräuchte ein Pixel viele Takte, als Fließband kommt trotzdem in jedem Takt einer heraus.</text>
+  <rect x="40" y="704" width="196" height="62" rx="8" class="plan"/>
+  <text x="138.0" y="730" class="t c">u/z, v/z, 1/z</text>
+  <text x="138.0" y="748" class="b c">pro Pixel addieren</text>
+  <text x="138.0" y="788" class="m c">Pixel 6</text>
+  <rect x="266" y="704" width="196" height="62" rx="8" class="plan"/>
+  <text x="364.0" y="730" class="t c">Kehrwert z</text>
+  <text x="364.0" y="748" class="b c">Tabelle + Newton-Schritt</text>
+  <text x="364.0" y="788" class="m c">Pixel 5</text>
+  <path d="M239,735.0 H263" class="wp" marker-end="url(#arrp)"/>
+  <rect x="492" y="704" width="196" height="62" rx="8" class="plan"/>
+  <text x="590.0" y="730" class="t c">u, v</text>
+  <text x="590.0" y="748" class="b c">zwei Multiplikationen</text>
+  <text x="590.0" y="788" class="m c">Pixel 4</text>
+  <path d="M465,735.0 H489" class="wp" marker-end="url(#arrp)"/>
+  <rect x="718" y="704" width="196" height="62" rx="8" class="plan"/>
+  <text x="816.0" y="730" class="t c">Texel holen</text>
+  <text x="816.0" y="748" class="b c">Textur-Cache, cram0</text>
+  <text x="816.0" y="788" class="m c">Pixel 3</text>
+  <path d="M691,735.0 H715" class="wp" marker-end="url(#arrp)"/>
+  <rect x="944" y="704" width="196" height="62" rx="8" class="plan"/>
+  <text x="1042.0" y="730" class="t c">Zeichenart</text>
+  <text x="1042.0" y="748" class="b c">16 · 64 · 128 · 224 (SMG)</text>
+  <text x="1042.0" y="788" class="m c">Pixel 2</text>
+  <path d="M917,735.0 H941" class="wp" marker-end="url(#arrp)"/>
+  <rect x="1170" y="704" width="196" height="62" rx="8" class="plan"/>
+  <text x="1268.0" y="730" class="t c">schreiben</text>
+  <text x="1268.0" y="748" class="b c">Framebuffer</text>
+  <text x="1268.0" y="788" class="m c">Pixel 1</text>
+  <path d="M1143,735.0 H1167" class="wp" marker-end="url(#arrp)"/>
+  <text x="40" y="816" class="l">Im selben Takt: Pixel 6 wird gerade erst begonnen, Pixel 1 schon geschrieben. Zeichenart 224 (Glas, Schatten, Scheinwerfer) liest dazu den Pixel im Bild und schlägt das Ergebnis in der Tabelle MAPn.SMG nach.</text>
+</svg>
