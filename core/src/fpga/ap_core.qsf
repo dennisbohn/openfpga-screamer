@@ -309,10 +309,12 @@ set_global_assignment -name ROUTER_CLOCKING_TOPOLOGY_ANALYSIS ON
 set_global_assignment -name ECO_OPTIMIZE_TIMING ON
 set_global_assignment -name PERIPHERY_TO_CORE_PLACEMENT_AND_ROUTING_OPTIMIZATION ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_COMBO_LOGIC ON
-set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_DUPLICATION ON
+set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_DUPLICATION OFF
 set_global_assignment -name PHYSICAL_SYNTHESIS_REGISTER_RETIMING ON
 set_global_assignment -name PHYSICAL_SYNTHESIS_ASYNCHRONOUS_SIGNAL_PIPELINING ON
-set_global_assignment -name FITTER_EFFORT "AUTO FIT"
+set_global_assignment -name FITTER_EFFORT "STANDARD FIT"
+set_global_assignment -name OPTIMIZE_HOLD_TIMING "ALL PATHS"
+set_global_assignment -name OPTIMIZE_MULTI_CORNER_TIMING ON
 set_global_assignment -name ROUTER_LCELL_INSERTION_AND_LOGIC_DUPLICATION ON
 
 # Assembler Assignments
@@ -745,6 +747,7 @@ set_global_assignment -name VERILOG_FILE core/cfu_fixmul.v
 set_global_assignment -name VERILOG_FILE core/ram_lane.v
 set_global_assignment -name VERILOG_FILE core/soc.v
 set_global_assignment -name VERILOG_FILE core/raster.v
+set_global_assignment -name VERILOG_FILE core/raster_tex.v
 set_global_assignment -name VERILOG_FILE core/framebuffer.v
 set_global_assignment -name VERILOG_FILE core/video_out.v
 set_global_assignment -name VERILOG_FILE core/sdram.v

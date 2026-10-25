@@ -288,6 +288,9 @@ end
     reg         sdram_reinit = 0;
 
     wire        bridge_sdram = bridge_addr[31:26] == 6'b000100;
+    wire        rs_mem_valid, rs_mem_ready, rs_mem_rsp_valid;     // texture lines (raster.v)
+    wire [25:5] rs_mem_addr;
+    wire [31:0] rs_mem_rsp_data;
 
 sdram_port sdp (
     .clk                ( clk ),
@@ -309,6 +312,11 @@ sdram_port sdp (
     .db_rsp_data        ( sdp_db_rsp_data ),
     .db_rsp_error       ( sdp_db_rsp_error ),
     .db_rsp_last        ( sdp_db_rsp_last ),
+    .rs_cmd_valid       ( rs_mem_valid ),
+    .rs_cmd_ready       ( rs_mem_ready ),
+    .rs_cmd_addr        ( rs_mem_addr ),
+    .rs_rsp_valid       ( rs_mem_rsp_valid ),
+    .rs_rsp_data        ( rs_mem_rsp_data ),
     .br_wr              ( bridge_wr && bridge_sdram ),
     .br_addr            ( bridge_addr[25:2] ),
     .br_data            ( swap32(bridge_wr_data) ),
@@ -527,8 +535,8 @@ psram32 ps0 (
     wire [31:0] rs_pixels, rs_fb_data;
     wire [13:0] rs_fb_addr;
     wire [3:0]  rs_fb_be;
-    wire        rs_wr = d_write && d_region == R_REG && d_addr[15:5] == 11'h180;
-    wire        rs_start = rs_wr && d_addr[4:2] == 3'd5;
+    wire        rs_wr = d_write && d_region == R_REG && d_addr[15:7] == 9'h060;   // 0x3000-0x307C
+    wire        rs_start = rs_wr && d_addr[6:2] == 5'd5;
     wire        rs_waits = (rs_busy || rs_start) && (cmd_region == R_FB ||
                            (dbus_cmd_wr && cmd_region == R_REG && dbus_cmd_addr[15:0] == 16'h3014));
 
@@ -536,7 +544,7 @@ raster rs (
     .clk                ( clk ),
     .reset              ( cpu_reset ),
     .wr                 ( rs_wr ),
-    .wr_addr            ( d_addr[4:2] ),
+    .wr_addr            ( d_addr[6:2] ),
     .wr_data            ( d_data ),
     .busy               ( rs_busy ),
     .pixels             ( rs_pixels ),
@@ -544,7 +552,12 @@ raster rs (
     .fb_buf             ( rs_fb_buf ),
     .fb_addr            ( rs_fb_addr ),
     .fb_data            ( rs_fb_data ),
-    .fb_be              ( rs_fb_be )
+    .fb_be              ( rs_fb_be ),
+    .mem_valid          ( rs_mem_valid ),
+    .mem_ready          ( rs_mem_ready ),
+    .mem_addr           ( rs_mem_addr ),
+    .mem_rsp_valid      ( rs_mem_rsp_valid ),
+    .mem_rsp_data       ( rs_mem_rsp_data )
 );
 
     assign dbus_cmd_ready = d_state == D_IDLE && !cpu_reset && sdp_db_cmd_ready &&

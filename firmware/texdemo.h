@@ -6,6 +6,17 @@
 #include <stdint.h>
 #include "raster.h"
 
+/* how texdemo_draw() draws: the floating-point reference, the fixed-point model, or through
+   texdemo_hw (the rasterizer; fb is not used then and the pixel count is texdemo_hw's) */
+#define TEXDEMO_FLOAT   0
+#define TEXDEMO_FIXED   1
+#define TEXDEMO_HW      2
+extern int texdemo_mode;
+extern uint32_t (*texdemo_hw)(const struct rs_vertex pos[3], const struct rs_tex_setup *s, const struct rs_texture *t);
+
+/* Write a stand-in texture file (test patterns, test palette) at file */
+void texdemo_synth(volatile uint8_t *file);
+
 /* Check the texture file at file; returns the number of textures, 0 if none was loaded. */
 int texdemo_init(const volatile uint8_t *file);
 

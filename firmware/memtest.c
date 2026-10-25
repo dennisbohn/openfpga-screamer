@@ -546,8 +546,8 @@ static void measure(void)
         if(hit < line_hit) line_hit = hit;
     }
     dcache_invalidate();
-    read_mbs = (uint32_t)((uint64_t)n * 7425 / (read_cycles(b, b + n) * 100u));
-    write_mbs = (uint32_t)((uint64_t)n * 7425 / (write_cycles(b, b + n) * 100u));
+    read_mbs = n * 7425u / (read_cycles(b, b + n) * 100u);     /* n * 7425 < 2^32 */
+    write_mbs = n * 7425u / (write_cycles(b, b + n) * 100u);
     dlog_str("SDRAM line read: row hit ");
     dlog_dec((int32_t)line_hit);
     dlog_str(" cycles, row miss ");

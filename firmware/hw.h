@@ -94,7 +94,16 @@
 #define RS_CLIP1        REG32(0xF0003010u)  /* [15:0] x1, [31:16] y1, pixels, exclusive */
 #define RS_DRAW         REG32(0xF0003014u)  /* W: colour | buffer << 8, starts; R: RS_BUSY */
 #define RS_PIXELS       REG32(0xF0003018u)  /* R: pixels drawn; W: clears */
+#define RS_TEX          REG32(0xF000301Cu)  /* texture page: SDRAM byte address >> 8, rows of 256 bytes */
+#define RS_TEXSIZE      REG32(0xF0003020u)  /* [8:0] width, [24:16] height (1..256), [31] RS_CUT */
+#define RS_REF          REG32(0xF0003024u)  /* reference pixel, RS_XY(x, y) */
+#define RS_A(k)         REG32(0xF0003028u + 4u * (k))   /* Q, U, V at the reference pixel (rs_tex_setup) */
+#define RS_DX(k)        REG32(0xF0003034u + 4u * (k))   /* their change per pixel in x, 8 fraction bits */
+#define RS_DY(k)        REG32(0xF0003040u + 4u * (k))   /* ... in y */
+#define RS_CTRL         REG32(0xF000304Cu)  /* W: any value forgets the cached texture lines */
 #define RS_BUSY         (1u << 0)
+#define RS_TEXTURED     (1u << 9)           /* RS_DRAW: textured with RS_TEX ... RS_DY */
+#define RS_CUT          (1u << 31)          /* RS_TEXSIZE: texel 0 is see-through */
 #define RS_XY(x, y)     ((uint32_t)(uint16_t)(y) << 16 | (uint16_t)(x))
 
 /* Cache maintenance: invalidate the whole data cache (it is write-through, so nothing is

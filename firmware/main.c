@@ -144,62 +144,21 @@ static void draw_results(volatile uint8_t *fb)
 }
 
 /*
- * Triangle demo: two wheels that turn opposite ways and overlap (the right one is drawn
- * later and covers the left), and a triangle on top that the d-pad moves.
+ * The demo: the texture scene (texdemo.c) through the rasterizer, and on top a triangle in
+ * one colour that the d-pad moves
  */
-static int16_t sin_q14[256];    /* sin(2 pi i / 256), 1.0 = 16384 */
-
-static void sin_init(void)
-{
-    const float dc = 0.99969881869620f, ds = 0.02454122852291f;    /* cos, sin of 2 pi / 256 */
-    float c = 1.0f, s = 0.0f;
-    for (int i = 0; i < 256; i++) {
-        sin_q14[i] = (int16_t)(s * 16384.0f + (s < 0.0f ? -0.5f : 0.5f));
-        float t = c * dc - s * ds;
-        s = s * dc + c * ds;
-        c = t;
-    }
-}
-
-/* a point at radius r (pixels) and angle a (1/256 turn) around the centre (cx, cy), in 1/16 pixel */
-static struct rs_vertex polar(int cx, int cy, int r, int a)
-{
-    struct rs_vertex v;
-    v.x = cx * 16 + ((r * sin_q14[(a + 64) & 255]) >> 10);
-    v.y = cy * 16 + ((r * sin_q14[a & 255]) >> 10);
-    return v;
-}
-
 static const struct rs_clip demo_clip = { 0, 48, FB_W, 168 };  /* text rows 6..20 */
 static int player_x = 160 * 16, player_y = 120 * 16;
+static uint8_t col_player = COL_SQUARE;
+static uint32_t draw_buf;               /* the back buffer, for hw_textured() */
 
 struct demo_stats { uint32_t triangles, pixels, cycles; };
-struct demo_tri { struct rs_vertex v[3]; uint8_t colour; };
 
-#define DEMO_TRIS   15
 #define CHECK_BUF   ((volatile uint8_t *)(SDRAM_BASE + 0x100000))  /* the C model's picture */
 
-/* this frame's triangles in drawing order */
-static void demo_list(struct demo_tri t[DEMO_TRIS], uint32_t frame, uint32_t keys)
+/* the player's triangle: 2 pixels a frame, kept inside the demo area */
+static void player(struct rs_vertex v[3], uint32_t keys)
 {
-    static const uint8_t left_cols[8] = { 0, 32, 64, 96, 128, 160, 224, 255 };
-    static const uint8_t right_cols[6] = { 16, 48, 112, 144, 208, 240 };
-    int a = (int)frame, n = 0;
-
-    for (int k = 0; k < 8; k++, n++) {      /* left wheel, clockwise */
-        t[n].v[0] = polar(110, 108, 0, 0);
-        t[n].v[1] = polar(110, 108, 58, a + 32 * k);
-        t[n].v[2] = polar(110, 108, 34, a + 32 * k + 18);
-        t[n].colour = left_cols[k];
-    }
-    for (int k = 0; k < 6; k++, n++) {      /* right wheel, anticlockwise, drawn over the left */
-        t[n].v[0] = polar(200, 108, 0, 0);
-        t[n].v[1] = polar(200, 108, 56, -a + 43 * k);
-        t[n].v[2] = polar(200, 108, 56, -a + 43 * k + 24);
-        t[n].colour = right_cols[k];
-    }
-
-    /* the player's triangle: 2 pixels a frame, kept inside the demo area */
     if (keys & KEY_LEFT) player_x -= 32;
     if (keys & KEY_RIGHT) player_x += 32;
     if (keys & KEY_UP) player_y -= 32;
@@ -208,40 +167,57 @@ static void demo_list(struct demo_tri t[DEMO_TRIS], uint32_t frame, uint32_t key
     if (player_x > (FB_W - 12) * 16) player_x = (FB_W - 12) * 16;
     if (player_y < 60 * 16) player_y = 60 * 16;
     if (player_y > 156 * 16) player_y = 156 * 16;
-    t[n].v[0] = (struct rs_vertex){ player_x, player_y - 12 * 16 };
-    t[n].v[1] = (struct rs_vertex){ player_x + 11 * 16, player_y + 10 * 16 };
-    t[n].v[2] = (struct rs_vertex){ player_x - 11 * 16, player_y + 10 * 16 };
-    t[n].colour = COL_SQUARE;
+    v[0] = (struct rs_vertex){ player_x, player_y - 12 * 16 };
+    v[1] = (struct rs_vertex){ player_x + 11 * 16, player_y + 10 * 16 };
+    v[2] = (struct rs_vertex){ player_x - 11 * 16, player_y + 10 * 16 };
 }
 
-/* the triangles through the rasterizer into buffer buf; the CPU only writes registers */
-static struct demo_stats draw_demo(const struct demo_tri t[DEMO_TRIS], int buf)
+/* one textured triangle to the rasterizer: the CPU only writes registers */
+static uint32_t hw_textured(const struct rs_vertex pos[3], const struct rs_tex_setup *s, const struct rs_texture *t)
+{
+    for (int k = 0; k < 3; k++) RS_V(k) = RS_XY(pos[k].x, pos[k].y);
+    RS_TEX = (uint32_t)((uintptr_t)t->data - SDRAM_BASE) >> 8;
+    RS_TEXSIZE = (uint32_t)t->width | (uint32_t)t->height << 16 | (t->routine == 64 ? RS_CUT : 0);
+    RS_REF = RS_XY(s->xr, s->yr);
+    for (int k = 0; k < 3; k++) {
+        RS_A(k) = (uint32_t)s->a[k];
+        RS_DX(k) = (uint32_t)s->dx[k];
+        RS_DY(k) = (uint32_t)s->dy[k];
+    }
+    RS_DRAW = draw_buf << 8 | RS_TEXTURED;      /* waits while the previous one draws */
+    return 0;
+}
+
+static struct demo_stats draw_demo(uint32_t frame, const struct rs_vertex pv[3], int buf)
 {
     struct demo_stats d;
     uint32_t t0 = rdcycle();
+    draw_buf = (uint32_t)buf;
     RS_PIXELS = 0;
     RS_CLIP0 = RS_XY(demo_clip.x0, demo_clip.y0);
     RS_CLIP1 = RS_XY(demo_clip.x1, demo_clip.y1);
-    for (int i = 0; i < DEMO_TRIS; i++) {
-        for (int k = 0; k < 3; k++) RS_V(k) = RS_XY(t[i].v[k].x, t[i].v[k].y);
-        RS_DRAW = t[i].colour | (uint32_t)buf << 8;    /* waits while the previous one draws */
-    }
+    texdemo_mode = TEXDEMO_HW;
+    texdemo_draw(0, &demo_clip, frame, &d.triangles);
+    for (int k = 0; k < 3; k++) RS_V(k) = RS_XY(pv[k].x, pv[k].y);
+    RS_DRAW = col_player | (uint32_t)buf << 8;
     while (RS_DRAW & RS_BUSY)
         ;
     d.cycles = rdcycle() - t0;
     d.pixels = RS_PIXELS;
-    d.triangles = DEMO_TRIS;
+    d.triangles += 1;
     return d;
 }
 
-/* Once per run: the same triangles through the C model into the SDRAM, then the demo area
-   of both pictures compared pixel by pixel */
-static void raster_check(volatile uint8_t *fb, const struct demo_tri t[DEMO_TRIS], uint32_t hw_pixels)
+/* Once per run: the same picture through the C model into the SDRAM, then the demo area of
+   both compared pixel by pixel */
+static void raster_check(volatile uint8_t *fb, uint32_t frame, const struct rs_vertex pv[3], uint32_t hw_pixels)
 {
     volatile uint8_t *m = CHECK_BUF;
-    uint32_t pixels = 0, differ = 0, first = 0;
+    uint32_t pixels, differ = 0, first = 0, tris;
     fb_fill(m, demo_clip.x0, demo_clip.y0, demo_clip.x1 - demo_clip.x0, demo_clip.y1 - demo_clip.y0, col_bg);
-    for (int i = 0; i < DEMO_TRIS; i++) pixels += rs_triangle(m, &demo_clip, t[i].v, t[i].colour);
+    texdemo_mode = TEXDEMO_FIXED;
+    pixels = texdemo_draw(m, &demo_clip, frame, &tris);
+    pixels += rs_triangle(m, &demo_clip, pv, col_player);
     for (int y = demo_clip.y0; y < demo_clip.y1; y++)
         for (int x = demo_clip.x0; x < demo_clip.x1; x++)
             if (fb[y * FB_W + x] != m[y * FB_W + x] && differ++ == 0) first = (uint32_t)(y * FB_W + x);
@@ -279,16 +255,6 @@ static uint8_t nearest(const volatile uint32_t *pal, int r, int g, int b)
     return n;
 }
 
-/* the texture demo, drawn by the CPU with the C model */
-static struct demo_stats draw_texdemo(volatile uint8_t *fb, uint32_t frame)
-{
-    struct demo_stats d;
-    uint32_t t0 = rdcycle();
-    d.pixels = texdemo_draw(fb, &demo_clip, frame, &d.triangles);
-    d.cycles = rdcycle() - t0;
-    return d;
-}
-
 static void draw_status(volatile uint8_t *fb, uint32_t st, uint32_t drawn, const struct demo_stats *d)
 {
     char buf[CON_COLS + 1];
@@ -301,7 +267,15 @@ static void draw_status(volatile uint8_t *fb, uint32_t st, uint32_t drawn, const
         fmt_udec(fmt_str(p, " Takte "), d->cycles);
         con_text(fb, 1, 22, buf, col_text, col_bg);
     }
-    fmt_udec(fmt_str(fmt_udec(fmt_str(buf, "Bild "), VID_FRAME(st)), "  gezeichnet "), drawn);
+    /* frames drawn in the last second (60 video frames) */
+    static uint32_t fps, fps_drawn, fps_frame;
+    if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= 60) {
+        fps = drawn - fps_drawn;
+        fps_drawn = drawn;
+        fps_frame = VID_FRAME(st);
+    }
+    char *q = fmt_udec(fmt_str(fmt_udec(fmt_str(buf, "Bild "), VID_FRAME(st)), "  gezeichnet "), drawn);
+    fmt_udec(fmt_str(q, "  FPS "), fps);
     con_text(fb, 1, 23, buf, col_text, col_bg);
 }
 
@@ -350,14 +324,21 @@ int main(void)
         col_text = nearest(pal, 255, 255, 255);
         col_dim = nearest(pal, 120, 200, 120);
         col_alert = nearest(pal, 230, 25, 178);
+        col_player = nearest(pal, 85, 170, 255);
         dlog_str("textures: ");
         dlog_dec(textures);
-        dlog_str(" from data slot 3, drawn by the CPU (C model)\n");
+        dlog_str(" from data slot 3\n");
     } else {
-        dlog_str("textures: none (data slot 3 not loaded), flat triangles by the rasterizer\n");
+        /* no textures.bin: test patterns instead, written before the rasterizer reads them */
+        texdemo_synth((volatile uint8_t *)TEX_FILE);
+        while (!(MEM_STATUS & MEM_WRITES_IDLE))
+            ;
+        textures = texdemo_init(TEX_FILE);
+        dlog_str("textures: none in data slot 3, test patterns instead\n");
     }
+    RS_CTRL = 1;                    /* the texture cache forgets what it held */
+    texdemo_hw = hw_textured;
 
-    sin_init();
     uint32_t drawn = 0;
     for (;;) {
         st = wait_swap_done();
@@ -372,19 +353,15 @@ int main(void)
         }
         uint32_t keys = IN_KEY;
         volatile uint8_t *fb = FB(!(st & VID_FRONT));  /* the back buffer */
-        draw_frame(fb, textures ? "SCREAMER POCKET - TEXTUREN" : "SCREAMER POCKET - DREIECKE");
+        draw_frame(fb, "SCREAMER POCKET - TEXTUREN");
         if (keys & KEY_SELECT) {
             draw_results(fb);
             draw_status(fb, st, drawn, 0);
-        } else if (textures) {
-            fb_fill(fb, demo_clip.x0, demo_clip.y0, demo_clip.x1 - demo_clip.x0, demo_clip.y1 - demo_clip.y0, col_bg);
-            struct demo_stats d = draw_texdemo(fb, drawn);
-            draw_status(fb, st, drawn, &d);
         } else {
-            struct demo_tri tris[DEMO_TRIS];
-            demo_list(tris, drawn, keys);
-            struct demo_stats d = draw_demo(tris, !(st & VID_FRONT));
-            if (drawn == 2) raster_check(fb, tris, d.pixels);
+            struct rs_vertex pv[3];
+            player(pv, keys);
+            struct demo_stats d = draw_demo(drawn, pv, !(st & VID_FRONT));
+            if (drawn == 2) raster_check(fb, drawn, pv, d.pixels);
             draw_status(fb, st, drawn, &d);
             if (drawn == 2) {
                 dlog_str("frame 2: ");

@@ -87,6 +87,11 @@ sdram_port sdp (
     .db_rsp_data        ( db_rsp_data ),
     .db_rsp_error       ( db_rsp_error ),
     .db_rsp_last        ( db_rsp_last ),
+    .rs_cmd_valid       ( 1'b0 ),           // the rasterizer's port is not driven here
+    .rs_cmd_ready       ( ),
+    .rs_cmd_addr        ( 21'd0 ),
+    .rs_rsp_valid       ( ),
+    .rs_rsp_data        ( ),
     .br_wr              ( br_wr ),
     .br_addr            ( br_addr ),
     .br_data            ( br_data ),

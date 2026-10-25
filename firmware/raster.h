@@ -33,3 +33,19 @@ struct rs_texture {
 
 uint32_t rs_textured(volatile uint8_t *fb, const struct rs_clip *clip,
                      const struct rs_tvertex v[3], const struct rs_texture *tex);
+
+/*
+ * The same in fixed point, bit for bit what the hardware draws. Per triangle a reference
+ * pixel and, for Q (= 1/z scaled below 2^24), U (= u/256 Q) and V, the value at its centre
+ * and the change per pixel in x and y with 8 fraction bits. rs_tex_setup() makes them from
+ * the floating-point vertices (returns 0 for a triangle without area).
+ */
+struct rs_tex_setup {
+    int32_t xr, yr;                             /* reference pixel, on the screen */
+    int32_t a[3];                               /* Q, U, V at its centre */
+    int32_t dx[3], dy[3];                       /* per pixel, 8 fraction bits */
+};
+
+int rs_tex_setup(struct rs_tex_setup *s, const struct rs_tvertex v[3]);
+uint32_t rs_textured_fx(volatile uint8_t *fb, const struct rs_clip *clip, const struct rs_vertex pos[3],
+                        const struct rs_tex_setup *s, const struct rs_texture *tex);

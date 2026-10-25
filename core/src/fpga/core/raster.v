@@ -8,16 +8,25 @@
 //   0.5)), limited to the clip rectangle.
 // Vertices are signed 16 bit in 1/16 pixel. Setup: one division per edge (32 clocks, one
 // quotient bit a clock) and one multiplication, two or three edges a triangle. Then three
-// clocks per row and one per framebuffer word: up to four pixels a clock.
+// clocks per row and, for one colour, one per framebuffer word: up to four pixels a clock.
+// Textured (raster_tex.v): Q, U, V at the span's first pixel from the triangle's reference
+// pixel, a = (A << 8) + dx (x0 - xr) + dy (r - yr) (four clocks a row), then one pixel a
+// clock into the texture pipeline, a += dx each.
 //
-// Registers (soc.v maps them at 0xF000_3000 + 4 * wr_addr):
-//   0..2  vertex n: [15:0] x, [31:16] y. Only copied when a triangle starts, so the next one
-//         can be set up while one is drawn.
+// Registers (soc.v maps them at 0xF000_3000 + 4 * wr_addr). Everything but 5, 6 and 19 is
+// copied when a triangle starts, so the next one can be set up while one is drawn.
+//   0..2  vertex n: [15:0] x, [31:16] y
 //   3     clip: [15:0] x0, [31:16] y0      4  clip: [15:0] x1, [31:16] y1 (exclusive),
 //         pixels, limited to the screen
-//   5     draw: [7:0] colour, [8] buffer; starts the triangle (soc.v holds this write back
-//         while busy)
+//   5     draw: [7:0] colour, [8] buffer, [9] textured; starts the triangle (soc.v holds
+//         this write back while busy)
 //   6     clears the pixel counter
+//   7     texture page: SDRAM byte address >> 8 (rows of 256 bytes)
+//   8     texture: [8:0] width, [24:16] height (1..256), [31] texel 0 see-through
+//   9     reference pixel: [15:0] x, [31:16] y
+//   10..12  Q, U, V at the reference pixel's centre (signed)
+//   13..15  their change per pixel in x, 8 fraction bits    16..18  the same in y
+//   19    write: forget the cached texture lines (after the CPU changed textures)
 //
 
 module raster (
@@ -25,41 +34,68 @@ module raster (
     input   wire            reset,              // abandons the triangle being drawn
 
     input   wire            wr,
-    input   wire    [2:0]   wr_addr,
+    input   wire    [4:0]   wr_addr,
     input   wire    [31:0]  wr_data,
     output  wire            busy,
     output  reg     [31:0]  pixels = 0,         // pixels drawn since the last clear
 
     // framebuffer drawing port, a word of four pixels; be[3] is the leftmost pixel
-    output  reg             fb_wr = 0,
+    output  wire            fb_wr,
     output  reg             fb_buf,
-    output  reg     [13:0]  fb_addr,
+    output  wire    [13:0]  fb_addr,
     output  wire    [31:0]  fb_data,
-    output  reg     [3:0]   fb_be
+    output  wire    [3:0]   fb_be,
+
+    // texture lines from the SDRAM (sdram_port)
+    output  wire            mem_valid,
+    input   wire            mem_ready,
+    output  wire    [25:5]  mem_addr,
+    input   wire            mem_rsp_valid,
+    input   wire    [31:0]  mem_rsp_data
 );
 
-    localparam  [2:0]   S_IDLE = 3'd0;
-    localparam  [2:0]   S_ROWS = 3'd1;          // first, middle and last row
-    localparam  [2:0]   S_EDGE = 3'd2;          // edge setup (div, mul, add)
-    localparam  [2:0]   S_ROW  = 3'd3;          // a row: left and right edge, rounded
-    localparam  [2:0]   S_CLIP = 3'd4;          // limited to the clip rectangle
-    localparam  [2:0]   S_SPAN = 3'd5;          // its words, or the next row if empty
-    localparam  [2:0]   S_FILL = 3'd6;          // the words
+    localparam  [3:0]   S_IDLE = 4'd0;
+    localparam  [3:0]   S_ROWS = 4'd1;          // first, middle and last row
+    localparam  [3:0]   S_EDGE = 4'd2;          // edge setup (div, mul, add)
+    localparam  [3:0]   S_ROW  = 4'd3;          // a row: left and right edge, rounded
+    localparam  [3:0]   S_CLIP = 4'd4;          // limited to the clip rectangle
+    localparam  [3:0]   S_SPAN = 4'd5;          // its words, or the next row if empty
+    localparam  [3:0]   S_FILL = 4'd6;          // the words of one colour
+    localparam  [3:0]   S_ACC  = 4'd7;          // textured: Q, U, V at the span's first pixel
+    localparam  [3:0]   S_TEX  = 4'd8;          // textured: the pixels into raster_tex
 
-    reg  [2:0]  state = S_IDLE;
-    assign busy = state != S_IDLE || fb_wr;
+    reg  [3:0]  state = S_IDLE;
+    reg         flat_wr = 0;                    // one-colour words
+    reg  [13:0] flat_addr;
+    reg  [3:0]  flat_be;
+    wire        tex_busy, tex_wr, tex_ready;
+    wire [13:0] tex_word;
+    wire [3:0]  tex_be;
+    wire [7:0]  tex_texel;
+    assign busy = state != S_IDLE || flat_wr || tex_busy;
 
 //
 // registers the CPU writes
 //
     reg  [31:0] v_reg [0:2];
-    reg  [31:0] clip0, clip1;
-    wire        start = wr && wr_addr == 3'd5 && state == S_IDLE && !reset;
+    reg  [31:0] clip0, clip1, tex_reg, size_reg, ref_reg;
+    reg  [31:0] a_reg [0:2];
+    reg  [31:0] dx_reg [0:2];
+    reg  [31:0] dy_reg [0:2];
+    wire        start = wr && wr_addr == 5'd5 && state == S_IDLE && !reset;
+    wire [4:0]  wr_a5 = wr_addr - 5'd10, wr_dx5 = wr_addr - 5'd13, wr_dy5 = wr_addr - 5'd16;
+    wire [1:0]  wr_addr_a = wr_a5[1:0], wr_addr_dx = wr_dx5[1:0], wr_addr_dy = wr_dy5[1:0];
 
 always @(posedge clk) begin
-    if(wr && wr_addr <= 3'd2) v_reg[wr_addr[1:0]] <= wr_data;
-    if(wr && wr_addr == 3'd3) clip0 <= wr_data;
-    if(wr && wr_addr == 3'd4) clip1 <= wr_data;
+    if(wr && wr_addr <= 5'd2) v_reg[wr_addr[1:0]] <= wr_data;
+    if(wr && wr_addr == 5'd3) clip0 <= wr_data;
+    if(wr && wr_addr == 5'd4) clip1 <= wr_data;
+    if(wr && wr_addr == 5'd7) tex_reg <= wr_data;
+    if(wr && wr_addr == 5'd8) size_reg <= wr_data;
+    if(wr && wr_addr == 5'd9) ref_reg <= wr_data;
+    if(wr && wr_addr >= 5'd10 && wr_addr <= 5'd12) a_reg[wr_addr_a] <= wr_data;
+    if(wr && wr_addr >= 5'd13 && wr_addr <= 5'd15) dx_reg[wr_addr_dx] <= wr_data;
+    if(wr && wr_addr >= 5'd16 && wr_addr <= 5'd18) dy_reg[wr_addr_dy] <= wr_data;
 end
 
     // sorted by y with the swaps of the C model
@@ -104,7 +140,54 @@ end
     reg  [9:0]  px0, px1;                       // span [px0, px1)
     reg  [7:0]  w, w1;                          // framebuffer words of the span, w1 inclusive
 
-    assign fb_data = {4{colour}};
+    // textured
+    reg         textured;
+    reg  [17:0] t_base;
+    reg  [8:0]  t_w, t_h;
+    reg         t_cut;
+    reg signed [15:0] t_xr, t_yr;
+    reg signed [31:0] t_a [0:2];
+    reg signed [31:0] t_dx [0:2];
+    reg signed [31:0] t_dy [0:2];
+    reg signed [43:0] acc [0:2];                // Q, U, V at pixel x, 8 fraction bits
+    reg signed [42:0] acc_px, acc_py;           // dx (x0 - xr), dy (r - yr)
+    reg  [1:0]  acc_k;
+    reg  [9:0]  x;                              // textured: the pixel going in
+
+    wire signed [10:0] acc_dx = $signed({1'b0, px0}) - $signed(t_xr[10:0]);
+    wire signed [10:0] acc_dy = r[10:0] - t_yr[10:0];
+
+    assign fb_wr = flat_wr || tex_wr;
+    assign fb_addr = tex_wr ? tex_word : flat_addr;
+    assign fb_be = tex_wr ? tex_be : flat_be;
+    assign fb_data = textured ? {4{tex_texel}} : {4{colour}};
+
+raster_tex rt (
+    .clk                ( clk ),
+    .reset              ( reset ),
+    .invalidate         ( wr && wr_addr == 5'd19 ),
+    .in_valid           ( state == S_TEX ),
+    .in_ready           ( tex_ready ),
+    .in_q               ( acc[0] ),
+    .in_u               ( acc[1] ),
+    .in_v               ( acc[2] ),
+    .in_word            ( row_base + {6'd0, x[9:2]} ),
+    .in_lane            ( x[1:0] ),
+    .tex_base           ( t_base ),
+    .tex_w              ( t_w ),
+    .tex_h              ( t_h ),
+    .tex_cut            ( t_cut ),
+    .busy               ( tex_busy ),
+    .out_wr             ( tex_wr ),
+    .out_word           ( tex_word ),
+    .out_be             ( tex_be ),
+    .out_texel          ( tex_texel ),
+    .mem_valid          ( mem_valid ),
+    .mem_ready          ( mem_ready ),
+    .mem_addr           ( mem_addr ),
+    .mem_rsp_valid      ( mem_rsp_valid ),
+    .mem_rsp_data       ( mem_rsp_data )
+);
 
 //
 // edge setup: slope = ((x1 - x0) << 16) / (y1 - y0), x = (x0 << 12) + (slope * dyc >>> 4)
@@ -153,7 +236,7 @@ end
 
     // byte enables of word w: pixel 4w + k is drawn when px0 <= 4w + k < px1
     reg  [3:0]  be;
-    integer     k;
+    integer     k, j;
 always @(*) begin
     be = 0;
     for(k = 0; k < 4; k = k + 1)
@@ -161,8 +244,8 @@ always @(*) begin
 end
 
 always @(posedge clk) begin
-    fb_wr <= 0;
-    if(wr && wr_addr == 3'd6) pixels <= 0;
+    flat_wr <= 0;
+    if(wr && wr_addr == 5'd6) pixels <= 0;
     else if(fb_wr) pixels <= pixels + fb_be[0] + fb_be[1] + fb_be[2] + fb_be[3];
 
     case(state)
@@ -172,6 +255,18 @@ always @(posedge clk) begin
         cx <= sx[2]; cy <= sy[2];
         colour <= wr_data[7:0];
         fb_buf <= wr_data[8];
+        textured <= wr_data[9];
+        t_base <= tex_reg[17:0];
+        t_w <= size_reg[8:0];
+        t_h <= size_reg[24:16];
+        t_cut <= size_reg[31];
+        t_xr <= ref_reg[15:0];
+        t_yr <= ref_reg[31:16];
+        for(j = 0; j < 3; j = j + 1) begin
+            t_a[j] <= a_reg[j];
+            t_dx[j] <= dx_reg[j];
+            t_dy[j] <= dy_reg[j];
+        end
         cx0 <= limit(clip0[15:0], 16'sd320);
         cy0 <= limit(clip0[31:16], 16'sd200);
         cx1 <= limit(clip1[15:0], 16'sd320);
@@ -252,16 +347,36 @@ always @(posedge clk) begin
     S_SPAN: begin
         w <= px0[9:2];
         w1 <= px_last[9:2];
-        if(px0 < px1) state <= S_FILL;
-        else next_row;
+        x <= px0;
+        acc_k <= 0;
+        if(px0 >= px1) next_row;
+        else state <= textured ? S_ACC : S_FILL;
     end
 
     S_FILL: begin
-        fb_wr <= 1;
-        fb_addr <= row_base + {6'd0, w};
-        fb_be <= be;
+        flat_wr <= 1;
+        flat_addr <= row_base + {6'd0, w};
+        flat_be <= be;
         w <= w + 1'b1;
         if(w == w1) next_row;
+    end
+
+    S_ACC: begin                                // products for k, the sum one clock later
+        acc_k <= acc_k + 1'b1;
+        if(acc_k != 2'd3) begin
+            acc_px <= t_dx[acc_k] * acc_dx;
+            acc_py <= t_dy[acc_k] * acc_dy;
+        end
+        if(acc_k != 2'd0)
+            acc[acc_k - 2'd1] <= $signed({{4{t_a[acc_k - 2'd1][31]}}, t_a[acc_k - 2'd1], 8'd0}) +
+                                 $signed({acc_px[42], acc_px}) + $signed({acc_py[42], acc_py});
+        if(acc_k == 2'd3) state <= S_TEX;
+    end
+
+    S_TEX: if(tex_ready) begin
+        x <= x + 1'b1;
+        for(j = 0; j < 3; j = j + 1) acc[j] <= acc[j] + {{12{t_dx[j][31]}}, t_dx[j]};
+        if(x == px_last) next_row;
     end
 
     default: state <= S_IDLE;

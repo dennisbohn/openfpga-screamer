@@ -3,9 +3,10 @@
 // arbiter in front of sdram.v (docs/speicher.md)
 //
 // iBus and dBus speak VexRiscv's native cache-bus protocol, limited to what soc.v sends
-// here: iBus lines, dBus line reads, single reads and writes. cmd_ready is "register
-// empty" and comes from flops only, so both ports may take a command in the same clock.
-// At every job boundary the arbiter picks bridge buffer > dBus register > iBus register.
+// here: iBus lines, dBus line reads, single reads and writes; the rasterizer's texture
+// cache reads lines the same way as the iBus. cmd_ready is "register empty" and comes from
+// flops only, so the ports may take a command in the same clock. At every job boundary the
+// arbiter picks bridge buffer > dBus register > rasterizer register > iBus register.
 // Writes of one source run in the order they were taken; a read sees every write taken
 // before it (an iBus read may see later ones too).
 //
@@ -39,6 +40,13 @@ module sdram_port (
     output  reg             db_rsp_error,
     output  reg             db_rsp_last,
 
+    // texture lines for the rasterizer (raster_tex.v), 8 words each
+    input   wire            rs_cmd_valid,
+    output  wire            rs_cmd_ready,
+    input   wire    [25:5]  rs_cmd_addr,
+    output  reg             rs_rsp_valid = 0,
+    output  reg     [31:0]  rs_rsp_data,
+
     // bridge writes into the SDRAM, data already in the CPU's byte order
     input   wire            br_wr,
     input   wire    [25:2]  br_addr,
@@ -71,6 +79,7 @@ module sdram_port (
     localparam  [1:0]   P_IB = 2'd0;
     localparam  [1:0]   P_DB = 2'd1;
     localparam  [1:0]   P_BR = 2'd2;
+    localparam  [1:0]   P_RS = 2'd3;
 
     reg         reset_d = 0;
     reg         epoch = 0;
@@ -91,8 +100,13 @@ module sdram_port (
     reg  [31:0] db_data;
     reg  [3:0]  db_mask;
 
+    reg         rs_valid = 0;
+    reg         rs_busy = 0;
+    reg  [25:5] rs_addr;
+
     assign ib_cmd_ready = !ib_valid && !ib_busy && !cpu_reset;
     assign db_cmd_ready = !db_valid && !db_busy && !cpu_reset;
+    assign rs_cmd_ready = !rs_valid && !rs_busy && !cpu_reset;
 
 //
 // bridge buffer, 4 entries
@@ -107,15 +121,16 @@ module sdram_port (
 //
     wire        sel_br = bf_count != 0;
     wire        sel_db = !sel_br && db_valid;
-    wire        sel_ib = !sel_br && !db_valid && ib_valid;
+    wire        sel_rs = !sel_br && !db_valid && rs_valid;
+    wire        sel_ib = !sel_br && !db_valid && !rs_valid && ib_valid;
 
-    assign job_valid = sel_br || sel_db || sel_ib;
+    assign job_valid = sel_br || sel_db || sel_rs || sel_ib;
     assign job_write = sel_br || (sel_db && db_wr);
-    assign job_line  = sel_db ? db_line : sel_ib;
-    assign job_addr  = sel_br ? bf_addr[bf_rp] : sel_db ? db_addr : {ib_addr, 3'b000};
+    assign job_line  = sel_db ? db_line : sel_rs || sel_ib;
+    assign job_addr  = sel_br ? bf_addr[bf_rp] : sel_db ? db_addr : sel_rs ? {rs_addr, 3'b000} : {ib_addr, 3'b000};
     assign job_wdata = sel_br ? bf_data[bf_rp] : db_data;
     assign job_mask  = sel_br ? 4'b1111 : db_mask;
-    assign job_tag   = {epoch, sel_br ? P_BR : sel_db ? P_DB : P_IB};
+    assign job_tag   = {epoch, sel_br ? P_BR : sel_db ? P_DB : sel_rs ? P_RS : P_IB};
 
     wire        job_take = job_valid && job_ready;
 
@@ -124,6 +139,7 @@ module sdram_port (
     // read words for the current epoch
     wire        rd_ib = rd_valid && rd_tag == {epoch, P_IB} && !cpu_reset;
     wire        rd_db = rd_valid && rd_tag == {epoch, P_DB} && !cpu_reset;
+    wire        rd_rs = rd_valid && rd_tag == {epoch, P_RS} && !cpu_reset;
 
 always @(posedge clk) begin
     reset_d <= cpu_reset;
@@ -152,10 +168,23 @@ always @(posedge clk) begin
         db_valid <= 0;
         db_busy <= !db_wr;
     end
+    if(rs_cmd_valid && rs_cmd_ready) begin
+        rs_valid <= 1;
+        rs_addr <= rs_cmd_addr;
+    end
+    if(job_take && sel_rs) begin
+        rs_valid <= 0;
+        rs_busy <= 1;
+    end
 
     // words back
     ib_rsp_valid <= rd_ib;
     db_rsp_valid <= rd_db;
+    rs_rsp_valid <= rd_rs;
+    if(rd_rs) begin
+        rs_rsp_data <= rd_data;
+        if(rd_last) rs_busy <= 0;
+    end
     if(rd_ib) begin
         ib_rsp_data <= rd_data;
         ib_rsp_error <= rd_error && !rd_last;
@@ -174,6 +203,8 @@ always @(posedge clk) begin
         ib_busy <= 0;
         db_valid <= 0;
         db_busy <= 0;
+        rs_valid <= 0;
+        rs_busy <= 0;
     end
 
     // bridge buffer

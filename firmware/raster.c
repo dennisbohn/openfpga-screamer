@@ -22,7 +22,9 @@ struct edge { int64_t x, slope; };
 static struct edge edge_at(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int r)
 {
     struct edge e;
-    e.slope = ((int64_t)(x1 - x0) << 16) / (y1 - y0);
+    int32_t dx = x1 - x0;               /* |dx| < 2^16, so |dx| << 16 fits 32 bits unsigned */
+    uint32_t q = ((uint32_t)(dx < 0 ? -dx : dx) << 16) / (uint32_t)(y1 - y0);
+    e.slope = dx < 0 ? -(int64_t)q : (int64_t)q;
     e.x = ((int64_t)x0 << 12) + ((e.slope * (16 * r + 8 - y0)) >> 4);
     return e;
 }
@@ -162,4 +164,97 @@ uint32_t rs_textured(volatile uint8_t *fb, const struct rs_clip *clip,
     s.vq = plane_of(x, y, v[0].vq, v[1].vq, v[2].vq, det);
     s.tex = tex;
     return walk(fb, clip, pos, span_tex, &s);
+}
+
+/*
+ * Fixed point, what the hardware computes. Per pixel, with acc = A << 8 (8 fraction bits):
+ *   Q = max(acc_Q >> 8, 1); n = bit length of Q, e = n - 16, m = Q shifted to 16 bits
+ *   r0 = floor((2^32 - 1) / (2^15 + 32 m[14:5] + 16))     (a table of 1024 in hardware)
+ *   r = r0 (2^33 - m r0) >> 32                              (one Newton step, about 2^32 / m)
+ *   U = acc_U >> 8 limited to 27 bits signed, u = (U r) >> (16 + e), in texels with 8
+ *   fraction bits; v the same
+ * then the texel at (u >> 8, v >> 8), clamped to the texture.
+ */
+static uint32_t recip(uint32_t m)
+{
+    uint32_t r0 = 0xFFFFFFFFu / (0x8000u + ((m >> 5) & 1023u) * 32u + 16u);
+    uint64_t p = (uint64_t)m * r0;
+    return (uint32_t)(((uint64_t)r0 * ((1ull << 33) - p)) >> 32);
+}
+
+struct texfx_ctx { const struct rs_tex_setup *s; const struct rs_texture *tex; };
+
+static uint32_t span_texfx(volatile uint8_t *fb, int r, int x0, int x1, const void *ctx)
+{
+    const struct rs_tex_setup *s = ((const struct texfx_ctx *)ctx)->s;
+    const struct rs_texture *t = ((const struct texfx_ctx *)ctx)->tex;
+    volatile uint8_t *row = fb + r * FB_STRIDE;
+    int64_t acc[3];
+    for(int k = 0; k < 3; k++)
+        acc[k] = ((int64_t)s->a[k] << 8) + (int64_t)s->dx[k] * (x0 - s->xr) + (int64_t)s->dy[k] * (r - s->yr);
+    uint32_t n = 0;
+    for(int x = x0; x < x1; x++) {
+        int64_t qa = acc[0] >> 8;
+        uint32_t q = qa < 1 ? 1u : qa > 0x7FFFFFFF ? 0x7FFFFFFFu : (uint32_t)qa;
+        int e = -16;                                /* bit length - 16 */
+        while(e < 16 && q >> (e + 16)) e++;
+        uint32_t m = e >= 0 ? q >> e : q << -e;
+        int64_t rc = recip(m);
+        int64_t ua = acc[1] >> 8, va = acc[2] >> 8;
+        ua = ua < -(1 << 26) ? -(1 << 26) : ua > (1 << 26) - 1 ? (1 << 26) - 1 : ua;
+        va = va < -(1 << 26) ? -(1 << 26) : va > (1 << 26) - 1 ? (1 << 26) - 1 : va;
+        int64_t u = ((ua * rc) >> (16 + e)) >> 8;
+        int64_t v = ((va * rc) >> (16 + e)) >> 8;
+        int tu = u < 0 ? 0 : u >= t->width ? t->width - 1 : (int)u;
+        int tv = v < 0 ? 0 : v >= t->height ? t->height - 1 : (int)v;
+        uint8_t c = t->data[tv * 256 + tu];
+        if(c || t->routine != 64) {
+            row[x] = c;
+            n++;
+        }
+        for(int k = 0; k < 3; k++) acc[k] += s->dx[k];
+    }
+    return n;
+}
+
+uint32_t rs_textured_fx(volatile uint8_t *fb, const struct rs_clip *clip, const struct rs_vertex pos[3],
+                        const struct rs_tex_setup *s, const struct rs_texture *tex)
+{
+    struct texfx_ctx c = { s, tex };
+    return walk(fb, clip, pos, span_texfx, &c);
+}
+
+static int32_t sat_round(float f)
+{
+    if(f >= 2147483520.0f) return 0x7FFFFFFF;
+    if(f <= -2147483520.0f) return -0x7FFFFFFF;
+    return (int32_t)(f + (f < 0.0f ? -0.5f : 0.5f));
+}
+
+int rs_tex_setup(struct rs_tex_setup *s, const struct rs_tvertex v[3])
+{
+    float x[3], y[3], qmax = 0.0f;
+    for(int i = 0; i < 3; i++) {
+        x[i] = (float)v[i].x / 16.0f;
+        y[i] = (float)v[i].y / 16.0f;
+        if(v[i].q > qmax) qmax = v[i].q;
+    }
+    float det = (x[1] - x[0]) * (y[2] - y[0]) - (x[2] - x[0]) * (y[1] - y[0]);
+    if(det == 0.0f || qmax <= 0.0f) return 0;
+    float k = 11863283.0f / qmax;               /* 2^23.5: Q stays below 2^24 */
+    s->xr = v[0].x >> 4;
+    s->yr = v[0].y >> 4;
+    s->xr = s->xr < 0 ? 0 : s->xr > FB_STRIDE - 1 ? FB_STRIDE - 1 : s->xr;
+    s->yr = s->yr < 0 ? 0 : s->yr > 199 ? 199 : s->yr;
+    float fx = (float)s->xr + 0.5f - x[0], fy = (float)s->yr + 0.5f - y[0];
+    for(int c = 0; c < 3; c++) {
+        float a[3];
+        for(int i = 0; i < 3; i++)
+            a[i] = c == 0 ? v[i].q * k : (c == 1 ? v[i].uq : v[i].vq) * k / 256.0f;
+        struct plane p = plane_of(x, y, a[0], a[1], a[2], det);
+        s->a[c] = sat_round(p.a0 + p.ax * fx + p.ay * fy);
+        s->dx[c] = sat_round(p.ax * 256.0f);
+        s->dy[c] = sat_round(p.ay * 256.0f);
+    }
+    return 1;
 }
