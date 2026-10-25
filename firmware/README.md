@@ -1,8 +1,10 @@
 # Firmware (Schritt 3: Dreiecke)
 
-Das Programm für die RISC-V-CPU im Core. Speicherkarte, Register und was die Simulation
-prüft, stehen in [`docs/soc.md`](../docs/soc.md), der Speichertest in
-[`docs/speicher.md`](../docs/speicher.md).
+Die Programme für die RISC-V-CPU im Core, in zwei Teilen: `firmware.bin`, der Lader im
+Boot-RAM (`boot.c`: Selbsttests, Speichertest, Prüfung und Start des Programms), und
+`program.bin`, das Programm im SDRAM (`main.c`), das über die Caches läuft. Speicherkarte,
+Register, Startablauf und was die Simulation prüft, stehen in [`docs/soc.md`](../docs/soc.md),
+der Speichertest in [`docs/speicher.md`](../docs/speicher.md).
 
 Beim Start löscht die Firmware das Protokoll (`debug.txt`), trägt die Prüfsumme ihres
 eigenen Abbilds ein und prüft die CPU (Ganzzahl-Multiplikation, -Division und
@@ -34,12 +36,17 @@ Skript beim ersten Mal selbst. Ergebnis in `build/firmware/`: `firmware.bin` (h�
 
 | Datei | Inhalt |
 |---|---|
-| `start.S`, `link.ld` | Sprung bei `0x0`, Trap-Einsprung bei `0x20`, alles in den 32 KB Boot-RAM |
+| `start.S`, `link.ld` | Lader: Sprung bei `0x0`, Trap-Einsprung bei `0x20`, alles im Boot-RAM unterhalb von 24 KB |
+| `boot.c` | Lader: Selbsttests, Speichertest, Prüfung und Start von `program.bin` |
+| `start_prog.S`, `link_prog.ld` | Programm: Kopf (Größe, CRC-32, Einsprung), Start, eigener Trap-Einsprung, im SDRAM ab `0x1300_0000` |
+| `prog_crc.py` | trägt beim Bauen den CRC-32 in den Kopf von `program.bin` ein |
+| `main.c` | Programm: Textur-Szene Bild für Bild (Hardware, einmal gegen `raster.c` geprüft), FPS |
 | `hw.h` | Adressen und Register aus `docs/soc.md`, `rdcycle`, `fixmul` (CFU), Cache-Befehle |
-| `main.c` | Ablauf: Selbsttests, Speichertest, Dreiecke Bild für Bild (Hardware, einmal gegen `raster.c` geprüft) |
 | `selftest.c` | die drei Selbsttests mit festen Sollwerten |
 | `memtest.c` | der Speichertest (`docs/speicher.md`) |
-| `raster.c` | Rasterizer als C-Modell: Dreiecke mit genauer Pixelregel, Festkomma |
+| `raster.c` | Rasterizer als C-Modell: Dreiecke mit genauer Pixelregel, Texturen in Fest- und Fließkomma |
+| `texdemo.c` | die Szene (Fahne, Banner, Schild, Leitplanke), Testmuster ohne `textures.bin` |
+| `screen.c` | was Lader und Programm beide zeichnen |
 | `console.c` | Text (8×8-Font) und Rechtecke im Framebuffer, Zahlen ohne `printf` |
 | `dlog.c` | das Protokoll `debug.txt` |
 | `trap.c` | Trap-Handler |

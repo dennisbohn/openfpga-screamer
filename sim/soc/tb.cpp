@@ -11,17 +11,18 @@
 // Loading like the APF: the core held in reset, a bridge word at most every 88 clocks
 // (io_bridge_peripheral.v), firmware.bin to bridge address 0, the debug log slot filled
 // with 0xFF (debug.txt does not exist yet; the core must ignore it), then, after waiting
-// for the acknowledge core_top gives a slot write once the SDRAM is ready, firmware.bin a
-// second time into the SDRAM at 0x1000_0000 (data slot 2). Then reset is released.
+// for the acknowledge core_top gives a slot write once the SDRAM is ready, program.bin (next
+// to firmware.bin, if it is there) into the SDRAM at 0x1300_0000 (data slot 2). Then reset
+// is released: the boot loader tests, checks program.bin and starts it.
 //
 // Run until the firmware reports through SYS_SIM, then capture two more frames and check:
 // SYS_SIM, the model error counts and the longest refresh gap, the debug log's slot size
 // and header line, and print the log. A normal run also checks the test band of the last
-// frame and that the SDRAM slot passed. Then two resets as when the firmware is reloaded
+// frame and that program.bin passed its check. Then two resets as when the firmware is reloaded
 // from the menu (only firmware.bin is loaded again): one while buffer 1 is in front (the
 // swap request, the buffer in front and SYS_SIM must be 0 in reset), one in the middle of
-// the memory test's SDRAM traffic. The last run must pass like the first, report the SDRAM
-// slot as skipped (it was not loaded again) and swap nothing the CPU did not ask for. For
+// the memory test's SDRAM traffic. The last run must pass like the first with the
+// program.bin of the first load and swap nothing the CPU did not ask for. For
 // an expected trap (0xC0000000 | mcause, a fault test firmware) instead of the test band
 // the trap handler's report: its box on screen and its TRAP line in the log. Any other
 // expected value is a negative test (a fault built into a memory model, SIM_DEFINES in
@@ -189,7 +190,7 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
     std::string text = log.substr(0, end);
     printf("---- debug.txt (%zu bytes of text) ----\n%s\n---- end ----\n", text.size(), text.c_str());
     if (end == 0 || end == std::string::npos) { printf("FAIL: the log is empty or not terminated\n"); fails++; }
-    else if (log.compare(0, 22, "Screamer Pocket step 3") != 0) { printf("FAIL: the log does not start with its header line\n"); fails++; }
+    else if (log.compare(0, 16, "Screamer Pocket ") != 0) { printf("FAIL: the log does not start with its header line\n"); fails++; }
     if (expect_trap) {
         char line[32];
         snprintf(line, sizeof line, "TRAP mcause=%08x", expect & 0x3FFFFFFFu);
@@ -223,6 +224,23 @@ int main(int argc, char **argv) {
     if (fw.empty() || fw.size() > 32768) { fprintf(stderr, "firmware size %zu is not 1..32768\n", fw.size()); return 2; }
     while (fw.size() % 4) fw.push_back(0);
 
+    // program.bin next to firmware.bin (tools/fw.sh builds both)
+    std::vector<uint8_t> prog;
+    {
+        std::string path = argv[1];
+        size_t slash = path.find_last_of("/\\");
+        path = (slash == std::string::npos ? std::string() : path.substr(0, slash + 1)) + "program.bin";
+        FILE *f = fopen(path.c_str(), "rb");
+        if (f) {
+            uint8_t buf[4096];
+            size_t n;
+            while ((n = fread(buf, 1, sizeof buf, f)) > 0) prog.insert(prog.end(), buf, buf + n);
+            fclose(f);
+        }
+        while (prog.size() % 4) prog.push_back(0);
+        printf("%s: %zu bytes\n", path.c_str(), prog.size());
+    }
+
     Sim s;
     Vsoc_system &top = s.top;
     top.clk_74a = 0; top.clk_vid = 0; top.reset_n = 0; top.bridge_wr = 0; top.bridge_rd = 0; top.cont1_key = 0;
@@ -244,7 +262,7 @@ int main(int argc, char **argv) {
     uint64_t wait_from = s.now;
     while (!top.sdram_ready) s.rise_74();
     printf("SDRAM ready %.1f us after the first two slots\n", double(s.now - wait_from) / 1e6);
-    s.load(0x10000000, fw);
+    s.load(0x13000000, prog);
     s.rise_74(16);
     top.reset_n = 1; top.eval();
 
@@ -252,7 +270,7 @@ int main(int argc, char **argv) {
     bool done, unasked;
     int frames = s.run(timeout_frames, last, done, unasked);
     fails += check_run(s, argv[2], frames, done, last, expect, timeout_frames,
-                       expect_trap || negative ? nullptr : "SDRAM slot: ok");
+                       expect_trap || negative ? nullptr : "SDRAM program: ok");
 
     if (!expect_trap && !negative) {
         // a reset as when the firmware is reloaded from the menu (Reset Enter, the slot
@@ -280,7 +298,7 @@ int main(int argc, char **argv) {
         if (unasked) { printf("FAIL: a swap after the reset that the CPU did not ask for\n"); fails++; }
         else printf("after the reset: buffer 0 in front until the CPU's first swap\n");
         fails += check_run(s, std::string(argv[2]) + "_reset", frames, done, last, expect, timeout_frames,
-                           "SDRAM slot: skipped");
+                           "SDRAM program: ok");
     }
 
     if (fails) { printf("FAIL\n"); return 1; }

@@ -24,14 +24,14 @@
                 "address": "0x00100000"
             },
             {
-                "name": "Firmware SDRAM",
+                "name": "Program",
                 "id": 2,
-                "required": false,
+                "required": true,
                 "parameters": "0x02",
-                "filename": "firmware.bin",
+                "filename": "program.bin",
                 "extensions": ["bin"],
-                "size_maximum": 32768,
-                "address": "0x10000000"
+                "size_maximum": 1048576,
+                "address": "0x13000000"
             },
             {
                 "name": "Textures",

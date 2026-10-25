@@ -17,17 +17,26 @@ etwas daran ändert, ändert beide Seiten und dieses Dokument.
   kein Tausch steht aus und `SYS_SIM` ist 0. Bis zum ersten Tausch zeigt `video_out` Puffer 0
   mit Palette 0: nach dem Laden des Cores schwarz, nach einem Neuladen der Firmware, was der
   vorige Lauf dort hinterlassen hat.
-- **Firmware:** Data-Slot `firmware.bin` (höchstens 32 KB) an Bridge-Adresse `0x00000000`,
-  geschrieben ins Boot-RAM. Die Bridge liefert 32-Bit-Wörter big-endian (das erste Byte der
-  Datei in Bit 31:24), die CPU ist little-endian: `soc.v` dreht die Byte-Reihenfolge beim
-  Schreiben um, `firmware.bin` ist ein ganz normales little-endian-Abbild.
+- **Firmware:** zwei Teile. Data-Slot 0 `firmware.bin` (höchstens 32 KB) an Bridge-Adresse
+  `0x00000000` ins Boot-RAM: der Lader (Selbsttests, Speichertest). Data-Slot 2
+  `program.bin` an `0x1300_0000` ins SDRAM: das Programm. Die Bridge liefert 32-Bit-Wörter
+  big-endian (das erste Byte der Datei in Bit 31:24), die CPU ist little-endian: `soc.v`
+  dreht die Byte-Reihenfolge beim Schreiben um, beide sind ganz normale little-endian-Abbilder.
+- **Start des Programms:** `program.bin` beginnt mit einem Kopf aus vier Wörtern: `"SCRP"`
+  (`0x50524353`), Größe in Bytes, CRC-32 der Bytes nach dem Kopf, Einsprungadresse. Der Lader
+  prüft ihn nach dem Speichertest (Test „program“, `SYS_SIM` Bit 4), leert den D-Cache, macht
+  `fence.i` und springt mit `a0` = seine Ergebnisse (`SYS_SIM`-Bits), `a1`, `a2` = Position
+  und angefangenes Wort im Protokoll. Das Programm setzt eigenes `gp`, `tp` und `mtvec`, sein
+  Stack liegt oben im Boot-RAM (ab `0x8000` abwärts bis `0x6000`; der Lader bleibt darunter).
+  Der kurze Speichertest schreibt im SDRAM nur unterhalb von 32 MB und ins letzte Fenster, der
+  volle (Select beim Start) überschreibt das Programm: Dann bleiben nur die Ergebnisse stehen.
 
 ## Speicherkarte der CPU
 
 | Adresse | Größe | Inhalt | Cache |
 |---|---|---|---|
-| `0x0000_0000` | 32 KB | Boot-RAM: Code, Daten, Stack. Reset-Vektor `0x0000_0000`, `mtvec` nach Reset `0x0000_0020` | ja |
-| `0x1000_0000` | 64 MB | SDRAM | ja |
+| `0x0000_0000` | 32 KB | Boot-RAM: der Lader, darüber der Stack des Programms. Reset-Vektor `0x0000_0000`, `mtvec` nach Reset `0x0000_0020` | ja |
+| `0x1000_0000` | 64 MB | SDRAM: Texturen ab `0x1210_0000` (Slot 3), das Programm ab `0x1300_0000` (Slot 2) | ja |
 | `0xF000_0000` | 4 KB | System- und Speicher-Register | nein |
 | `0xF000_1000` | 4 KB | Video-Register und Palette | nein |
 | `0xF000_2000` | 4 KB | Eingabe | nein |

@@ -61,7 +61,8 @@ static void (*progress)(const char *what, uint32_t addr);
 /* for the screen */
 static int phase_first = -1, phase_len, phase_centre;
 static uint32_t refresh_per_s, line_hit, line_miss, read_mbs, write_mbs;
-static uint8_t slot_state;      /* 0 not run, 1 ok, 2 failed, 3 skipped */
+static uint8_t slot_state;      /* 0 not run, 1 ok, 2 failed */
+static uint32_t prog_entry;     /* program.bin's entry when its check passed */
 static char phase_map[PHASE_STEPS_MAX + 1];
 
 static int skip(const struct memory *m, uint32_t off)
@@ -341,26 +342,36 @@ static void phase_step(int later)
         ;
 }
 
-/* The copy of firmware.bin the APF loaded into the SDRAM (data slot 2), if it did so in
-   this run: a reload from the menu writes only the reloaded slot */
-static void t_slot(uint32_t boot_crc)
+/* program.bin (data slot 2) in the SDRAM: header, size and CRC-32. Still there after a
+   reload of firmware.bin from the menu, which writes only the reloaded slot. */
+static void t_program(void)
 {
-    extern const uint8_t __image_start[], __image_end[];
-    uint32_t size = (uint32_t)(__image_end - __image_start), words = MEM_BRIDGE_WORDS;
-    uint32_t t0 = rdcycle(), before = begin(sd, "slot");
-    if(words * 4 < size) {
-        dlog_str("SDRAM slot: skipped (not loaded in this run), bridge words ");
-        dlog_dec((int32_t)words);
+    const volatile uint32_t *h = (const volatile uint32_t *)PROG_BASE;
+    uint32_t t0 = rdcycle(), before = begin(sd, "program"), size = h[1];
+    if(h[0] != PROG_MAGIC || size < 16 || size > PROG_MAX) {
+        dlog_str("program.bin: not in the SDRAM (data slot 2)\n");
+        fail(sd, PROG_BASE - SDRAM_BASE, PROG_MAGIC, h[0]);
+    } else {
+        uint32_t c = crc32((const uint8_t *)PROG_BASE + 16, (const uint8_t *)PROG_BASE + size);
+        dlog_str("program.bin: ");
+        dlog_dec((int32_t)size);
+        dlog_str(" bytes, crc32 ");
+        dlog_hex(c);
         dlog_char('\n');
-        results |= 1u << B_SD_SLOT;
-        slot_state = 3;
-        return;
+        if(c != h[2]) fail(sd, PROG_BASE - SDRAM_BASE + 8, h[2], c);
+        else prog_entry = h[3];
     }
-    uint32_t c = crc32((const uint8_t *)SDRAM_BASE, (const uint8_t *)SDRAM_BASE + size);
-    if(c != boot_crc) fail(sd, 0, boot_crc, c);
-    if(MEM_STATUS & (MEM_OVERFLOW | MEM_DROPPED)) fail(sd, 0, 0, MEM_STATUS);
+    if(MEM_STATUS & (MEM_OVERFLOW | MEM_DROPPED)) {
+        fail(sd, 0, 0, MEM_STATUS);
+        prog_entry = 0;
+    }
     end(sd, B_SD_SLOT, before, t0);
     slot_state = errors[M_SDRAM] == before ? 1 : 2;
+}
+
+uint32_t memtest_program(void)
+{
+    return prog_entry;
 }
 
 /* A short hard check for the phase sweep: pseudo-random words through the cache, words
@@ -559,7 +570,7 @@ static void measure(void)
     dlog_str(" MB/s\n");
 }
 
-uint32_t memtest_run(uint32_t boot_crc, int full, void (*cb)(const char *what, uint32_t addr))
+uint32_t memtest_run(int full, void (*cb)(const char *what, uint32_t addr))
 {
     progress = cb;
     sim = (SYS_FLAGS & FLAG_SIM) != 0;
@@ -576,7 +587,7 @@ uint32_t memtest_run(uint32_t boot_crc, int full, void (*cb)(const char *what, u
 
     if(st & MEM_READY) {
         results |= 1u << B_SD_READY;
-        t_slot(boot_crc);               /* first: nothing has written the SDRAM in this run */
+        t_program();                    /* first: the full test overwrites it */
         t_phase();
         t_memory(sd);
         t_code();
@@ -627,8 +638,8 @@ int memtest_rows(char rows[][41], uint8_t fail[])
         fail[n] = ((results >> b) & 15) != 15;
         n++;
         if(i == M_SDRAM) {
-            p = fmt_str(rows[n], "      Slot ");
-            p = fmt_str(p, slot_state == 1 ? "ok" : slot_state == 3 ? "-" : "FEHLER");
+            p = fmt_str(rows[n], "      Prog ");
+            p = fmt_str(p, slot_state == 1 ? "ok" : "FEHLER");
             p = fmt_str(p, " Phase ");
             p = fmt_udec(p, (uint32_t)phase_len);
             fmt_udec(fmt_str(p, "/80, Schritt "), (uint32_t)phase_centre);

@@ -15,6 +15,10 @@
 
 void dlog_init(void);           /* clear the 4 KB; call first thing at boot */
 void dlog_head(const char *s);  /* (re)write the first line, cut or padded to 63 */
+/* hand the log over from the boot loader to the program: where the next byte goes and the
+   bytes already in that word */
+void dlog_state(uint32_t *pos, uint32_t *cur);
+void dlog_attach(uint32_t pos, uint32_t cur);
 void dlog_char(char c);
 void dlog_str(const char *s);
 void dlog_dec(int32_t v);

@@ -22,16 +22,20 @@ Wie der Rasterizer ein Dreieck in Pixel zerlegt und wie der Texturpfad als Flie�
 Grün: gebaut und auf dem Pocket getestet. Grau gestrichelt: geplant. Drei Bilder sind
 gleichzeitig in Arbeit: Die CPU berechnet Bild N+1 und schreibt dessen nach Abstand
 sortierte Objektliste ins SRAM, die Geometrie-Einheit liest die Liste von Bild N und
-liefert Dreiecke an den Rasterizer, der Texel aus `cram0` liest und Bild N in den
+liefert Dreiecke an den Rasterizer, der Texel über seinen Textur-Cache aus dem SDRAM liest und Bild N in den
 hinteren Framebuffer zeichnet, während `video_out` den vorderen zeigt (Bild N−1).
 Getauscht wird in der Austastlücke; Befehlslisten und Framebuffer sind doppelt gepuffert.
 
 | Speicher | Inhalt |
 |---|---|
-| SDRAM | Programm, Geometrie, Spielzustand, Sounds |
+| SDRAM | Programm, Geometrie, Spielzustand, Texturen der aktuellen Strecke (`MAPn.MLB`, ≤ 3 MB, über den 16-KB-Textur-Cache) |
 | SRAM | Befehlslisten der Geometrie-Einheit, doppelt gepuffert (je ≤ 26 KB), Rest Reserve |
-| cram0 | Texturen der aktuellen Strecke (`MAPn.MLB`, ≤ 3 MB), später im Burst-Modus |
+| cram0 | Soundeffekte (`SOUND.DAT`, 1,9 MB): gleichmäßig und langsam gelesen, der Mischer stört so nie die Zugriffe von CPU und Rasterizer aufs SDRAM |
 | cram1 | frei |
+
+Eine Cache-Zeile Texturen kostet aus dem SDRAM etwa 25 Takte, aus dem PSRAM (asynchron)
+etwa 130. Die Texturen bleiben deshalb im SDRAM, solange CPU und Rasterizer sich dort nicht
+messbar ausbremsen; sonst ziehen sie in einen eigenen PSRAM um.
 | Block-RAM | zwei Framebuffer (2 × 64 KB) und zwei Paletten, Boot-RAM, CPU-Caches, Textur-Cache, Transparenztabelle (`MAPn.SMG`) |
 
 ## Speicherbedarf eines Rennens (gemessen, entpackt)

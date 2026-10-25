@@ -24,6 +24,20 @@ void dlog_init(void)
     limit = DLOG_SIZE - DLOG_RESERVE;
 }
 
+void dlog_state(uint32_t *p, uint32_t *c)
+{
+    *p = pos;
+    *c = cur;
+}
+
+void dlog_attach(uint32_t p, uint32_t c)
+{
+    pos = p;
+    cur = c;
+    last = '\n';
+    limit = DLOG_SIZE - DLOG_RESERVE;
+}
+
 void dlog_head(const char *s)
 {
     if (!limit)

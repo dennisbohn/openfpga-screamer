@@ -65,6 +65,11 @@
 #define SDRAM_BASE      0x10000000u
 #define SDRAM_UBASE     0xF4000000u
 #define SDRAM_SIZE      (64u << 20)
+/* The program in the SDRAM (program.bin, data slot 2): a header the boot loader checks,
+   then code and data. Above the 32 MB the quick memory test writes in, below its last window. */
+#define PROG_BASE       (SDRAM_BASE + 0x3000000u)
+#define PROG_MAX        (0x1000000u - 0x800u)
+#define PROG_MAGIC      0x50524353u         /* "SCRP" */
 #define SRAM_BASE       0xF8000000u
 #define SRAM_SIZE       (256u << 10)
 #define PSRAM_BASE      0xFA000000u         /* cram0: die 0, die 1 from PSRAM_BASE + 8 MB */
