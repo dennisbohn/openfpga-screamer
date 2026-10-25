@@ -28,7 +28,7 @@ GROUPS = [
 # name, group, measured, ALMs (lo, hi), M10K (lo, hi), DSP (lo, hi)
 COMPONENTS = [
     ("Analogue-Rahmen", "frame", True, (414, 414), (2, 2), (0, 0)),
-    ("Framebuffer + Video", "frame", True, (172, 172), (4, 4), (0, 0)),
+    ("Framebuffer ×2 + Video", "frame", True, (68, 68), (130, 130), (0, 0)),
     ("VexRiscv + 2× 8 KB Cache", "cpu", False, (1200, 1600), (18, 22), (4, 4)),
     ("FPU (RV32F)", "cpu", False, (1500, 2200), (0, 2), (2, 4)),
     ("Geometrie-Einheit", "gfx", False, (2500, 4000), (4, 8), (12, 18)),
@@ -36,6 +36,7 @@ COMPONENTS = [
     ("Textur-Cache 16 KB", "gfx", False, (100, 200), (16, 16), (0, 0)),
     ("Schattierungs-/Transparenztabellen", "gfx", False, (0, 0), (16, 24), (0, 0)),
     ("Speicher-Controller", "mem", False, (900, 1400), (2, 4), (0, 0)),
+    ("SRAM-Controller", "mem", False, (100, 200), (0, 0), (0, 0)),
     ("JTOPL (OPL2)", "audio", False, (800, 1200), (3, 5), (0, 1)),
     ("PCM-Mixer", "audio", False, (300, 500), (2, 2), (1, 2)),
 ]

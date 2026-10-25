@@ -41,11 +41,13 @@ mit `tools/deploy.sh /i` (SD-Karte bzw. Pocket im USB-Modus als Laufwerk I:).
 
 Was der Core aus den Spieldaten braucht, wird auf dem PC umgewandelt und landet in
 `build/assets/` (nie im Repository), `tools/package.sh` kopiert es nach `Assets/`.
-Zurzeit ist das ein Bild für den Framebuffer-Test:
+Zurzeit sind das zwei Bilder für den Framebuffer-Test (Taste A tauscht sie):
 
 ```sh
 python tools/make_screen.py "C:/GOG Games/Screamer/GFX/GRAF.DAT" LOAD2L.PCX \
     build/assets/screamer/Chainy.Screamer/screen.bin build/preview/LOAD2L.png
+python tools/make_screen.py "C:/GOG Games/Screamer/GFX/GRAF.DAT" LOAD1L.PCX \
+    build/assets/screamer/Chainy.Screamer/screen2.bin build/preview/LOAD1L.png
 ```
 
 ## Simulation
@@ -54,16 +56,22 @@ Verilator läuft in Docker (`verilator/verilator:v5.050`). Jede Testbench liegt 
 `sim/<name>/`: `files.f` nennt das oberste Modul und die Quellen, `tb.cpp` treibt sie.
 
 ```sh
-# Framebuffer im PSRAM: Laden über die Bridge, ein Bild Pixel für Pixel prüfen.
-# Letzte Zahl: Abstand der Bridge-Wörter in Takten (88 = schnellste echte APF-Rate).
-tools/sim.sh fb_system build/assets/screamer/Chainy.Screamer/screen.bin build/sim/fb_system.rgb 88
+# Zwei Framebuffer: beide Bilder über die Bridge laden, mit Taste A tauschen,
+# acht Bilder Pixel für Pixel prüfen (Tausch nur an der Bildgrenze, Palette je Puffer).
+tools/sim.sh display build/assets/screamer/Chainy.Screamer/screen.bin \
+    build/assets/screamer/Chainy.Screamer/screen2.bin build/sim/display_frame
 ```
+
+`sim/models/psram_model.v` ist ein Verhaltensmodell des PSRAM (prüft die 70-ns-Zugriffszeit),
+für den späteren Textur-Speicher.
 
 ## Werkzeuge
 
 - `tools/dat_sizes.py <datei.DAT>...` listet den Inhalt der Spiel-Container mit
   entpackten Größen (`-v` für jede Datei einzeln).
 - `tools/datfile.py` liest die Container (gemeinsam genutzt von den anderen Skripten).
+- `tools/make_budget_svg.py` zeichnet `docs/ressourcen.svg` aus der Zahlentabelle darin.
+- `tools/deploy.sh /i` packt den Core und kopiert ihn auf die SD-Karte.
 
 ## Lizenz
 

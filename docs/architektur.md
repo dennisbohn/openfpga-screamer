@@ -1,9 +1,10 @@
 # Architektur
 
-Stand: 2026-10-25. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 aus einem
-8-Bit-Framebuffer im PSRAM (`cram1`) über Zeilenpuffer und Palette, geladen über einen
-Data-Slot (586 ALMs, 6 M10K). Alles Weitere sind Schätzungen, bis die Synthese echte
-Zahlen liefert.
+Stand: 2026-10-25. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 aus zwei
+8-Bit-Framebuffern im Block-RAM, je mit eigener Palette, getauscht zu Beginn eines Bildes;
+bis die CPU zeichnet, füllen zwei Data-Slots die Puffer und Taste A tauscht sie (482 ALMs,
+132 M10K). Davor lief der Framebuffer im PSRAM `cram1` (Commit `b148783`). Alles Weitere
+sind Schätzungen, bis die Synthese echte Zahlen liefert.
 
 ## Hardware des Pocket (Haupt-FPGA)
 
@@ -15,17 +16,21 @@ Getrennte Speicherbusse: SDRAM 64 MB, PSRAM `cram0` und `cram1` je 16 MB, SRAM 2
 
 ![Geplante Architektur: Datenfluss vom RISC-V über Geometrie-Einheit und Rasterizer in den Framebuffer, Speicher und Ein-/Ausgänge des Pocket](architektur.svg)
 
-Durchgezogen: gebaut und auf dem Pocket getestet. Gestrichelt: geplant. Der RISC-V sortiert
-die Objekte nach Abstand und schickt sie von hinten nach vorn mit ihren Matrizen an die
-Geometrie-Einheit, die liefert Dreiecke an den Rasterizer; der liest Texel aus `cram0` und schreibt 8-Bit-Pixel in den Framebuffer in
-`cram1`, aus dem `video_out` jede Zeile vor ihrer Ausgabe holt.
+Grün: gebaut und auf dem Pocket getestet. Grau gestrichelt: geplant. Drei Bilder sind
+gleichzeitig in Arbeit: Die CPU berechnet Bild N+1 und schreibt dessen nach Abstand
+sortierte Objektliste ins SRAM, die Geometrie-Einheit liest die Liste von Bild N und
+liefert Dreiecke an den Rasterizer, der Texel aus `cram0` liest und Bild N in den
+hinteren Framebuffer zeichnet, während `video_out` den vorderen zeigt (Bild N−1).
+Getauscht wird zu Beginn eines Bildes; Befehlslisten und Framebuffer sind doppelt
+gepuffert.
 
 | Speicher | Inhalt |
 |---|---|
 | SDRAM | Programm, Geometrie, Spielzustand, Sounds |
-| cram0 | Texturen der aktuellen Strecke (`MAPn.MLB`, ≤ 3 MB) |
-| cram1 | Framebuffer, 8 Bit, doppelt gepuffert |
-| Block-RAM | CPU-Caches, Textur-Cache, Palette, Schattierungstabellen |
+| SRAM | Befehlslisten der Geometrie-Einheit, doppelt gepuffert (je ~20–30 KB) |
+| cram0 | Texturen der aktuellen Strecke (`MAPn.MLB`, ≤ 3 MB), später im Burst-Modus |
+| cram1 | frei |
+| Block-RAM | zwei Framebuffer (2 × 64 KB) und zwei Paletten, CPU-Caches, Textur-Cache, Schattierungstabellen |
 
 ## Speicherbedarf eines Rennens (gemessen, entpackt)
 
@@ -62,21 +67,22 @@ die Synthese eine Schätzung ersetzt, beides anpassen.
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
 | Analogue-Rahmen (**gemessen**, unverändertes Template) | 414 | 2 | 0 |
-| Framebuffer + Video (**gemessen**: `fb_psram`, `video_out`, PSRAM-Controller) | 172 | 4 | 0 |
+| Framebuffer ×2 + Video (**gemessen**: `framebuffer`, `video_out`, `fb_bridge`) | 68 | 130 | 0 |
 | VexRiscv RV32IM + 2× 8 KB Cache | 1.200–1.600 | 18–22 | 4 |
 | FPU (RV32F) | 1.500–2.200 | 0–2 | 2–4 |
 | Speicher-Controller (SDRAM, `cram0`) + Arbiter | 900–1.400 | 2–4 | 0 |
+| SRAM-Controller (Befehlslisten) | 100–200 | – | 0 |
 | Geometrie-Einheit | 2.500–4.000 | 4–8 | 12–18 |
 | Rasterizer (Logik) | 2.000–3.000 | 3–6 | 4–8 |
 | Textur-Cache 16 KB | 100–200 | 16 | – |
 | Schattierungs-/Transparenztabellen | – | 16–24 | – |
 | JTOPL | 800–1.200 | 3–5 | 0–1 |
 | PCM-Mixer | 300–500 | 2 | 1–2 |
-| **Summe** | **9.886–14.686 (53–79 %)** | **70–95 (23–31 %)** | **23–37 (35–56 %)** |
+| **Summe** | **9.882–14.782 (53–80 %)** | **196–221 (64–72 %)** | **23–37 (35–56 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
-Taktfrequenz zu halten. Block-RAM und DSP haben Reserve. Einen Tiefenpuffer
-(320×200×16 Bit, 100 M10K) gibt es nicht, siehe „Entschieden“.
+Taktfrequenz zu halten. Block-RAM trägt jetzt die beiden Framebuffer (128 M10K) und hat
+danach noch Reserve, DSP ebenso. Einen Tiefenpuffer gibt es nicht, siehe „Entschieden“.
 
 ## Entschieden
 
@@ -96,6 +102,19 @@ Taktfrequenz zu halten. Block-RAM und DSP haben Reserve. Einen Tiefenpuffer
   dafür mit seinem Tiefenpuffer Sonderregeln. Nötig bleibt das Clipping an der vorderen
   Ebene. Es spart 100 M10K; dafür wird jedes verdeckte Pixel erneut geschrieben, was die
   Bandbreite zum Framebuffer wichtiger macht.
+- **Bilder überlappen (Pipeline):** CPU, Grafik und Anzeige arbeiten gleichzeitig an Bild
+  N+1, N und N−1, die Zeit pro Bild ist das Maximum statt der Summe. Kosten: ein Bild mehr
+  Verzögerung zwischen Eingabe und Anzeige (16,7 ms bei 60 fps).
+- **Zwei Framebuffer im Block-RAM** statt im PSRAM: Der Rasterizer schreibt den hinteren
+  mit einem Pixel pro Takt, Übermalen kostet nichts, und es braucht weder PSRAM-Controller
+  noch Arbitrierung für den Framebuffer (spart Logik, die knappe Ressource). Jeder Puffer
+  hat seine eigene Palette, Palettenwechsel (Überblendungen) passen damit genau zum Bild.
+  Getauscht wird nur zu Beginn eines Bildes, in der Austastlücke (`video_out.v`). Auf dem
+  Pocket getestet.
+- **SRAM für die Befehlslisten:** AS6C2016-55, 55 ns, laut Analogue kaum schneller als der
+  PSRAM und ohne Bursts, also nichts für Pixel. Für die doppelt gepufferten Objektlisten
+  (~20–30 KB je Bild, ~1–2 MB/s) reicht es gut, und die Geometrie-Einheit liest sie über
+  einen eigenen Bus, ohne die CPU im SDRAM zu stören.
 
 ## Offene Entscheidungen
 
