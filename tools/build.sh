@@ -1,10 +1,15 @@
 #!/bin/sh
 # Compile the Quartus project in core/src/fpga inside Docker (Quartus Prime Lite 18.1.1)
 # and write the bit-reversed bitstream the Pocket loads to core/output/bitstream.rbf_r.
+# If timing fails (negative slack anywhere), the fitter is run again with the next seed,
+# up to five tries, and the seed that met timing is left in ap_core.qsf: a few registers
+# in front of the FPU's DSP blocks sit within 50 ps of hold, depending on placement.
 set -e
 root=$(cd "$(dirname "$0")/.." && pwd)
 fpga="$root/core/src/fpga"
+qsf="$fpga/ap_core.qsf"
 image="raetro/quartus:pocket"
+tries=5
 
 # Git Bash on Windows: hand Docker a Windows path and stop MSYS rewriting /build.
 if command -v cygpath >/dev/null 2>&1; then
@@ -15,13 +20,40 @@ fi
 
 mkdir -p "$root/build"
 log="$root/build/quartus.log"
-if ! MSYS_NO_PATHCONV=1 docker run --rm -v "$mount:/build" -w /build "$image" \
-    quartus_sh --flow compile ap_core > "$log" 2>&1; then
-    grep -E "^Error" "$log" | head -20
-    echo "Build failed, full log: $log"
-    exit 1
-fi
+
+# worst slack of each check across all clocks, from the timing summary
+worst() {
+    awk '/^Type/ { split($0, t, "Model "); split(t[2], k, " ") }
+         /^Slack/ { if (!(k[1] in min) || $3 < min[k[1]]) { min[k[1]] = $3; at[k[1]] = t[2] } }
+         END { for (c in min) printf "Worst %-22s: %s ns (%s)%s\n", c, min[c], at[c], min[c] < 0 ? "  <-- TIMING FAILED" : "" }' \
+        "$fpga/output_files/ap_core.sta.summary"
+}
+
+seed=$(sed -n 's/^set_global_assignment -name SEED \([0-9]*\).*/\1/p' "$qsf")
+seed=${seed:-1}
+try=1
+while :; do
+    if ! MSYS_NO_PATHCONV=1 docker run --rm -v "$mount:/build" -w /build "$image" \
+        quartus_sh --flow compile ap_core > "$log" 2>&1; then
+        grep -E "^Error" "$log" | head -20
+        echo "Build failed, full log: $log"
+        exit 1
+    fi
+    if ! worst | grep -q "TIMING FAILED"; then
+        break
+    fi
+    if [ "$try" -ge "$tries" ]; then
+        echo "Timing still fails after $tries seeds:"
+        worst
+        exit 1
+    fi
+    echo "Timing fails with fitter seed $seed, trying seed $((seed + 1))"
+    seed=$((seed + 1))
+    try=$((try + 1))
+    sed -i "s/^set_global_assignment -name SEED [0-9]*/set_global_assignment -name SEED $seed/" "$qsf"
+done
 grep -E "Quartus Prime Shell was successful" "$log" | tail -1
+echo "fitter seed $seed"
 
 python -I "$root/tools/reverse_rbf.py" "$fpga/output_files/ap_core.rbf" "$root/core/output/bitstream.rbf_r"
 
@@ -34,13 +66,11 @@ python -I "$root/tools/check_budget.py" "$fpga/output_files/ap_core.fit.rpt" || 
 cp "$root/tools/sta_sdram.tcl" "$fpga/sta_sdram.tcl"
 if ! MSYS_NO_PATHCONV=1 docker run --rm -v "$mount:/build" -w /build "$image" \
     quartus_sta -t sta_sdram.tcl > "$root/build/sta_sdram.log" 2>&1; then
+    rm -f "$fpga/sta_sdram.tcl"
     grep -E "SDRAM IO|^Info:   |Error" "$root/build/sta_sdram.log" | head -30
     echo "SDRAM IO timing check failed, full log: build/sta_sdram.log"
     exit 1
 fi
 rm -f "$fpga/sta_sdram.tcl"
 grep -E "Info: (SDRAM IO|  )" "$root/build/sta_sdram.log" | sed 's/^Info: //'
-awk '/^Type/ { split($0, t, "Model "); split(t[2], k, " ") }
-     /^Slack/ { if (!(k[1] in min) || $3 < min[k[1]]) { min[k[1]] = $3; at[k[1]] = t[2] } }
-     END { for (c in min) printf "Worst %-22s: %s ns (%s)%s\n", c, min[c], at[c], min[c] < 0 ? "  <-- TIMING FAILED" : "" }' \
-    "$fpga/output_files/ap_core.sta.summary"
+worst
