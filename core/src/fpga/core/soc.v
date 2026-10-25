@@ -8,6 +8,11 @@
 // into and out of the CPU's memories is byte-swapped, and so is the framebuffer, whose
 // words keep the leftmost pixel in [31:24].
 //
+// Bridge reads are answered one read later, as the APF expects (io_bridge_peripheral.v:
+// "reads are buffered by 1 word"): the data for the address of a read is latched at its
+// bridge_rd pulse and sent in the next read transaction. The APF reads one word more
+// than it needs and drops the first answer. core_bridge_cmd answers the same way.
+//
 // Buses: VexRiscv's native cache buses.
 //   iBus  a command per 32-byte line, answered with 8 words in order (boot RAM only)
 //   dBus  line reads (size 5, 8 words), single reads (1 word, 2 clocks later) and
@@ -21,9 +26,10 @@ module soc (
 
     // APF bridge (firmware into the boot RAM, debug log in and out), synchronous to clk
     input   wire            bridge_wr,
+    input   wire            bridge_rd,
     input   wire    [31:0]  bridge_addr,
     input   wire    [31:0]  bridge_wr_data,
-    output  wire    [31:0]  bridge_log_rd_data,     // read data for bridge addresses 0x0010_xxxx
+    output  reg     [31:0]  bridge_log_rd_data,     // read data for bridge addresses 0x0010_xxxx
 
     // controller 1, synchronous to clk
     input   wire    [31:0]  cont1_key,
@@ -202,7 +208,10 @@ cfu_fixmul cfu (
         end
     endgenerate
 
-    assign bridge_log_rd_data = swap32(log_q_b);
+    // the answer for the next read transaction (see the header)
+always @(posedge clk) begin
+    if(bridge_rd && bridge_log) bridge_log_rd_data <= swap32(log_q_b);
+end
 
 //
 // iBus: line reads from the boot RAM, one word a clock

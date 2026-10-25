@@ -524,6 +524,7 @@ soc soc (
     .clk                ( clk_74a ),
     .reset_n            ( reset_n ),
     .bridge_wr          ( bridge_wr ),
+    .bridge_rd          ( bridge_rd ),
     .bridge_addr        ( bridge_addr ),
     .bridge_wr_data     ( bridge_wr_data ),
     .bridge_log_rd_data ( soc_log_rd_data ),

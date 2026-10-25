@@ -9,6 +9,7 @@ module soc_system (
     input   wire            reset_n,
 
     input   wire            bridge_wr,
+    input   wire            bridge_rd,
     input   wire    [31:0]  bridge_addr,
     input   wire    [31:0]  bridge_wr_data,
     output  wire    [31:0]  bridge_log_rd_data,
@@ -44,6 +45,7 @@ soc soc (
     .clk                ( clk_74a ),
     .reset_n            ( reset_n ),
     .bridge_wr          ( bridge_wr ),
+    .bridge_rd          ( bridge_rd ),
     .bridge_addr        ( bridge_addr ),
     .bridge_wr_data     ( bridge_wr_data ),
     .bridge_log_rd_data ( bridge_log_rd_data ),

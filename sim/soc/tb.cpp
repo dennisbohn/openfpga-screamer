@@ -48,10 +48,17 @@ struct Sim {
         rise_74();
         top.bridge_wr = 0; top.eval();
     }
+    // one read transaction as io_bridge_peripheral.v does it: the address, 4 clocks, the
+    // answer is sampled, then the bridge_rd pulse. The answer belongs to the previous read.
     uint32_t bridge_read(uint32_t addr) {
         top.bridge_addr = addr; top.eval();
         rise_74(4);
-        return top.bridge_log_rd_data;
+        uint32_t answer = top.bridge_log_rd_data;
+        top.bridge_rd = 1; top.eval();
+        rise_74();
+        top.bridge_rd = 0; top.eval();
+        rise_74(2);
+        return answer;
     }
 };
 
@@ -77,7 +84,7 @@ int main(int argc, char **argv) {
 
     Sim s;
     Vsoc_system &top = s.top;
-    top.clk_74a = 0; top.clk_vid = 0; top.reset_n = 0; top.bridge_wr = 0; top.cont1_key = 0;
+    top.clk_74a = 0; top.clk_vid = 0; top.reset_n = 0; top.bridge_wr = 0; top.bridge_rd = 0; top.cont1_key = 0;
     top.eval();
 
     // as the APF does it: the nonvolatile slot first (no debug.txt yet: 0xFF), then the firmware;
@@ -140,8 +147,10 @@ int main(int argc, char **argv) {
     // the slot table entry and the log, read through the bridge as the APF does on exit
     printf("debug log slot size in the slot table: %u\n", top.log_slot_size);
     if (top.log_slot_size != 4096) { printf("FAIL: expected 4096\n"); fails++; }
+    // like the APF saving the slot: one read more than words, the first answer dropped
     std::string log;
-    for (uint32_t a = 0; a < 4096; a += 4) {
+    s.bridge_read(0x00100000);
+    for (uint32_t a = 4; a <= 4096; a += 4) {
         uint32_t w = s.bridge_read(0x00100000 + a);
         for (int k = 3; k >= 0; k--) log.push_back(char(w >> (8 * k)));
     }
@@ -155,6 +164,7 @@ int main(int argc, char **argv) {
     printf("---- debug.txt (%zu bytes of text) ----\n%s\n---- end ----\n", end == std::string::npos ? log.size() : end,
            log.substr(0, end).c_str());
     if (end == 0 || end == std::string::npos) { printf("FAIL: the log is empty or not terminated\n"); fails++; }
+    else if (log.compare(0, 22, "Screamer Pocket step 1") != 0) { printf("FAIL: the log does not start with its header line\n"); fails++; }
 
     if (fails) { printf("FAIL\n"); return 1; }
     printf("PASS: firmware ran, self-tests pass, test band matches, log readable over the bridge, slot size set\n");
