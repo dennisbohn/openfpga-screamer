@@ -98,7 +98,7 @@
   <rect x="910" y="260" width="150" height="100" rx="8" class="plan"/>
   <text x="985" y="288" class="t c">Rasterizer</text>
   <text x="985" y="306" class="b c">Spans, Texturen,</text>
-  <text x="985" y="322" class="b c">Schattierung</text>
+  <text x="985" y="322" class="b c">Transparenz</text>
   <text x="985" y="344" class="p c">zeichnet Bild N</text>
 
   <rect x="1100" y="260" width="110" height="100" rx="8" class="built"/>

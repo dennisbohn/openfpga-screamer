@@ -30,7 +30,7 @@ Getauscht wird in der Austastlücke; Befehlslisten und Framebuffer sind doppelt 
 | SRAM | Befehlslisten der Geometrie-Einheit, doppelt gepuffert (je ≤ 26 KB), Rest Reserve |
 | cram0 | Texturen der aktuellen Strecke (`MAPn.MLB`, ≤ 3 MB), später im Burst-Modus |
 | cram1 | frei |
-| Block-RAM | zwei Framebuffer (2 × 64 KB) und zwei Paletten, Boot-RAM, CPU-Caches, Textur-Cache, Schattierungstabellen |
+| Block-RAM | zwei Framebuffer (2 × 64 KB) und zwei Paletten, Boot-RAM, CPU-Caches, Textur-Cache, Transparenztabelle (`MAPn.SMG`) |
 
 ## Speicherbedarf eines Rennens (gemessen, entpackt)
 
@@ -59,7 +59,7 @@ braucht. 27 Dateien (Grenze: 32 Slots):
 
 ## Geschätzte Belegung
 
-![Platzbudget im FPGA: Logik geplant 55–77 %, Block-RAM 67–77 %, DSP 42–61 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik geplant 55–77 %, Block-RAM 67–74 %, DSP 42–61 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py` aus denselben Zahlen wie diese Tabelle; wenn
 die Synthese eine Schätzung ersetzt, beides anpassen.
@@ -77,10 +77,10 @@ die Synthese eine Schätzung ersetzt, beides anpassen.
 | Geometrie-Einheit | 2.500–4.000 | 4–8 | 12–18 |
 | Rasterizer (Logik) | 2.000–3.000 | 3–6 | 4–8 |
 | Textur-Cache 16 KB | 100–200 | 16 | – |
-| Schattierungs-/Transparenztabellen | – | 16–24 | – |
+| Transparenztabelle (`MAPn.SMG`, 64 × 256 Byte) | – | 16 | – |
 | JTOPL | 800–1.200 | 3–5 | 0–1 |
 | PCM-Mixer | 300–500 | 2 | 1–2 |
-| **Summe** | **10.242–14.242 (55–77 %)** | **206–237 (67–77 %)** | **28–40 (42–61 %)** |
+| **Summe** | **10.242–14.242 (55–77 %)** | **206–229 (67–74 %)** | **28–40 (42–61 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Block-RAM trägt die beiden Framebuffer (128 M10K); CPU-Caches und

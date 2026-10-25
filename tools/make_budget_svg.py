@@ -37,7 +37,7 @@ COMPONENTS = [
     ("Geometrie-Einheit", "gfx", False, (2500, 4000), (4, 8), (12, 18)),
     ("Rasterizer", "gfx", False, (2000, 3000), (3, 6), (4, 8)),
     ("Textur-Cache 16 KB", "gfx", False, (100, 200), (16, 16), (0, 0)),
-    ("Schattierungs-/Transparenztabellen", "gfx", False, (0, 0), (16, 24), (0, 0)),
+    ("Transparenztabelle (MAPn.SMG)", "gfx", False, (0, 0), (16, 16), (0, 0)),
     ("Speicher-Controller", "mem", False, (900, 1400), (2, 4), (0, 0)),
     ("SRAM-Controller", "mem", False, (100, 200), (0, 0), (0, 0)),
     ("JTOPL (OPL2)", "audio", False, (800, 1200), (3, 5), (0, 1)),

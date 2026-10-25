@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1012" width="1120" height="1012" role="img" aria-label="Platzbudget im FPGA: Logik geplant 55 bis 77 Prozent, knapp an der 80-Prozent-Grenze; Block-RAM 67 bis 77 Prozent; DSP 42 bis 61 Prozent. Größte Posten: Geometrie-Einheit, Rasterizer und FPU.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1012" width="1120" height="1012" role="img" aria-label="Platzbudget im FPGA: Logik geplant 55 bis 77 Prozent, knapp an der 80-Prozent-Grenze; Block-RAM 67 bis 74 Prozent; DSP 42 bis 61 Prozent. Größte Posten: Geometrie-Einheit, Rasterizer und FPU.">
 <title>Platzbudget im FPGA</title>
 <style>
   svg {
@@ -106,10 +106,10 @@
 <text x="278.0" y="417.0" class="s" text-anchor="end">Plan, obere Schätzung</text>
 <rect x="290.0" y="404.0" width="272.3" height="18" class="f-frame"><title>Rahmen &amp; Video (gemessen): 132 (43 %) · Plan, obere Schätzung</title></rect>
 <rect x="564.3" y="404.0" width="81.1" height="18" class="f-cpu"><title>CPU: VexRiscv, FPU: 40 (13 %) · Plan, obere Schätzung</title></rect>
-<rect x="647.4" y="404.0" width="110.2" height="18" class="f-gfx"><title>Grafik: Geometrie, Rasterizer, Texturen: 54 (18 %) · Plan, obere Schätzung</title></rect>
-<rect x="759.6" y="404.0" width="6.3" height="18" class="f-mem"><title>Speicher-Controller: 4 (1 %) · Plan, obere Schätzung</title></rect>
-<path d="M767.9,404.0 H778.5 A4,4 0 0 1 782.5,408.0 V418.0 A4,4 0 0 1 778.5,422.0 H767.9 Z" class="f-audio"><title>Audio: OPL2, PCM: 7 (2 %) · Plan, obere Schätzung</title></path>
-<text x="790.5" y="417.0" class="v">237 · 77 %</text>
+<rect x="647.4" y="404.0" width="93.6" height="18" class="f-gfx"><title>Grafik: Geometrie, Rasterizer, Texturen: 46 (15 %) · Plan, obere Schätzung</title></rect>
+<rect x="743.0" y="404.0" width="6.3" height="18" class="f-mem"><title>Speicher-Controller: 4 (1 %) · Plan, obere Schätzung</title></rect>
+<path d="M751.3,404.0 H761.8 A4,4 0 0 1 765.8,408.0 V418.0 A4,4 0 0 1 761.8,422.0 H751.3 Z" class="f-audio"><title>Audio: OPL2, PCM: 7 (2 %) · Plan, obere Schätzung</title></path>
+<text x="773.8" y="417.0" class="v">229 · 74 %</text>
 <text x="40.0" y="453.0" class="t">DSP-Blöcke</text>
 <text x="126.0" y="453.0" class="m">66</text>
 <text x="278.0" y="475.0" class="s" text-anchor="end">heute gebaut</text>
