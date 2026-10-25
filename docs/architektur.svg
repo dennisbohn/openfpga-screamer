@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 840" width="1440" height="840" role="img" aria-label="Geplante Architektur: Der RISC-V-Prozessor arbeitet an Bild N+1 und schreibt dessen sortierte Objektliste ins SRAM, während die Geometrie-Einheit die Liste von Bild N liest und Dreiecke an den Rasterizer gibt. Der Rasterizer liest Texturen aus PSRAM cram0 und schreibt Pixel in den hinteren der beiden Framebuffer im Block-RAM; video_out zeigt den vorderen, Bild N−1, getauscht wird bei VSync. Code, Daten und Meshes liegen im SDRAM, die Dateien kommen von der SD-Karte über die APF-Bridge.">
   <title>Screamer auf dem Analogue Pocket – geplante Architektur</title>
-  <desc>Gebaut und auf dem Pocket getestet: APF-Bridge mit Data-Slots, zwei Framebuffer im Block-RAM mit Tausch bei VSync, video_out mit zwei Paletten, VexRiscv RV32IMF mit FPU und CFU, seit Schritt 2 SDRAM-Controller und SRAM-Controller (Speichertest auf dem Pocket bestanden, cram0 asynchron angebunden), seit Schritt 3 der Rasterizer für einfarbige Dreiecke. Geplant: Texturen und Transparenz im Rasterizer, Befehlslisten im SRAM, Geometrie-Einheit, Audio, Textur-Speicher mit Burst-Modus und Cache in cram0. PSRAM cram1 ist frei.</desc>
+  <desc>Gebaut und auf dem Pocket getestet: APF-Bridge mit Data-Slots, zwei Framebuffer im Block-RAM mit Tausch bei VSync, video_out mit zwei Paletten, VexRiscv RV32IMF mit FPU und CFU, seit Schritt 2 SDRAM-Controller und SRAM-Controller (Speichertest auf dem Pocket bestanden, cram0 asynchron angebunden), seit Schritt 3 der Rasterizer für einfarbige und texturierte Dreiecke mit 16-KB-Textur-Cache. Geplant: Glas und Schatten (Tabelle MAPn.SMG) im Rasterizer, Befehlslisten im SRAM, Geometrie-Einheit, Audio, Textur-Speicher mit Burst-Modus und Cache in cram0. PSRAM cram1 ist frei.</desc>
   <defs>
     <marker id="built" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#2e7d32"/>
@@ -97,8 +97,8 @@
 
   <rect x="910" y="260" width="150" height="100" rx="8" class="built"/>
   <text x="985" y="288" class="t c">Rasterizer</text>
-  <text x="985" y="306" class="b c">einfarbig: fertig</text>
-  <text x="985" y="322" class="b c">Texturen: folgt</text>
+  <text x="985" y="306" class="b c">einfarbig, Texturen</text>
+  <text x="985" y="322" class="b c">Glas/Schatten: folgt</text>
   <text x="985" y="344" class="p c">zeichnet Bild N</text>
 
   <rect x="1100" y="260" width="110" height="100" rx="8" class="built"/>
@@ -123,10 +123,10 @@
   <text x="655" y="569" class="t c">SDRAM-Controller</text>
   <text x="655" y="589" class="b c">Bursts für Cache-Zeilen · zweiter Port für die Bridge</text>
 
-  <rect x="910" y="540" width="150" height="70" rx="8" class="plan"/>
-  <text x="985" y="564" class="t c">Textur-Speicher</text>
-  <text x="985" y="582" class="b c">cram0, Burst-Modus</text>
-  <text x="985" y="597" class="b c">+ Textur-Cache</text>
+  <rect x="910" y="540" width="150" height="70" rx="8" class="built"/>
+  <text x="985" y="564" class="t c">Textur-Cache 16 KB</text>
+  <text x="985" y="582" class="b c">Texturen im SDRAM</text>
+  <text x="985" y="597" class="b c">(cram0 als Option)</text>
 
   <!-- external memory chips below -->
   <rect x="540" y="700" width="230" height="56" rx="6" class="ext"/>
@@ -204,5 +204,5 @@
 
   <!-- notes -->
   <text x="40" y="798" class="l">Bild N+1, N und N−1: CPU, Grafik und Anzeige arbeiten gleichzeitig an drei aufeinanderfolgenden Bildern; Befehlslisten und Framebuffer sind doppelt gepuffert.</text>
-  <text x="40" y="816" class="l">Heute (Schritt 3): Der Rasterizer zeichnet einfarbige Dreiecke in Hardware (bis 4 Pixel/Takt), Speicher getestet. Belegung: 5.109 von 18.480 ALMs (28 %), 194 von 308 M10K, 14 von 66 DSP.</text>
+  <text x="40" y="816" class="l">Heute (Schritt 3): Der Rasterizer zeichnet einfarbige und texturierte Dreiecke in Hardware (Texturen 1 Pixel/Takt, 16-KB-Cache), 50 Hz. Belegung: 5.970 von 18.480 ALMs (32 %), 217 von 308 M10K, 22 von 66 DSP.</text>
 </svg>
