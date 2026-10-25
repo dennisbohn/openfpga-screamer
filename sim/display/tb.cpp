@@ -33,7 +33,7 @@
 
 static const int W = 320, H = 200;
 static const uint64_t HALF_74 = 6734, HALF_VID = 40690;    // ps
-static const uint64_t LINE_PS = 400 * 2 * HALF_VID;        // one video line
+static const uint64_t LINE_PS = 480 * 2 * HALF_VID;        // one video line
 
 static std::vector<uint8_t> load(const char *path) {
     std::vector<uint8_t> f(65024);

@@ -1,5 +1,5 @@
 //
-// 320x200 video out of the front framebuffer through its palette, at 60 Hz
+// 320x200 video out of the front framebuffer through its palette, at 50 Hz
 //
 // There are two framebuffers (framebuffer.v) and two palettes, one for each. The
 // front one is shown; a writer draws the other and then asks for a swap by flipping
@@ -8,8 +8,9 @@
 // skipped; a frame never mixes the two buffers. swap_ack_toggle then follows
 // swap_req_toggle, and the old front buffer is free to draw.
 //
-// Video timing at the 12.288 MHz pixel clock: 400 clocks x 512 lines = 60 Hz,
-// 320 x 200 of it visible.
+// Video timing at the 12.288 MHz pixel clock: 480 clocks x 512 lines = 50 Hz, 320 x 200
+// of it visible. 50 Hz is the game's own step: its physics never takes less than 20 ms a
+// frame (docs/architektur.md).
 //
 
 module video_out (
@@ -42,7 +43,7 @@ module video_out (
 
     localparam  H_ACTIVE = 'd320;
     localparam  H_BPORCH = 'd10;
-    localparam  H_TOTAL  = 'd400;
+    localparam  H_TOTAL  = 'd480;
     localparam  V_ACTIVE = 'd200;
     localparam  V_BPORCH = 'd10;
     localparam  V_TOTAL  = 'd512;

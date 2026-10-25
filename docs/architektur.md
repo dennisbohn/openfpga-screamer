@@ -100,6 +100,14 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   einer Scala-Konfiguration als Verilog erzeugt, eigene CPU-Befehle laufen über sein
   CFU-Plugin. Gleiche Leistung wie SpinalHDL, leichter zu lesen.
 - **Spieldaten:** Originaldateien flach in `Assets/screamer/common/` (siehe oben).
+- **50 Hz, ein Spielschritt pro Bild:** Das Original hat keinen festen Takt, seine Physik
+  rechnet mit der gemessenen Bildzeit, begrenzt auf 0,02–0,2 s; schneller als 50 Schritte
+  pro Sekunde wird es also nie (OpenScreamer `docs/NOTES.md`, Fahrmodell). Die Bildausgabe
+  läuft deshalb mit genau 50 Hz (480 × 512 Takte bei 12,288 MHz, der Bildschirm des Pocket
+  kann 47–61 Hz), und jedes Bild ist ein Physikschritt mit 20 ms: das Spiel bei seiner
+  besten Rate, ohne Zwischenbilder und ohne Ruckeln. Die Uhr für Countdowns und
+  Rundenzeiten tickt im Original mit 100 Hz und bekommt ein eigenes Zählregister. Pro Bild
+  stehen 1,485 Millionen Takte zur Verfügung.
 - **VGA-Fassung:** 320×200 mit 8-Bit-Palette wie die VGA-Version des Spiels, daher nur die
   L-Dateien. Cockpit, Renninfos und andere statische Bilder sind Sprites aus dem L-Satz von
   `GAME.DAT` und kommen 1:1 pixelgenau in den Framebuffer: erst von der CPU gezeichnet,
@@ -120,7 +128,7 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   wichtiger macht.
 - **Bilder überlappen (Pipeline):** CPU, Grafik und Anzeige arbeiten gleichzeitig an Bild
   N+1, N und N−1, die Zeit pro Bild ist das Maximum statt der Summe. Kosten: ein Bild mehr
-  Verzögerung zwischen Eingabe und Anzeige (16,7 ms bei 60 fps).
+  Verzögerung zwischen Eingabe und Anzeige (20 ms bei 50 fps).
 - **Zwei Framebuffer im Block-RAM** statt im PSRAM: Der Rasterizer schreibt den hinteren
   mit einem Pixel pro Takt, Übermalen kostet nichts, und es braucht weder PSRAM-Controller
   noch Arbitrierung für den Framebuffer (spart Logik, die knappe Ressource). Jeder Puffer
@@ -130,7 +138,7 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   18.1 den Speicher mit echten Byte-Enables sonst stillschweigend aus Registern baut;
   `tools/check_budget.py` prüft bei jedem Build die 128 M10K. Getauscht wird am Anfang
   jeder Zeile der Austastlücke, höchstens einmal je Lücke (`video_out.v`): Ein Bild, das
-  etwas länger als 16,7 ms braucht, fällt so nicht gleich auf 30 fps. Unabhängig
+  etwas länger als 20 ms braucht, fällt so nicht gleich auf 25 fps. Unabhängig
   gegengeprüft gegen SRAM, PSRAM und Mischformen (2026-10-25).
 - **SRAM für die Befehlslisten:** AS6C2016-55, 55 ns, laut Analogue kaum schneller als der
   PSRAM und ohne Bursts, also nichts für Pixel. Für die doppelt gepufferten Objektlisten

@@ -38,7 +38,7 @@
 
 static const int W = 320, H = 200;
 static const uint64_t HALF_74 = 6734, HALF_VID = 40690;    // ps
-static const uint64_t FRAME_PS = 400ull * 512 * 2 * HALF_VID;
+static const uint64_t FRAME_PS = 480ull * 512 * 2 * HALF_VID;   // 50 Hz
 static const int BRIDGE_GAP = 88;                           // clocks per bridge word, APF worst case
 
 struct Sim {

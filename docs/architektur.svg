@@ -156,7 +156,7 @@
   <text x="420" y="280" class="l c">Tasten,</text>
   <text x="420" y="293" class="l c">Protokoll</text>
   <text x="1240" y="302" class="l c">320×200</text>
-  <text x="1240" y="324" class="l c">60 Hz</text>
+  <text x="1240" y="324" class="l c">50 Hz</text>
 
   <!-- planned connections -->
   <path d="M675,148 V204" class="wp" marker-start="url(#plan)" marker-end="url(#plan)"/>

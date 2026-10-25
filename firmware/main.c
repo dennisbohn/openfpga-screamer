@@ -267,9 +267,9 @@ static void draw_status(volatile uint8_t *fb, uint32_t st, uint32_t drawn, const
         fmt_udec(fmt_str(p, " Takte "), d->cycles);
         con_text(fb, 1, 22, buf, col_text, col_bg);
     }
-    /* frames drawn in the last second (60 video frames) */
+    /* frames drawn in the last second */
     static uint32_t fps, fps_drawn, fps_frame;
-    if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= 60) {
+    if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
         fps = drawn - fps_drawn;
         fps_drawn = drawn;
         fps_frame = VID_FRAME(st);

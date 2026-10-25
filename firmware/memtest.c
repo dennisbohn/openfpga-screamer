@@ -459,7 +459,7 @@ static void t_code(void)
 /* Refresh: count the AUTO REFRESH commands over a second (two frames in the simulation) */
 static void t_refresh(void)
 {
-    uint32_t frames = small ? 2 : 60, t0 = rdcycle(), before = begin(sd, "refresh");
+    uint32_t frames = small ? 2 : VID_HZ, t0 = rdcycle(), before = begin(sd, "refresh");
     uint32_t f0 = VID_FRAME(VID_STATUS), r0;
     while(VID_FRAME(VID_STATUS) == f0)      /* start at a frame boundary */
         ;
@@ -467,7 +467,7 @@ static void t_refresh(void)
     r0 = MEM_REFRESH;
     while(((VID_FRAME(VID_STATUS) - f0) & 0xFFFF) < frames)
         ;
-    refresh_per_s = (MEM_REFRESH - r0) * 60 / frames;
+    refresh_per_s = (MEM_REFRESH - r0) * VID_HZ / frames;
     if(refresh_per_s < 128000) fail(sd, 0, 128000, refresh_per_s);
     dlog_str("SDRAM refresh per second ");
     dlog_dec((int32_t)refresh_per_s);

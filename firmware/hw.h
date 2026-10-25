@@ -27,7 +27,8 @@
 #define VID_PAL         ((volatile uint32_t *)0xF0001400u)  /* W: [256] 0x00RRGGBB, back buffer */
 #define VID_FRONT       (1u << 0)           /* the buffer on screen (0/1) */
 #define VID_PENDING     (1u << 1)           /* swap requested, not yet done */
-#define VID_FRAME(st)   ((st) >> 16)        /* counts every video frame (60 Hz) */
+#define VID_FRAME(st)   ((st) >> 16)        /* counts every video frame (VID_HZ) */
+#define VID_HZ          50                  /* video frames a second */
 
 /* Input (cont1_key, cont1_joy, cont1_trig) */
 #define IN_KEY          REG32(0xF0002000u)
