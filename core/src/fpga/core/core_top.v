@@ -316,10 +316,9 @@ always @(*) begin
     default: begin
         bridge_rd_data <= 0;
     end
-    32'h10xxxxxx: begin
-        // example
-        // bridge_rd_data <= example_device_data;
-        bridge_rd_data <= 0;
+    32'h0010xxxx: begin
+        // the debug log (data slot debug.txt), saved by the APF on exit
+        bridge_rd_data <= soc_log_rd_data;
     end
     32'hF8xxxxxx: begin
         bridge_rd_data <= cmd_bridge_rd_data;
@@ -496,53 +495,69 @@ core_bridge_cmd icb (
 
 
 
-// video: two 320x200 8-bit framebuffers in block RAM, each with its own palette;
-// one is shown while the other is drawn, swapped at the start of a frame.
-// Until the CPU draws, the two data slots fill them and button A swaps them.
+// the CPU system (docs/soc.md) and the video: the CPU draws into the back one of two
+// 320x200 8-bit framebuffers in block RAM, each with its own palette; video_out shows
+// the front one and swaps them in the vertical blanking when the CPU asks.
+// Everything but the video runs on clk_74a in step 1.
 // ~12,288,000 hz pixel clock, 60 hz
 
 assign video_rgb_clock = clk_core_12288;
 assign video_rgb_clock_90 = clk_core_12288_90deg;
 assign video_skip = 0;
 
-    wire            fb_wr_en, fb_wr_buf;
-    wire    [13:0]  fb_wr_addr;
-    wire    [31:0]  fb_wr_data;
+    wire    [31:0]  soc_log_rd_data;
+    wire    [31:0]  soc_sim_status;         // only for the simulation
+    wire            fb_wr_en, fb_buf;
+    wire    [13:0]  fb_addr;
+    wire    [31:0]  fb_wr_data, fb_sys_rd_data;
+    wire    [3:0]   fb_wr_be;
     wire            pal_wr, pal_buf;
     wire    [7:0]   pal_addr;
     wire    [23:0]  pal_data;
-    wire            swap_req_toggle, swap_ack_toggle;
+    wire            swap_req_toggle, swap_ack_toggle, frame_toggle;
     wire            fb_front;
     wire            fb_rd_buf;
     wire    [13:0]  fb_rd_addr;
     wire    [31:0]  fb_rd_data;
 
-fb_bridge fbb (
-    .clk_74a        ( clk_74a ),
-    .bridge_wr      ( bridge_wr ),
-    .bridge_addr    ( bridge_addr ),
-    .bridge_wr_data ( bridge_wr_data ),
-    .swap_button    ( cont1_key[4] ),       // face_a
-    .fb_wr_en       ( fb_wr_en ),
-    .fb_wr_buf      ( fb_wr_buf ),
-    .fb_wr_addr     ( fb_wr_addr ),
-    .fb_wr_data     ( fb_wr_data ),
-    .pal_wr         ( pal_wr ),
-    .pal_buf        ( pal_buf ),
-    .pal_addr       ( pal_addr ),
-    .pal_data       ( pal_data ),
-    .swap_req_toggle( swap_req_toggle ),
-    .swap_ack_toggle( swap_ack_toggle )
+soc soc (
+    .clk                ( clk_74a ),
+    .reset_n            ( reset_n ),
+    .bridge_wr          ( bridge_wr ),
+    .bridge_addr        ( bridge_addr ),
+    .bridge_wr_data     ( bridge_wr_data ),
+    .bridge_log_rd_data ( soc_log_rd_data ),
+    .cont1_key          ( cont1_key ),
+    .cont1_joy          ( cont1_joy ),
+    .cont1_trig         ( cont1_trig ),
+    .fb_wr_en           ( fb_wr_en ),
+    .fb_buf             ( fb_buf ),
+    .fb_addr            ( fb_addr ),
+    .fb_wr_data         ( fb_wr_data ),
+    .fb_wr_be           ( fb_wr_be ),
+    .fb_rd_data         ( fb_sys_rd_data ),
+    .pal_wr             ( pal_wr ),
+    .pal_buf            ( pal_buf ),
+    .pal_addr           ( pal_addr ),
+    .pal_data           ( pal_data ),
+    .swap_req_toggle    ( swap_req_toggle ),
+    .swap_ack_toggle    ( swap_ack_toggle ),
+    .frame_toggle       ( frame_toggle ),
+    .dt_addr            ( datatable_addr ),
+    .dt_wren            ( datatable_wren ),
+    .dt_data            ( datatable_data ),
+    .dt_q               ( datatable_q ),
+    .sim_status         ( soc_sim_status )
 );
 
 framebuffer fb (
     .clk_sys        ( clk_74a ),
     .wr_en          ( fb_wr_en ),
-    .wr_buf         ( fb_wr_buf ),
-    .wr_addr        ( fb_wr_addr ),
+    .wr_buf         ( fb_buf ),
+    .wr_addr        ( fb_addr ),
     .wr_data        ( fb_wr_data ),
-    .wr_be          ( 4'b1111 ),
-    .sys_rd_data    ( ),
+    .wr_be          ( fb_wr_be ),
+    .sys_rd_data    ( fb_sys_rd_data ),
     .clk_vid        ( clk_core_12288 ),
     .rd_buf         ( fb_rd_buf ),
     .rd_addr        ( fb_rd_addr ),
@@ -558,6 +573,7 @@ video_out vo (
     .swap_req_toggle( swap_req_toggle ),
     .swap_ack_toggle( swap_ack_toggle ),
     .front          ( fb_front ),
+    .frame_toggle   ( frame_toggle ),
     .fb_rd_buf      ( fb_rd_buf ),
     .fb_rd_addr     ( fb_rd_addr ),
     .fb_rd_data     ( fb_rd_data ),

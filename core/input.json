@@ -5,11 +5,8 @@
             {
                 "type": "default",
                 "mappings": [
-                    {
-                        "id": 0,
-                        "name": "Swap screens",
-                        "key": "pad_btn_a"
-                    }
+                    { "id": 0, "name": "A", "key": "pad_btn_a" },
+                    { "id": 1, "name": "B", "key": "pad_btn_b" }
                 ]
             }
         ]

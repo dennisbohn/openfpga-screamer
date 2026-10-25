@@ -3,23 +3,24 @@
         "magic": "APF_VER_1",
         "data_slots": [
             {
-                "name": "Screen A",
+                "name": "Firmware",
                 "id": 0,
                 "required": true,
-                "parameters": "0x02",
-                "filename": "screen.bin",
+                "parameters": "0x43",
+                "filename": "firmware.bin",
                 "extensions": ["bin"],
-                "size_exact": 65024,
+                "size_maximum": 16384,
                 "address": "0x00000000"
             },
             {
-                "name": "Screen B",
+                "name": "Debug Log",
                 "id": 1,
-                "required": true,
-                "parameters": "0x02",
-                "filename": "screen2.bin",
-                "extensions": ["bin"],
-                "size_exact": 65024,
+                "required": false,
+                "parameters": "0x22",
+                "nonvolatile": true,
+                "filename": "debug.txt",
+                "extensions": ["txt"],
+                "size_maximum": 4096,
                 "address": "0x00100000"
             }
         ]

@@ -1,42 +1,49 @@
 //
-// One byte lane of the framebuffers: 32768 x 8 bits, 32 M10K
-//   port A (clk_sys): read or write one byte, data one clock after the address;
-//                     a read of the byte being written returns the new byte
-//   port B (clk_vid): read only, data one clock after the address
+// One byte lane of a block RAM: 2^ADDR_W x 8 bits, two independent ports
+//   port A (clk_a): read or write one byte, data one clock after the address;
+//                   a read of the byte being written returns the new byte
+//   port B (clk_b): the same
+// Wider memories with byte enables are built from four of these (framebuffer.v,
+// soc.v): one lane per byte, each with its own write enable.
 //
-// Quartus gets an explicit altsyncram: inferring this memory with byte enables builds
+// Quartus gets an explicit altsyncram: inferring a memory with byte enables builds
 // registers instead of M10K, and inferring a second read port duplicates the blocks.
 // The simulation gets the same behaviour from an array, starting from a poison byte so
 // a lost write shows up.
 //
 
-module fb_lane (
-    input   wire            clk_sys,
-    input   wire    [14:0]  addr_a,
-    input   wire            we_a,
-    input   wire    [7:0]   wdata_a,
-    output  wire    [7:0]   q_a,
+module ram_lane #(
+    parameter ADDR_W = 15
+) (
+    input   wire                clk_a,
+    input   wire    [ADDR_W-1:0] addr_a,
+    input   wire                we_a,
+    input   wire    [7:0]       wdata_a,
+    output  wire    [7:0]       q_a,
 
-    input   wire            clk_vid,
-    input   wire    [14:0]  addr_b,
-    output  wire    [7:0]   q_b
+    input   wire                clk_b,
+    input   wire    [ADDR_W-1:0] addr_b,
+    input   wire                we_b,
+    input   wire    [7:0]       wdata_b,
+    output  wire    [7:0]       q_b
 );
 
 `ifdef VERILATOR
 
-    reg [7:0]   mem [0:32767];
+    reg [7:0]   mem [0:(1<<ADDR_W)-1];
     reg [7:0]   ra, rb;
 
     integer i;
-    initial for(i = 0; i < 32768; i = i + 1) mem[i] = 8'hA5;
+    initial for(i = 0; i < (1<<ADDR_W); i = i + 1) mem[i] = 8'hA5;
 
-always @(posedge clk_sys) begin
+always @(posedge clk_a) begin
     if(we_a) mem[addr_a] <= wdata_a;
     ra <= we_a ? wdata_a : mem[addr_a];
 end
 
-always @(posedge clk_vid) begin
-    rb <= mem[addr_b];
+always @(posedge clk_b) begin
+    if(we_b) mem[addr_b] <= wdata_b;
+    rb <= we_b ? wdata_b : mem[addr_b];
 end
 
     assign q_a = ra;
@@ -51,11 +58,11 @@ altsyncram #(
     .ram_block_type                 ( "M10K" ),
     .power_up_uninitialized         ( "FALSE" ),
     .width_a                        ( 8 ),
-    .widthad_a                      ( 15 ),
-    .numwords_a                     ( 32768 ),
+    .widthad_a                      ( ADDR_W ),
+    .numwords_a                     ( 1 << ADDR_W ),
     .width_b                        ( 8 ),
-    .widthad_b                      ( 15 ),
-    .numwords_b                     ( 32768 ),
+    .widthad_b                      ( ADDR_W ),
+    .numwords_b                     ( 1 << ADDR_W ),
     .width_byteena_a                ( 1 ),
     .width_byteena_b                ( 1 ),
     .outdata_reg_a                  ( "UNREGISTERED" ),
@@ -70,15 +77,15 @@ altsyncram #(
     .read_during_write_mode_port_a  ( "NEW_DATA_NO_NBE_READ" ),
     .read_during_write_mode_port_b  ( "NEW_DATA_NO_NBE_READ" )
 ) ram (
-    .clock0         ( clk_sys ),
+    .clock0         ( clk_a ),
     .address_a      ( addr_a ),
     .wren_a         ( we_a ),
     .data_a         ( wdata_a ),
     .q_a            ( q_a ),
-    .clock1         ( clk_vid ),
+    .clock1         ( clk_b ),
     .address_b      ( addr_b ),
-    .wren_b         ( 1'b0 ),
-    .data_b         ( 8'h00 ),
+    .wren_b         ( we_b ),
+    .data_b         ( wdata_b ),
     .q_b            ( q_b ),
     .aclr0          ( 1'b0 ),
     .aclr1          ( 1'b0 ),

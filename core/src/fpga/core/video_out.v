@@ -24,6 +24,7 @@ module video_out (
     input   wire            swap_req_toggle,
     output  reg             swap_ack_toggle,
     output  reg             front,
+    output  reg             frame_toggle,       // flips at the start of every frame
 
     // framebuffer read port, data one clock after the address
     output  wire            fb_rd_buf,
@@ -83,6 +84,7 @@ always @(posedge clk_vid or negedge reset_n) begin
         front <= 0;
         swap_ack_toggle <= 0;
         swap_armed <= 1;
+        frame_toggle <= 0;
         de_d <= 0;
         hs_d <= 0;
         vs_d <= 0;
@@ -98,7 +100,10 @@ always @(posedge clk_vid or negedge reset_n) begin
             if(y_count == V_TOTAL-1) y_count <= 0;
         end
 
-        if(frame_start) pix_addr <= 0;
+        if(frame_start) begin
+            pix_addr <= 0;
+            frame_toggle <= ~frame_toggle;
+        end
         else if(active) pix_addr <= pix_addr + 1'b1;
 
         // a pending swap takes effect at the start of a blanking line, once per

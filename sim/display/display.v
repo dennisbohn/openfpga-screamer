@@ -37,6 +37,7 @@ module display (
     wire    [23:0]  pal_data;
     wire            swap_req_toggle, swap_ack_toggle;
     wire            fb_rd_buf;
+    wire            frame_toggle;       // not checked here
     wire    [13:0]  fb_rd_addr;
     wire    [31:0]  fb_rd_data;
 
@@ -81,6 +82,7 @@ video_out vo (
     .swap_req_toggle( swap_req_toggle ),
     .swap_ack_toggle( swap_ack_toggle ),
     .front          ( front ),
+    .frame_toggle   ( frame_toggle ),
     .fb_rd_buf      ( fb_rd_buf ),
     .fb_rd_addr     ( fb_rd_addr ),
     .fb_rd_data     ( fb_rd_data ),
