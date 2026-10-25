@@ -81,6 +81,7 @@ static const struct rs_clip demo_clip = { 0, 48, FB_W, 168 };  /* text rows 6..2
 static int player_x = 160 * 16, player_y = 120 * 16;
 static uint8_t col_player = COL_SQUARE;
 static uint32_t draw_buf;               /* the back buffer, for hw_textured() */
+static uint32_t draw_wait;              /* cycles the DRAW writes waited for the rasterizer */
 
 struct demo_stats { uint32_t triangles, pixels, cycles; };
 
@@ -114,7 +115,9 @@ static uint32_t hw_textured(const struct rs_vertex pos[3], const struct rs_tex_s
         RS_DX(k) = (uint32_t)s->dx[k];
         RS_DY(k) = (uint32_t)s->dy[k];
     }
+    uint32_t t0 = rdcycle();
     RS_DRAW = draw_buf << 8 | RS_TEXTURED;      /* waits while the previous one draws */
+    draw_wait += rdcycle() - t0;
     return 0;
 }
 
@@ -126,7 +129,9 @@ static void hw_track_tex(const struct rs_vertex pos[3], const struct rs_tex_setu
 static void hw_track_flat(const struct rs_vertex pos[3], uint8_t colour)
 {
     for (int k = 0; k < 3; k++) RS_V(k) = RS_XY(pos[k].x, pos[k].y);
+    uint32_t t = rdcycle();
     RS_DRAW = colour | draw_buf << 8;
+    draw_wait += rdcycle() - t;
 }
 
 static struct demo_stats draw_demo(uint32_t frame, const struct rs_vertex pv[3], int buf)
@@ -261,6 +266,7 @@ static void __attribute__((noreturn)) run_track(void)
         RS_PIXELS = 0;
         RS_MISSES = 0;
         RS_CLOCKS = 0;
+        draw_wait = 0;
         RS_CLIP0 = RS_XY(track_clip.x0, track_clip.y0);
         RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
         track_draw(0, &track_clip, pos, &ts);
@@ -307,15 +313,36 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)misses);
             dlog_str(", fps ");
             dlog_dec((int32_t)fps);
-            dlog_str(", camera ");
-            dlog_dec(ts.cam[0]);
-            dlog_char(' ');
-            dlog_dec(ts.cam[1]);
-            dlog_char(' ');
-            dlog_dec(ts.cam[2]);
-            dlog_str(", nearest ");
-            dlog_dec((int32_t)ts.nearest);
-            dlog_char('\n');
+            if (drawn == 2) {                   /* the log has 4 KB: once */
+                dlog_str(", camera ");
+                dlog_dec(ts.cam[0]);
+                dlog_char(' ');
+                dlog_dec(ts.cam[1]);
+                dlog_char(' ');
+                dlog_dec(ts.cam[2]);
+                dlog_str(", nearest ");
+                dlog_dec((int32_t)ts.nearest);
+            }
+            dlog_str("\n  cycles: cull ");
+            dlog_dec((int32_t)ts.cyc_cull);
+            dlog_str(", vertices ");
+            dlog_dec((int32_t)ts.cyc_vert);
+            dlog_str(" (");
+            dlog_dec((int32_t)ts.vertices);
+            dlog_str("), faces ");
+            dlog_dec((int32_t)ts.cyc_face);
+            dlog_str(", clip ");
+            dlog_dec((int32_t)ts.cyc_clip);
+            dlog_str(", setup ");
+            dlog_dec((int32_t)ts.cyc_setup);
+            dlog_str(", out ");
+            dlog_dec((int32_t)ts.cyc_out);
+            dlog_str(" (wait ");
+            dlog_dec((int32_t)draw_wait);
+            dlog_str("), after ");
+            dlog_dec((int32_t)(cycles - ts.cyc_cull - ts.cyc_vert - ts.cyc_face - ts.cyc_clip
+                               - ts.cyc_setup - ts.cyc_out));
+            dlog_str("\n");
         }
         VID_SWAP = 1;
         log_head("frames drawn: ", ++drawn);

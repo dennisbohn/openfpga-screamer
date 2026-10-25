@@ -32,6 +32,11 @@ struct track_stats {
     uint32_t see_through;                       /* faces of routine 224 left out for now */
     int32_t cam[3];                             /* camera X, Y, height */
     uint32_t nearest;                           /* distance to the nearest placement */
+    uint32_t vertices;                          /* vertices taken into view space */
+    /* CPU cycles (0 on the PC): pieces in view and sorted, vertices into view space, the
+       face rows (backface test, material), cutting and projecting, the triangles' texture
+       setup, the hooks or the C model */
+    uint32_t cyc_cull, cyc_vert, cyc_face, cyc_clip, cyc_setup, cyc_out;
 };
 
 /* Where triangles go: the C model into fb (TRACK_MODEL) or the two hooks (TRACK_HW) */
