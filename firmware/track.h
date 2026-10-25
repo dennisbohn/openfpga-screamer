@@ -19,11 +19,19 @@ const uint32_t *track_palette(void);
 /* Path points of the camera's lap */
 uint32_t track_path_length(void);
 
+/* The file's size and its blocks of 256 KB from offset 0x100 on, each with a CRC-32 in the
+   header: whether block k (0 .. track_blocks() - 1) arrived as written */
+uint32_t track_size(void);
+int track_blocks(void);
+int track_block_ok(int k);
+
 struct track_stats {
     uint32_t pieces;                            /* placements drawn */
     uint32_t faces;                             /* faces drawn */
     uint32_t triangles;                         /* triangles handed out */
     uint32_t see_through;                       /* faces of routine 224 left out for now */
+    int32_t cam[3];                             /* camera X, Y, height */
+    uint32_t nearest;                           /* distance to the nearest placement */
 };
 
 /* Where triangles go: the C model into fb (TRACK_MODEL) or the two hooks (TRACK_HW) */

@@ -25,6 +25,3 @@ uint32_t memtest_program(void);
    returns the number of rows. Highlight rows whose fail flag is set. */
 #define MT_ROWS         9
 int memtest_rows(char rows[][41], uint8_t fail[]);
-
-/* CRC-32 as zlib computes it (main.c) */
-uint32_t crc32(const uint8_t *p, const uint8_t *end);

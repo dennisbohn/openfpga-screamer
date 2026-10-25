@@ -5,7 +5,7 @@ Usage: python tools/make_track.py <GFX/MAPnL.DAT> <DATA/MAPn.DAT> <out.bin> <pre
 Formats from openscreamer docs/NOTES.md ("How the track is built", sections 1-4 and 11).
 The output, for data slot 3 (core/data.json), little-endian:
 
-  0x00  "SCRK", u32 version 1
+  0x00  "SCRK", u32 version 2
   0x08  u32 offset, size of MAPn.MLB     materials and pixel pages, unchanged
   0x10  u32 offset, size of MAPn.UNR     the meshes, unchanged
   0x18  u32 offset of the palette        256 x 0x00RRGGBB (MAPn.COL is 6-bit VGA)
@@ -15,6 +15,8 @@ The output, for data slot 3 (core/data.json), little-endian:
                                          along the player's line (MAPnOPP.SPL, the tenth
                                          spline, a uniform quadratic B-spline over the
                                          nodes' handles)
+  0x2C  u32 file size, u32 n, n x u32    CRC-32 (zlib) of each 256 KB block from 0x100 on,
+                                         so the core can tell where a load went wrong
 
 Sections start on 256-byte boundaries. The output is made from game data: it stays in
 build/, never in the repository. The preview draws placements and path from above.
@@ -27,6 +29,8 @@ import zlib
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import datfile
+
+BLOCK = 0x40000         # bytes per CRC block
 
 
 def png(path, w, h, rgb):
@@ -117,13 +121,16 @@ def main():
     for s in sections:
         offs.append(pos)
         pos = (pos + len(s) + 255) & ~255
-    head = b"SCRK" + struct.pack("<I", 1) + struct.pack("<2I", offs[0], len(mlb)) + \
-        struct.pack("<2I", offs[1], len(unr)) + struct.pack("<I", offs[2]) + \
-        struct.pack("<2I", offs[3], len(pl)) + struct.pack("<2I", offs[4], len(path))
     blob = bytearray(pos)
-    blob[:len(head)] = head
     for o, s in zip(offs, sections):
         blob[o:o + len(s)] = s
+    crcs = [zlib.crc32(blob[o:o + BLOCK]) for o in range(0x100, pos, BLOCK)]
+    head = b"SCRK" + struct.pack("<I", 2) + struct.pack("<2I", offs[0], len(mlb)) + \
+        struct.pack("<2I", offs[1], len(unr)) + struct.pack("<I", offs[2]) + \
+        struct.pack("<2I", offs[3], len(pl)) + struct.pack("<2I", offs[4], len(path)) + \
+        struct.pack("<2I", pos, len(crcs)) + struct.pack(f"<{len(crcs)}I", *crcs)
+    assert len(head) <= 0x100, "file too large for the block CRCs in the header"
+    blob[:len(head)] = head
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
     with open(out, "wb") as fh:
         fh.write(blob)

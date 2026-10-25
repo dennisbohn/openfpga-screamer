@@ -20,7 +20,9 @@
  * (found from the data: each row leaves out the faces seen only from elsewhere).
  */
 #include "track.h"
+#include "crc32.h"
 
+#define BLOCK       0x40000     /* bytes per CRC block (tools/make_track.py) */
 #define MAX_PIECES  1024        /* placements; track 1 has 809 */
 #define MAX_OBJ     512         /* meshes; up to 360 on a track */
 #define MAX_VERT    512         /* vertices of one mesh; at most 189 measured */
@@ -37,7 +39,9 @@ struct piece { int32_t obj, x, y, h, t; };
 struct pt { int32_t x, y, h; };
 struct cv { float r, u, f, s, t; };     /* a corner in view space and its texel position */
 
-static const uint8_t *mlb, *unr_blob;
+static const uint8_t *file_start, *mlb, *unr_blob;
+static uint32_t file_size;
+static int nblocks;
 static const int32_t *unr_off;
 static int unr_count;
 static const struct piece *pieces;
@@ -72,7 +76,11 @@ static const uint8_t *block_of(int k, const uint8_t **obj)
 int track_init(const volatile uint8_t *file)
 {
     const uint8_t *f = (const uint8_t *)file;
-    if(rd32(f) != 0x4B524353 || rd32(f + 4) != 1) return 0;    /* "SCRK", version 1 */
+    if(rd32(f) != 0x4B524353 || rd32(f + 4) != 2) return 0;    /* "SCRK", version 2 */
+    file_start = f;
+    file_size = (uint32_t)rd32(f + 0x2C);
+    nblocks = rd32(f + 0x30);
+    if(nblocks < 0 || 0x34 + 4 * nblocks > 0x100) nblocks = 0;
     mlb = f + rd32(f + 0x08);
     const uint8_t *unr = f + rd32(f + 0x10);
     pal = (const uint32_t *)(f + rd32(f + 0x18));
@@ -115,6 +123,22 @@ const uint32_t *track_palette(void)
 uint32_t track_path_length(void)
 {
     return (uint32_t)npath;
+}
+
+uint32_t track_size(void)
+{
+    return file_size;
+}
+
+int track_blocks(void)
+{
+    return nblocks;
+}
+
+int track_block_ok(int k)
+{
+    uint32_t o = 0x100 + (uint32_t)k * BLOCK, e = o + BLOCK < file_size ? o + BLOCK : file_size;
+    return o < e && crc32(file_start + o, file_start + e) == (uint32_t)rd32(file_start + 0x34 + 4 * k);
 }
 
 /* distance of a corner from clipping plane p (>= 0 inside) */
@@ -221,16 +245,21 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
     l = __builtin_sqrtf(rx * rx + ry * ry);
     rx /= l; ry /= l;
     float ux = ry * fh, uy = -rx * fh, uh = rx * fy - ry * fx;   /* up = right x forward */
+    st->cam[0] = (int32_t)cx;
+    st->cam[1] = (int32_t)cy;
+    st->cam[2] = (int32_t)ch;
 
     /* the pieces in reach and in view, far to near */
     const float half_w = (float)(clip->x1 - clip->x0) / 2.0f / FOCAL;
     const float half_h = (float)(clip->y1 - clip->y0) / 2.0f / FOCAL;
     int nv = 0;
+    float nearest = 1e30f;
     for(int i = 0; i < npieces; i++) {
         const struct piece *pc = &pieces[i];
         if(pc->obj < 0 || pc->obj >= unr_count) continue;
         float dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch, rad = radius[pc->obj];
         float d2 = dx * dx + dy * dy + dh * dh;
+        if(d2 < nearest) nearest = d2;
         if(d2 > FAR * FAR) continue;
         float f = dx * fx + dy * fy + dh * fh, r = dx * rx + dy * ry, u = dx * ux + dy * uy + dh * uh;
         if(f + rad < NEAR) continue;
@@ -240,6 +269,7 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
         vis[nv].i = i;
         nv++;
     }
+    st->nearest = nearest < 4e18f ? (uint32_t)__builtin_sqrtf(nearest) : 0xFFFFFFFFu;
     for(int gap = nv / 2; gap > 0; gap /= 2)    /* Shell sort, far first */
         for(int i = gap; i < nv; i++) {
             struct vis t = vis[i];

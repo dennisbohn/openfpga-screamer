@@ -307,6 +307,14 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)misses);
             dlog_str(", fps ");
             dlog_dec((int32_t)fps);
+            dlog_str(", camera ");
+            dlog_dec(ts.cam[0]);
+            dlog_char(' ');
+            dlog_dec(ts.cam[1]);
+            dlog_char(' ');
+            dlog_dec(ts.cam[2]);
+            dlog_str(", nearest ");
+            dlog_dec((int32_t)ts.nearest);
             dlog_char('\n');
         }
         VID_SWAP = 1;
@@ -334,7 +342,16 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         dlog_dec(placements);
         dlog_str(" placements, ");
         dlog_dec((int32_t)track_path_length());
-        dlog_str(" path points (data slot 3)\n");
+        dlog_str(" path points (data slot 3)\ntrack1.bin: ");
+        dlog_dec((int32_t)track_size());
+        dlog_str(" bytes, CRC of the 256 KB blocks:");
+        int bad = 0;
+        for (int k = 0; k < track_blocks(); k++) {
+            int ok = track_block_ok(k);
+            bad += !ok;
+            dlog_str(ok ? " ok" : " BAD");
+        }
+        dlog_str(bad ? "\n" : " (all ok)\n");
         RS_CTRL = 1;
         run_track();
     }

@@ -14,6 +14,7 @@
 #include "console.h"
 #include "dlog.h"
 #include "memtest.h"
+#include "crc32.h"
 
 #define V32(a)          (*(volatile uint32_t *)(uintptr_t)(a))
 #define V16(a)          (*(volatile uint16_t *)(uintptr_t)(a))
