@@ -94,30 +94,6 @@ module soc (
     input   wire            ds_done,
     input   wire    [2:0]   ds_err,
 
-    // SRAM pins (data bus split)
-    output  wire    [16:0]  sram_a,
-    output  wire    [15:0]  sram_dq_o,
-    output  wire            sram_dq_oe,
-    input   wire    [15:0]  sram_dq_i,
-    output  wire            sram_oe_n,
-    output  wire            sram_we_n,
-    output  wire            sram_ub_n,
-    output  wire            sram_lb_n,
-
-    // PSRAM cram0 pins
-    output  wire    [21:16] cram0_a,
-    inout   wire    [15:0]  cram0_dq,
-    input   wire            cram0_wait,
-    output  wire            cram0_clk,
-    output  wire            cram0_adv_n,
-    output  wire            cram0_cre,
-    output  wire            cram0_ce0_n,
-    output  wire            cram0_ce1_n,
-    output  wire            cram0_oe_n,
-    output  wire            cram0_we_n,
-    output  wire            cram0_ub_n,
-    output  wire            cram0_lb_n,
-
     output  reg     [31:0]  sim_status = 0          // SYS_SIM, for the testbench
 );
 
@@ -464,14 +440,10 @@ end
     localparam  R_FB    = 3'd3;
     localparam  R_REG   = 3'd4;
     localparam  R_SDRAM = 3'd5;             // cached window and the uncached one
-    localparam  R_SRAM  = 3'd6;
-    localparam  R_PSRAM = 3'd7;
 
     function [2:0] region(input [31:0] a);
         if(a[31:15] == 0)                                   region = R_BOOT;
         else if(a[31:26] == 6'b000100 || a[31:26] == 6'b111101) region = R_SDRAM;
-        else if(a[31:18] == 14'h3E00)                       region = R_SRAM;
-        else if(a[31:24] == 8'hFA)                          region = R_PSRAM;
         else if(a[31:12] == 20'hF0008)                      region = R_LOG;
         else if(a[31:17] == 15'h7880 && a[15:2] < 14'd16000) region = R_FB;
         else if(a[31:12] == 20'hF0000 || a[31:12] == 20'hF0001 || a[31:12] == 20'hF0002 ||
@@ -482,7 +454,7 @@ end
     localparam  D_IDLE   = 2'd0;
     localparam  D_SINGLE = 2'd1;            // fixed-latency single read
     localparam  D_LINE   = 2'd2;            // line read from the boot RAM (or error words)
-    localparam  D_EXT    = 2'd3;            // read from the SDRAM, SRAM or PSRAM
+    localparam  D_EXT    = 2'd3;            // read from the SDRAM
 
     reg  [1:0]  d_state = D_IDLE;
     reg  [31:0] d_addr;                     // the command being worked on
@@ -498,58 +470,6 @@ end
     reg         d_rsp_last;
     reg  [31:0] d_rsp_data;
     reg         d_rsp_error;
-
-//
-// SRAM and PSRAM cram0: one 32-bit access at a time each, started from d_* one clock
-// after the dBus took the command
-//
-    reg         sram_start = 0, psram_start = 0;
-    wire        sram_busy, sram_rvalid, psram_busy, psram_rvalid;
-    wire [31:0] sram_rdata, psram_rdata;
-
-sram sr (
-    .clk                ( clk ),
-    .start              ( sram_start ),
-    .we                 ( d_wr ),
-    .addr               ( d_addr[17:2] ),
-    .wdata              ( d_data ),
-    .mask               ( d_mask ),
-    .busy               ( sram_busy ),
-    .rvalid             ( sram_rvalid ),
-    .rdata              ( sram_rdata ),
-    .sram_a             ( sram_a ),
-    .sram_dq_o          ( sram_dq_o ),
-    .sram_dq_oe         ( sram_dq_oe ),
-    .sram_dq_i          ( sram_dq_i ),
-    .sram_oe_n          ( sram_oe_n ),
-    .sram_we_n          ( sram_we_n ),
-    .sram_ub_n          ( sram_ub_n ),
-    .sram_lb_n          ( sram_lb_n )
-);
-
-psram32 ps0 (
-    .clk                ( clk ),
-    .start              ( psram_start ),
-    .we                 ( d_wr ),
-    .addr               ( d_addr[23:2] ),
-    .wdata              ( d_data ),
-    .mask               ( d_mask ),
-    .busy               ( psram_busy ),
-    .rvalid             ( psram_rvalid ),
-    .rdata              ( psram_rdata ),
-    .cram_a             ( cram0_a ),
-    .cram_dq            ( cram0_dq ),
-    .cram_wait          ( cram0_wait ),
-    .cram_clk           ( cram0_clk ),
-    .cram_adv_n         ( cram0_adv_n ),
-    .cram_cre           ( cram0_cre ),
-    .cram_ce0_n         ( cram0_ce0_n ),
-    .cram_ce1_n         ( cram0_ce1_n ),
-    .cram_oe_n          ( cram0_oe_n ),
-    .cram_we_n          ( cram0_we_n ),
-    .cram_ub_n          ( cram0_ub_n ),
-    .cram_lb_n          ( cram0_lb_n )
-);
 
     wire [2:0]  cmd_region = region(dbus_cmd_addr);
 
@@ -694,8 +614,7 @@ raster rs (
     .su_dy2             ( su_dy2 )
 );
 
-    assign dbus_cmd_ready = d_state == D_IDLE && !cpu_reset && sdp_db_cmd_ready &&
-                            !sram_busy && !sram_start && !psram_busy && !psram_start && !rs_waits;
+    assign dbus_cmd_ready = d_state == D_IDLE && !cpu_reset && sdp_db_cmd_ready && !rs_waits;
     wire        d_fire = dbus_cmd_valid && dbus_cmd_ready;
     assign sdp_db_cmd_valid = d_fire && cmd_region == R_SDRAM;
 
@@ -741,8 +660,7 @@ end
     reg         ds_started = 0;                 // the data slot read's command has begun
     reg  [2:0]  ds_result = 0;                  // the last one's result, 0 = ok
     reg  [31:0] reg_q;
-    wire        writes_idle = sdram_cpu_writes_idle && !sram_busy && !sram_start &&
-                              !psram_busy && !psram_start;
+    wire        writes_idle = sdram_cpu_writes_idle;
 
 always @(posedge clk) begin
     ack_s <= {ack_s[0], swap_ack_toggle};
@@ -785,8 +703,6 @@ always @(posedge clk) begin
     d_rsp_valid <= 0;
     d_write <= 0;
     d_issued <= 0;
-    sram_start <= 0;
-    psram_start <= 0;
     phase_step <= 0;
     sdram_reinit <= 0;
 
@@ -813,11 +729,8 @@ always @(posedge clk) begin
             d_mask <= dbus_cmd_mask;
             d_wr <= dbus_cmd_wr;
             d_region <= cmd_region;
-            sram_start <= cmd_region == R_SRAM;
-            psram_start <= cmd_region == R_PSRAM;
             if(dbus_cmd_wr) d_write <= 1;
-            else if(cmd_region == R_SDRAM || cmd_region == R_SRAM || cmd_region == R_PSRAM)
-                d_state <= D_EXT;
+            else if(cmd_region == R_SDRAM) d_state <= D_EXT;
             else if(dbus_cmd_size == 3'd5) begin d_state <= D_LINE; d_cnt <= 0; end
             else begin d_state <= D_SINGLE; d_phase <= 0; end
         end
@@ -882,18 +795,8 @@ always @(posedge clk) begin
             d_rsp_data <= boot_q_b;
         end
 
-        // reads from the SDRAM (words come straight from sdram_port), SRAM or PSRAM
-        if(d_state == D_EXT) begin
-            if(d_region == R_SDRAM) begin
-                if(sdp_db_rsp_valid && sdp_db_rsp_last) d_state <= D_IDLE;
-            end else if(d_region == R_SRAM ? sram_rvalid : psram_rvalid) begin
-                d_rsp_valid <= 1;
-                d_rsp_last <= 1;
-                d_rsp_error <= 0;
-                d_rsp_data <= d_region == R_SRAM ? sram_rdata : psram_rdata;
-                d_state <= D_IDLE;
-            end
-        end
+        // reads from the SDRAM: the words come straight from sdram_port
+        if(d_state == D_EXT && sdp_db_rsp_valid && sdp_db_rsp_last) d_state <= D_IDLE;
     end
 end
 

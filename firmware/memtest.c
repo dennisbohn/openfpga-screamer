@@ -1,13 +1,12 @@
 /*
- * Memory test of step 2 (docs/speicher.md). One set of tests for all three memories,
- * given their base addresses, size and die size; the SDRAM gets a few of its own: the
- * clock phase window, code, refresh, the write status, and program.bin, which it asks the
- * APF for only after them (slot.h).
+ * Memory test of step 2 (docs/speicher.md). A set of tests for a memory given its base
+ * addresses and size (once there were the SRAM and PSRAM cram0 too); the SDRAM gets a few of
+ * its own: the clock phase window, code, refresh, the write status, and program.bin, which
+ * it asks the APF for only after them (slot.h).
  *
  * In the simulation (SYS_FLAGS) only the window sizes shrink: the first and the last
- * window of each memory and of each PSRAM die are tested, so loop ends, the die switch and
- * the left-out word run too. The SDRAM patterns go through the data cache (invalidated
- * before each check), everything else uses uncached addresses. Each error is logged with
+ * window are tested, so loop ends run too. The patterns go through the data cache
+ * (invalidated before each check), everything else uses uncached addresses. Each error is logged with
  * the value read and two uncached re-reads: the same wrong value three times points to a
  * write or address fault, changing values to read timing.
  */
@@ -28,11 +27,9 @@
 enum {
     B_SD_READY, B_SD_SLOT, B_SD_PHASE, B_SD_DATA, B_SD_BYTES, B_SD_ADDR, B_SD_PATTERN,
     B_SD_CODE, B_SD_REFRESH, B_SD_STATUS,
-    B_SR_DATA, B_SR_BYTES, B_SR_ADDR, B_SR_PATTERN,
-    B_PS_DATA, B_PS_BYTES, B_PS_ADDR, B_PS_PATTERN,
 };
 
-enum { M_SDRAM, M_SRAM, M_PSRAM, M_N };
+enum { M_SDRAM, M_N };
 
 struct memory {
     const char *name;
@@ -46,8 +43,6 @@ struct memory {
 
 static const struct memory mems[M_N] = {
     { "SDRAM", SDRAM_BASE, SDRAM_UBASE, SDRAM_SIZE, SDRAM_SIZE, B_SD_DATA, 1 },
-    { "SRAM", SRAM_BASE, SRAM_BASE, SRAM_SIZE, SRAM_SIZE, B_SR_DATA, 0 },
-    { "cram0", PSRAM_BASE, PSRAM_BASE, PSRAM_SIZE, PSRAM_SIZE / 2, B_PS_DATA, 0 },
 };
 
 #define SIM_WINDOW      2048    /* bytes per window in the simulation */
@@ -67,12 +62,6 @@ static uint32_t refresh_per_s, line_hit, line_miss, read_mbs, write_mbs;
 static uint8_t slot_state;      /* 0 not run, 1 ok, 2 failed */
 static uint32_t prog_entry;     /* program.bin's entry when its check passed */
 static char phase_map[PHASE_STEPS_MAX + 1];
-
-static int skip(const struct memory *m, uint32_t off)
-{
-    /* PSRAM: the word holding halfword 3FFFFFh of each die (software access) */
-    return m == &mems[M_PSRAM] && (off & (m->die - 1)) == m->die - 4;
-}
 
 static void fail(const struct memory *m, uint32_t off, uint32_t want, uint32_t got)
 {
@@ -185,10 +174,10 @@ static void t_address(const struct memory *m)
 {
     uint32_t t0 = rdcycle(), before = begin(m, "address");
     for(uint32_t o = 0; o < m->size; o = o ? o << 1 : 4)
-        if(!skip(m, o)) V32(m->ubase + o) = addr_value(o);
+        V32(m->ubase + o) = addr_value(o);
     for(uint32_t o = 0; o < m->size; o = o ? o << 1 : 4) {
         uint32_t g;
-        if(!skip(m, o) && (g = V32(m->ubase + o)) != addr_value(o)) fail(m, o, addr_value(o), g);
+        if((g = V32(m->ubase + o)) != addr_value(o)) fail(m, o, addr_value(o), g);
     }
     end(m, m->first_bit + 2, before, t0);
 }
@@ -252,13 +241,11 @@ static int windows(const struct memory *m, uint32_t w[][2])
     return n;
 }
 
-/* Write or check one pattern over the windows, 64 KB at a time between progress reports.
-   A window that ends with a die ends before the PSRAM word skip() leaves out. */
+/* Write or check one pattern over the windows, 64 KB at a time between progress reports */
 static void pass(const struct memory *m, int kind, int checking, uint32_t w[][2], int nw)
 {
     for(int i = 0; i < nw; i++) {
         uint32_t end = w[i][1];
-        if(skip(m, end - 4)) end -= 4;
         xs = 0x9E3779B9u ^ w[i][0] ^ (uint32_t)kind;
         for(uint32_t o = w[i][0]; o < end; o += 0x10000) {
             uint32_t e = end - o > 0x10000 ? o + 0x10000 : end;
@@ -308,15 +295,11 @@ static void t_patterns(const struct memory *m)
 static void t_memory(const struct memory *m)
 {
     dlog_str(m->name);
-    dlog_str(sim ? ": simulation, windows of 2048 bytes at the start and end of each die\n"
-                 : small ? ": quick check, windows of 2048 bytes at the start and end of each die"
+    dlog_str(sim ? ": simulation, windows of 2048 bytes at the start and the end\n"
+                 : small ? ": quick check, windows of 2048 bytes at the start and the end"
                            " (hold Select at start for the whole memory)\n"
                  : ": the whole memory\n");
     t_databus(m);
-    if(m == &mems[M_PSRAM] && errors[M_PSRAM] >= 64) {
-        dlog_str("cram0 does not answer (deep power-down left by another core?)\n");
-        return;
-    }
     t_bytes(m);
     t_address(m);
     t_patterns(m);
@@ -611,15 +594,9 @@ uint32_t memtest_run(int full, void (*cb)(const char *what, uint32_t addr))
     } else {
         dlog_str("SDRAM not ready: its tests skipped\n");
     }
-    t_memory(&mems[M_SRAM]);
-    t_memory(&mems[M_PSRAM]);
 
     dlog_str("memtest: errors SDRAM ");
     dlog_dec((int32_t)errors[M_SDRAM]);
-    dlog_str(", SRAM ");
-    dlog_dec((int32_t)errors[M_SRAM]);
-    dlog_str(", cram0 ");
-    dlog_dec((int32_t)errors[M_PSRAM]);
     dlog_char('\n');
     return results << MT_BIT_FIRST;
 }
@@ -634,7 +611,7 @@ static char *ok_word(char *p, const char *label, int bit)
 
 int memtest_rows(char rows[][41], uint8_t fail[])
 {
-    static const char *const names[M_N] = { "SDRAM", "SRAM ", "cram0" };
+    static const char *const names[M_N] = { "SDRAM" };
     char *p;
     int n = 0;
     for(int i = 0; i < M_N; i++) {

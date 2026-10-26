@@ -6,7 +6,7 @@
  * against the rasterizer's C model (raster.c), and a triangle moved with the d-pad.
  * Every frame into the back buffer: palette, test band, background, the scene, the counts
  * and FPS; then a swap. After the third completed swap the results go to SYS_SIM once
- * (0x801FFFFF when everything passed).
+ * (0x80001FFF when everything passed).
  */
 #include "hw.h"
 #include "console.h"

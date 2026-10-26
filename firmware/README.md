@@ -8,9 +8,9 @@ der Speichertest in [`docs/speicher.md`](../docs/speicher.md).
 
 Beim Start löscht die Firmware das Protokoll (`debug.txt`), trägt die Prüfsumme ihres
 eigenen Abbilds ein und prüft die CPU (Ganzzahl-Multiplikation, -Division und
-Schiebebefehle, Fließkomma, CFU). Dann läuft der Speichertest über SDRAM, SRAM und PSRAM
-`cram0`: normal kurz (unter einer Sekunde, je Die die ersten und letzten 2 KB), über den
-ganzen Speicher (gut 45 Sekunden), wenn man beim Start **Select** hält. Danach zeichnet sie
+Schiebebefehle, Fließkomma, CFU). Dann läuft der Speichertest über den SDRAM: normal kurz
+(unter einer Sekunde, die ersten und letzten 2 KB), über den ganzen Speicher, wenn man beim
+Start **Select** hält. Danach zeichnet sie
 jedes Bild in den hinteren Puffer: Palette nach der Formel aus `docs/soc.md`, Prüfstreifen in
 den oberen 8 Zeilen, zwei sich drehende Räder aus Dreiecken, die sich überdecken, und ein
 Dreieck, das sich mit dem Steuerkreuz bewegt, dazu Pixel und Takte pro Bild. Die Dreiecke
@@ -18,7 +18,7 @@ zeichnet der Hardware-Rasterizer (`raster.v`); einmal je Lauf zeichnet sein C-Mo
 dieselben Dreiecke ins SDRAM, und die Zeile `raster check` im Protokoll meldet, ob beide
 Bilder Pixel für Pixel gleich sind. Hält man **Select**,
 stehen statt der Dreiecke die Ergebnisse des Speichertests da. Nach drei getauschten Bildern
-meldet sie alle Ergebnisse an `SYS_SIM` (`0x801FFFFF`, wenn alles stimmt). Ein Absturz
+meldet sie alle Ergebnisse an `SYS_SIM` (`0x80001FFF`, wenn alles stimmt). Ein Absturz
 (Trap) landet mit `mcause`, `mepc` und `mtval` im Protokoll und unten auf dem Bildschirm.
 
 ## Bauen
@@ -77,15 +77,14 @@ SDRAM slot: ok, cycles 474618
 phase map ####
 phase: good from step 0, 4 steps of 168 ps, now at step 0
 SDRAM phase: ok, cycles 37292
-SDRAM: simulation, windows of 2048 bytes at the start and end of each die
+SDRAM: simulation, windows of 2048 bytes at the start and the end
 SDRAM data bus: ok, cycles 14085
 ...
 SDRAM line read: row hit 30 cycles, row miss 34; read 63 MB/s, write 95 MB/s
 ...
-cram0 patterns: ok, cycles 1021410
-memtest: errors SDRAM 0, SRAM 0, cram0 0
+memtest: errors SDRAM 0
 stack used 624 bytes
-SYS_SIM=801fffff
+SYS_SIM=80001fff
 ```
 
 Die Phasenkarte zeigt je Schritt von 168 ps ein `#` (SDRAM arbeitet) oder `.`; die Firmware

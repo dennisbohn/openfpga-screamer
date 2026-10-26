@@ -51,8 +51,6 @@ etwas daran ändert, ändert beide Seiten und dieses Dokument.
 | `0xF100_0000` | 64 000 B | Framebuffer 0 | nein |
 | `0xF101_0000` | 64 000 B | Framebuffer 1 | nein |
 | `0xF400_0000` | 64 MB | SDRAM, dasselbe ungecacht | nein |
-| `0xF800_0000` | 256 KB | SRAM | nein |
-| `0xFA00_0000` | 16 MB | PSRAM `cram0` (Die 0, Die 1 ab `0xFA80_0000`) | nein |
 
 `0xF000_0000`–`0xFFFF_FFFF` ist für die CPU ungecacht (`StaticMemoryTranslatorPlugin`).
 Lesen außerhalb der Bereiche liefert einen Busfehler (Trap), Schreiben dorthin wird
@@ -179,13 +177,12 @@ SDRAM-Slot Warten auf die Quittung), lässt die CPU laufen und prüft:
 
 - `SYS_SIM`: Die Firmware schreibt, sobald sie drei Bilder gezeichnet und getauscht hat,
   `0x80000000 | bits`. Bit 0 = Ganzzahl, Bit 1 = Fließkomma (add, mul, div, sqrt, Umwandlung),
-  Bit 2 = CFU; Bit 3..20 = Speichertest (`firmware/memtest.c`): SDRAM bereit, Slot, Phase,
-  Datenbus, Byte-Lanes, Adressbus, Muster, Code, Refresh, Schreib-Status; SRAM Datenbus,
-  Byte-Lanes, Adressbus, Muster; `cram0` dieselben vier. Erwartet: `0x801FFFFF`. Bei einem Trap
+  Bit 2 = CFU; Bit 3..12 = Speichertest (`firmware/memtest.c`): SDRAM bereit, Slot, Phase,
+  Datenbus, Byte-Lanes, Adressbus, Muster, Code, Refresh, Schreib-Status. Erwartet:
+  `0x80001FFF`. Bei einem Trap
   schreibt sie `0xC0000000 | mcause`.
-- **Modelle:** SDRAM-, SRAM- und PSRAM-Modell melden keinen Fehler (Befehlsfolgen, Zeiten,
-  Buskonflikte, Software-Access-Wort), der längste Abstand zwischen zwei AUTO REFRESH bleibt
-  unter 580 Takten.
+- **Modell:** Das SDRAM-Modell meldet keinen Fehler (Befehlsfolgen, Zeiten, Buskonflikte),
+  der längste Abstand zwischen zwei AUTO REFRESH bleibt unter 580 Takten.
 - **Prüfstreifen:** Die oberen 8 Zeilen jedes von der Firmware gezeichneten Bildes haben in
   Spalte x < 256 den Palettenindex x, und die Palette jedes Bildes ist
   `pal[i] = (i << 16) | ((255 - i) << 8) | ((i * 3) & 255)`. Die Testbench vergleicht diese
@@ -202,7 +199,7 @@ SDRAM-Slot Warten auf die Quittung), lässt die CPU laufen und prüft:
 
 Der SDRAM-Controller hat dazu einen eigenen Zufallstest (`sim/sdram`, siehe
 `docs/speicher.md`). Gegenproben: `tools/sim_faults.sh` baut in je einem Lauf einen Fehler in
-ein Speichermodell ein; mit jedem anderen erwarteten Wert als `0x801FFFFF` (und ohne
+das SDRAM-Modell ein; mit jedem anderen erwarteten Wert als `0x80001FFF` (und ohne
 Trap-Bits) verlangt die Testbench genau diesen Wert, mindestens ein „FAIL" im Protokoll und
 lässt die Resets weg.
 

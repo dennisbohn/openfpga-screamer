@@ -1,19 +1,17 @@
 /*
- * Memory test of step 2 (docs/speicher.md): SDRAM, SRAM and PSRAM cram0 with patterns,
- * the SDRAM clock phase window measured on the Pocket, results in the debug log, on the
- * screen and as SYS_SIM bits.
+ * Memory test of step 2 (docs/speicher.md): the SDRAM with patterns, its clock phase window
+ * measured on the Pocket, results in the debug log, on the screen and as SYS_SIM bits.
  */
 #pragma once
 #include <stdint.h>
 
-/* SYS_SIM result bits 3..20 (bits 0..2 are the CPU self-tests): 1 = passed */
+/* SYS_SIM result bits 3..12 (bits 0..2 are the CPU self-tests): 1 = passed */
 #define MT_BIT_FIRST    3
-#define MT_BITS         18
+#define MT_BITS         10
 #define MT_ALL          (((1u << MT_BITS) - 1) << MT_BIT_FIRST)
 
-/* Run every test once; the first checks program.bin in the SDRAM. full: patterns over the
-   whole memories (about 45 s on the Pocket; program.bin is gone afterwards), else over the
-   first and last 2 KB of each die, as always in the simulation (under a second), which
+/* Run every test once; the last checks program.bin in the SDRAM. full: patterns over the
+   whole memory (program.bin is gone afterwards), else over the first and last 2 KB, as always in the simulation (under a second), which
    leaves program.bin and the textures alone. progress() is called before each test and
    every 64 KB inside one. */
 uint32_t memtest_run(int full, void (*progress)(const char *what, uint32_t addr));

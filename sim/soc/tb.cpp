@@ -1,9 +1,8 @@
-// soc testbench: the CPU system with its firmware and models of the SDRAM, SRAM and PSRAM
-// cram0, loaded the way the Pocket loads it, checked the way docs/soc.md and
-// docs/speicher.md describe.
+// soc testbench: the CPU system with its firmware and a model of the SDRAM, loaded the way
+// the Pocket loads it, checked the way docs/soc.md and docs/speicher.md describe.
 //
 // Usage: Vsoc_system <firmware.bin> <out prefix> [timeout in frames, default 80]
-//                    [expected SYS_SIM in hex, default 801FFFFF]
+//                    [expected SYS_SIM in hex, default 80001FFF]
 // Writes <prefix>.rgb (raw 320x200 RGB of the checked frame) and <prefix>_log.txt
 // (the debug log as the APF would save it as debug.txt); <prefix>_reset.* the same for
 // the run after the resets.
@@ -157,7 +156,7 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
                      uint32_t expect, int timeout_frames, const char *slot_line) {
     Vsoc_system &top = s.top;
     bool expect_trap = (expect & 0xC0000000u) == 0xC0000000u;
-    bool negative = !expect_trap && expect != 0x801FFFFFu;
+    bool negative = !expect_trap && expect != 0x80001FFFu;
     int fails = 0;
     uint32_t st = top.sim_status;
     printf("SYS_SIM = 0x%08x after %d frames, expected 0x%08x\n", st, frames, expect);
@@ -168,9 +167,9 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
     else if (expect_trap) { printf("FAIL: no trap\n"); fails++; }
     else { printf("FAIL: failed test bits 0x%08x (see docs/soc.md)\n", ~st & expect & 0x3FFFFFFFu); fails++; }
 
-    printf("model errors: SDRAM %u, SRAM %u, PSRAM %u; longest SDRAM refresh gap %u clocks\n",
-           top.sdram_errors, top.sram_errors, top.psram_errors, top.sdram_max_refresh);
-    if (top.sdram_errors || top.sram_errors || top.psram_errors) { printf("FAIL: a memory model reported errors\n"); fails++; }
+    printf("model errors: SDRAM %u; longest SDRAM refresh gap %u clocks\n",
+           top.sdram_errors, top.sdram_max_refresh);
+    if (top.sdram_errors) { printf("FAIL: the memory model reported errors\n"); fails++; }
     if (top.sdram_max_refresh > 580) { printf("FAIL: refresh gap above 7.8 us (580 clocks)\n"); fails++; }
 
     // the last whole frame: the test band, or the trap handler's box (rows 18..24 in
@@ -233,9 +232,9 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
 int main(int argc, char **argv) {
     if (argc < 3) { fprintf(stderr, "usage: %s firmware.bin outprefix [timeout frames] [expected SYS_SIM]\n", argv[0]); return 2; }
     int timeout_frames = argc > 3 ? atoi(argv[3]) : 80;
-    uint32_t expect = argc > 4 ? uint32_t(strtoul(argv[4], nullptr, 16)) : 0x801FFFFFu;
+    uint32_t expect = argc > 4 ? uint32_t(strtoul(argv[4], nullptr, 16)) : 0x80001FFFu;
     bool expect_trap = (expect & 0xC0000000u) == 0xC0000000u;
-    bool negative = !expect_trap && expect != 0x801FFFFFu;
+    bool negative = !expect_trap && expect != 0x80001FFFu;
 
     std::vector<uint8_t> fw;
     {
@@ -335,6 +334,6 @@ int main(int argc, char **argv) {
     printf(expect_trap ? "PASS: the trap was taken and reported on screen and in the log, slot size set\n"
            : negative ? "PASS: the memory test reports the built-in fault: exactly the expected tests fail\n"
                       : "PASS: firmware and memory test pass, test band matches, log readable over the bridge, "
-                        "models without errors; the same after two resets, which swapped nothing by themselves\n");
+                        "the SDRAM model without errors; the same after two resets, which swapped nothing by themselves\n");
     return 0;
 }

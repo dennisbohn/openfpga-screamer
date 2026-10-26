@@ -60,8 +60,8 @@
 #define FB(n)           ((volatile uint8_t *)((n) ? FB1_BASE : FB0_BASE))
 
 /* Step 2 memories (docs/speicher.md). The SDRAM is cached for code and data and has an
-   uncached view; the SRAM and PSRAM cram0 are uncached only. Code runs from the boot RAM
-   and the SDRAM; fetching from anywhere else is an instruction access fault. */
+   uncached view; SRAM and PSRAM are not used. Code runs from the boot RAM and the SDRAM;
+   fetching from anywhere else is an instruction access fault. */
 #define SDRAM_BASE      0x10000000u
 #define SDRAM_UBASE     0xF4000000u
 #define SDRAM_SIZE      (64u << 20)
@@ -70,10 +70,6 @@
 #define PROG_BASE       (SDRAM_BASE + 0x3000000u)
 #define PROG_MAX        (0x1000000u - 0x800u)
 #define PROG_MAGIC      0x50524353u         /* "SCRP" */
-#define SRAM_BASE       0xF8000000u
-#define SRAM_SIZE       (256u << 10)
-#define PSRAM_BASE      0xFA000000u         /* cram0: die 0, die 1 from PSRAM_BASE + 8 MB */
-#define PSRAM_SIZE      (16u << 20)
 
 #define SYS_FLAGS       REG32(0xF0000008u)  /* R: FLAG_SIM */
 #define MEM_STATUS      REG32(0xF000000Cu)  /* R: MEM_LOCKED ... MEM_WRITES_IDLE */

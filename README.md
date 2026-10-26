@@ -72,8 +72,8 @@ python tools/make_screen.py "C:/GOG Games/Screamer/GFX/GRAF.DAT" LOAD1L.PCX \
     build/sim/screen2.bin build/preview/LOAD1L.png
 tools/sim.sh display build/sim/screen.bin build/sim/screen2.bin build/sim/display_frame
 
-# CPU-System mit Firmware (docs/soc.md, docs/speicher.md) und Modellen von SDRAM, SRAM und
-# PSRAM: Selbsttests, Speichertest, Prüfstreifen, Protokoll über die Bridge, dann zwei
+# CPU-System mit Firmware (docs/soc.md, docs/speicher.md) und einem Modell des SDRAM:
+# Selbsttests, Speichertest, Prüfstreifen, Protokoll über die Bridge, dann zwei
 # Resets mit neu geladener Firmware (einer mitten im Speichertest).
 tools/fw.sh
 tools/sim.sh soc build/firmware/firmware.bin build/sim/soc

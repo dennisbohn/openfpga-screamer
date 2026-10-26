@@ -11,32 +11,33 @@ Alles Weitere sind Schätzungen, bis die Synthese echte Zahlen liefert.
 
 Cyclone V 5CEBA4F23C8: 18.480 ALMs, 308 M10K (je 10 Kbit), 66 DSP-Blöcke, 4 PLLs.
 Getrennte Speicherbusse: SDRAM 64 MB, PSRAM `cram0` und `cram1` je 16 MB, SRAM 256 KB
-(alle 16 Bit breit).
+(alle 16 Bit breit). Benutzt wird nur der SDRAM; SRAM und PSRAM sind seit 2026-10-26
+ausgebaut (nur der Speichertest brauchte sie).
 
 ## Aufteilung
 
-![Geplante Architektur: Die CPU schreibt die Objektliste von Bild N+1 ins SRAM, die Geometrie-Einheit liest die von Bild N und gibt Dreiecke an den Rasterizer, der Bild N in den hinteren Framebuffer im Block-RAM zeichnet, während video_out den vorderen zeigt](architektur.svg)
+![Architektur: Die CPU wählt und sortiert die Bauteile und schreibt sie in den Puffer der Geometrie-Einheit; Geometrie-Einheit, Clipper, Setup-Einheit und Rasterizer zeichnen das Bild in den hinteren Framebuffer im Block-RAM, während video_out den vorderen zeigt](architektur.svg)
 
 Wie der Rasterizer ein Dreieck in Pixel zerlegt und wie der Texturpfad als Fließband geplant ist: [rasterizer.svg](rasterizer.svg).
 
-Grün: gebaut und auf dem Pocket getestet. Grau gestrichelt: geplant. Drei Bilder sind
-gleichzeitig in Arbeit: Die CPU berechnet Bild N+1 und schreibt dessen nach Abstand
-sortierte Objektliste ins SRAM, die Geometrie-Einheit liest die Liste von Bild N und
-liefert Dreiecke an den Rasterizer, der Texel über seinen Textur-Cache aus dem SDRAM liest und Bild N in den
-hinteren Framebuffer zeichnet, während `video_out` den vorderen zeigt (Bild N−1).
-Getauscht wird in der Austastlücke; Befehlslisten und Framebuffer sind doppelt gepuffert.
+Grün: gebaut und auf dem Pocket getestet. Grau gestrichelt: geplant. Die CPU wählt die
+Bauteile in Reichweite, sortiert sie von hinten nach vorn und schreibt sie in den Puffer der
+Geometrie-Einheit; Geometrie-Einheit, Clipper, Setup-Einheit und Rasterizer arbeiten
+gleichzeitig daran, der Rasterizer liest Texel über seinen Textur-Cache aus dem SDRAM und
+zeichnet in den hinteren Framebuffer, während `video_out` den vorderen zeigt. Getauscht wird
+in der Austastlücke. Geplant: Die CPU rechnet schon Bild N+1, während die Hardware Bild N
+zeichnet.
 
 | Speicher | Inhalt |
 |---|---|
 | SDRAM | Programm, Geometrie, Spielzustand, Texturen der aktuellen Strecke (`MAPn.MLB`, ≤ 3 MB, über den 16-KB-Textur-Cache) |
-| SRAM | Befehlslisten der Geometrie-Einheit, doppelt gepuffert (je ≤ 26 KB), Rest Reserve |
-| cram0 | Soundeffekte (`SOUND.DAT`, 1,9 MB): gleichmäßig und langsam gelesen, der Mischer stört so nie die Zugriffe von CPU und Rasterizer aufs SDRAM |
-| cram1 | frei |
+| SDRAM (geplant) | Soundeffekte (`SOUND.DAT`, 1,9 MB) |
+| Block-RAM | zwei Framebuffer (2 × 64 KB) und zwei Paletten, Boot-RAM, CPU-Caches, Puffer der Geometrie-Einheit, Textur- und Mesh-Cache, Transparenztabelle (`MAPn.SMG`), geplant der Audiopuffer |
+| SRAM, cram0, cram1 | nicht benutzt |
 
-Eine Cache-Zeile Texturen kostet aus dem SDRAM etwa 25 Takte, aus dem PSRAM (asynchron)
-etwa 130. Die Texturen bleiben deshalb im SDRAM, solange CPU und Rasterizer sich dort nicht
-messbar ausbremsen; sonst ziehen sie in einen eigenen PSRAM um.
-| Block-RAM | zwei Framebuffer (2 × 64 KB) und zwei Paletten, Boot-RAM, CPU-Caches, Textur-Cache, Transparenztabelle (`MAPn.SMG`) |
+Eine Cache-Zeile Texturen kostet aus dem SDRAM etwa 30 Takte, aus dem PSRAM (asynchron)
+etwa 130; deshalb liegt alles im SDRAM, auch die Sounds, die der Mischer gleichmäßig und
+langsam liest. Ein Audiopuffer im Block-RAM fängt dabei jede Wartezeit ab.
 
 ## Speicherbedarf eines Rennens (gemessen, entpackt)
 
@@ -65,6 +66,11 @@ braucht. 33 Dateien, eine mehr als die 32 Slots: offen, z. B. zwei Dateien in ei
 - `TABS/`: `PERSP01.TAB`, `VIS.TAB`
 
 ## Geschätzte Belegung
+
+Die Schätzung unten stammt vom 2026-10-25 (mit SRAM-Controller, der inzwischen entfallen
+ist). Gemessen am 2026-10-26, mit Geometrie-Einheit, Clipper, Setup-Einheit und
+vorausladendem Textur-Cache, ohne SRAM- und PSRAM-Controller: 14.405 von 18.480 ALMs (78 %), 252 von 308 M10K (82 %), 30 von
+66 DSP (45 %).
 
 ![Platzbudget im FPGA: Logik geplant 55–77 %, Block-RAM 67–74 %, DSP 42–61 %](ressourcen.svg)
 
@@ -184,11 +190,12 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   jeder Zeile der Austastlücke, höchstens einmal je Lücke (`video_out.v`): Ein Bild, das
   etwas länger als 20 ms braucht, fällt so nicht gleich auf 25 fps. Unabhängig
   gegengeprüft gegen SRAM, PSRAM und Mischformen (2026-10-25).
-- **SRAM für die Befehlslisten:** AS6C2016-55, 55 ns, laut Analogue kaum schneller als der
-  PSRAM und ohne Bursts, also nichts für Pixel. Für die doppelt gepufferten Objektlisten
-  (je ≤ 26 KB, ~10 % der SRAM-Zeit) reicht es gut, und die Geometrie-Einheit liest sie
-  über einen eigenen Bus, ohne die CPU im SDRAM zu stören. Den Listenzugriff so bauen,
-  dass die Listen in den SDRAM umziehen können, falls die Logik knapp wird.
+- **SRAM und PSRAM ausgebaut (2026-10-26):** Geplant war das SRAM für die Befehlslisten
+  der Geometrie-Einheit und `cram0` für die Sounds. Die Geometrie-Einheit bekam stattdessen
+  einen Puffer für 113 Bauteile im Block-RAM, und die 1,9 MB Sounds passen in den SDRAM.
+  Beide Controller dienten nur noch dem Speichertest; sie zu entfernen spart wenig Logik
+  (etwa 100 ALMs), aber Prüfaufwand und Fehlerquellen. Hinweise für einen Wiedereinbau
+  stehen in `docs/speicher.md`.
 - **Perspektivkorrektur exakt pro Pixel:** Eine Kehrwert-Einheit (Tabelle und ein
   Newton-Schritt, 2–3 DSP) liefert einen Kehrwert pro Takt, also kostet es keine Zeit. Der
   Software-Renderer von OpenScreamer rechnet nur jedes achte Pixel exakt, daher seine Knicke

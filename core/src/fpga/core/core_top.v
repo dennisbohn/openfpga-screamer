@@ -261,6 +261,19 @@ assign port_tran_sd = 1'bz;
 assign port_tran_sd_dir = 1'b0;     // SD is input and not used
 
 // tie off the rest of the pins we are not using (SDRAM, SRAM and cram0: see the CPU system)
+// cram0, cram1 and the SRAM are not used: sounds go into the SDRAM (docs/speicher.md)
+assign cram0_a = 'h0;
+assign cram0_dq = {16{1'bZ}};
+assign cram0_clk = 0;
+assign cram0_adv_n = 1;
+assign cram0_cre = 0;
+assign cram0_ce0_n = 1;
+assign cram0_ce1_n = 1;
+assign cram0_oe_n = 1;
+assign cram0_we_n = 1;
+assign cram0_ub_n = 1;
+assign cram0_lb_n = 1;
+
 assign cram1_a = 'h0;
 assign cram1_dq = {16{1'bZ}};
 assign cram1_clk = 0;
@@ -503,17 +516,23 @@ assign video_skip = 0;
     wire            fb_rd_buf;
     wire    [13:0]  fb_rd_addr;
     wire    [31:0]  fb_rd_data;
-    wire    [15:0]  dram_dq_o, sram_dq_o;
-    wire            dram_dq_oe, sram_dq_oe;
+    wire    [15:0]  dram_dq_o;
+    wire            dram_dq_oe;
     wire            sdram_pll_locked, clk_sdram;
     wire            phase_step, phase_later, phase_busy;
     wire    [15:0]  phase_count;
     wire    [4:0]   pll_cntsel;
     wire            pll_updn, pll_phase_en, pll_phase_done;
 
-    // the data buses' tristate drivers; everything else comes from IO registers
+    // the data bus's tristate driver; everything else comes from IO registers
     assign dram_dq = dram_dq_oe ? dram_dq_o : {16{1'bZ}};
-    assign sram_dq = sram_dq_oe ? sram_dq_o : {16{1'bZ}};
+
+    assign sram_a = 0;
+    assign sram_dq = {16{1'bZ}};
+    assign sram_oe_n = 1;
+    assign sram_we_n = 1;
+    assign sram_ub_n = 1;
+    assign sram_lb_n = 1;
 
 // dram_clk: the SDRAM PLL's 74.25 MHz, phase shifted (about 9.9 ns at the start), forwarded
 // through a DDIO register like the command and data outputs
@@ -600,26 +619,6 @@ soc soc (
     .ds_length          ( target_dataslot_length ),
     .ds_done            ( target_dataslot_done ),
     .ds_err             ( target_dataslot_err ),
-    .sram_a             ( sram_a ),
-    .sram_dq_o          ( sram_dq_o ),
-    .sram_dq_oe         ( sram_dq_oe ),
-    .sram_dq_i          ( sram_dq ),
-    .sram_oe_n          ( sram_oe_n ),
-    .sram_we_n          ( sram_we_n ),
-    .sram_ub_n          ( sram_ub_n ),
-    .sram_lb_n          ( sram_lb_n ),
-    .cram0_a            ( cram0_a ),
-    .cram0_dq           ( cram0_dq ),
-    .cram0_wait         ( cram0_wait ),
-    .cram0_clk          ( cram0_clk ),
-    .cram0_adv_n        ( cram0_adv_n ),
-    .cram0_cre          ( cram0_cre ),
-    .cram0_ce0_n        ( cram0_ce0_n ),
-    .cram0_ce1_n        ( cram0_ce1_n ),
-    .cram0_oe_n         ( cram0_oe_n ),
-    .cram0_we_n         ( cram0_we_n ),
-    .cram0_ub_n         ( cram0_ub_n ),
-    .cram0_lb_n         ( cram0_lb_n ),
     .sim_status         ( soc_sim_status )
 );
 

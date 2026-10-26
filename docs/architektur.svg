@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1560 860" width="1560" height="860" role="img" aria-label="Architektur: Die CPU wählt und sortiert die Bauteile der Strecke und schreibt je Bauteil seine Lage in Register der Geometrie-Einheit. Die liest das Mesh aus dem SDRAM, rechnet die Eckpunkte in Kamerasicht um, lässt Rückseiten weg und gibt die Flächen an Clipper und Setup-Einheit, die schneiden, projizieren und die Dreiecke für den Rasterizer vorbereiten. Der Rasterizer liest Texturen über einen Cache aus dem SDRAM, der fehlende Zeilen schon vor einer Warteschlange anfordert, und schreibt in den hinteren der beiden Framebuffer im Block-RAM; video_out zeigt den vorderen mit 50 Hz, getauscht wird in der Austastlücke. Programm und Strecke lädt der Pocket auf Anforderung über die APF-Bridge in den SDRAM.">
   <title>Screamer auf dem Analogue Pocket – Architektur</title>
-  <desc>Gebaut und auf dem Pocket getestet: APF-Bridge mit Data-Slots (Programm und Strecke auf Anforderung), zwei Framebuffer im Block-RAM mit Tausch bei VSync, video_out mit 50 Hz und zwei Paletten, VexRiscv RV32IMF mit FPU und CFU, SDRAM-, SRAM- und PSRAM-Controller, Rasterizer mit 16-KB-Textur-Cache, der fehlende Zeilen vorauslädt, Setup-Einheit mit Clipper. Seit Schritt 4 auch die Geometrie-Einheit; mit ihr hält der Streckendurchflug stabil 50 fps, die CPU braucht davon etwa 20 % eines Bildes. Geplant: Audio, Glas und Schatten (MAPn.SMG) im Rasterizer, Sounds in cram0, Überlappen von Bild N+1 und N. PSRAM cram1 ist frei.</desc>
+  <desc>Gebaut und auf dem Pocket getestet: APF-Bridge mit Data-Slots (Programm und Strecke auf Anforderung), zwei Framebuffer im Block-RAM mit Tausch bei VSync, video_out mit 50 Hz und zwei Paletten, VexRiscv RV32IMF mit FPU und CFU, SDRAM-Controller, Rasterizer mit 16-KB-Textur-Cache, der fehlende Zeilen vorauslädt, Setup-Einheit mit Clipper. Seit Schritt 4 auch die Geometrie-Einheit; mit ihr hält der Streckendurchflug stabil 50 fps, die CPU braucht davon etwa 20 % eines Bildes. Geplant: Audio, Glas und Schatten (MAPn.SMG) im Rasterizer, Sounds im SDRAM, Überlappen von Bild N+1 und N. SRAM und PSRAM sind nicht benutzt.</desc>
   <defs>
     <marker id="built" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#2e7d32"/>
@@ -48,9 +48,9 @@
   <text x="1220" y="81" class="l">Bauteil des Pocket</text>
 
   <!-- SRAM above the FPGA -->
-  <rect x="590" y="94" width="170" height="52" rx="6" class="ext"/>
-  <text x="675" y="115" class="t c">SRAM · 256 KB</text>
-  <text x="675" y="133" class="b c">frei (Speichertest)</text>
+  <rect x="590" y="94" width="170" height="52" rx="6" class="free"/>
+  <text x="675" y="115" class="t c" fill="#666666">SRAM · 256 KB</text>
+  <text x="675" y="133" class="b c">nicht benutzt</text>
 
   <!-- outside the FPGA, left -->
   <rect x="40" y="200" width="70" height="40" rx="6" class="ext"/>
@@ -77,8 +77,6 @@
   <text x="248" y="194" class="t">Haupt-FPGA · Cyclone V 5CEBA4</text>
   <text x="1332" y="194" class="l r">Takte: System 74,25 MHz · Pixel 12,288 MHz</text>
 
-  <rect x="600" y="206" width="150" height="30" rx="6" class="built"/>
-  <text x="675" y="226" class="t c">SRAM-Controller</text>
 
   <!-- row A: bridge, CPU, geometry, setup, raster, video -->
   <rect x="250" y="260" width="120" height="100" rx="8" class="built"/>
@@ -133,10 +131,6 @@
   <text x="605" y="584" class="b c">Bursts für Cache-Zeilen · Ports: Bridge, CPU,</text>
   <text x="605" y="599" class="b c">Zeilen für Rasterizer und Geometrie (geteilt)</text>
 
-  <rect x="840" y="540" width="150" height="70" rx="8" class="built"/>
-  <text x="915" y="566" class="t c">PSRAM-Controller</text>
-  <text x="915" y="584" class="b c">cram0, 32 Bit</text>
-  <text x="915" y="599" class="b c">für die CPU</text>
 
   <rect x="1040" y="540" width="140" height="70" rx="8" class="built"/>
   <text x="1110" y="566" class="t c">Textur-Cache 16 KB</text>
@@ -146,15 +140,15 @@
   <!-- external memory chips below -->
   <rect x="490" y="700" width="230" height="56" rx="6" class="ext"/>
   <text x="605" y="724" class="t c">SDRAM · 64 MB</text>
-  <text x="605" y="741" class="b c">Programm, Strecke (Meshes, Texturen)</text>
+  <text x="605" y="741" class="b c">Programm, Strecke, Sounds (geplant)</text>
 
-  <rect x="830" y="700" width="170" height="56" rx="6" class="ext"/>
-  <text x="915" y="724" class="t c">PSRAM cram0 · 16 MB</text>
-  <text x="915" y="741" class="b c">Sounds (geplant)</text>
+  <rect x="830" y="700" width="170" height="56" rx="6" class="free"/>
+  <text x="915" y="724" class="t c" fill="#666666">PSRAM cram0 · 16 MB</text>
+  <text x="915" y="741" class="b c">nicht benutzt</text>
 
   <rect x="1040" y="700" width="140" height="56" rx="6" class="free"/>
   <text x="1110" y="724" class="t c" fill="#666666">PSRAM cram1 · 16 MB</text>
-  <text x="1110" y="741" class="b c">frei</text>
+  <text x="1110" y="741" class="b c">nicht benutzt</text>
 
   <!-- built connections -->
   <path d="M190,298 H248" class="wb" marker-end="url(#built)"/>
@@ -171,9 +165,6 @@
   <text x="322" y="500" class="l r">Strecke</text>
   <text x="322" y="514" class="l r">(~1,4 MB/s)</text>
 
-  <path d="M675,148 V204" class="wb" marker-start="url(#built)" marker-end="url(#built)"/>
-  <text x="684" y="164" class="l">16 Bit</text>
-  <path d="M560,258 V221 H598" class="wb" marker-end="url(#built)"/>
 
   <path d="M990,310 H1038" class="wb" marker-end="url(#built)"/>
   <text x="1014" y="300" class="l c">Dreiecke</text>
@@ -192,20 +183,16 @@
   <text x="447" y="500" class="l">Code, Daten</text>
   <text x="447" y="514" class="l">(Cache-Zeilen)</text>
 
-  <path d="M575,362 V380 H707 A8,8 0 0 1 723,380 H880 V538" class="wb" marker-start="url(#built)" marker-end="url(#built)"/>
-  <text x="887" y="500" class="l">Daten</text>
 
   <path d="M1110,540 V362" class="wb" marker-end="url(#built)"/>
   <text x="1117" y="500" class="l">Texel</text>
 
-  <path d="M760,612 V632 H907 A8,8 0 0 1 923,632 H1070 V614" class="wb" marker-end="url(#built)"/>
+  <path d="M760,612 V632 H1070 V614" class="wb" marker-end="url(#built)"/>
   <text x="1062" y="626" class="l r">Texturzeilen</text>
 
   <path d="M605,612 V698" class="wb" marker-start="url(#built)" marker-end="url(#built)"/>
   <text x="612" y="676" class="l">16 Bit</text>
 
-  <path d="M915,612 V698" class="wb" marker-start="url(#built)" marker-end="url(#built)"/>
-  <text x="922" y="676" class="l">16 Bit</text>
 
 
   <!-- connections of the geometry unit -->
@@ -232,5 +219,5 @@
   <!-- notes -->
   <text x="40" y="798" class="l">Pro Bild: Die CPU wählt die Bauteile in Reichweite, sortiert sie von hinten nach vorn (Maler-Algorithmus) und schreibt sie in den Puffer der Geometrie-Einheit (113 Bauteile); dahinter arbeiten Geometrie, Setup und Rasterizer gleichzeitig.</text>
   <text x="40" y="816" class="l">Gezeigt wird nur ein fertiges Bild (Doppelpufferung, Tausch in der Austastlücke, höchstens 50 Bilder pro Sekunde). Geplant: Bild N+1 und N überlappen, Glas/Schatten, Audio.</text>
-  <text x="40" y="834" class="l">Streckendurchflug stabil 50 fps (schwerstes Bild 64 % eines Bildes), CPU-Anteil etwa 20 %. Belegung: 14.660 von 18.480 ALMs (79 %), 252 von 308 M10K (82 %), 30 von 66 DSP (45 %); Timing hält bei 74,25 MHz.</text>
+  <text x="40" y="834" class="l">Streckendurchflug stabil 50 fps (schwerstes Bild 64 % eines Bildes), CPU-Anteil etwa 20 %. Belegung: 14.405 von 18.480 ALMs (78 %), 252 von 308 M10K (82 %), 30 von 66 DSP (45 %); Timing hält bei 74,25 MHz.</text>
 </svg>

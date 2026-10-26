@@ -7,8 +7,7 @@
 # Output: build/sim/faults/<name>.txt per run, a summary at the end; exit 1 if one failed.
 #
 # SYS_SIM bits (firmware/memtest.c): 4 program.bin in the SDRAM, 5 phase, 6 data bus, 7 bytes, 8 address,
-# 9 patterns, 10 code, 11 refresh, 12 write status; SRAM 13..16 and cram0 17..20 data bus,
-# bytes, address, patterns. All passing is 801FFFFF.
+# 9 patterns, 10 code, 11 refresh, 12 write status. All passing is 80001FFF.
 root=$(cd "$(dirname "$0")/.." && pwd)
 fw=${1:-build/firmware/firmware.bin}
 cd "$root" || exit 1
@@ -16,13 +15,11 @@ mkdir -p build/sim/faults
 
 # name, defines, expected SYS_SIM
 cases="
-dqm_swap|-DSDRAM_FAULT_DQM_SWAP=1|801FFF7F
-dq8_stuck0|-DSDRAM_FAULT_DQ_STUCK0=256|801FF80F
-ba1_stuck0|-DSDRAM_FAULT_BA1_STUCK0=1|801FFEEF
-row12_from_row11|-DSDRAM_FAULT_ROW_ALIAS_SRC=11 -DSDRAM_FAULT_ROW_ALIAS_DST=12|801FFEFF
-drop_write|-DSDRAM_FAULT_DROP_WRITE_N=16000|801FFDFF
-sram_ub_lb_swap|-DSRAM_FAULT_SWAP_UB_LB=1|801FBFFF
-cram0_die1_dead|-DPSRAM_FAULT_DIE1_DEAD=1|8007FFFF
+dqm_swap|-DSDRAM_FAULT_DQM_SWAP=1|80001F7F
+dq8_stuck0|-DSDRAM_FAULT_DQ_STUCK0=256|8000180F
+ba1_stuck0|-DSDRAM_FAULT_BA1_STUCK0=1|80001EEF
+row12_from_row11|-DSDRAM_FAULT_ROW_ALIAS_SRC=11 -DSDRAM_FAULT_ROW_ALIAS_DST=12|80001EFF
+drop_write|-DSDRAM_FAULT_DROP_WRITE_N=16000|80001DFF
 "
 # Why exactly these bits:
 #   dqm_swap          the SDRAM's byte masks swapped: only byte stores go wrong (bytes)
@@ -41,9 +38,6 @@ cram0_die1_dead|-DPSRAM_FAULT_DIE1_DEAD=1|8007FFFF
 #                     and the tests before the patterns (about 1400) the first loss falls
 #                     into the patterns (about 11800 beats); later ones land in the test
 #                     textures the program writes, which the rasterizer and its check share
-#   sram_ub_lb_swap   the SRAM's byte enables swapped: only byte stores (SRAM bytes)
-#   cram0_die1_dead   the second PSRAM die never answers: address (offset 800000h) and
-#                     patterns (the windows of die 1)
 
 echo "$cases" | {
     while IFS='|' read -r name defines expect; do

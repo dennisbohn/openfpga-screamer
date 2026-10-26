@@ -1,4 +1,9 @@
-# Speicher (Schritt 2: SDRAM, SRAM, PSRAM und Speichertest)
+# Speicher (Schritt 2: SDRAM und Speichertest)
+
+**Seit 2026-10-26 sind SRAM und PSRAM ausgebaut.** Nur der Speichertest hat sie benutzt; die
+Sounds kommen in den SDRAM, der Audiopuffer in den Block-RAM. Ihre Pins liegen fest auf
+inaktiv (`core_top.v`). Wie die Controller gebaut waren, steht unten kurz und vollständig
+in der Git-Historie (bis Commit `837a781`).
 
 Stand 2026-10-25: gebaut und in der Simulation geprüft, der Lauf auf dem Pocket steht noch
 aus. Der Entwurf ging vorher durch eine Prüfung aus fünf Blickwinkeln (39 Befunde,
@@ -12,9 +17,8 @@ Gründe dafür.
 - **SDRAM** (64 MB): Hauptspeicher der CPU für Programm und Daten, über I-Cache und D-Cache,
   dazu ein ungecachtes Fenster für Tests und ein Schreibpfad von der APF-Bridge, über den der
   Pocket Data-Slots direkt ins SDRAM lädt.
-- **SRAM** (256 KB): später die Befehlslisten der Geometrie-Einheit; jetzt ungecacht.
-- **PSRAM `cram0`** (16 MB): später die Texturen; jetzt ungecacht. `cram1` bleibt frei.
-- **Speichertest** als Firmware: alle drei Chips mit Mustern beschreiben und zurücklesen,
+- **SRAM** (256 KB) und **PSRAM** `cram0`, `cram1` (je 16 MB): nicht benutzt (siehe oben).
+- **Speichertest** als Firmware: das SDRAM mit Mustern beschreiben und zurücklesen,
   das SDRAM-Timing auf dem Pocket vermessen, Ergebnis auf dem Bildschirm, in `debug.txt` und
   für die Simulation in `SYS_SIM`.
 
@@ -96,10 +100,9 @@ Hold; die Phasenmessung auf dem Pocket zeigt, wo es wirklich liegt. Deshalb:
   `clk_74a` ↔ `dram_clk_pin` (Setup und Hold, alle Ecken) berichten und bricht ab, wenn einer
   0 Pfade hat, unter 0,5 ns liegt oder der Lese-Hold über 5 ns liegt (Zeichen eines falschen
   Multicycles).
-- **IO-Register:** `FAST_OUTPUT_REGISTER` auf allen Ausgängen von SDRAM, SRAM und `cram0`,
+- **IO-Register:** `FAST_OUTPUT_REGISTER` auf allen Ausgängen des SDRAM,
   `FAST_OUTPUT_ENABLE_REGISTER` und `FAST_INPUT_REGISTER` auf den Datenleitungen;
   `tools/check_budget.py` prüft im Fitter-Bericht, dass die Register in den IO-Zellen liegen.
-  Für SRAM und `cram0` begrenzt `set_max_skew`/`set_max_delay` die Laufzeiten der Pins.
 
 Leselatenz: Das SDRAM gibt ein Datenwort tAC nach seiner Flanke r+CL−1 aus und hält es bis tOH
 nach Flanke r+CL; der Controller übernimmt es mit der Flanke **READ + CL + 1 = READ + 3**
@@ -180,13 +183,13 @@ kann (`soc.v` bindet es unverändert ein):
 - **CPU-Reset:** noch nicht begonnene CPU-Leseaufträge werden verworfen; Wörter von Aufträgen,
   die schon im Controller laufen, verwirft eine 1-Bit-Epoche in der Marke (bei jedem
   CPU-Reset umgeschaltet), egal wie kurz der Reset ist. Angenommene CPU-Schreibzugriffe laufen
-  noch durch, nie nach dem Reset. Arbiter, Controller, SRAM- und PSRAM-Ablauf werden von
-  `cpu_reset` nicht zurückgesetzt, nur die CPU-Register.
+  noch durch, nie nach dem Reset. Arbiter und Controller werden von `cpu_reset` nicht
+  zurückgesetzt, nur die CPU-Register.
 - **„Alle Schreibzugriffe erledigt"** (`MEM_STATUS`): NOR über jede Stufe, die einen
-  angenommenen Schreibzugriff halten kann (dBus-Register, Controller bis zum letzten WRITE,
-  SRAM- und PSRAM-Ablauf). Ohne Zähler. Ein `lw MEM_STATUS` direkt nach einem `sw` liest 0,
-  solange das Schreiben noch läuft (ins SDRAM mit Zeilenwechsel 7 Takte nach der Annahme).
-  Gebraucht wird es später für „Befehlsliste ins SRAM, dann Start-Register", denn Schreibzugriffe
+  angenommenen Schreibzugriff halten kann (dBus-Register, Controller bis zum letzten WRITE).
+  Ohne Zähler. Ein `lw MEM_STATUS` direkt nach einem `sw` liest 0, solange das Schreiben noch
+  läuft (ins SDRAM mit Zeilenwechsel 7 Takte nach der Annahme). Gebraucht wird es, wenn eine
+  Einheit Daten liest, die die CPU gerade in den SDRAM geschrieben hat, denn Schreibzugriffe
   an verschiedene Ziele können sich überholen.
 
 ### Adressdekodierung
@@ -196,12 +199,10 @@ kann (`soc.v` bindet es unverändert ein):
 | Boot-RAM (32 KB) | [31:15] = 0 | ja | wie bisher |
 | SDRAM | [31:26] = `000100` (0x1000_0000) | Zeilen | Zeilen, Schreiben |
 | SDRAM ungecacht | [31:26] = `111101` (0xF400_0000) | Busfehler | Einzel-Lesen, Schreiben |
-| SRAM | [31:18] = 0x3E00 (0xF800_0000) | Busfehler | Einzel-Lesen, Schreiben |
-| PSRAM `cram0` | [31:24] = 0xFA | Busfehler | Einzel-Lesen, Schreiben |
 | sonst | | Busfehler | wie in `docs/soc.md` |
 
 „Busfehler" heißt beim iBus: `soc.v` antwortet selbst mit 8 Wörtern, Fehlerbit auf den Wörtern
-0–6 (wie in Schritt 1); solche Zeilen erreichen weder den Arbiter noch SRAM oder PSRAM.
+0–6 (wie in Schritt 1); solche Zeilen erreichen den Arbiter nicht.
 
 ### Bridge und Data-Slots
 
@@ -222,34 +223,24 @@ Der Test-Slot (`core/data.json`, nach Slot 0 und 1):
 "address": "0x10000000"}` – Bit 1, weil die Datei im Core-Ordner liegt; kein nonvolatile,
 kein deferload.
 
-## SRAM-Controller (`sram.v`)
+## SRAM und PSRAM (ausgebaut)
 
-Ein Halbwort pro Zugriff, alle Pins aus IO-Registern:
+Bis 2026-10-26 gab es einen SRAM-Controller (`sram.v`, ein Halbwort in 7 Takten, alle Pins
+aus IO-Registern) und für `cram0` agg23s asynchronen Controller (`ip/psram.sv` aus
+[agg23/analogue-pocket-utils](https://github.com/agg23/analogue-pocket-utils), MIT, in
+`psram32.v`; 8 Takte pro Halbwort), beide nur für den Speichertest. Zusammen etwa 100 ALMs.
+Falls ein PSRAM wieder gebraucht wird, gilt aus dem Bau und der Prüfung auf dem Pocket:
 
-- **Lesen:** Takt 0 Adresse, OE = 0, UB = LB = 0; Takt 6 nimmt das IO-Register die Daten
-  (80,8 ns nach der Adresse), OE = 1.
-- **Schreiben:** Takt 0 Adresse und Daten, WE = 1; Takt 1 WE = 0 mit UB/LB nach Maske; Takt 5
-  WE = 1 (53,9 ns ≥ 45 ns); Takt 6 Bus frei. Die Adresse ändert sich nie, solange WE low ist.
-- **Umschalten:** ein Leertakt zwischen Lesen und Schreiben in beide Richtungen.
-
-Ein 32-Bit-Zugriff der CPU sind zwei Halbwortzugriffe; Schreib-Halbwörter ohne Maskenbits
-fallen weg.
-
-## PSRAM `cram0` (`psram32.v` um `ip/psram.sv`)
-
-agg23s asynchroner Controller (bei 74,25 MHz 8 Takte pro Halbwort, auf dem Pocket schon
-gelaufen), `CLOCK_SPEED = 74.25`, Byte-Adresse [23] wählt das Die. `cram0_clk` bleibt still
-(ein laufender Takt machte bei einem anderen Core aus asynchronen Schreibzugriffen Bursts).
-Jede Hälfte eines 32-Bit-Zugriffs wird genau ein Chip-Zugriff.
-
-**Software-Access-Falle:** Zweimal Lesen, dann Schreiben an Halbwort `3FFFFFh` eines Dies ist
-die Folge, die die Konfigurationsregister ändert (`RCR[4] = 0` hieße Deep Power-Down). Der Test
-lässt deshalb das ganze 32-Bit-Wort an Byte-Offset `0x7FFFFC` jedes Dies aus (CPU
-`0xFA7F_FFFC` und `0xFAFF_FFFC`), und das PSRAM-Modell der Simulation meldet jeden Zugriff
-dort. Eine Konfiguration, die ein anderer Core hinterlassen hat (Teil-Refresh, Deep
-Power-Down), kann `psram.sv` nicht zurücksetzen; antwortet ein Die gar nicht, schreibt der Test
-„antwortet nicht (Deep Power-Down?)". Konfiguration lesen und setzen kommt mit dem
-Textur-Speicher.
+- **Konfiguration nicht voraussetzen.** BCR/RCR überleben das Laden eines anderen Cores,
+  nur Ausschalten setzt sie zurück. Asynchrone Zugriffe mit stehendem `cram_clk`
+  funktionieren in jedem Modus; ein laufender Takt machte bei einem anderen Core aus
+  asynchronen Schreibzugriffen Bursts.
+- **Software-Access-Falle:** Zweimal Lesen, dann Schreiben an Halbwort `3FFFFFh` eines Dies
+  ändert die Konfigurationsregister (`RCR[4] = 0` hieße Deep Power-Down); das Wort meiden.
+- **IO-Timing festmachen:** alle `cram`-Ausgänge in IO-Register (`FAST_OUTPUT_REGISTER`, für
+  `cram_dq` auch `FAST_OUTPUT_ENABLE_REGISTER` und `FAST_INPUT_REGISTER`).
+- **Startwerte der Steuerleitungen:** Initialwerte in Port-Deklarationen übernimmt Quartus
+  18.1 womöglich nicht; dann `POWER_UP_LEVEL HIGH` in der `.qsf`.
 
 ## Speicherkarte und Register (Ergänzung zu `docs/soc.md`)
 
@@ -257,8 +248,6 @@ Textur-Speicher.
 |---|---|---|---|
 | `0x1000_0000` | 64 MB | SDRAM | I und D |
 | `0xF400_0000` | 64 MB | SDRAM, dasselbe ungecacht | nein (Code: Busfehler) |
-| `0xF800_0000` | 256 KB | SRAM | nein (Code: Busfehler) |
-| `0xFA00_0000` | 16 MB | PSRAM `cram0`, Die 1 ab `0xFA80_0000` | nein (Code: Busfehler) |
 
 | Adresse | Name | | Bedeutung |
 |---|---|---|---|
@@ -270,20 +259,20 @@ Textur-Speicher.
 
 ## Speichertest (Firmware)
 
-`firmware/memtest.c`: ein Testablauf für alle drei Speicher, beschrieben durch (Basis,
-ungecachte Basis, Größe, Die-Größe). Fehler mit Adresse, Soll, Ist und zweimal ungecacht
+`firmware/memtest.c`: ein Testablauf für einen Speicher, beschrieben durch (Basis,
+ungecachte Basis, Größe, Die-Größe); bis zum Ausbau liefen SRAM und `cram0` mit. Fehler mit Adresse, Soll, Ist und zweimal ungecacht
 nachgelesen (dreimal derselbe falsche Wert deutet auf Schreiben oder Adresse, wechselnde Werte
 auf Lese-Timing); höchstens acht Fehlerzeilen je Speicher, danach wird nur gezählt. Nach
 jedem Test eine Zeile mit „ok" oder „FAIL, errors n" und den Takten. Vor jedem Test und alle
 64 KB darin stehen Test und Adresse auf dem Bildschirm und in der Kopfzeile des Protokolls,
 damit ein Hängenbleiben eine Stelle zeigt. Jeder Test setzt bei Erfolg ein Bit in `SYS_SIM`
-(Bit 3..20, Liste in `tools/sim_faults.sh`).
+(Bit 3..12, Liste in `tools/sim_faults.sh`).
 
 SDRAM, in dieser Reihenfolge:
 
 1. **Bereitschaft:** bis 0,5 s auf `MEM_STATUS` Bit 1 warten, `SYS_FLAGS`, `MEM_STATUS` und
    `MEM_BRIDGE_WORDS` ins Protokoll; ist das SDRAM nicht bereit, werden die SDRAM-Tests
-   übersprungen, SRAM und `cram0` trotzdem geprüft.
+   übersprungen.
 2. **program.bin:** läuft jetzt als letzter SDRAM-Test: vom Pocket angefordert (Kopf, dann
    die Datei), Kopf, Größe und CRC-32 geprüft, dazu die Bits „übergelaufen" und „verworfen".
 3. **Phasen-Fenster:** 80 Schritte zu 168 ps (Simulation: 4), bei jedem kurz neu
@@ -320,13 +309,9 @@ SDRAM, in dieser Reihenfolge:
     der Bank (die schnellste von vier Messungen), MB/s Lesen und Schreiben über den Cache mit
     einer ausgerollten Schleife; der gemessene Code liegt an I-Cache-Zeilen ausgerichtet.
 
-SRAM und `cram0`: Datenbus, Byte-Lanes (UB/LB), Adressbus und Muster wie oben, ungecacht;
-für `cram0` beide Dies ohne die Wörter an `0x7FFFFC`. Antwortet `cram0` beim Datenbus-Test
-gar nicht (64 Fehler), steht „does not answer (deep power-down left by another core?)" im
-Protokoll und die übrigen `cram0`-Tests entfallen. In der Simulation (`SYS_FLAGS` Bit 0)
-schrumpft nur die Fenstergröße, nie der Ablauf: geprüft werden das erste und das letzte
-Fenster jedes Speichers und jedes Dies, so laufen Schleifenenden, Die-Wechsel und Auslassung
-auch dort; das Protokoll nennt die Fenster, die Testbench prüft das. Die Firmware füllt den
+In der Simulation (`SYS_FLAGS` Bit 0) schrumpft nur die Fenstergröße, nie der Ablauf:
+geprüft werden das erste und das letzte Fenster, so laufen auch die Schleifenenden; das
+Protokoll nennt die Fenster, die Testbench prüft das. Die Firmware füllt den
 Stack beim Start mit einem Muster und schreibt den höchsten Stand ins Protokoll.
 
 Ergebnis in der Simulation (alle Modelle, Fenster von 2 KB):
@@ -336,14 +321,14 @@ SDRAM slot: ok, cycles 474618
 phase map ####
 SDRAM write status: ok, cycles 13600
 SDRAM line read: row hit 30 cycles, row miss 34; read 63 MB/s, write 95 MB/s
-memtest: errors SDRAM 0, SRAM 0, cram0 0
+memtest: errors SDRAM 0
 ```
 
 Eine Cache-Zeile kostet die CPU 30 Takte bei offener Zeile, 4 mehr (tRP + tRCD) bei einem
 Zeilenwechsel in der Bank. Die Musterschleifen sind eine Schleife je Muster ohne Aufrufe,
 der seltene Fehlerfall liegt außerhalb (`__builtin_expect`), damit VexRiscvs statische
-Sprungvorhersage immer trifft: 5 Befehle je Wort beim Prüfen. Geschätzte Dauer auf dem Pocket:
-SDRAM-Muster knapp 20 s, `cram0` gut 10 s, alles zusammen gut eine halbe Minute.
+Sprungvorhersage immer trifft: 5 Befehle je Wort beim Prüfen. Geschätzte Dauer auf dem Pocket
+für den ganzen Speicher: SDRAM-Muster knapp 20 s.
 
 ## Prüfung
 
@@ -354,12 +339,12 @@ SDRAM-Muster knapp 20 s, `cram0` gut 10 s, alles zusammen gut eine halbe Minute.
   Giftmuster. Takt-Konvention: Das Modell sieht einen Befehl eine Flanke nach dem Controller
   (steht für φ), gibt Halbwort k ab Flanke r+CL−1+k aus; die Simulation zeigt dann Leselatenz
   CL+1 = 3. Die echte Lese-Flanke beweist nur die Timing-Analyse und die Phasenmessung.
-- **Fehler-Einspeisung** (`tools/sim_faults.sh`): sieben Läufe von `sim/soc` mit je einem in
-  ein Modell eingebauten Fehler (SDRAM: DQM vertauscht, DQ8 hängt auf 0, BA1 hängt auf 0,
-  Zeilenbit 12 folgt Bit 11, jeder 16.000. Schreib-Beat fehlt; SRAM UB/LB vertauscht; `cram0`
-  Die 1 antwortet nie). `SYS_SIM` muss genau die vorhergesagten Tests als fehlgeschlagen
-  zeigen, nicht mehr und nicht weniger (die Begründung je Fall steht im Skript), und das
-  Protokoll muss einen Fehler melden. Alle sieben bestehen.
+- **Fehler-Einspeisung** (`tools/sim_faults.sh`): fünf Läufe von `sim/soc` mit je einem in
+  das SDRAM-Modell eingebauten Fehler (DQM vertauscht, DQ8 hängt auf 0, BA1 hängt auf 0,
+  Zeilenbit 12 folgt Bit 11, jeder 16.000. Schreib-Beat fehlt; bis zum Ausbau dazu SRAM
+  UB/LB vertauscht und `cram0` Die 1 antwortet nie). `SYS_SIM` muss genau die vorhergesagten
+  Tests als fehlgeschlagen zeigen, nicht mehr und nicht weniger (die Begründung je Fall steht
+  im Skript), und das Protokoll muss einen Fehler melden.
 - **Zufallstest** (`sim/sdram`): `sdram_port` + `sdram.v` + Modell, Busmodelle genau nach dem
   Protokoll der CPU. Adressen aus einem kleinen Pool (wenige Zeilen je Bank, Zeilen- und
   Bankgrenzen, letzte Zeile), Pausen meist 0–3 Takte, Schreiben gefolgt von Lesen derselben
@@ -380,12 +365,10 @@ SDRAM-Muster knapp 20 s, `cram0` gut 10 s, alles zusammen gut eine halbe Minute.
   Port-Register, Refresh alle 600 Takte, tRCD 1, tWR 1, READ→WRITE nach 3 Takten
   (Buskonflikt), Einzel-Lesen an falscher Spalte, nur das untere Halbwort geschrieben, Maske
   ignoriert, Leselatenz 2, PRECHARGE an die falsche Bank, Refresh vor Ablauf von tRP.
-- **SRAM- und PSRAM-Modell** mit Zeitprüfungen in Takten; das PSRAM-Modell bekommt das zweite
-  Die und meldet CE0 und CE1 gleichzeitig, Zugriffe auf `3FFFFFh` und die Software-Access-Folge.
 - **Systemtest** (`sim/soc`): die echte Firmware mit allen Modellen; die Bridge wie der Pocket
   (88 Takte Abstand, vor jedem Slot Warten auf die Quittung), Test-Slot geladen; ein Reset
-  mitten im SDRAM-Verkehr; der letzte Lauf meldet den Slot-Test als übersprungen. Alle 21
-  Bits in `SYS_SIM`, Modelle ohne Fehler, längste Refresh-Lücke 533 Takte.
+  mitten im SDRAM-Verkehr; der letzte Lauf meldet den Slot-Test als übersprungen. Alle 13
+  Bits in `SYS_SIM` (`0x80001FFF`), Modell ohne Fehler, längste Refresh-Lücke 533 Takte.
 - **Timing-Analyse:** IO-Register auf allen 103 Speicher-Pins gepackt, die vier
   SDRAM-Übergänge in allen Ecken mit Abstand (Tabelle oben), Phase in ps mit VCO und Zählern
   dokumentiert. Belegung mit allen drei Controllern: 4.212 ALMs (23 %), 194 von 308 M10K

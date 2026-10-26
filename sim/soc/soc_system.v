@@ -1,6 +1,6 @@
 //
-// Simulation top: soc + framebuffer + video_out wired as in core_top, models of the
-// SDRAM, SRAM and PSRAM cram0, the SDRAM clock's phase stepper with a PLL that is always
+// Simulation top: soc + framebuffer + video_out wired as in core_top, a model of the
+// SDRAM, the SDRAM clock's phase stepper with a PLL that is always
 // done, and a model of the core side of the APF data slot table (the table
 // core_bridge_cmd keeps)
 //
@@ -28,9 +28,7 @@ module soc_system (
     output  wire            swap_req,           // soc's swap request toggle
     output  wire            front,              // video_out: the buffer in front
     output  wire            sdram_ready,        // what core_top acknowledges data slot writes with
-    output  wire    [31:0]  sdram_errors,       // model error counts
-    output  wire    [31:0]  sram_errors,
-    output  wire    [31:0]  psram_errors,
+    output  wire    [31:0]  sdram_errors,       // model error count
     output  wire    [31:0]  sdram_max_refresh,  // longest gap between AUTO REFRESH, clocks
 
     // the core's data slot reads (deferload), answered by the testbench like the APF
@@ -64,21 +62,13 @@ module soc_system (
     wire    [15:0]  dram_dq_o, sdm_dq_o;
     wire            dram_dq_oe, sdm_dq_oe;
     wire            dram_cke, dram_ras_n, dram_cas_n, dram_we_n;
-    wire    [16:0]  sram_a;
-    wire    [15:0]  sram_dq_o, srm_dq_o;
-    wire            sram_dq_oe, srm_dq_oe, sram_oe_n, sram_we_n, sram_ub_n, sram_lb_n;
-    wire    [21:16] cram0_a;
-    wire    [15:0]  cram0_dq;
-    wire            cram0_clk, cram0_adv_n, cram0_cre, cram0_ce0_n, cram0_ce1_n;
-    wire            cram0_oe_n, cram0_we_n, cram0_ub_n, cram0_lb_n;
     wire            phase_step, phase_later, phase_busy;
     wire    [15:0]  phase_count;
     wire    [4:0]   pll_cntsel;
     wire            pll_updn, pll_phase_en;
 
-    // the data buses: whoever drives; a poison value when nobody does
+    // the data bus: whoever drives; a poison value when nobody does
     wire    [15:0]  dram_dq = sdm_dq_oe ? sdm_dq_o : dram_dq_oe ? dram_dq_o : 16'hD1D1;
-    wire    [15:0]  sram_dq = srm_dq_oe ? srm_dq_o : sram_dq_oe ? sram_dq_o : 16'hD2D2;
 
 soc soc (
     .clk                ( clk_74a ),
@@ -132,26 +122,6 @@ soc soc (
     .ds_length          ( ds_length ),
     .ds_done            ( ds_done ),
     .ds_err             ( ds_err ),
-    .sram_a             ( sram_a ),
-    .sram_dq_o          ( sram_dq_o ),
-    .sram_dq_oe         ( sram_dq_oe ),
-    .sram_dq_i          ( sram_dq ),
-    .sram_oe_n          ( sram_oe_n ),
-    .sram_we_n          ( sram_we_n ),
-    .sram_ub_n          ( sram_ub_n ),
-    .sram_lb_n          ( sram_lb_n ),
-    .cram0_a            ( cram0_a ),
-    .cram0_dq           ( cram0_dq ),
-    .cram0_wait         ( 1'b0 ),
-    .cram0_clk          ( cram0_clk ),
-    .cram0_adv_n        ( cram0_adv_n ),
-    .cram0_cre          ( cram0_cre ),
-    .cram0_ce0_n        ( cram0_ce0_n ),
-    .cram0_ce1_n        ( cram0_ce1_n ),
-    .cram0_oe_n         ( cram0_oe_n ),
-    .cram0_we_n         ( cram0_we_n ),
-    .cram0_ub_n         ( cram0_ub_n ),
-    .cram0_lb_n         ( cram0_lb_n ),
     .sim_status         ( sim_status )
 );
 
@@ -186,37 +156,6 @@ sdram_model sdm (
     .init_done          ( ),
     .max_refresh_interval ( sdram_max_refresh ),
     .refresh_count      ( )
-);
-
-sram_model srm (
-    .clk                ( clk_74a ),
-    .a                  ( sram_a ),
-    .dq_i               ( sram_dq_o ),
-    .dq_i_en            ( sram_dq_oe ),
-    .dq_o               ( srm_dq_o ),
-    .dq_o_en            ( srm_dq_oe ),
-    .oe_n               ( sram_oe_n ),
-    .we_n               ( sram_we_n ),
-    .ub_n_pin           ( sram_ub_n ),
-    .lb_n_pin           ( sram_lb_n ),
-    .error              ( ),
-    .error_count        ( sram_errors )
-);
-
-psram_model psm (
-    .clk                ( clk_74a ),
-    .a                  ( cram0_a ),
-    .dq                 ( cram0_dq ),
-    .adv_n              ( cram0_adv_n ),
-    .ce0_n              ( cram0_ce0_n ),
-    .ce1_n              ( cram0_ce1_n ),
-    .oe_n               ( cram0_oe_n ),
-    .we_n               ( cram0_we_n ),
-    .ub_n               ( cram0_ub_n ),
-    .lb_n               ( cram0_lb_n ),
-    .timing_error       ( ),
-    .error              ( ),
-    .error_count        ( psram_errors )
 );
 
 framebuffer fb (

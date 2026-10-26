@@ -19,11 +19,8 @@ EXPECTED = {
 
 # pin name (without the bus index) -> registers it needs: in, out, oe
 IO_REGS = {name: ("out",) for name in (
-    "dram_a", "dram_ba", "dram_dqm", "dram_cke", "dram_ras_n", "dram_cas_n", "dram_we_n",
-    "sram_a", "sram_oe_n", "sram_we_n", "sram_ub_n", "sram_lb_n",
-    "cram0_a", "cram0_adv_n", "cram0_ce0_n", "cram0_ce1_n", "cram0_oe_n", "cram0_we_n",
-    "cram0_ub_n", "cram0_lb_n")}
-IO_REGS.update({name: ("in", "out", "oe") for name in ("dram_dq", "sram_dq", "cram0_dq")})
+    "dram_a", "dram_ba", "dram_dqm", "dram_cke", "dram_ras_n", "dram_cas_n", "dram_we_n")}
+IO_REGS.update({name: ("in", "out", "oe") for name in ("dram_dq",)})
 
 COLUMNS = {"in": "Input Register", "out": "Output Register", "oe": "Output Enable Register"}
 

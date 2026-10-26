@@ -2,8 +2,6 @@
 # user core constraints
 #
 # put your clock groups in here as well as any net assignments
-#
-
 set_clock_groups -asynchronous \
  -group { bridge_spiclk } \
  -group { clk_74a } \
@@ -40,16 +38,3 @@ set_multicycle_path -setup -end 2 -from [get_clocks dram_clk_pin] -to [get_clock
 # Quartus derives
 set_clock_uncertainty -add -from [get_clocks clk_74a] -to [get_clocks dram_clk_pin] 0.3
 set_clock_uncertainty -add -from [get_clocks dram_clk_pin] -to [get_clocks clk_74a] 0.3
-
-#
-# SRAM and PSRAM cram0: asynchronous, timed by the controllers in whole clocks
-# (sram.v, ip/psram.sv). Bound the pin paths, which the IO registers keep short anyway.
-#
-set async_out [get_ports {sram_a[*] sram_oe_n sram_we_n sram_ub_n sram_lb_n sram_dq[*] \
-    cram0_a[*] cram0_adv_n cram0_ce0_n cram0_ce1_n cram0_oe_n cram0_we_n cram0_ub_n cram0_lb_n cram0_dq[*]}]
-set async_in [get_ports {sram_dq[*] cram0_dq[*]}]
-set_max_delay -to $async_out 10.0
-set_min_delay -to $async_out 0.0
-set_max_delay -from $async_in 10.0
-set_min_delay -from $async_in 0.0
-
