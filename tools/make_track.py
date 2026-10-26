@@ -1,11 +1,12 @@
-"""One track for the Pocket's track flythrough (firmware/track.c), from the game files.
+"""One track for the Pocket (firmware/track.c, car.c), from the game files.
 
-Usage: python tools/make_track.py <GFX/MAPnL.DAT> <DATA/MAPn.DAT> <out.bin> <preview.png>
+Usage: python tools/make_track.py <GFX/MAPnL.DAT> <DATA/MAPn.DAT> <DATA/GEN.DAT> <out.bin>
+                                  <preview.png>
 
-Formats from openscreamer docs/NOTES.md ("How the track is built", sections 1-4 and 11).
+Formats from openscreamer docs/NOTES.md ("How the track is built", sections 1-4, 6-9, 11).
 The output, for data slot 3 (core/data.json), little-endian:
 
-  0x00  "SCRK", u32 version 2
+  0x00  "SCRK", u32 version 3
   0x08  u32 offset, size of MAPn.MLB     materials and pixel pages, unchanged
   0x10  u32 offset, size of MAPn.UNR     the meshes, unchanged
   0x18  u32 offset of the palette        256 x 0x00RRGGBB (MAPn.COL is 6-bit VGA)
@@ -15,7 +16,24 @@ The output, for data slot 3 (core/data.json), little-endian:
                                          along the player's line (MAPnOPP.SPL, the tenth
                                          spline, a uniform quadratic B-spline over the
                                          nodes' handles)
-  0x2C  u32 file size, u32 n, n x u32    CRC-32 (zlib) of each 256 KB block from 0x100 on,
+  0x2C  u32 offset, count of the ground index: the drivable pieces (record run 0) by the
+                                         grid cell of their position, cell = ((Y + 2^20) >> 13)
+                                         x 256 + ((X + 2^20) >> 13): u16 first[65537], then
+                                         count u16 placement numbers, each cell's in file order
+                                         (as openscreamer's track_under() walks them)
+  0x34  u32 offset, count of markers     MAPn.MRK's 32-byte records unchanged
+  0x3C  u32 offset, count of cars        CARS.DTR's CARS_DATA rows, 68 bytes each: char
+                                         name[12], int32 livery, float maxspd, maxrpm, grip,
+                                         accel, int32 automatic, nshift, float ratio[7]
+  0x44  u32 offset, count of car models  AUTO00..: float wheelbase, front axle (ahead of the
+                                         origin), rear axle (behind it), half track, from the
+                                         wheel blocks' offsets
+  0x4C  u32 offset, count of road points MAPn.MMP cell array 2: float angle, int32 x, y
+  0x54  u32 offset, count of walls       MAPn.MMP cell array 3: float angle, int32 x, y, x1,
+                                         y1, x2, y2
+  0x5C  int32 x, y, float heading        where the player starts: the road point nearest the
+                                         third path point, facing along the path
+  0x68  u32 file size, u32 n, n x u32    CRC-32 (zlib) of each 256 KB block from 0x100 on,
                                          so the core can tell where a load went wrong
 
 Sections start on 256-byte boundaries. The output is made from game data: it stays in
@@ -45,23 +63,116 @@ def png(path, w, h, rgb):
                  + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
 
 
-def placements(mmp):
-    """The 64-byte records of runs 0 and 1 of every cell of the 256 x 256 grid"""
+def cells(mmp):
+    """The cells of the 256 x 256 grid that hold something, row by row"""
     i32 = lambda o: struct.unpack_from("<i", mmp, o)[0]
-    out = []
     for gy in range(256):
         row = i32(4 * gy)
         if row == -1:
             continue
         for gx in range(256):
             c = i32(row + 4 * gx)
-            if c == -1:
-                continue
-            n = i32(c + 0x14) + i32(c + 0x18)
-            for k in range(n):
-                o = c + 0x28 + 64 * k
-                out.append((i32(o), i32(o + 0x08), i32(o + 0x10), i32(o + 0x0C), i32(o + 0x18)))
-    return out
+            if c != -1:
+                yield c
+
+
+def placements(mmp):
+    """The 64-byte records of runs 0 and 1 of every cell, and which of them are run 0"""
+    i32 = lambda o: struct.unpack_from("<i", mmp, o)[0]
+    out, run0 = [], []
+    for c in cells(mmp):
+        n0, n1 = i32(c + 0x14), i32(c + 0x18)
+        for k in range(n0 + n1):
+            o = c + 0x28 + 64 * k
+            out.append((i32(o), i32(o + 0x08), i32(o + 0x10), i32(o + 0x0C), i32(o + 0x18)))
+            run0.append(k < n0)
+    return out, run0
+
+
+def ground_index(pl, run0):
+    """u16 first[65537] and the run-0 placement numbers, binned by their position's cell"""
+    bins = {}
+    for i, (obj, x, y, h, t) in enumerate(pl):
+        if not run0[i]:
+            continue
+        kx, ky = (x + 0x100000) >> 13, (y + 0x100000) >> 13
+        if 0 <= kx < 256 and 0 <= ky < 256:
+            bins.setdefault(ky * 256 + kx, []).append(i)
+    first, order = [0] * 65537, []
+    for k in range(65536):
+        order += bins.get(k, [])
+        first[k + 1] = len(order)
+    assert len(order) < 65536 and len(pl) < 65536
+    return struct.pack("<65537H", *first) + struct.pack(f"<{len(order)}H", *order), len(order)
+
+
+def cell_arrays(mmp):
+    """Arrays 2 (road points, 12 bytes) and 3 (walls, 28 bytes) of every cell"""
+    i32 = lambda o: struct.unpack_from("<i", mmp, o)[0]
+    dirs, walls = [], []
+    for c in cells(mmp):
+        for k in range(i32(c + 0x1C)):
+            dirs.append(mmp[i32(c + 0x08) + 12 * k:i32(c + 0x08) + 12 * k + 12])
+        for k in range(i32(c + 0x20)):
+            walls.append(mmp[i32(c + 0x0C) + 28 * k:i32(c + 0x0C) + 28 * k + 28])
+    return dirs, walls
+
+
+def cars_data(dtr):
+    """CARS.DTR's CARS_DATA rows (openscreamer drive.c, cars_dtr_load)"""
+    rows, row, on = [], [], False
+    for line in dtr.decode("latin-1").splitlines():
+        s = line.strip()
+        if not on:
+            on = s.startswith("CARS_DATA")
+            continue
+        if s.startswith("END_LIST"):
+            break
+        for tok in s.split():
+            if tok.startswith("*"):
+                break
+            row.append(tok)
+            if len(row) == 14:
+                rows.append(row)
+                row = []
+    num = lambda tok: int(tok[1:], 16) if tok[0] == "x" else float(tok[1:])
+    out = b""
+    for r in rows:
+        ratio = [0.0] + [num(x) for x in r[8:14]]
+        out += struct.pack("<12si4f2i7f", r[0][1:].encode()[:11], int(num(r[1])), num(r[2]), num(r[3]),
+                           num(r[4]), num(r[5]), int(num(r[6])), int(num(r[7])), *ratio)
+    return out, len(rows)
+
+
+def car_model(x3d):
+    """wheelbase, front axle, rear axle, half track of a .3DX car: from the offsets of its
+    off-centre (wheel) blocks (openscreamer mesh.c); the nose is towards local -Z"""
+    i32 = lambda o: struct.unpack_from("<i", x3d, o)[0]
+    lo = hi = half = 0.0
+    seen = False
+    for k in range(i32(0x14)):
+        off = i32(0x18 + 4 * k)
+        so = i32(off + 0x0C)
+        if so <= 0:
+            continue
+        tx, tz = i32(so + 0x10), i32(so + 0x18)
+        if tx == 0:
+            continue
+        lo, hi = (tz, tz) if not seen else (min(lo, tz), max(hi, tz))
+        seen = True
+        half = max(half, abs(tx))
+    return struct.pack("<4f", hi - lo, -lo, hi, half) if seen else struct.pack("<4f", 935.0, 445.0, 490.0, 226.0)
+
+
+def start_pose(path, dirs):
+    """openscreamer's player_reset(path, 2): the road point nearest the third path point,
+    facing the way the path goes"""
+    (x, y, _), (x1, y1, _) = path[2], path[3]
+    yaw = math.atan2(x1 - x, -(y1 - y))
+    best = min(dirs, key=lambda d: (struct.unpack_from("<i", d, 4)[0] - x) ** 2 + (struct.unpack_from("<i", d, 8)[0] - y) ** 2)
+    a, dx, dy = struct.unpack("<f2i", best)
+    along = math.sin(a) * math.sin(yaw) + -math.cos(a) * -math.cos(yaw)
+    return struct.pack("<2if", dx, dy, a + (math.pi if along < 0 else 0.0))
 
 
 def splines(spl):
@@ -102,21 +213,30 @@ def player_path(spl, step=100.0):
 
 
 def main():
-    gfx, dat, out, preview = sys.argv[1:5]
+    gfx, dat, gen, out, preview = sys.argv[1:6]
     g = datfile.read(gfx)
+    d = datfile.read(dat)
     track = os.path.basename(gfx).upper()[:-5]                        # MAP1 from MAP1L.DAT or MAP1H.DAT
     mlb = datfile.extract(g, track + ".MLB")
     unr = datfile.extract(g, track + ".UNR")
     col = datfile.extract(g, track + ".COL")
     mmp = datfile.extract(g, track + ".MMP")
-    spl = datfile.extract(datfile.read(dat), track + "OPP.SPL")
+    spl = datfile.extract(d, track + "OPP.SPL")
+    mrk = datfile.extract(d, track + ".MRK")
     pal = b"".join(struct.pack("<I", col[3 * i] * 4 << 16 | col[3 * i + 1] * 4 << 8 | col[3 * i + 2] * 4)
                    for i in range(256))
-    pl = placements(mmp)
+    pl, run0 = placements(mmp)
     path = player_path(spl)
+    ground, nground = ground_index(pl, run0)
+    nmark = struct.unpack_from("<i", mrk, 0)[0]
+    cars, ncars = cars_data(datfile.extract(datfile.read(gen), "CARS.DTR"))
+    models = b"".join(car_model(datfile.extract(g, "AUTO%02d.3DX" % k)) for k in range(7))
+    dirs, walls = cell_arrays(mmp)
 
     sections = [mlb, unr, pal, b"".join(struct.pack("<5i", *p) for p in pl),
-                b"".join(struct.pack("<3i", *p) for p in path)]
+                b"".join(struct.pack("<3i", *p) for p in path), ground, mrk[4:4 + 32 * nmark],
+                cars, models, b"".join(dirs), b"".join(walls)]
+    counts = [len(mlb), len(unr), 0, len(pl), len(path), nground, nmark, ncars, 7, len(dirs), len(walls)]
     offs, pos = [], 0x100
     for s in sections:
         offs.append(pos)
@@ -125,10 +245,11 @@ def main():
     for o, s in zip(offs, sections):
         blob[o:o + len(s)] = s
     crcs = [zlib.crc32(blob[o:o + BLOCK]) for o in range(0x100, pos, BLOCK)]
-    head = b"SCRK" + struct.pack("<I", 2) + struct.pack("<2I", offs[0], len(mlb)) + \
-        struct.pack("<2I", offs[1], len(unr)) + struct.pack("<I", offs[2]) + \
-        struct.pack("<2I", offs[3], len(pl)) + struct.pack("<2I", offs[4], len(path)) + \
-        struct.pack("<2I", pos, len(crcs)) + struct.pack(f"<{len(crcs)}I", *crcs)
+    head = b"SCRK" + struct.pack("<I", 3) + struct.pack("<2I", offs[0], counts[0]) + \
+        struct.pack("<2I", offs[1], counts[1]) + struct.pack("<I", offs[2]) + \
+        b"".join(struct.pack("<2I", offs[k], counts[k]) for k in range(3, 11)) + \
+        start_pose(path, dirs) + struct.pack("<2I", pos, len(crcs)) + struct.pack(f"<{len(crcs)}I", *crcs)
+    assert len(head) == 0x70 + 4 * len(crcs)
     assert len(head) <= 0x100, "file too large for the block CRCs in the header"
     blob[:len(head)] = head
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
@@ -157,8 +278,9 @@ def main():
     for p in path:
         dot(p[0], p[1], b"\xff\x30\x30", 0)
     png(preview, W, H, bytes(img))
-    print(f"{out}: {len(blob)} bytes: MLB {len(mlb)}, UNR {len(unr)}, {len(pl)} placements, "
-          f"{len(path)} path points; preview {preview}")
+    print(f"{out}: {len(blob)} bytes: MLB {len(mlb)}, UNR {len(unr)}, {len(pl)} placements "
+          f"({nground} drivable), {len(path)} path points, {nmark} markers, {ncars} cars, "
+          f"{len(dirs)} road points, {len(walls)} walls; preview {preview}")
 
 
 main()

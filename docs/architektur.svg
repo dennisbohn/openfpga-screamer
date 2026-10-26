@@ -88,7 +88,7 @@
   <text x="505" y="286" class="t c">VexRiscv RV32IMF</text>
   <text x="505" y="304" class="b c">I-/D-Cache · FPU · CFU</text>
   <text x="505" y="320" class="b c">Bauteile wählen, sortieren</text>
-  <text x="505" y="336" class="b c">Spiellogik, Physik: folgt</text>
+  <text x="505" y="336" class="b c">Fahrphysik · Spiellogik: folgt</text>
 
   <rect x="640" y="260" width="150" height="100" rx="8" class="built"/>
   <text x="715" y="286" class="t c">Geometrie-Einheit</text>

@@ -1,8 +1,10 @@
 /*
  * The program (program.bin, data slot 2) in the SDRAM, started by the boot loader with its
- * results (docs/soc.md). With a track in data slot 3 (tools/make_track.py) a flythrough of
- * it as a benchmark: the CPU does the geometry (track.c), the rasterizer draws; the d-pad
- * sets the speed. Without one, the texture scene with test patterns, checked once a run
+ * results (docs/soc.md). With a track in data slot 3 (tools/make_track.py) the player's car
+ * on it (car.c): A or up accelerates, B or down brakes, left and right steer, L and R change
+ * gear on a manual car, Select changes the view; the CPU picks and sorts the pieces
+ * (track.c), the geometry unit, setup unit and rasterizer draw them. Without one, the
+ * texture scene with test patterns, checked once a run
  * against the rasterizer's C model (raster.c), and a triangle moved with the d-pad.
  * Every frame into the back buffer: palette, test band, background, the scene, the counts
  * and FPS; then a swap. After the third completed swap the results go to SYS_SIM once
@@ -17,6 +19,7 @@
 #include "screen.h"
 #include "slot.h"
 #include "track.h"
+#include "car.h"
 
 uint32_t frames_shown;             /* read by the trap handler */
 
@@ -258,14 +261,14 @@ static const struct rs_clip track_clip = { 0, 30, FB_W, 176 };
 
 /* Once per run: the frame just drawn against the C models of the setup unit and the
    rasterizer, drawn into the SDRAM; the track area compared pixel by pixel */
-static void track_check(volatile uint8_t *fb, uint32_t pos, uint8_t sky)
+static void track_check(volatile uint8_t *fb, const struct track_cam *cam, uint8_t sky)
 {
     volatile uint8_t *m = CHECK_BUF;
     struct track_stats ts;
     uint32_t differ = 0, first = 0, t0 = rdcycle();
     fb_fill(m, track_clip.x0, track_clip.y0, track_clip.x1 - track_clip.x0, track_clip.y1 - track_clip.y0, sky);
     track_mode = TRACK_MODEL;
-    track_draw(m, &track_clip, pos, &ts);
+    track_draw_cam(m, &track_clip, cam, &ts);
     track_mode = TRACK_HW;
     for (int y = track_clip.y0; y < track_clip.y1; y++)
         for (int x = track_clip.x0; x < track_clip.x1; x++)
@@ -293,8 +296,11 @@ static void __attribute__((noreturn)) run_track(void)
 {
     const uint32_t *pal = track_palette();
     uint8_t col_sky = nearest((const volatile uint32_t *)pal, 110, 150, 210);
-    uint32_t lap = track_path_length() << 8, pos = 0, speed = 512, drawn = 0;
+    uint32_t drawn = 0, keys_before = 0, last_frame = 0, steps = 0;
     uint32_t fps = 0, fps_drawn = 0, fps_frame = 0;
+    int car_v = 0;
+    car_init(0);
+    car_view(car_v);
     struct su_view view;
     track_view(&track_clip, &view);
     track_mode = TRACK_HW;
@@ -312,8 +318,19 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_hex(SIM_DONE | results);
             dlog_char('\n');
         }
-        if ((keys & KEY_UP) && speed < 4096) speed += 16;
-        if ((keys & KEY_DOWN) && speed >= 16) speed -= 16;
+        /* the physics at 50 steps a second: one per video frame since the last picture */
+        uint32_t n = drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
+        last_frame = VID_FRAME(st);
+        if (n > 4) n = 4;
+        if ((keys & ~keys_before) & KEY_SELECT) car_view(++car_v);
+        for (uint32_t k = 0; k < n; k++) {
+            car_step(keys, keys_before);
+            keys_before = keys;
+        }
+        steps += n;
+        const struct car_state *cs = car_state();
+        struct track_cam cam;
+        car_camera(&cam);
 
         volatile uint8_t *fb = FB(!(st & VID_FRONT));
         for (int i = 0; i < 256; i++) VID_PAL[i] = pal[i];
@@ -339,7 +356,7 @@ static void __attribute__((noreturn)) run_track(void)
         RS_CLIP0 = RS_XY(track_clip.x0, track_clip.y0);
         RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
         su_view_regs(&view);
-        track_draw(0, &track_clip, pos, &ts);
+        track_draw_cam(0, &track_clip, &cam, &ts);
         while (RS_DRAW & RS_BUSY)
             ;
         uint32_t cycles = rdcycle() - t0, raster = RS_CLOCKS, pixels = RS_PIXELS, misses = RS_MISSES;
@@ -347,7 +364,7 @@ static void __attribute__((noreturn)) run_track(void)
         uint32_t r_miss = RS_MISS_CLOCKS, r_edge = RS_EDGE_CLOCKS, r_row = RS_ROW_CLOCKS;
         uint32_t r_drain = RS_DRAIN_CLOCKS, r_starved = RS_STARVED;
         ts.faces = GU_FACES;
-        if (drawn == 2) track_check(fb, pos, col_sky);
+        if (drawn == 2) track_check(fb, &cam, col_sky);
 
         if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
             fps = drawn - fps_drawn;
@@ -362,15 +379,26 @@ static void __attribute__((noreturn)) run_track(void)
         p = fmt_udec(fmt_str(p, " Raster "), raster);
         fmt_udec(fmt_str(p, " Miss "), misses);
         con_text(fb, 1, 23, buf, col_text, col_bg);
-        p = fmt_udec(fmt_str(buf, "Pixel "), pixels);
-        p = fmt_udec(fmt_str(p, " FPS "), fps);
-        fmt_udec(fmt_str(p, " Tempo "), speed >> 4);
+        p = fmt_udec(fmt_str(buf, "FPS "), fps);
+        p = fmt_udec(fmt_str(p, "  "), (uint32_t)drive_kmh(cs));
+        p = fmt_udec(fmt_str(p, " km/h  Gang "), (uint32_t)cs->gear);
+        fmt_udec(fmt_str(p, "  U/min "), (uint32_t)cs->rpm);
         con_text(fb, 1, 24, buf, col_text, col_bg);
         if (drawn % 250 == 2) {
             dlog_str("track frame ");
             dlog_dec((int32_t)drawn);
-            dlog_str(": point ");
-            dlog_dec((int32_t)(pos >> 8));
+            dlog_str(": car ");
+            dlog_dec((int32_t)cs->x);
+            dlog_char(' ');
+            dlog_dec((int32_t)cs->y);
+            dlog_char(' ');
+            dlog_dec((int32_t)cs->z);
+            dlog_str(", ");
+            dlog_dec((int32_t)drive_kmh(cs));
+            dlog_str(" km/h, gear ");
+            dlog_dec(cs->gear);
+            dlog_str(", steps ");
+            dlog_dec((int32_t)steps);
             dlog_str(", ");
             dlog_dec((int32_t)ts.pieces);
             dlog_str(" pieces, ");
@@ -423,7 +451,6 @@ static void __attribute__((noreturn)) run_track(void)
         }
         VID_SWAP = 1;
         log_head("frames drawn: ", ++drawn);
-        pos = (pos + speed) % lap;
     }
 }
 
