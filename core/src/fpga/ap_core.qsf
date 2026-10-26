@@ -749,6 +749,7 @@ set_global_assignment -name VERILOG_FILE core/soc.v
 set_global_assignment -name VERILOG_FILE core/raster.v
 set_global_assignment -name VERILOG_FILE core/raster_tex.v
 set_global_assignment -name VERILOG_FILE core/setup.v
+set_global_assignment -name VERILOG_FILE core/clipper.v
 set_global_assignment -name VERILOG_FILE core/framebuffer.v
 set_global_assignment -name VERILOG_FILE core/video_out.v
 set_global_assignment -name VERILOG_FILE core/sdram.v

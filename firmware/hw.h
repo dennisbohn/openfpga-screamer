@@ -127,7 +127,7 @@
 #define REGF(addr)      (*(volatile float *)(addr))
 #define SU_CENTRE       REG32(0xF0003080u)  /* W: centre of the view in 1/16 pixel, RS_XY */
 #define SU_SCALE        REG32(0xF0003084u)  /* W: focal length in pixels times 16 */
-#define SU_MODE         REG32(0xF0003088u)  /* W: as RS_DRAW (colour, buffer, RS_TEXTURED) */
+#define SU_MODE         REG32(0xF0003088u)  /* W: as RS_DRAW (colour, buffer, RS_TEXTURED), SU_CORNERS */
 #define SU_TEX          REG32(0xF000308Cu)  /* W: as RS_TEX     } taken with the first */
 #define SU_TEXSIZE      REG32(0xF0003090u)  /* W: as RS_TEXSIZE } corner of a polygon */
 #define SU_R            REGF(0xF0003094u)   /* W: a corner: r, u, f, s (floats) */
@@ -137,6 +137,8 @@
 #define SU_T_NEXT       REGF(0xF00030A4u)   /* W: t; the corner continues the polygon */
 #define SU_T_FIRST      REGF(0xF00030A8u)   /* W: t; the corner starts a polygon */
 #define SU_CLOCKS       REG32(0xF00030ACu)  /* R: clocks the unit computed; W: clears */
+#define SU_FAR          REG32(0xF00030B0u)  /* W: far plane depth with 8 fraction bits */
+#define SU_CORNERS(n)   ((uint32_t)(n) << 10)  /* SU_MODE: corners of the polygon, 3 or 4 */
 
 /* Cache maintenance: invalidate the whole data cache (it is write-through, so nothing is
    lost), and make the instruction cache fetch code written with stores (fence.i, then

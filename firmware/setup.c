@@ -41,11 +41,84 @@ int32_t su_fix8(float v)
     return b.u >> 31 ? -(int32_t)a : (int32_t)a;
 }
 
-void su_project(const struct su_view *v, const struct su_corner *c, struct su_point *p)
+void su_fix(const struct su_corner *c, struct su_fixed *x)
 {
-    int32_t r = su_fix8(c->r), u = su_fix8(c->u), f = su_fix8(c->f);
-    int64_t s = clamp64(su_fix8(c->s), -(1 << 23), (1 << 23) - 1);
-    int64_t t = clamp64(su_fix8(c->t), -(1 << 23), (1 << 23) - 1);
+    x->r = su_fix8(c->r);
+    x->u = su_fix8(c->u);
+    x->f = su_fix8(c->f);
+    x->s = (int32_t)clamp64(su_fix8(c->s), -(1 << 23), (1 << 23) - 1);
+    x->t = (int32_t)clamp64(su_fix8(c->t), -(1 << 23), (1 << 23) - 1);
+}
+
+/* distance from plane k, >= 0 inside: near (depth 128), the guard band (|r|, |u| up to
+   SU_GUARD times the depth), far */
+static int64_t plane(const struct su_view *v, const struct su_fixed *c, int k)
+{
+    int64_t g = (int64_t)c->f * SU_GUARD;
+    switch(k) {
+    case 0: return (int64_t)c->f - SU_NEAR8;
+    case 1: return g - c->r;
+    case 2: return g + c->r;
+    case 3: return g - c->u;
+    case 4: return g + c->u;
+    default: return (int64_t)v->far8 - c->f;
+    }
+}
+
+static int32_t lerp(int32_t a, int32_t b, int64_t t16)
+{
+    return (int32_t)(a + ((((int64_t)b - a) * t16) >> 16));
+}
+
+int su_clip(const struct su_view *v, const struct su_fixed *in, int n, struct su_fixed *out)
+{
+    struct su_fixed buf[2][SU_MAX_POLY];
+    int any = 0, all = 0x3F;
+    for(int i = 0; i < n; i++) {
+        int code = 0;
+        for(int k = 0; k < 6; k++)
+            if(plane(v, &in[i], k) < 0) code |= 1 << k;
+        any |= code;
+        all &= code;
+        buf[0][i] = in[i];
+    }
+    if(all) return 0;                       /* wholly outside one plane */
+    int cur = 0;
+    for(int k = 0; k < 6; k++) {
+        if(!(any >> k & 1)) continue;
+        const struct su_fixed *p = buf[cur];
+        struct su_fixed *q = buf[!cur];
+        int m = 0;
+        for(int i = 0; i < n; i++) {
+            const struct su_fixed *a = &p[i], *b = &p[i + 1 < n ? i + 1 : 0];
+            int64_t da = plane(v, a, k), db = plane(v, b, k);
+            if(da >= 0) q[m++] = *a;
+            if((da >= 0) != (db >= 0)) {
+                /* t = |da| / (|da| + |db|) with 16 fraction bits from the table */
+                uint64_t ea = (uint64_t)(da < 0 ? -da : da), d = ea + (uint64_t)(db < 0 ? -db : db);
+                int l = bitlen(d);
+                int64_t t16 = (int64_t)((ea * rs_recip(norm16(d, l))) >> l);
+                if(t16 > 65536) t16 = 65536;
+                q[m].r = lerp(a->r, b->r, t16);
+                q[m].u = lerp(a->u, b->u, t16);
+                q[m].f = lerp(a->f, b->f, t16);
+                q[m].s = lerp(a->s, b->s, t16);
+                q[m].t = lerp(a->t, b->t, t16);
+                m++;
+            }
+        }
+        n = m;
+        cur = !cur;
+        if(n < 3) return 0;
+    }
+    for(int i = 0; i < n; i++) out[i] = buf[cur][i];
+    return n;
+}
+
+void su_project(const struct su_view *v, const struct su_fixed *c, struct su_point *p)
+{
+    int32_t r = c->r, u = c->u, f = c->f;
+    int64_t s = c->s, t = c->t;
     if(f < 1) f = 1;
     int l = bitlen((uint32_t)f);
     uint32_t rc = rs_recip(norm16((uint32_t)f, l));         /* 2^(16 + l) / f */
@@ -117,15 +190,19 @@ int su_triangle(const struct su_point p[3], struct rs_vertex pos[3], struct rs_t
 uint32_t su_polygon(volatile uint8_t *fb, const struct rs_clip *clip, const struct su_view *v,
                     const struct su_corner *c, int n, const struct rs_texture *tex, uint8_t colour)
 {
+    struct su_fixed in[SU_MAX_IN], out[SU_MAX_POLY];
     struct su_point p[3];
     uint32_t pixels = 0;
+    if(n < 3 || n > SU_MAX_IN) return 0;
+    for(int i = 0; i < n; i++) su_fix(&c[i], &in[i]);
+    n = su_clip(v, in, n, out);
     if(n < 3) return 0;
-    su_project(v, &c[0], &p[0]);
-    su_project(v, &c[1], &p[1]);
+    su_project(v, &out[0], &p[0]);
+    su_project(v, &out[1], &p[1]);
     for(int i = 2; i < n; i++) {
         struct rs_vertex pos[3];
         struct rs_tex_setup s;
-        su_project(v, &c[i], &p[2]);
+        su_project(v, &out[i], &p[2]);
         if(su_triangle(p, pos, &s, tex != 0))
             pixels += tex ? rs_textured_fx(fb, clip, pos, &s, tex) : rs_triangle(fb, clip, pos, colour);
         p[1] = p[2];

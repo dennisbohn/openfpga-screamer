@@ -75,6 +75,7 @@ void texdemo_view(const struct rs_clip *clip, struct su_view *v)
     v->cx = (clip->x0 + clip->x1) * 8;      /* the centre in 1/16 pixel */
     v->cy = (clip->y0 + clip->y1) * 8;
     v->scale = (uint32_t)(FOCAL * 16.0f);
+    v->far8 = 10 * 256 * 256;               /* depth 10 (scaled by 256, 8 fraction bits) */
 }
 
 /* a quad: in view space to the setup unit or its C model (scaled by 256: the setup unit
@@ -112,7 +113,8 @@ static uint32_t draw_quad(volatile uint8_t *fb, const struct rs_clip *clip, cons
 uint32_t texdemo_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t a, uint32_t *tris)
 {
     static const struct quad ground[2] = {
-        { { { -2.0f, 0, 2.0f }, { 2.0f, 0, 2.0f }, { 2.0f, 0, -2.0f }, { -2.0f, 0, -2.0f } }, 4 },  /* asphalt */
+        /* asphalt from behind the camera to past the far plane: the setup unit cuts it */
+        { { { -12.0f, 0, 12.0f }, { 12.0f, 0, 12.0f }, { 12.0f, 0, -12.0f }, { -12.0f, 0, -12.0f } }, 4 },
         { { { -1.0f, 0, 1.0f }, { 1.0f, 0, 1.0f }, { 1.0f, 0, -1.0f }, { -1.0f, 0, -1.0f } }, 0 },  /* flag */
     };
     static const struct quad upright[3] = {

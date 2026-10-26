@@ -26,16 +26,17 @@
 #define MAX_PIECES  2048        /* placements; track 1 has 809 (L set), 1164 (H set) */
 #define MAX_OBJ     512         /* meshes; up to 360 on a track */
 #define MAX_VERT    512         /* vertices of one mesh; at most 189 measured */
-#define MAX_POLY    12          /* corners of a face after cutting at six planes */
 
 /* How far the game draws (openscreamer docs/NOTES.md, DETAIL): a piece only while its
    position is within 52000 units of the camera (0x83164: dist^2 >> 2 < 676000000), and
    every face cut at a depth set by the DETAIL option (the table at 0x21d4) */
 #define REACH2      2704000000.0f
 static const float far_depth[3] = { 27808.0f, 27808.0f, 43808.0f };     /* LOW, MID, HI */
-#define NEAR        64.0f
-#define FOCAL       200.0f      /* pixels per unit at distance 1 */
-#define GUARD       9.0f        /* faces are cut where |x| or |y| > GUARD z: 1800 pixels out */
+/* the original's lens (openscreamer docs/NOTES.md, section 10): screen = centre + 128 x /
+   depth, the eye line 65 % down the view; the near plane at depth 128 */
+#define NEAR        128.0f
+#define FOCAL       128.0f
+#define EYE_LINE    0.65f
 #define CAM_UP      700.0f      /* camera over the player's line */
 #define LOOK        12          /* path points ahead for the direction of view */
 
@@ -70,7 +71,7 @@ static inline uint32_t now(void)
 #else
 static inline uint32_t now(void) { return 0; }
 #endif
-static uint32_t cyc_clip, cyc_out;      /* summed up by polygon() */
+static uint32_t cyc_out;                /* summed up by polygon() */
 
 static int32_t rd32(const uint8_t *p) { return *(const int32_t *)p; }
 static int16_t rd16(const uint8_t *p) { return *(const int16_t *)p; }
@@ -168,71 +169,25 @@ int track_block_ok(int k)
     return o < e && crc32(file_start + o, file_start + e) == (uint32_t)rd32(file_start + 0x34 + 4 * k);
 }
 
-/* distance of a corner from clipping plane p (>= 0 inside) */
-static float plane_dist(const struct cv *v, int p)
-{
-    switch(p) {
-    case 0: return v->f - NEAR;
-    case 1: return GUARD * v->f - v->r;
-    case 2: return GUARD * v->f + v->r;
-    case 3: return GUARD * v->f - v->u;
-    case 4: return GUARD * v->f + v->u;
-    default: return far_z - v->f;
-    }
-}
-
-static int clip(struct cv *out, const struct cv *in, int n, int p)
-{
-    int m = 0;
-    for(int i = 0; i < n; i++) {
-        const struct cv *a = &in[i], *b = &in[i + 1 < n ? i + 1 : 0];
-        float da = plane_dist(a, p), db = plane_dist(b, p);
-        if(da >= 0.0f) out[m++] = *a;
-        if((da >= 0.0f) != (db >= 0.0f)) {
-            float t = da / (da - db);
-            out[m].r = a->r + (b->r - a->r) * t;
-            out[m].u = a->u + (b->u - a->u) * t;
-            out[m].f = a->f + (b->f - a->f) * t;
-            out[m].s = a->s + (b->s - a->s) * t;
-            out[m].t = a->t + (b->t - a->t) * t;
-            m++;
-        }
-    }
-    return m;
-}
-
 void track_view(const struct rs_clip *clip, struct su_view *v)
 {
     v->cx = (clip->x0 + clip->x1) * 8;      /* the centre in 1/16 pixel */
-    v->cy = (clip->y0 + clip->y1) * 8;
+    v->cy = clip->y0 * 16 + (int32_t)((float)((clip->y1 - clip->y0) * 16) * EYE_LINE);
     v->scale = (uint32_t)(FOCAL * 16.0f);
+    v->far8 = (int32_t)(far_z * 256.0f);
 }
 
 struct view { struct su_view su; volatile uint8_t *fb; const struct rs_clip *clip; };
 
-/* a face: cut where it leaves the space between the planes, then to the setup unit (or
-   its C model), which projects it and splits it into triangles; returns their number */
-static uint32_t polygon(const struct view *w, struct cv *p, int n, const struct rs_texture *tex,
+/* a face in view space to the setup unit (or its C model), which cuts it at the planes,
+   projects it and splits it into triangles; returns the triangles of the uncut face */
+static uint32_t polygon(const struct view *w, const struct cv *p, int n, const struct rs_texture *tex,
                         int colour)
 {
-    struct cv tmp[MAX_POLY];
     uint32_t t0 = now();
-    int inside = 1;
-    for(int i = 0; i < n && inside; i++)
-        for(int k = 0; k < 6; k++)
-            if(plane_dist(&p[i], k) < 0.0f) inside = 0;
-    if(!inside) {
-        for(int k = 0; k < 6 && n >= 3; k++) {
-            n = clip(tmp, p, n, k);
-            for(int i = 0; i < n; i++) p[i] = tmp[i];
-        }
-    }
-    uint32_t t1 = now();
-    cyc_clip += t1 - t0;
-    if(n < 3) return 0;
     if(track_mode == TRACK_HW) track_hw_poly(p, n, tex, (uint8_t)colour);
     else su_polygon(w->fb, w->clip, &w->su, p, n, tex, (uint8_t)colour);
-    cyc_out += now() - t1;
+    cyc_out += now() - t0;
     return (uint32_t)(n - 2);
 }
 
@@ -244,7 +199,7 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
 {
     uint32_t t_start = now();
     st->pieces = st->faces = st->triangles = st->see_through = st->vertices = 0;
-    st->cyc_vert = cyc_clip = cyc_out = 0;
+    st->cyc_vert = cyc_out = 0;
 
     /* the camera on the player's line, looking LOOK points ahead and a little down */
     uint32_t i0 = (pos >> 8) % (uint32_t)npath, i1 = (i0 + 1) % (uint32_t)npath;
@@ -266,7 +221,8 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
 
     /* the pieces in reach and in view, far to near */
     const float half_w = (float)(clip->x1 - clip->x0) / 2.0f / FOCAL;
-    const float half_h = (float)(clip->y1 - clip->y0) / 2.0f / FOCAL;
+    const float up = (float)(clip->y1 - clip->y0) * EYE_LINE / FOCAL;          /* above the eye line */
+    const float down = (float)(clip->y1 - clip->y0) * (1.0f - EYE_LINE) / FOCAL;
     int nv = 0;
     float nearest = 1e30f;
     for(int i = 0; i < npieces; i++) {
@@ -279,7 +235,7 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
         float f = dx * fx + dy * fy + dh * fh, r = dx * rx + dy * ry, u = dx * ux + dy * uy + dh * uh;
         if(f + rad < NEAR || f - rad > far_z) continue;
         if(r - rad > half_w * (f + rad) || r + rad < -half_w * (f + rad)) continue;
-        if(u - rad > half_h * (f + rad) || u + rad < -half_h * (f + rad)) continue;
+        if(u - rad > up * (f + rad) || u + rad < -down * (f + rad)) continue;
         vis[nv].d2 = d2;
         vis[nv].i = i;
         nv++;
@@ -358,7 +314,7 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
                 sw = (float)tex.width / 256.0f;
                 sh = (float)tex.height / 256.0f;
             }
-            struct cv poly[MAX_POLY];
+            struct cv poly[4];
             for(int j = 0; j < nc; j++) {
                 uint16_t vo = ru16(fc + 8 + 2 * j);
                 int vi = vo / 6;
@@ -372,7 +328,6 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
             st->triangles += polygon(&w, poly, nc, routine == 128 ? 0 : &tex, rd16(fc + 2) & 255);
         }
     }
-    st->cyc_clip = cyc_clip;
     st->cyc_out = cyc_out;
-    st->cyc_face = now() - t_pieces - st->cyc_vert - cyc_clip - cyc_out;
+    st->cyc_face = now() - t_pieces - st->cyc_vert - cyc_out;
 }

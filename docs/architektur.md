@@ -141,8 +141,14 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Setup-Einheit (`setup.v`, C-Modell `firmware/setup.c`): Die CPU gibt Vielecke in
   Kamerasicht ab (fünf Floats je Ecke), die Hardware projiziert, zerlegt sie in einen
   Fächer und rechnet die Werte für den Rasterizer in Festkomma, während der Rasterizer das
-  vorige Dreieck zeichnet. Auswahl, Sortieren, Flächenlisten und Zuschneiden bleiben
-  vorerst auf der CPU.
+  vorige Dreieck zeichnet. Danach das Zuschneiden (`clipper.v`, davor): mit der
+  Setup-Einheit sank die CPU-Zeit im schwersten Bild von 10,4 auf 5,8 Mio. Takte, davon
+  58 % Zuschneiden. Wie im Original an der nahen Ebene (Tiefe 128) und der fernen der
+  DETAIL-Stufe; dazu ein Schutzband bei 14 × Tiefe, nur damit die Bildschirmkoordinaten in
+  16 Bit passen (den Bildrand schneidet der Rasterizer). Das Objektiv ist das des
+  Originals: Brennweite 128, Augenhöhe bei 65 % der Bildhöhe. Auswahl, Sortieren,
+  Eckpunkte und Flächenlisten bleiben vorerst auf der CPU; als Nächstes die
+  Geometrie-Einheit, die die Bauteile selbst aus dem SDRAM liest.
 - **Bilder überlappen (Pipeline):** CPU, Grafik und Anzeige arbeiten gleichzeitig an Bild
   N+1, N und N−1, die Zeit pro Bild ist das Maximum statt der Summe. Kosten: ein Bild mehr
   Verzögerung zwischen Eingabe und Anzeige (20 ms bei 50 fps).

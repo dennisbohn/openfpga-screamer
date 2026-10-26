@@ -109,18 +109,20 @@ static void su_view_regs(const struct su_view *v)
 {
     SU_CENTRE = RS_XY(v->cx, v->cy);
     SU_SCALE = v->scale;
+    SU_FAR = (uint32_t)v->far8;
 }
 
-/* a polygon in view space to the setup unit: its mode and texture, then the corners; the
-   CPU only writes registers, a corner waits while the unit is busy with the one before */
+/* a polygon in view space to the setup unit: its mode (with the number of corners) and
+   texture, then the corners; the CPU only writes registers, a corner waits while the
+   unit's input still holds the polygon before */
 static void hw_poly(const struct su_corner *c, int n, const struct rs_texture *t, uint8_t colour)
 {
     if (t) {
-        SU_MODE = draw_buf << 8 | RS_TEXTURED;
+        SU_MODE = draw_buf << 8 | RS_TEXTURED | SU_CORNERS(n);
         SU_TEX = (uint32_t)((uintptr_t)t->data - SDRAM_BASE);
         SU_TEXSIZE = (uint32_t)t->width | (uint32_t)t->height << 16 | (t->routine == 64 ? RS_CUT : 0);
     } else {
-        SU_MODE = colour | draw_buf << 8;
+        SU_MODE = colour | draw_buf << 8 | SU_CORNERS(n);
     }
     for (int i = 0; i < n; i++) {
         SU_R = c[i].r;
@@ -380,15 +382,12 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)ts.vertices);
             dlog_str("), faces ");
             dlog_dec((int32_t)ts.cyc_face);
-            dlog_str(", clip ");
-            dlog_dec((int32_t)ts.cyc_clip);
             dlog_str(", out ");
             dlog_dec((int32_t)ts.cyc_out);
             dlog_str(" (wait ");
             dlog_dec((int32_t)draw_wait);
             dlog_str("), after ");
-            dlog_dec((int32_t)(cycles - ts.cyc_cull - ts.cyc_vert - ts.cyc_face - ts.cyc_clip
-                               - ts.cyc_out));
+            dlog_dec((int32_t)(cycles - ts.cyc_cull - ts.cyc_vert - ts.cyc_face - ts.cyc_out));
             dlog_str("\n");
         }
         VID_SWAP = 1;

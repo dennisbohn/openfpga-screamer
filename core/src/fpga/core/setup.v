@@ -1,28 +1,34 @@
 //
-// Setup unit: polygons in view space from the CPU, projected, split into a fan of
-// triangles (corner 0 with each pair of neighbours), each with what the rasterizer needs,
-// started there. Bit for bit the C model firmware/setup.c (setup.h has the arithmetic):
-//   corner: values to 8 fraction bits as they are written; rc = 2^(16 + l) / f from the
+// Setup unit: polygons in view space from the CPU, cut at the near plane, the far plane
+// and a guard band (clipper.v), projected, split into a fan of triangles (corner 0 with each
+// pair of neighbours), each with what the rasterizer needs, started there. Bit for bit the
+// C model firmware/setup.c (setup.h has the arithmetic):
+//   polygon: values to 8 fraction bits as they are written (s, t saturated at 24 bits);
+//     cut (clipper.v)
+//   corner: rc = 2^(16 + l) / f from the
 //     reciprocal table and one Newton step (l = bit length of f); x = centre + scale r / f,
 //     y = centre - scale u / f in 1/16 pixel; s rc, t rc kept
 //   triangle: d = twice the area (none if 0, textured), 1/|d| from the table; Q, U, V at the
 //     corners scaled by the triangle's largest Q; per value the change per pixel in x and y
 //     (8 fraction bits) and the value at the reference pixel's centre
-// Two parts, each with one multiplier (operands registered, two stages, the result three
-// clocks after it was issued) and a fixed schedule: the corner part (about 20 clocks a
-// corner) and the triangle part (about 40 clocks a textured triangle, 1 a flat one). While
-// the rasterizer draws a triangle, the triangle part works out the next one and the corner
-// part the corner after it.
+// After the clipper two parts, each with one multiplier (operands registered, two stages,
+// the result three clocks after it was issued) and a fixed schedule: the corner part (about
+// 20 clocks a corner) and the triangle part (about 40 clocks a textured triangle, 1 a flat
+// one). While the rasterizer draws a triangle, the triangle part works out the next one,
+// the corner part the corner after it, the clipper the next polygon, and the CPU writes the
+// polygon after that.
 //
 // Registers (soc.v maps them at 0xF000_3080 + 4 * wr_addr):
 //   0   centre of the view: [15:0] x, [31:16] y in 1/16 pixel
 //   1   [15:0] focal length in pixels times 16
-//   2   mode: [7:0] colour, [8] buffer, [9] textured       } taken with the first
-//   3   texture address, 4 texture size (raster.v's 7, 8)  } corner of a polygon
+//   2   mode: [7:0] colour, [8] buffer, [9] textured,    } taken with the first
+//       [12:10] corners (3 or 4)                          } corner of a polygon
+//   3   texture address, 4 texture size (raster.v's 7, 8) }
 //   5..8  r, u, f, s of a corner (floats)
 //   9   t, and the corner continues the polygon   10  t, and the corner starts a polygon:
 //       hands the corner over (soc.v holds the write back while ready is low)
 //   11  write: clear busy_clocks
+//   12  the far plane's depth with 8 fraction bits (an integer)
 //
 
 module setup (
@@ -127,8 +133,8 @@ end
 //
     reg  signed [15:0] cen_x, cen_y;
     reg  [15:0] scale;
-    reg  [9:0]  in_mode;
-    reg  [31:0] in_tex, in_size;
+    reg  [12:0] in_mode;
+    reg  [31:0] in_tex, in_size, far8;
     reg  signed [31:0] in_r, in_u, in_f, in_s, in_t;
     wire signed [31:0] wr_fix = fix8(wr_data);
     wire        trigger = wr && (wr_addr == 4'd9 || wr_addr == 4'd10) && !reset;
@@ -136,20 +142,82 @@ end
 always @(posedge clk) begin
     if(wr && wr_addr == 4'd0) begin cen_x <= wr_data[15:0]; cen_y <= wr_data[31:16]; end
     if(wr && wr_addr == 4'd1) scale <= wr_data[15:0];
-    if(wr && wr_addr == 4'd2) in_mode <= wr_data[9:0];
+    if(wr && wr_addr == 4'd2) in_mode <= wr_data[12:0];
     if(wr && wr_addr == 4'd3) in_tex <= wr_data;
     if(wr && wr_addr == 4'd4) in_size <= wr_data;
     if(wr && wr_addr == 4'd5) in_r <= wr_fix;
     if(wr && wr_addr == 4'd6) in_u <= wr_fix;
     if(wr && wr_addr == 4'd7) in_f <= wr_fix;
     if(wr && wr_addr == 4'd8) in_s <= wr_fix;
+    if(wr && wr_addr == 4'd12) far8 <= wr_data;
 end
+
+//
+// the polygon being written: a corner goes in one clock after its last write; complete,
+// the clipper copies it out
+//
+    reg  [575:0] ib;
+    reg  [2:0]  ib_n, ib_cnt;
+    reg  [9:0]  ib_mode;
+    reg  [31:0] ib_tex, ib_size;
+    reg         ib_full = 0, tw = 0, tw_first;
+    reg  [9:0]  cl_mode;                        // the polygon in the clipper
+    reg  [31:0] cl_tex, cl_size;
+    wire        cl_idle, cl_taken, co_valid, co_first;
+    wire [143:0] co_c;
+    wire        co_take;                        // the corner part takes a corner
+    wire [2:0]  tw_idx = tw_first ? 3'd0 : ib_cnt;
+    wire [2:0]  tw_n = tw_first ? (in_mode[12:10] < 3'd3 ? 3'd3 : in_mode[12:10] > 3'd4 ? 3'd4 : in_mode[12:10]) : ib_n;
+
+always @(posedge clk) begin
+    if(trigger && ready) begin
+        in_t <= wr_fix;
+        tw <= 1;
+        tw_first <= wr_addr == 4'd10;
+    end
+    if(tw) begin
+        tw <= 0;
+        ib[144 * tw_idx +: 144] <= {sat24(in_t), sat24(in_s), in_f, in_u, in_r};
+        ib_cnt <= tw_idx + 3'd1;
+        if(tw_first) begin
+            ib_n <= tw_n;
+            ib_mode <= in_mode[9:0];
+            ib_tex <= in_tex;
+            ib_size <= in_size;
+        end
+        if(tw_idx == tw_n - 3'd1) ib_full <= 1;
+    end
+    if(ib_full && cl_idle) begin
+        cl_mode <= ib_mode;
+        cl_tex <= ib_tex;
+        cl_size <= ib_size;
+    end
+    if(cl_taken) ib_full <= 0;
+    if(reset) begin
+        tw <= 0;
+        ib_full <= 0;
+    end
+end
+
+clipper cl (
+    .clk                ( clk ),
+    .reset              ( reset ),
+    .start              ( ib_full ),
+    .n                  ( ib_n ),
+    .in_c               ( ib ),
+    .far8               ( far8 ),
+    .idle               ( cl_idle ),
+    .taken              ( cl_taken ),
+    .out_valid          ( co_valid ),
+    .out_first          ( co_first ),
+    .out_c              ( co_c ),
+    .out_take           ( co_take )
+);
 
 //
 // corner part
 //
     reg         cu_busy = 0, cu_done = 0;
-    reg         c_go = 0, c_go_first;           // a corner written, taken next clock
     reg  [4:0]  cu_step;
     reg  signed [31:0] c_r, c_u, c_f;
     reg  signed [23:0] c_s, c_t;
@@ -186,22 +254,16 @@ always @(posedge clk) begin
     cm_t2 <= cm_t1;
     cm_t0 <= 0;
 
-    if(trigger && ready) begin
-        in_t <= wr_fix;
-        c_go <= 1;
-        c_go_first <= wr_addr == 4'd10;
-    end
-    if(c_go) begin
-        c_go <= 0;
-        c_r <= in_r;
-        c_u <= in_u;
-        c_f <= in_f < 1 ? 32'sd1 : in_f;
-        c_s <= sat24(in_s);
-        c_t <= sat24(in_t);
-        c_first <= c_go_first;
-        c_mode <= in_mode;
-        c_tex <= in_tex;
-        c_size <= in_size;
+    if(co_take) begin
+        c_r <= co_c[31:0];
+        c_u <= co_c[63:32];
+        c_f <= $signed(co_c[95:64]) < 32'sd1 ? 32'sd1 : $signed(co_c[95:64]);
+        c_s <= co_c[119:96];
+        c_t <= co_c[143:120];
+        c_first <= co_first;
+        c_mode <= cl_mode;
+        c_tex <= cl_tex;
+        c_size <= cl_size;
         cu_busy <= 1;
         cu_step <= 0;
     end
@@ -252,7 +314,6 @@ always @(posedge clk) begin
     if(reset) begin
         cu_busy <= 0;
         cu_done <= 0;
-        c_go <= 0;
     end
 end
 
@@ -270,8 +331,9 @@ end
     reg  [5:0]  tu_step;
 
     assign cu_take = cu_done && !tu_busy && !go;
-    assign ready = !cu_busy && !cu_done && !c_go;
-    assign busy = c_go || cu_busy || cu_done || tu_busy || go;
+    assign co_take = co_valid && !cu_busy && !cu_done;
+    assign ready = !ib_full && !tw;
+    assign busy = tw || ib_full || !cl_idle || cu_busy || cu_done || tu_busy || go;
 
     // per triangle
     reg  signed [16:0] dx1, dy1, dx2, dy2;
@@ -349,7 +411,7 @@ always @(posedge clk) begin
     tm_k2 <= tm_k1;
     tm_t0 <= 0;
 
-    if(cu_busy || tu_busy) busy_clocks <= busy_clocks + 1'b1;
+    if(!cl_idle || cu_busy || tu_busy) busy_clocks <= busy_clocks + 1'b1;
     if(wr && wr_addr == 4'd11) busy_clocks <= 0;
 
     // a corner from the corner part

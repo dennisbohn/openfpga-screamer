@@ -3,8 +3,8 @@
  * seen from a camera that drives the player's line. The CPU does the geometry the way the
  * geometry unit will: the pieces within reach, sorted far to near (the game's painter's
  * algorithm), each piece's faces in its stored order for the side the camera is on, faces
- * turned away left out, cut at the near plane and a guard band, projected, and handed out
- * as triangles.
+ * turned away left out; the faces go in view space to the setup unit, which cuts,
+ * projects and draws them.
  */
 #pragma once
 #include <stdint.h>
@@ -42,13 +42,12 @@ struct track_stats {
     uint32_t nearest;                           /* distance to the nearest placement */
     uint32_t vertices;                          /* vertices taken into view space */
     /* CPU cycles (0 on the PC): pieces in view and sorted, vertices into view space, the
-       face rows (backface test, material), cutting at the planes, handing the faces on
-       (the hook or the C model) */
-    uint32_t cyc_cull, cyc_vert, cyc_face, cyc_clip, cyc_out;
+       face rows (backface test, material), handing the faces on (the hook or the C model) */
+    uint32_t cyc_cull, cyc_vert, cyc_face, cyc_out;
 };
 
-/* Where faces go, in view space after cutting: the setup unit's C model and the
-   rasterizer's into fb (TRACK_MODEL), or the hook (TRACK_HW; tex 0 for one colour) */
+/* Where faces go, in view space: the setup unit's C model and the rasterizer's into fb
+   (TRACK_MODEL), or the hook (TRACK_HW; tex 0 for one colour) */
 #define TRACK_MODEL     0
 #define TRACK_HW        1
 extern int track_mode;
