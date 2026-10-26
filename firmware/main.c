@@ -1,7 +1,7 @@
 /*
  * The program (program.bin, data slot 2) in the SDRAM, started by the boot loader with its
  * results (docs/soc.md). With a track in data slot 3 (tools/make_track.py) the player's car
- * on it (car.c): A or up accelerates, B or down brakes, left and right steer, L and R change
+ * on it (car.c): A accelerates, B brakes, left and right steer, L and R change
  * gear on a manual car, Select changes the view; the CPU picks and sorts the pieces
  * (track.c), the geometry unit, setup unit and rasterizer draw them. Without one, the
  * texture scene with test patterns, checked once a run
@@ -156,7 +156,7 @@ static void hw_piece(const struct gu_piece *g)
     for (int k = 0; k < 3; k++) GU_PUSH = (uint32_t)g->e[k];
     GU_PUSH = (uint32_t)((uintptr_t)g->obj - SDRAM_BASE);
     GU_PUSH = (uint32_t)((uintptr_t)g->blk - SDRAM_BASE);
-    GU_PUSH = (uint32_t)g->row;
+    GU_PUSH = (uint32_t)g->row | (g->phase & 0x3FFF) << 16;
     draw_wait += rdcycle() - t0;
 }
 
@@ -261,14 +261,15 @@ static const struct rs_clip track_clip = { 0, 30, FB_W, 176 };
 
 /* Once per run: the frame just drawn against the C models of the setup unit and the
    rasterizer, drawn into the SDRAM; the track area compared pixel by pixel */
-static void track_check(volatile uint8_t *fb, const struct track_cam *cam, uint8_t sky)
+static void track_check(volatile uint8_t *fb, const struct track_cam *cam, const struct track_object *objs,
+                        int nobj, uint8_t sky)
 {
     volatile uint8_t *m = CHECK_BUF;
     struct track_stats ts;
     uint32_t differ = 0, first = 0, t0 = rdcycle();
     fb_fill(m, track_clip.x0, track_clip.y0, track_clip.x1 - track_clip.x0, track_clip.y1 - track_clip.y0, sky);
     track_mode = TRACK_MODEL;
-    track_draw_cam(m, &track_clip, cam, &ts);
+    track_draw_cam(m, &track_clip, cam, objs, nobj, &ts);
     track_mode = TRACK_HW;
     for (int y = track_clip.y0; y < track_clip.y1; y++)
         for (int x = track_clip.x0; x < track_clip.x1; x++)
@@ -328,9 +329,12 @@ static void __attribute__((noreturn)) run_track(void)
             keys_before = keys;
         }
         steps += n;
+        track_clock(n);
         const struct car_state *cs = car_state();
         struct track_cam cam;
+        struct track_object car_obj;
         car_camera(&cam);
+        int nobj = car_object(&cam, &car_obj);
 
         volatile uint8_t *fb = FB(!(st & VID_FRONT));
         for (int i = 0; i < 256; i++) VID_PAL[i] = pal[i];
@@ -356,7 +360,7 @@ static void __attribute__((noreturn)) run_track(void)
         RS_CLIP0 = RS_XY(track_clip.x0, track_clip.y0);
         RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
         su_view_regs(&view);
-        track_draw_cam(0, &track_clip, &cam, &ts);
+        track_draw_cam(0, &track_clip, &cam, &car_obj, nobj, &ts);
         while (RS_DRAW & RS_BUSY)
             ;
         uint32_t cycles = rdcycle() - t0, raster = RS_CLOCKS, pixels = RS_PIXELS, misses = RS_MISSES;
@@ -364,7 +368,7 @@ static void __attribute__((noreturn)) run_track(void)
         uint32_t r_miss = RS_MISS_CLOCKS, r_edge = RS_EDGE_CLOCKS, r_row = RS_ROW_CLOCKS;
         uint32_t r_drain = RS_DRAIN_CLOCKS, r_starved = RS_STARVED;
         ts.faces = GU_FACES;
-        if (drawn == 2) track_check(fb, &cam, col_sky);
+        if (drawn == 2) track_check(fb, &cam, &car_obj, nobj, col_sky);
 
         if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
             fps = drawn - fps_drawn;
@@ -397,6 +401,8 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)drive_kmh(cs));
             dlog_str(" km/h, gear ");
             dlog_dec(cs->gear);
+            dlog_str(", walls ");
+            dlog_dec((int32_t)car_wall_hits());
             dlog_str(", steps ");
             dlog_dec((int32_t)steps);
             dlog_str(", ");

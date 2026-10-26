@@ -69,8 +69,8 @@ braucht. 33 Dateien, eine mehr als die 32 Slots: offen, z. B. zwei Dateien in ei
 
 Die Schätzung unten stammt vom 2026-10-25 (mit SRAM-Controller, der inzwischen entfallen
 ist). Gemessen am 2026-10-26, mit Geometrie-Einheit, Clipper, Setup-Einheit und
-vorausladendem Textur-Cache, ohne SRAM- und PSRAM-Controller: 14.405 von 18.480 ALMs (78 %), 252 von 308 M10K (82 %), 30 von
-66 DSP (45 %).
+vorausladendem Textur-Cache, ohne SRAM- und PSRAM-Controller, mit Auto und Texturbildern: 14.469 von 18.480 ALMs (78 %), 252
+von 308 M10K (82 %), 31 von 66 DSP (47 %).
 
 ![Platzbudget im FPGA: Logik geplant 55–77 %, Block-RAM 67–74 %, DSP 42–61 %](ressourcen.svg)
 
@@ -176,6 +176,27 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Den Takt gibt jetzt die Geometrie-Einheit vor: Sie ist vom ersten Bauteil bis zum
   Bildende beschäftigt (einschließlich Warten auf Clipper und Speicher), die Bildzeit ist
   etwa Auswahl der CPU plus Geometrie-Einheit.
+- **Das Auto des Spielers (2026-10-27):** Die Fahrphysik (Motor, Getriebe, Bremse, Lenkung,
+  Rutschen) ist OpenScreamers Übertragung aus dem Spiel (`firmware/drive.c`), Zeile für Zeile;
+  Bodenkontakt über die vier Räder, Wände, Marker und Kamera nach OpenScreamers Glue-Code
+  (`firmware/car.c`), die Suche, was unter einem Punkt liegt, in `track.c` direkt auf den
+  Blöcken im SDRAM. Das Auto selbst sind die zwölf Blöcke von `AUTOnn.3DX`, als Teile durch
+  die Geometrie-Einheit, in der Reihenfolge des Spiels (Reifen, Naben, dann die Karosserie);
+  nur die Naben drehen sich, die vorderen Blöcke lenken. Die Geometrie-Einheit wählt dazu das
+  Bild einer Textur nach einer Phase je Teil (Lackierung, Bremslicht, Radbild; die
+  Streckentexturen nach der Animationsuhr). Gas und Bremse liegen auf A und B, nicht auf dem
+  Steuerkreuz, damit ein Lenken in die Diagonale nicht bremst.
+- **Reihenfolge der Objekte wie im Original** (2026-10-27, aus `STARTL.EXE` gelesen: `0x83164`
+  baut die Liste aus den Rasterzellen, je Zelle Lauf 1 vor Lauf 0, mit `dist² >> 2`;
+  `0x8a6a8` hängt die bewegten Objekte an; `0x8a7b0` macht daraus den Schlüssel
+  −(√(dist² >> 2) gerundet >> 2), also etwa Entfernung/8; `0x832c0` sortiert, gezeichnet wird
+  das Fernste zuerst). Dabei zählt ein bewegtes Objekt (Auto) **800 näher**, 6400 Einheiten:
+  Sonst übermalt das lange Straßenteil, auf dem es steht, das Auto, auf einer Runde mit der
+  nahen Verfolgerkamera an jeder vierten Stelle. Und ein Mesh mit einer Klasse im letzten Wort
+  seines Objektkopfs (+0x32c) zählt weiter weg: Klasse 3 um 6000 (auf Strecke 1 nur `akk1tap`,
+  der Rasen unter der Straße), 1 um 1500, 2 um 800, 4 um 200. OpenScreamer zeichnet mit
+  Tiefenpuffer und hat dafür eigene Regeln (Rasen „doppelt so weit“, Objekte über ihrer
+  Straße); wir zeichnen wie das Original und brauchen nur dessen Schlüssel.
 - **Bilder überlappen (Pipeline):** CPU, Grafik und Anzeige arbeiten gleichzeitig an Bild
   N+1, N und N−1, die Zeit pro Bild ist das Maximum statt der Summe. Kosten: ein Bild mehr
   Verzögerung zwischen Eingabe und Anzeige (20 ms bei 50 fps).

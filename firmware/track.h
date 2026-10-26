@@ -41,10 +41,22 @@ int track_under(float x, float y, float *h, int *grass);
 struct track_marker { int32_t radius, kind; float pace, slip; int32_t flags, x, height, y; };
 const struct track_marker *track_markers(int *n);
 
-/* CARS.DTR's rows, and per car model (AUTOnn) its wheels' places */
-struct track_model { float wheelbase, axle_front, axle_rear, half_track; };
+/* CARS.DTR's rows, and per car model (AUTOnn) its wheels' places and its .3DX file */
+struct track_model { float wheelbase, axle_front, axle_rear, half_track; uint32_t mesh, mesh_size; };
 const struct car_spec *track_cars(int *n);
 const struct track_model *track_models(int *n);
+const uint8_t *track_model_mesh(int k);
+
+/* MAPn.MMP's road points (on the centre line, the road's heading there) and wall segments
+   (middle, two ends, angle; the normal is (cos a, -sin a)) */
+struct track_dir { float angle; int32_t x, y; };
+struct track_wall { float angle; int32_t x, y, x1, y1, x2, y2; };
+const struct track_dir *track_dirs(int *n);
+const struct track_wall *track_walls(int *n);
+
+/* The animation clock (0x1fcc4): + 0.3 a second, one turn in 3.33 s; the track's textures
+   play their frames by it */
+void track_clock(uint32_t steps);
 
 /* where the player starts: place and heading (forward = (sin a, -cos a)) */
 void track_start(float *x, float *y, float *yaw);
@@ -85,12 +97,24 @@ const uint8_t *track_mlb(void);
 void track_view(const struct rs_clip *clip, struct su_view *v);
 
 /* A camera: place, heading as the car's (forward = (sin yaw, -cos yaw)), pitch (+ looks up)
-   and roll (+ lifts the right-hand side of the picture) */
+   and roll (+ tips the camera's right-hand side up) */
 struct track_cam { float x, y, h, yaw, pitch, roll; };
 
-/* The view from the camera, clipped to clip */
+/* An object besides the track's pieces (a car): its blocks in the order they are drawn, each
+   with its own place: world = o + m . local (m rows: world x, y, height; columns: the block's
+   x, y up, z), and its texture phase (geom.h) */
+struct track_block { const uint8_t *file, *blk; float m[9], o[3]; uint32_t phase; };
+struct track_object { float x, y, h, radius; int n; const struct track_block *b; };
+
+/* The view from the camera, clipped to clip, with the objects sorted in among the pieces as
+   the game does it (0x83164, 0x8a6a8, 0x8a7b0, 0x832c0): the key is -(sqrt(dist^2 >> 2)
+   rounded, >> 2), about the distance / 8; an object (a car) counts 800 nearer, 6400 units,
+   so the road it stands on never covers it; a mesh's class (its header's last word, +0x32c)
+   puts it further off: 3 (track 1's lawn under the road) 6000, 1 1500, 2 800, 4 200. Far
+   first; on a tie in the order the game puts them in: the pieces as in the file (each cell's
+   scenery before its road), the objects after them. */
 void track_draw_cam(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam,
-                    struct track_stats *st);
+                    const struct track_object *objs, int nobj, struct track_stats *st);
 
 /* The view from path position pos (path points, 8 fraction bits), clipped to clip */
 void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, struct track_stats *st);

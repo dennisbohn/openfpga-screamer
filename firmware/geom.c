@@ -59,7 +59,12 @@ uint32_t gu_draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         if(routine != 128) {
             tw = clamp_size(rd32(mat + 8));
             th = clamp_size(rd32(mat + 12));
-            tex.data = mlb + rd32(mlb + rd32(mat + 4) + 8);
+            /* the frame: n x phase >> 14 of the texture record's n frames (the game's 0xd5980),
+               n taken as its low half when it is above 0 */
+            const uint8_t *trec = mlb + rd32(mat + 4);
+            int32_t n = rd32(trec);
+            uint32_t frame = n > 0 ? ((uint32_t)n & 0xFFFF) * (p->phase & 0x3FFF) >> 14 : 0;
+            tex.data = mlb + rd32(trec + 8 + 4 * frame);
             tex.width = tw;
             tex.height = th;
             tex.routine = routine == 64 ? 64 : 16;

@@ -25,6 +25,7 @@ struct gu_piece {
     int32_t t[3];                       /* the piece's origin in view space, 8 fraction bits */
     int32_t e[3];                       /* the eye in the piece's frame, 8 fraction bits */
     int row;                            /* the face row for the side the eye is on, 0..7 */
+    uint32_t phase;                     /* texture frame of n: n x phase >> 14 (14 bits) */
     const uint8_t *obj, *blk;           /* the mesh: object and its block */
 };
 

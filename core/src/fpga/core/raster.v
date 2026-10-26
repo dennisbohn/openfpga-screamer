@@ -89,6 +89,7 @@ module raster (
     localparam  [3:0]   S_FILL = 4'd6;          // the words of one colour
     localparam  [3:0]   S_ACC  = 4'd7;          // textured: Q, U, V at the span's first pixel
     localparam  [3:0]   S_TEX  = 4'd8;          // textured: the pixels into raster_tex
+    localparam  [3:0]   S_GO   = 4'd9;          // nothing to draw, or the first edge
 
     reg  [3:0]  state = S_IDLE;
     reg         flat_wr = 0;                    // one-colour words
@@ -299,7 +300,7 @@ always @(posedge clk) begin
         if(busy) busy_clocks <= busy_clocks + 1'b1;
         if(tex_stalled && tex_busy) miss_clocks <= miss_clocks + 1'b1;
         if(state == S_EDGE) edge_clocks <= edge_clocks + 1'b1;
-        if(state == S_ROWS || state == S_ROW || state == S_CLIP || state == S_SPAN || state == S_ACC)
+        if(state == S_ROWS || state == S_GO || state == S_ROW || state == S_CLIP || state == S_SPAN || state == S_ACC)
             row_clocks <= row_clocks + 1'b1;
         if(state == S_IDLE && su_go && !su_accept) drain_clocks <= drain_clocks + 1'b1;
     end
@@ -348,15 +349,18 @@ always @(posedge clk) begin
     end
 
     S_ROWS: begin
-        // r0 = max(first row, clip y0), r1 = min(end row, clip y1); nothing if r0 >= r1
+        // r0 = max(first row, clip y0), r1 = min(end row, clip y1)
         r0 <= row_from(ay) < cy0 ? cy0 : row_from(ay);
         r  <= row_from(ay) < cy0 ? cy0 : row_from(ay);
         rb <= row_from(by);
         r1 <= row_from(cy) > cy1 ? cy1 : row_from(cy);
-        if((row_from(ay) < cy0 ? cy0 : row_from(ay)) >= (row_from(cy) > cy1 ? cy1 : row_from(cy)))
-            state <= S_IDLE;
+        state <= S_GO;
+    end
+
+    S_GO: begin                                 // (a clock of its own: the rows are registers)
+        if(r0 >= r1) state <= S_IDLE;           // nothing to draw
         else begin
-            edge_start(ax, ay, cx, cy, row_from(ay) < cy0 ? cy0 : row_from(ay));
+            edge_start(ax, ay, cx, cy, r0);
             job <= 0;
             state <= S_EDGE;
         end

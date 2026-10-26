@@ -11,7 +11,9 @@ The output, for data slot 3 (core/data.json), little-endian:
   0x10  u32 offset, size of MAPn.UNR     the meshes, unchanged
   0x18  u32 offset of the palette        256 x 0x00RRGGBB (MAPn.COL is 6-bit VGA)
   0x1C  u32 offset, count of placements  from MAPn.MMP: int32 object, X, Y, height, heading
-                                         (2048 = one turn), 20 bytes each
+                                         (2048 = one turn), 20 bytes each; cell by cell, each
+                                         cell's record run 1 before its run 0, the order in which
+                                         the game puts them into its draw list (0x83164)
   0x24  u32 offset, count of camera path points: int32 X, Y, height, about 100 units apart,
                                          along the player's line (MAPnOPP.SPL, the tenth
                                          spline, a uniform quadratic B-spline over the
@@ -27,7 +29,8 @@ The output, for data slot 3 (core/data.json), little-endian:
                                          accel, int32 automatic, nshift, float ratio[7]
   0x44  u32 offset, count of car models  AUTO00..: float wheelbase, front axle (ahead of the
                                          origin), rear axle (behind it), half track, from the
-                                         wheel blocks' offsets
+                                         wheel blocks' offsets; u32 offset (from this section)
+                                         and size of the .3DX file, which follow the records
   0x4C  u32 offset, count of road points MAPn.MMP cell array 2: float angle, int32 x, y
   0x54  u32 offset, count of walls       MAPn.MMP cell array 3: float angle, int32 x, y, x1,
                                          y1, x2, y2
@@ -77,12 +80,12 @@ def cells(mmp):
 
 
 def placements(mmp):
-    """The 64-byte records of runs 0 and 1 of every cell, and which of them are run 0"""
+    """The 64-byte records of runs 1 and 0 of every cell, and which of them are run 0"""
     i32 = lambda o: struct.unpack_from("<i", mmp, o)[0]
     out, run0 = [], []
     for c in cells(mmp):
         n0, n1 = i32(c + 0x14), i32(c + 0x18)
-        for k in range(n0 + n1):
+        for k in list(range(n0, n0 + n1)) + list(range(n0)):
             o = c + 0x28 + 64 * k
             out.append((i32(o), i32(o + 0x08), i32(o + 0x10), i32(o + 0x0C), i32(o + 0x18)))
             run0.append(k < n0)
@@ -146,7 +149,7 @@ def cars_data(dtr):
 
 def car_model(x3d):
     """wheelbase, front axle, rear axle, half track of a .3DX car: from the offsets of its
-    off-centre (wheel) blocks (openscreamer mesh.c); the nose is towards local -Z"""
+    off-centre (wheel) blocks (openscreamer mesh.c); the nose is towards local -Z (16 bytes)"""
     i32 = lambda o: struct.unpack_from("<i", x3d, o)[0]
     lo = hi = half = 0.0
     seen = False
@@ -230,7 +233,12 @@ def main():
     ground, nground = ground_index(pl, run0)
     nmark = struct.unpack_from("<i", mrk, 0)[0]
     cars, ncars = cars_data(datfile.extract(datfile.read(gen), "CARS.DTR"))
-    models = b"".join(car_model(datfile.extract(g, "AUTO%02d.3DX" % k)) for k in range(7))
+    x3d = [datfile.extract(g, "AUTO%02d.3DX" % k) for k in range(7)]
+    models, files, at = b"", b"", 24 * len(x3d)
+    for f in x3d:
+        models += car_model(f) + struct.pack("<2I", at + len(files), len(f))
+        files += f + b"\0" * (-len(f) % 256)
+    models += files
     dirs, walls = cell_arrays(mmp)
 
     sections = [mlb, unr, pal, b"".join(struct.pack("<5i", *p) for p in pl),

@@ -63,6 +63,14 @@ static int ncars;
 static const struct track_model *models;
 static int nmodels;
 static const struct start *start;
+static const uint8_t *models_at;
+static const struct track_dir *dirs;
+static int ndirs;
+static const struct track_wall *walls;
+static int nwalls;
+static float anim;                      /* the animation clock, 0..1 */
+static uint32_t piece_phase;            /* the pieces' texture phase: the clock (record +0x20 is -1) */
+static int16_t class_key[MAX_OBJ];      /* the key's change for each mesh's class (+0x32c) */
 static float sin_q[513];                /* sin(2 pi i / 2048) for i = 0..512 */
 static float far_z = 43808.0f;          /* the far plane of the DETAIL level */
 static float radius[MAX_OBJ];           /* of each mesh around its origin */
@@ -124,8 +132,13 @@ int track_init(void)
     nmarkers = rd32(f + 0x38);
     cars = (const struct car_spec *)(f + rd32(f + 0x3C));
     ncars = rd32(f + 0x40);
-    models = (const struct track_model *)(f + rd32(f + 0x44));
+    models_at = f + rd32(f + 0x44);
+    models = (const struct track_model *)models_at;
     nmodels = rd32(f + 0x48);
+    dirs = (const struct track_dir *)(f + rd32(f + 0x4C));
+    ndirs = rd32(f + 0x50);
+    walls = (const struct track_wall *)(f + rd32(f + 0x54));
+    nwalls = rd32(f + 0x58);
     start = (const struct start *)(f + 0x5C);
     unr_count = rd32(unr + 4);
     if(unr_count > MAX_OBJ || npieces > MAX_PIECES || npath < LOOK + 2 || ncars < 1 || nmodels < 1) return 0;
@@ -150,6 +163,8 @@ int track_init(void)
             if(d > r2) r2 = d;
         }
         radius[k] = __builtin_sqrtf(r2);
+        int32_t cl = rd32(obj + 0x32C);                 /* 0x8a8d7 */
+        class_key[k] = cl == 3 ? -6000 : cl == 1 ? -1500 : cl == 2 ? -800 : cl == 4 ? -200 : 0;
     }
     return npieces;
 }
@@ -193,6 +208,30 @@ const struct track_model *track_models(int *n)
 {
     *n = nmodels;
     return models;
+}
+
+const uint8_t *track_model_mesh(int k)
+{
+    return models_at + models[k].mesh;
+}
+
+const struct track_dir *track_dirs(int *n)
+{
+    *n = ndirs;
+    return dirs;
+}
+
+const struct track_wall *track_walls(int *n)
+{
+    *n = nwalls;
+    return walls;
+}
+
+void track_clock(uint32_t steps)
+{
+    anim += (float)steps * 0.02f * 0.3f;
+    while(anim >= 1.0f) anim -= 1.0f;
+    piece_phase = (uint32_t)(anim * 65535.0f) & 0x3FFF;
 }
 
 void track_start(float *x, float *y, float *yaw)
@@ -279,12 +318,32 @@ void track_view(const struct rs_clip *clip, struct su_view *v)
     v->far8 = (int32_t)(far_z * 256.0f);
 }
 
-struct vis { float d2; int i; };
-static struct vis vis[MAX_PIECES];
+struct vis { int32_t k; int i; };              /* key << 16 | i; i: a piece, or npieces + an object */
+#define MAX_OBJS    8
+static struct vis vis[MAX_PIECES + MAX_OBJS];
+
+/* A block placed at o with m (world from local) as a piece for the geometry unit */
+static void block_piece(const float c[3], const float f[3], const float r[3], const float u[3],
+                        const float m[9], const float o[3], struct gu_piece *g)
+{
+    const float *basis[3] = { r, u, f };
+    for(int k = 0; k < 3; k++) {
+        for(int j = 0; j < 3; j++)
+            g->m[3 * k + j] = (int32_t)((basis[k][0] * m[j] + basis[k][1] * m[3 + j] + basis[k][2] * m[6 + j]) * 65536.0f);
+        g->t[k] = (int32_t)((basis[k][0] * (o[0] - c[0]) + basis[k][1] * (o[1] - c[1]) + basis[k][2] * (o[2] - c[2])) * 256.0f);
+    }
+    float e[3];
+    for(int j = 0; j < 3; j++) e[j] = m[j] * (c[0] - o[0]) + m[3 + j] * (c[1] - o[1]) + m[6 + j] * (c[2] - o[2]);
+    float ex = e[0], ez = e[2];
+    g->row = ex >= 0.0f ? (ez >= 0.0f ? (ex < ez ? 0 : 1) : (ex > -ez ? 2 : 3))
+                        : (ez < 0.0f ? (-ex < -ez ? 4 : 5) : (-ex > ez ? 6 : 7));
+    for(int j = 0; j < 3; j++) g->e[j] = (int32_t)(e[j] * 256.0f);
+}
 
 /* The view from the point c along forward f, with right r and up u (unit vectors) */
 static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const float c[3], const float f[3],
-                 const float r[3], const float u[3], struct track_stats *st)
+                 const float r[3], const float u[3], const struct track_object *objs, int nobj,
+                 struct track_stats *st)
 {
     uint32_t t_start = now();
     st->pieces = st->faces = st->triangles = st->see_through = st->vertices = 0;
@@ -301,6 +360,8 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const float c
     const float down = (float)(clip->y1 - clip->y0) * (1.0f - EYE_LINE) / FOCAL;
     int nv = 0;
     float nearest = 1e30f;
+    /* the game's key (0x8a7b0): -(sqrt(dist^2 >> 2), rounded, >> 2) */
+#define KEY(d2) (-((int32_t)lrintf(sqrtf((d2) * 0.25f)) >> 2))
     for(int i = 0; i < npieces; i++) {
         const struct piece *pc = &pieces[i];
         if(pc->obj < 0 || pc->obj >= unr_count) continue;
@@ -313,16 +374,29 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const float c
         if(vf + rad < NEAR || vf - rad > far_z) continue;
         if(vr - rad > half_w * (vf + rad) || vr + rad < -half_w * (vf + rad)) continue;
         if(vu - rad > up * (vf + rad) || vu + rad < -down * (vf + rad)) continue;
-        vis[nv].d2 = d2;
+        vis[nv].k = (KEY(d2) + class_key[pc->obj]) * 65536 + i;
         vis[nv].i = i;
         nv++;
     }
+    for(int k = 0; k < nobj && k < MAX_OBJS; k++) {
+        const struct track_object *ob = &objs[k];
+        float dx = ob->x - cx, dy = ob->y - cy, dh = ob->h - ch, rad = ob->radius;
+        float vf = dx * fx + dy * fy + dh * fh, vr = dx * rx + dy * ry + dh * rh;
+        float vu = dx * ux + dy * uy + dh * uh;
+        if(vf + rad < NEAR || vf - rad > far_z) continue;
+        if(vr - rad > half_w * (vf + rad) || vr + rad < -half_w * (vf + rad)) continue;
+        if(vu - rad > up * (vf + rad) || vu + rad < -down * (vf + rad)) continue;
+        float d2 = dx * dx + dy * dy + dh * dh;
+        vis[nv].k = (KEY(d2) + 800) * 65536 + npieces + k;     /* 0x8a8c3: an object counts nearer */
+        vis[nv].i = npieces + k;
+        nv++;
+    }
     st->nearest = nearest < 4e18f ? (uint32_t)__builtin_sqrtf(nearest) : 0xFFFFFFFFu;
-    for(int gap = nv / 2; gap > 0; gap /= 2)    /* Shell sort, far first */
+    for(int gap = nv / 2; gap > 0; gap /= 2)    /* Shell sort by key and order: far first */
         for(int i = gap; i < nv; i++) {
             struct vis t = vis[i];
             int j = i;
-            for(; j >= gap && vis[j - gap].d2 < t.d2; j -= gap) vis[j] = vis[j - gap];
+            for(; j >= gap && vis[j - gap].k > t.k; j -= gap) vis[j] = vis[j - gap];
             vis[j] = t;
         }
     uint32_t t_pieces = now();
@@ -333,8 +407,25 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const float c
     track_view(clip, &view);
     uint32_t t_out = 0;
     for(int n = 0; n < nv; n++) {
+        if(vis[n].i >= npieces) {                   /* an object: its blocks as they come */
+            const struct track_object *ob = &objs[vis[n].i - npieces];
+            for(int b = 0; b < ob->n; b++) {
+                struct gu_piece g;
+                block_piece(c, f, r, u, ob->b[b].m, ob->b[b].o, &g);
+                g.obj = ob->b[b].file;
+                g.blk = ob->b[b].blk;
+                g.phase = ob->b[b].phase;
+                st->pieces++;
+                uint32_t t0 = now();
+                if(track_mode == TRACK_HW) track_hw_piece(&g);
+                else gu_draw(fb, clip, &view, mlb, &g, &gst);
+                t_out += now() - t0;
+            }
+            continue;
+        }
         const struct piece *pc = &pieces[vis[n].i];
         struct gu_piece g;
+        g.phase = piece_phase;
         g.blk = block_of(pc->obj, &g.obj);
         float ca = sin2048((uint32_t)pc->t + 512), sa = sin2048((uint32_t)pc->t);
         float dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch;
@@ -369,7 +460,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const float c
 }
 
 void track_draw_cam(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam,
-                    struct track_stats *st)
+                    const struct track_object *objs, int nobj, struct track_stats *st)
 {
     float sy = sinf(cam->yaw), cy = cosf(cam->yaw), sp = sinf(cam->pitch), cp = cosf(cam->pitch);
     float sr = sinf(cam->roll), cr = cosf(cam->roll);
@@ -380,7 +471,7 @@ void track_draw_cam(volatile uint8_t *fb, const struct rs_clip *clip, const stru
     const float u0[3] = { r0[1] * f[2], -r0[0] * f[2], r0[0] * f[1] - r0[1] * f[0] };
     const float r[3] = { r0[0] * cr + u0[0] * sr, r0[1] * cr + u0[1] * sr, u0[2] * sr };
     const float u[3] = { u0[0] * cr - r0[0] * sr, u0[1] * cr - r0[1] * sr, u0[2] * cr };
-    draw(fb, clip, c, f, r, u, st);
+    draw(fb, clip, c, f, r, u, objs, nobj, st);
 }
 
 void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, struct track_stats *st)
@@ -400,5 +491,5 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
     rx /= l; ry /= l;
     const float c[3] = { cx, cy, ch }, f[3] = { fx, fy, fh }, r[3] = { rx, ry, 0.0f };
     const float u[3] = { ry * fh, -rx * fh, rx * fy - ry * fx };     /* up = right x forward */
-    draw(fb, clip, c, f, r, u, st);
+    draw(fb, clip, c, f, r, u, 0, 0, st);
 }

@@ -21,7 +21,9 @@
 //           it is full). A piece is 18 words: local to view (rows r, u, f of columns x, y, z,
 //           16 fraction bits, within +-2^17), its origin in view space and the eye in its
 //           frame (8 fraction bits each), the SDRAM byte addresses of the mesh's object and
-//           its block, and [2:0] the face row for the eye's side.
+//           its block, and a word with [2:0] the face row for the eye's side and [29:16] the
+//           texture phase: of a texture with n frames (texture record +0) frame n x phase >> 14
+//           is drawn (the game's 0xd5980; the frames' data offsets from record +8 on).
 //
 
 module geom (
@@ -206,8 +208,10 @@ end
     reg  signed [31:0] m [0:8];
     reg  signed [31:0] t [0:2];
     reg  signed [31:0] e [0:2];
-    reg  [25:0] obj, blk, verts, uvs, ep, face, mat, texdata;
+    reg  [25:0] obj, blk, verts, uvs, ep, face, mat, texdata, texrec;
     reg  [2:0]  row;
+    reg  [13:0] phase;
+    reg  [29:0] fmul;                           // frames x phase
     reg  signed [31:0] nvert, ro;
     reg  [9:0]  vi, nf;
     reg  signed [15:0] vx, vy, vz, nx, ny, nz;
@@ -272,6 +276,7 @@ always @(posedge clk) begin
         if(pk == 5'd17) blk <= f_q[25:0];
         if(pk == 5'd18) begin
             row <= f_q[2:0];
+            phase <= f_q[29:16];
             pc <= 6'd3;
         end
     end
@@ -384,7 +389,12 @@ always @(posedge clk) begin
     end
     6'd30: begin tw <= size9(rd_word); read(mat + 26'hC, 6'd31); end
     6'd31: begin th <= size9(rd_word); read(mat + 26'h4, 6'd32); end
-    6'd32: read(mlb + rd_word[25:0] + 26'h8, 6'd34);
+    6'd32: begin texrec <= mlb + rd_word[25:0]; read(mlb + rd_word[25:0], 6'd45); end
+    6'd45: begin                                // the frame: frames (if > 0, low half) x phase >> 14
+        fmul <= rd_word[31] ? 30'd0 : {14'd0, rd_word[15:0]} * {16'd0, phase};
+        pc <= 6'd46;
+    end
+    6'd46: read(texrec + 26'h8 + {8'd0, fmul[29:14], 2'd0}, 6'd34);
     6'd33: begin colour <= rd_half[7:0]; j <= 0; okv <= 1; pc <= 6'd35; end
     6'd34: begin texdata <= mlb + rd_word[25:0]; colour <= 0; j <= 0; okv <= 1; pc <= 6'd35; end
 
