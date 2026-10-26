@@ -165,7 +165,11 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   angefordert (bis 16 unterwegs, in einen Zeilenpuffer), und nur der Pixel, der sie
   braucht, wartet vorn in der Schlange; erst dann kommt sie in den Cache, wenn alle Pixel
   davor die alte Zeile gelesen haben. Das nächste texturierte Dreieck beginnt, sobald die
-  Pixel des vorigen in der Warteschlange sind.
+  Pixel des vorigen in der Warteschlange sind. Gemessen: Der Rasterizer ist im schwersten
+  Bild 0,49 statt 0,65 Mio. Takte beschäftigt, das Bild braucht 64 % statt 73 % von 20 ms.
+  Den Takt gibt jetzt die Geometrie-Einheit vor: Sie ist vom ersten Bauteil bis zum
+  Bildende beschäftigt (einschließlich Warten auf Clipper und Speicher), die Bildzeit ist
+  etwa Auswahl der CPU plus Geometrie-Einheit.
 - **Bilder überlappen (Pipeline):** CPU, Grafik und Anzeige arbeiten gleichzeitig an Bild
   N+1, N und N−1, die Zeit pro Bild ist das Maximum statt der Summe. Kosten: ein Bild mehr
   Verzögerung zwischen Eingabe und Anzeige (20 ms bei 50 fps).
