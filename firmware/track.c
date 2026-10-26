@@ -41,7 +41,7 @@ static const float far_depth[3] = { 27808.0f, 27808.0f, 43808.0f };     /* LOW, 
 
 struct piece { int32_t obj, x, y, h, t; };
 struct pt { int32_t x, y, h; };
-struct cv { float r, u, f, s, t; };     /* a corner in view space and its texel position */
+#define cv su_corner                    /* a corner in view space and its texel position */
 
 static const uint8_t *file_start, *mlb, *unr_blob;
 static uint32_t file_size;
@@ -58,8 +58,7 @@ static float far_z = 43808.0f;          /* the far plane of the DETAIL level */
 static float radius[MAX_OBJ];           /* of each mesh around its origin */
 
 int track_mode;
-void (*track_hw_tex)(const struct rs_vertex pos[3], const struct rs_tex_setup *s, const struct rs_texture *t);
-void (*track_hw_flat)(const struct rs_vertex pos[3], uint8_t colour);
+void (*track_hw_poly)(const struct su_corner *c, int n, const struct rs_texture *t, uint8_t colour);
 
 #ifdef __riscv
 static inline uint32_t now(void)
@@ -71,7 +70,7 @@ static inline uint32_t now(void)
 #else
 static inline uint32_t now(void) { return 0; }
 #endif
-static uint32_t cyc_clip, cyc_setup, cyc_out;  /* summed up by polygon() */
+static uint32_t cyc_clip, cyc_out;      /* summed up by polygon() */
 
 static int32_t rd32(const uint8_t *p) { return *(const int32_t *)p; }
 static int16_t rd16(const uint8_t *p) { return *(const int16_t *)p; }
@@ -202,14 +201,17 @@ static int clip(struct cv *out, const struct cv *in, int n, int p)
     return m;
 }
 
-/* screen position in 1/16 pixel, rounded (the values stay within +-2047 pixels) */
-static int32_t sub16(float x)
+void track_view(const struct rs_clip *clip, struct su_view *v)
 {
-    return (int32_t)(x * 16.0f + 0.5f + 65536.0f) - 65536;
+    v->cx = (clip->x0 + clip->x1) * 8;      /* the centre in 1/16 pixel */
+    v->cy = (clip->y0 + clip->y1) * 8;
+    v->scale = (uint32_t)(FOCAL * 16.0f);
 }
 
-struct view { float cx, cy; volatile uint8_t *fb; const struct rs_clip *clip; };
+struct view { struct su_view su; volatile uint8_t *fb; const struct rs_clip *clip; };
 
+/* a face: cut where it leaves the space between the planes, then to the setup unit (or
+   its C model), which projects it and splits it into triangles; returns their number */
 static uint32_t polygon(const struct view *w, struct cv *p, int n, const struct rs_texture *tex,
                         int colour)
 {
@@ -224,46 +226,14 @@ static uint32_t polygon(const struct view *w, struct cv *p, int n, const struct 
             n = clip(tmp, p, n, k);
             for(int i = 0; i < n; i++) p[i] = tmp[i];
         }
-        if(n < 3) {
-            cyc_clip += now() - t0;
-            return 0;
-        }
     }
-    struct rs_tvertex v[MAX_POLY];
-    for(int i = 0; i < n; i++) {
-        float q = 1.0f / p[i].f;
-        v[i].x = sub16(w->cx + FOCAL * p[i].r * q);
-        v[i].y = sub16(w->cy - FOCAL * p[i].u * q);
-        v[i].q = q;
-        v[i].uq = p[i].s * q;
-        v[i].vq = p[i].t * q;
-    }
-    uint32_t tris = 0, t1 = now(), t2;
+    uint32_t t1 = now();
     cyc_clip += t1 - t0;
-    for(int i = 1; i + 1 < n; i++) {
-        struct rs_tvertex t3[3] = { v[0], v[i], v[i + 1] };
-        struct rs_vertex pos[3] = { { t3[0].x, t3[0].y }, { t3[1].x, t3[1].y }, { t3[2].x, t3[2].y } };
-        if(!tex) {
-            t2 = now();
-            if(track_mode == TRACK_HW) track_hw_flat(pos, (uint8_t)colour);
-            else rs_triangle(w->fb, w->clip, pos, (uint8_t)colour);
-        } else {
-            struct rs_tex_setup ts;
-            int ok = rs_tex_setup(&ts, t3);
-            t2 = now();
-            cyc_setup += t2 - t1;
-            if(!ok) {
-                t1 = t2;
-                continue;
-            }
-            if(track_mode == TRACK_HW) track_hw_tex(pos, &ts, tex);
-            else rs_textured_fx(w->fb, w->clip, pos, &ts, tex);
-        }
-        t1 = now();
-        cyc_out += t1 - t2;
-        tris++;
-    }
-    return tris;
+    if(n < 3) return 0;
+    if(track_mode == TRACK_HW) track_hw_poly(p, n, tex, (uint8_t)colour);
+    else su_polygon(w->fb, w->clip, &w->su, p, n, tex, (uint8_t)colour);
+    cyc_out += now() - t1;
+    return (uint32_t)(n - 2);
 }
 
 struct vis { float d2; int i; };
@@ -274,7 +244,7 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
 {
     uint32_t t_start = now();
     st->pieces = st->faces = st->triangles = st->see_through = st->vertices = 0;
-    st->cyc_vert = cyc_clip = cyc_setup = cyc_out = 0;
+    st->cyc_vert = cyc_clip = cyc_out = 0;
 
     /* the camera on the player's line, looking LOOK points ahead and a little down */
     uint32_t i0 = (pos >> 8) % (uint32_t)npath, i1 = (i0 + 1) % (uint32_t)npath;
@@ -325,7 +295,10 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
     uint32_t t_pieces = now();
     st->cyc_cull = t_pieces - t_start;
 
-    struct view w = { (float)(clip->x0 + clip->x1) / 2.0f, (float)(clip->y0 + clip->y1) / 2.0f, fb, clip };
+    struct view w;
+    track_view(clip, &w.su);
+    w.fb = fb;
+    w.clip = clip;
     for(int n = 0; n < nv; n++) {
         const struct piece *pc = &pieces[vis[n].i];
         const uint8_t *obj, *blk = block_of(pc->obj, &obj);
@@ -400,7 +373,6 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
         }
     }
     st->cyc_clip = cyc_clip;
-    st->cyc_setup = cyc_setup;
     st->cyc_out = cyc_out;
-    st->cyc_face = now() - t_pieces - st->cyc_vert - cyc_clip - cyc_setup - cyc_out;
+    st->cyc_face = now() - t_pieces - st->cyc_vert - cyc_clip - cyc_out;
 }

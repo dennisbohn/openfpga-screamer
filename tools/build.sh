@@ -1,7 +1,7 @@
 #!/bin/sh
 # Compile the Quartus project in core/src/fpga inside Docker (Quartus Prime Lite 18.1.1)
 # and write the bit-reversed bitstream the Pocket loads to core/output/bitstream.rbf_r.
-# If timing fails (negative slack anywhere), the fitter is run again with the next seed,
+# If hold timing fails, the fitter is run again with the next seed,
 # up to five tries, and the seed that met timing is left in ap_core.qsf: a few registers
 # in front of the FPU's DSP blocks sit within 50 ps of hold, depending on placement.
 set -e
@@ -41,6 +41,17 @@ while :; do
     fi
     if ! worst | grep -q "TIMING FAILED"; then
         break
+    fi
+    # a setup path that is too slow does not get fast with another seed: show the worst ones
+    if worst | grep -q "Setup.*TIMING FAILED"; then
+        worst
+        cp "$root/tools/sta_paths.tcl" "$fpga/sta_paths.tcl"
+        MSYS_NO_PATHCONV=1 docker run --rm -v "$mount:/build" -w /build "$image" \
+            quartus_sta -t sta_paths.tcl > "$root/build/sta_paths.log" 2>&1 || true
+        rm -f "$fpga/sta_paths.tcl"
+        grep -E "Info: path" "$root/build/sta_paths.log" | sed 's/^Info: //'
+        echo "Setup timing fails (seed $seed): see the paths above, full log build/sta_paths.log"
+        exit 1
     fi
     if [ "$try" -ge "$tries" ]; then
         echo "Timing still fails after $tries seeds:"

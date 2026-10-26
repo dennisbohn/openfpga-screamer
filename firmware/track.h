@@ -9,6 +9,7 @@
 #pragma once
 #include <stdint.h>
 #include "raster.h"
+#include "setup.h"
 
 /* Whether a track file is at file (its header); then its blocks can be checked with
    track_block_ok() before track_init() reads the rest. track_init() returns the number of
@@ -41,17 +42,20 @@ struct track_stats {
     uint32_t nearest;                           /* distance to the nearest placement */
     uint32_t vertices;                          /* vertices taken into view space */
     /* CPU cycles (0 on the PC): pieces in view and sorted, vertices into view space, the
-       face rows (backface test, material), cutting and projecting, the triangles' texture
-       setup, the hooks or the C model */
-    uint32_t cyc_cull, cyc_vert, cyc_face, cyc_clip, cyc_setup, cyc_out;
+       face rows (backface test, material), cutting at the planes, handing the faces on
+       (the hook or the C model) */
+    uint32_t cyc_cull, cyc_vert, cyc_face, cyc_clip, cyc_out;
 };
 
-/* Where triangles go: the C model into fb (TRACK_MODEL) or the two hooks (TRACK_HW) */
+/* Where faces go, in view space after cutting: the setup unit's C model and the
+   rasterizer's into fb (TRACK_MODEL), or the hook (TRACK_HW; tex 0 for one colour) */
 #define TRACK_MODEL     0
 #define TRACK_HW        1
 extern int track_mode;
-extern void (*track_hw_tex)(const struct rs_vertex pos[3], const struct rs_tex_setup *s, const struct rs_texture *t);
-extern void (*track_hw_flat)(const struct rs_vertex pos[3], uint8_t colour);
+extern void (*track_hw_poly)(const struct su_corner *c, int n, const struct rs_texture *tex, uint8_t colour);
+
+/* The projection for clip (for the setup unit's registers) */
+void track_view(const struct rs_clip *clip, struct su_view *v);
 
 /* The view from path position pos (path points, 8 fraction bits), clipped to clip */
 void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, struct track_stats *st);

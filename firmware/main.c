@@ -104,35 +104,40 @@ static void player(struct rs_vertex v[3], uint32_t keys)
     v[2] = (struct rs_vertex){ player_x - 11 * 16, player_y + 10 * 16 };
 }
 
-/* one textured triangle to the rasterizer: the CPU only writes registers */
-static uint32_t hw_textured(const struct rs_vertex pos[3], const struct rs_tex_setup *s, const struct rs_texture *t)
+/* the projection into the setup unit's registers */
+static void su_view_regs(const struct su_view *v)
 {
-    for (int k = 0; k < 3; k++) RS_V(k) = RS_XY(pos[k].x, pos[k].y);
-    RS_TEX = (uint32_t)((uintptr_t)t->data - SDRAM_BASE);
-    RS_TEXSIZE = (uint32_t)t->width | (uint32_t)t->height << 16 | (t->routine == 64 ? RS_CUT : 0);
-    RS_REF = RS_XY(s->xr, s->yr);
-    for (int k = 0; k < 3; k++) {
-        RS_A(k) = (uint32_t)s->a[k];
-        RS_DX(k) = (uint32_t)s->dx[k];
-        RS_DY(k) = (uint32_t)s->dy[k];
+    SU_CENTRE = RS_XY(v->cx, v->cy);
+    SU_SCALE = v->scale;
+}
+
+/* a polygon in view space to the setup unit: its mode and texture, then the corners; the
+   CPU only writes registers, a corner waits while the unit is busy with the one before */
+static void hw_poly(const struct su_corner *c, int n, const struct rs_texture *t, uint8_t colour)
+{
+    if (t) {
+        SU_MODE = draw_buf << 8 | RS_TEXTURED;
+        SU_TEX = (uint32_t)((uintptr_t)t->data - SDRAM_BASE);
+        SU_TEXSIZE = (uint32_t)t->width | (uint32_t)t->height << 16 | (t->routine == 64 ? RS_CUT : 0);
+    } else {
+        SU_MODE = colour | draw_buf << 8;
     }
-    uint32_t t0 = rdcycle();
-    RS_DRAW = draw_buf << 8 | RS_TEXTURED;      /* waits while the previous one draws */
-    draw_wait += rdcycle() - t0;
+    for (int i = 0; i < n; i++) {
+        SU_R = c[i].r;
+        SU_U = c[i].u;
+        SU_F = c[i].f;
+        SU_S = c[i].s;
+        uint32_t t0 = rdcycle();
+        if (i) SU_T_NEXT = c[i].t;
+        else SU_T_FIRST = c[i].t;
+        draw_wait += rdcycle() - t0;
+    }
+}
+
+static uint32_t hw_quad(const struct su_corner c[4], const struct rs_texture *t)
+{
+    hw_poly(c, 4, t, 0);
     return 0;
-}
-
-static void hw_track_tex(const struct rs_vertex pos[3], const struct rs_tex_setup *s, const struct rs_texture *t)
-{
-    hw_textured(pos, s, t);
-}
-
-static void hw_track_flat(const struct rs_vertex pos[3], uint8_t colour)
-{
-    for (int k = 0; k < 3; k++) RS_V(k) = RS_XY(pos[k].x, pos[k].y);
-    uint32_t t = rdcycle();
-    RS_DRAW = colour | draw_buf << 8;
-    draw_wait += rdcycle() - t;
 }
 
 static struct demo_stats draw_demo(uint32_t frame, const struct rs_vertex pv[3], int buf)
@@ -143,6 +148,9 @@ static struct demo_stats draw_demo(uint32_t frame, const struct rs_vertex pv[3],
     RS_PIXELS = 0;
     RS_CLIP0 = RS_XY(demo_clip.x0, demo_clip.y0);
     RS_CLIP1 = RS_XY(demo_clip.x1, demo_clip.y1);
+    struct su_view v;
+    texdemo_view(&demo_clip, &v);
+    su_view_regs(&v);
     texdemo_mode = TEXDEMO_HW;
     texdemo_draw(0, &demo_clip, frame, &d.triangles);
     for (int k = 0; k < 3; k++) RS_V(k) = RS_XY(pv[k].x, pv[k].y);
@@ -229,15 +237,49 @@ static void draw_status(volatile uint8_t *fb, uint32_t st, uint32_t drawn, const
  */
 static const struct rs_clip track_clip = { 0, 30, FB_W, 176 };
 
+/* Once per run: the frame just drawn against the C models of the setup unit and the
+   rasterizer, drawn into the SDRAM; the track area compared pixel by pixel */
+static void track_check(volatile uint8_t *fb, uint32_t pos, uint8_t sky)
+{
+    volatile uint8_t *m = CHECK_BUF;
+    struct track_stats ts;
+    uint32_t differ = 0, first = 0, t0 = rdcycle();
+    fb_fill(m, track_clip.x0, track_clip.y0, track_clip.x1 - track_clip.x0, track_clip.y1 - track_clip.y0, sky);
+    track_mode = TRACK_MODEL;
+    track_draw(m, &track_clip, pos, &ts);
+    track_mode = TRACK_HW;
+    for (int y = track_clip.y0; y < track_clip.y1; y++)
+        for (int x = track_clip.x0; x < track_clip.x1; x++)
+            if (fb[y * FB_W + x] != m[y * FB_W + x] && differ++ == 0) first = (uint32_t)(y * FB_W + x);
+    dlog_str("track check: ");
+    dlog_str(differ ? "FAIL, " : "ok, ");
+    dlog_dec((int32_t)differ);
+    dlog_str(" pixels differ from the C models (");
+    dlog_dec((int32_t)((rdcycle() - t0) / (CPU_HZ / 1000)));
+    dlog_str(" ms)");
+    if (differ) {
+        dlog_str(", first at x ");
+        dlog_dec((int32_t)(first % FB_W));
+        dlog_str(" y ");
+        dlog_dec((int32_t)(first / FB_W));
+        dlog_str(": ");
+        dlog_hex(fb[first]);
+        dlog_str(" model ");
+        dlog_hex(m[first]);
+    }
+    dlog_char('\n');
+}
+
 static void __attribute__((noreturn)) run_track(void)
 {
     const uint32_t *pal = track_palette();
     uint8_t col_sky = nearest((const volatile uint32_t *)pal, 110, 150, 210);
     uint32_t lap = track_path_length() << 8, pos = 0, speed = 512, drawn = 0;
     uint32_t fps = 0, fps_drawn = 0, fps_frame = 0;
+    struct su_view view;
+    track_view(&track_clip, &view);
     track_mode = TRACK_HW;
-    track_hw_tex = hw_track_tex;
-    track_hw_flat = hw_track_flat;
+    track_hw_poly = hw_poly;
     for (;;) {
         uint32_t st = wait_swap_done(), keys = IN_KEY;
         frames_shown = drawn;
@@ -260,20 +302,24 @@ static void __attribute__((noreturn)) run_track(void)
         fb_fill(fb, 0, track_clip.y1, FB_W, FB_H - track_clip.y1, col_bg);
         con_text(fb, 1, 2, "SCREAMER POCKET - STRECKE 1", col_text, col_bg);
 
-        /* the geometry on the CPU, the triangles to the rasterizer */
+        /* the geometry on the CPU, the faces to the setup unit, its triangles to the rasterizer */
         struct track_stats ts;
         uint32_t t0 = rdcycle();
         draw_buf = !(st & VID_FRONT);
         RS_PIXELS = 0;
         RS_MISSES = 0;
         RS_CLOCKS = 0;
+        SU_CLOCKS = 0;
         draw_wait = 0;
         RS_CLIP0 = RS_XY(track_clip.x0, track_clip.y0);
         RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
+        su_view_regs(&view);
         track_draw(0, &track_clip, pos, &ts);
         while (RS_DRAW & RS_BUSY)
             ;
         uint32_t cycles = rdcycle() - t0, raster = RS_CLOCKS, pixels = RS_PIXELS, misses = RS_MISSES;
+        uint32_t setup = SU_CLOCKS;
+        if (drawn == 2) track_check(fb, pos, col_sky);
 
         if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
             fps = drawn - fps_drawn;
@@ -308,6 +354,8 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)pixels);
             dlog_str(" px, cpu ");
             dlog_dec((int32_t)cycles);
+            dlog_str(", setup ");
+            dlog_dec((int32_t)setup);
             dlog_str(", raster ");
             dlog_dec((int32_t)raster);
             dlog_str(", misses ");
@@ -334,15 +382,13 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)ts.cyc_face);
             dlog_str(", clip ");
             dlog_dec((int32_t)ts.cyc_clip);
-            dlog_str(", setup ");
-            dlog_dec((int32_t)ts.cyc_setup);
             dlog_str(", out ");
             dlog_dec((int32_t)ts.cyc_out);
             dlog_str(" (wait ");
             dlog_dec((int32_t)draw_wait);
             dlog_str("), after ");
             dlog_dec((int32_t)(cycles - ts.cyc_cull - ts.cyc_vert - ts.cyc_face - ts.cyc_clip
-                               - ts.cyc_setup - ts.cyc_out));
+                               - ts.cyc_out));
             dlog_str("\n");
         }
         VID_SWAP = 1;
@@ -361,8 +407,10 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
 
     /* the track (data slot 3, deferload): its header has the file's size; the file is only
        read once all its blocks are as written */
+    uint32_t t_load = rdcycle();
     int placements = 0, e = slot_read(3, 0, (uint32_t)(uintptr_t)TEX_FILE, 0x100);
     if (!e && track_open(TEX_FILE)) e = slot_read(3, 0, (uint32_t)(uintptr_t)TEX_FILE, (track_size() + 3) & ~3u);
+    t_load = (rdcycle() - t_load) / (CPU_HZ / 1000);
     if (e) {
         dlog_str("track1.bin: not loaded (data slot 3, result ");
         dlog_dec(e);
@@ -370,7 +418,9 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     } else if (track_open(TEX_FILE)) {
         dlog_str("track1.bin: ");
         dlog_dec((int32_t)track_size());
-        dlog_str(" bytes, CRC of the 256 KB blocks:");
+        dlog_str(" bytes loaded in ");
+        dlog_dec((int32_t)t_load);
+        dlog_str(" ms, CRC of the 256 KB blocks:");
         int bad = 0;
         for (int k = 0; k < track_blocks(); k++) {
             int ok = track_block_ok(k);
@@ -401,7 +451,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     textures = texdemo_init(TEX_FILE);
     dlog_str("textures: test patterns\n");
     RS_CTRL = 1;                    /* the texture cache forgets what it held */
-    texdemo_hw = hw_textured;
+    texdemo_hw = hw_quad;
 
     uint32_t drawn = 0;
     for (;;) {

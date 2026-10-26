@@ -123,6 +123,21 @@
 #define RS_CUT          (1u << 31)          /* RS_TEXSIZE: texel 0 is see-through */
 #define RS_XY(x, y)     ((uint32_t)(uint16_t)(y) << 16 | (uint16_t)(x))
 
+/* the setup unit (core/src/fpga/core/setup.v, C model setup.h): polygons in view space */
+#define REGF(addr)      (*(volatile float *)(addr))
+#define SU_CENTRE       REG32(0xF0003080u)  /* W: centre of the view in 1/16 pixel, RS_XY */
+#define SU_SCALE        REG32(0xF0003084u)  /* W: focal length in pixels times 16 */
+#define SU_MODE         REG32(0xF0003088u)  /* W: as RS_DRAW (colour, buffer, RS_TEXTURED) */
+#define SU_TEX          REG32(0xF000308Cu)  /* W: as RS_TEX     } taken with the first */
+#define SU_TEXSIZE      REG32(0xF0003090u)  /* W: as RS_TEXSIZE } corner of a polygon */
+#define SU_R            REGF(0xF0003094u)   /* W: a corner: r, u, f, s (floats) */
+#define SU_U            REGF(0xF0003098u)
+#define SU_F            REGF(0xF000309Cu)
+#define SU_S            REGF(0xF00030A0u)
+#define SU_T_NEXT       REGF(0xF00030A4u)   /* W: t; the corner continues the polygon */
+#define SU_T_FIRST      REGF(0xF00030A8u)   /* W: t; the corner starts a polygon */
+#define SU_CLOCKS       REG32(0xF00030ACu)  /* R: clocks the unit computed; W: clears */
+
 /* Cache maintenance: invalidate the whole data cache (it is write-through, so nothing is
    lost), and make the instruction cache fetch code written with stores (fence.i, then
    three instructions that may still come from the old line). */

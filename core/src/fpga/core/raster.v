@@ -14,7 +14,8 @@
 // clock into the texture pipeline, a += dx each.
 //
 // Registers (soc.v maps them at 0xF000_3000 + 4 * wr_addr). Everything but 5, 6 and 19 is
-// copied when a triangle starts, so the next one can be set up while one is drawn.
+// copied when a triangle starts, so the next one can be set up while one is drawn. A
+// triangle from the setup unit (su_*) brings its own values for 0..2, 5 and 7..18.
 //   0..2  vertex n: [15:0] x, [31:16] y
 //   3     clip: [15:0] x0, [31:16] y0      4  clip: [15:0] x1, [31:16] y1 (exclusive),
 //         pixels, limited to the screen
@@ -55,7 +56,16 @@ module raster (
     input   wire            mem_ready,
     output  wire    [25:5]  mem_addr,
     input   wire            mem_rsp_valid,
-    input   wire    [31:0]  mem_rsp_data
+    input   wire    [31:0]  mem_rsp_data,
+
+    // a triangle from the setup unit (setup.v): taken instead of the registers 0..18 and the
+    // draw word in a clock with su_go when not busy
+    input   wire            su_go,
+    input   wire    [31:0]  su_v0, su_v1, su_v2, su_ref, su_tex, su_size,
+    input   wire    [9:0]   su_draw,
+    input   wire    [31:0]  su_a0, su_a1, su_a2,
+    input   wire    [31:0]  su_dx0, su_dx1, su_dx2,
+    input   wire    [31:0]  su_dy0, su_dy1, su_dy2
 );
 
     localparam  [3:0]   S_IDLE = 4'd0;
@@ -87,6 +97,7 @@ module raster (
     reg  [31:0] dx_reg [0:2];
     reg  [31:0] dy_reg [0:2];
     wire        start = wr && wr_addr == 5'd5 && state == S_IDLE && !reset;
+    wire        su_take = su_go && !busy && !reset;    // the setup unit's triangle
     wire [4:0]  wr_a5 = wr_addr - 5'd10, wr_dx5 = wr_addr - 5'd13, wr_dy5 = wr_addr - 5'd16;
     wire [1:0]  wr_addr_a = wr_a5[1:0], wr_addr_dx = wr_dx5[1:0], wr_addr_dy = wr_dy5[1:0];
 
@@ -106,12 +117,17 @@ end
     reg signed [15:0] sx [0:2];
     reg signed [15:0] sy [0:2];
     reg signed [15:0] tx, ty;
+    // the values come from the setup unit while it offers a triangle (su_go, a register:
+    // the CPU starts none then, soc.v holds its draw command back)
+    wire [31:0] v_in0 = su_go ? su_v0 : v_reg[0];
+    wire [31:0] v_in1 = su_go ? su_v1 : v_reg[1];
+    wire [31:0] v_in2 = su_go ? su_v2 : v_reg[2];
 always @(*) begin
     tx = 0;
     ty = 0;
-    sx[0] = v_reg[0][15:0]; sy[0] = v_reg[0][31:16];
-    sx[1] = v_reg[1][15:0]; sy[1] = v_reg[1][31:16];
-    sx[2] = v_reg[2][15:0]; sy[2] = v_reg[2][31:16];
+    sx[0] = v_in0[15:0]; sy[0] = v_in0[31:16];
+    sx[1] = v_in1[15:0]; sy[1] = v_in1[31:16];
+    sx[2] = v_in2[15:0]; sy[2] = v_in2[31:16];
     if(sy[1] < sy[0]) begin tx = sx[0]; ty = sy[0]; sx[0] = sx[1]; sy[0] = sy[1]; sx[1] = tx; sy[1] = ty; end
     if(sy[2] < sy[1]) begin tx = sx[1]; ty = sy[1]; sx[1] = sx[2]; sy[1] = sy[2]; sx[2] = tx; sy[2] = ty; end
     if(sy[1] < sy[0]) begin tx = sx[0]; ty = sy[0]; sx[0] = sx[1]; sy[0] = sy[1]; sx[1] = tx; sy[1] = ty; end
@@ -257,23 +273,38 @@ always @(posedge clk) begin
     else if(fb_wr) pixels <= pixels + fb_be[0] + fb_be[1] + fb_be[2] + fb_be[3];
 
     case(state)
-    S_IDLE: if(start) begin
+    S_IDLE: if(start || su_take) begin
         ax <= sx[0]; ay <= sy[0];
         bx <= sx[1]; by <= sy[1];
         cx <= sx[2]; cy <= sy[2];
-        colour <= wr_data[7:0];
-        fb_buf <= wr_data[8];
-        textured <= wr_data[9];
-        t_base <= tex_reg[25:0];
-        t_w <= size_reg[8:0];
-        t_h <= size_reg[24:16];
-        t_cut <= size_reg[31];
-        t_xr <= ref_reg[15:0];
-        t_yr <= ref_reg[31:16];
-        for(j = 0; j < 3; j = j + 1) begin
-            t_a[j] <= a_reg[j];
-            t_dx[j] <= dx_reg[j];
-            t_dy[j] <= dy_reg[j];
+        if(su_go) begin
+            colour <= su_draw[7:0];
+            fb_buf <= su_draw[8];
+            textured <= su_draw[9];
+            t_base <= su_tex[25:0];
+            t_w <= su_size[8:0];
+            t_h <= su_size[24:16];
+            t_cut <= su_size[31];
+            t_xr <= su_ref[15:0];
+            t_yr <= su_ref[31:16];
+            t_a[0] <= su_a0; t_a[1] <= su_a1; t_a[2] <= su_a2;
+            t_dx[0] <= su_dx0; t_dx[1] <= su_dx1; t_dx[2] <= su_dx2;
+            t_dy[0] <= su_dy0; t_dy[1] <= su_dy1; t_dy[2] <= su_dy2;
+        end else begin
+            colour <= wr_data[7:0];
+            fb_buf <= wr_data[8];
+            textured <= wr_data[9];
+            t_base <= tex_reg[25:0];
+            t_w <= size_reg[8:0];
+            t_h <= size_reg[24:16];
+            t_cut <= size_reg[31];
+            t_xr <= ref_reg[15:0];
+            t_yr <= ref_reg[31:16];
+            for(j = 0; j < 3; j = j + 1) begin
+                t_a[j] <= a_reg[j];
+                t_dx[j] <= dx_reg[j];
+                t_dy[j] <= dy_reg[j];
+            end
         end
         cx0 <= limit(clip0[15:0], 16'sd320);
         cy0 <= limit(clip0[31:16], 16'sd200);

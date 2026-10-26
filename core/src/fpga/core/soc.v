@@ -539,17 +539,56 @@ psram32 ps0 (
     wire [2:0]  cmd_region = region(dbus_cmd_addr);
 
 //
-// the rasterizer (raster.v): registers at 0xF000_3000, the framebuffer port while it draws.
-// Until it is done, the CPU's framebuffer accesses and the next draw command wait.
+// the rasterizer (raster.v): registers at 0xF000_3000, the framebuffer port while it draws,
+// and the setup unit (setup.v) in front of it: registers at 0xF000_3080. Until both are
+// done, the CPU's framebuffer accesses and its own draw commands wait; a corner for the
+// setup unit waits until the unit can take it.
 //
     wire        rs_busy, rs_fb_wr, rs_fb_buf;
     wire [31:0] rs_pixels, rs_misses, rs_busy_clocks, rs_fb_data;
     wire [13:0] rs_fb_addr;
     wire [3:0]  rs_fb_be;
+    wire        su_busy, su_ready, su_go;
+    wire [31:0] su_busy_clocks, su_v0, su_v1, su_v2, su_ref, su_tex, su_size;
+    wire [31:0] su_a0, su_a1, su_a2, su_dx0, su_dx1, su_dx2, su_dy0, su_dy1, su_dy2;
+    wire [9:0]  su_draw;
     wire        rs_wr = d_write && d_region == R_REG && d_addr[15:7] == 9'h060;   // 0x3000-0x307C
     wire        rs_start = rs_wr && d_addr[6:2] == 5'd5;
-    wire        rs_waits = (rs_busy || rs_start) && (cmd_region == R_FB ||
-                           (dbus_cmd_wr && cmd_region == R_REG && dbus_cmd_addr[15:0] == 16'h3014));
+    wire        su_wr = d_write && d_region == R_REG && d_addr[15:7] == 9'h061;   // 0x3080-0x30FC
+    wire        su_corner = su_wr && (d_addr[5:2] == 4'd9 || d_addr[5:2] == 4'd10);
+    wire        rs_waits = ((rs_busy || rs_start || su_busy || su_corner) && (cmd_region == R_FB ||
+                           (dbus_cmd_wr && cmd_region == R_REG && dbus_cmd_addr[15:0] == 16'h3014))) ||
+                           ((!su_ready || su_corner) && dbus_cmd_wr && cmd_region == R_REG &&
+                            (dbus_cmd_addr[15:0] == 16'h30A4 || dbus_cmd_addr[15:0] == 16'h30A8));
+
+setup su (
+    .clk                ( clk ),
+    .reset              ( cpu_reset ),
+    .wr                 ( su_wr ),
+    .wr_addr            ( d_addr[5:2] ),
+    .wr_data            ( d_data ),
+    .ready              ( su_ready ),
+    .busy               ( su_busy ),
+    .busy_clocks        ( su_busy_clocks ),
+    .go                 ( su_go ),
+    .rs_idle            ( !rs_busy ),
+    .t_v0               ( su_v0 ),
+    .t_v1               ( su_v1 ),
+    .t_v2               ( su_v2 ),
+    .t_ref              ( su_ref ),
+    .t_tex              ( su_tex ),
+    .t_size             ( su_size ),
+    .t_draw             ( su_draw ),
+    .t_a0               ( su_a0 ),
+    .t_a1               ( su_a1 ),
+    .t_a2               ( su_a2 ),
+    .t_dx0              ( su_dx0 ),
+    .t_dx1              ( su_dx1 ),
+    .t_dx2              ( su_dx2 ),
+    .t_dy0              ( su_dy0 ),
+    .t_dy1              ( su_dy1 ),
+    .t_dy2              ( su_dy2 )
+);
 
 raster rs (
     .clk                ( clk ),
@@ -570,7 +609,24 @@ raster rs (
     .mem_ready          ( rs_mem_ready ),
     .mem_addr           ( rs_mem_addr ),
     .mem_rsp_valid      ( rs_mem_rsp_valid ),
-    .mem_rsp_data       ( rs_mem_rsp_data )
+    .mem_rsp_data       ( rs_mem_rsp_data ),
+    .su_go              ( su_go ),
+    .su_v0              ( su_v0 ),
+    .su_v1              ( su_v1 ),
+    .su_v2              ( su_v2 ),
+    .su_ref             ( su_ref ),
+    .su_tex             ( su_tex ),
+    .su_size            ( su_size ),
+    .su_draw            ( su_draw ),
+    .su_a0              ( su_a0 ),
+    .su_a1              ( su_a1 ),
+    .su_a2              ( su_a2 ),
+    .su_dx0             ( su_dx0 ),
+    .su_dx1             ( su_dx1 ),
+    .su_dx2             ( su_dx2 ),
+    .su_dy0             ( su_dy0 ),
+    .su_dy1             ( su_dy1 ),
+    .su_dy2             ( su_dy2 )
 );
 
     assign dbus_cmd_ready = d_state == D_IDLE && !cpu_reset && sdp_db_cmd_ready &&
@@ -643,10 +699,11 @@ always @(posedge clk) begin
         16'h2000: reg_q <= key_r;
         16'h2004: reg_q <= joy_r;
         16'h2008: reg_q <= {16'd0, trig_r};
-        16'h3014: reg_q <= {31'd0, rs_busy};
+        16'h3014: reg_q <= {31'd0, rs_busy || su_busy};
         16'h3018: reg_q <= rs_pixels;
         16'h3050: reg_q <= rs_misses;
         16'h3054: reg_q <= rs_busy_clocks;
+        16'h30AC: reg_q <= su_busy_clocks;
         default:  reg_q <= 32'd0;
     endcase
 end

@@ -115,7 +115,7 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   stehen 1,485 Millionen Takte zur Verfügung.
 - **VGA-Fassung:** 320×200 mit 8-Bit-Palette wie die VGA-Version des Spiels. Die Strecken
   kommen trotzdem aus beiden Sätzen: `MAPnL` bei DETAIL LOW, `MAPnH` ab MID (STARTL.EXE wie
-  STARTH.EXE, OpenScreamer `docs/NOTES2.md` S2-5d). Wie weit gezeichnet wird, legt DETAIL
+  STARTH.EXE, OpenScreamer `docs/NOTES.md` Abschnitt 27). Wie weit gezeichnet wird, legt DETAIL
   fest wie im Original: Teile bis 52000 Einheiten, Flächen geschnitten in der Tiefe 27808
   (LOW, MID) oder 43808 (HI). Cockpit, Renninfos und andere statische Bilder sind Sprites aus dem L-Satz von
   `GAME.DAT` und kommen 1:1 pixelgenau in den Framebuffer: erst von der CPU gezeichnet,
@@ -134,6 +134,15 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Ebene. Es spart rund 125 M10K (320×200×16 Bit passen nur in die 8-Kbit-Modi); dafür
   wird jedes verdeckte Pixel erneut geschrieben, was die Bandbreite zum Framebuffer
   wichtiger macht.
+- **Erst die Setup-Einheit, dann der Rest der Geometrie:** Der Durchflug durch Strecke 1
+  hat die Geometrie auf der CPU vermessen: rund 3000 Takte je Dreieck, fast die Hälfte
+  davon die Vorbereitung je Dreieck (die Ebenen von Q, U, V mit Divisionen), ein Viertel
+  Zuschneiden und Projektion, das Umrechnen der Eckpunkte nur 3 %. Deshalb kam zuerst die
+  Setup-Einheit (`setup.v`, C-Modell `firmware/setup.c`): Die CPU gibt Vielecke in
+  Kamerasicht ab (fünf Floats je Ecke), die Hardware projiziert, zerlegt sie in einen
+  Fächer und rechnet die Werte für den Rasterizer in Festkomma, während der Rasterizer das
+  vorige Dreieck zeichnet. Auswahl, Sortieren, Flächenlisten und Zuschneiden bleiben
+  vorerst auf der CPU.
 - **Bilder überlappen (Pipeline):** CPU, Grafik und Anzeige arbeiten gleichzeitig an Bild
   N+1, N und N−1, die Zeit pro Bild ist das Maximum statt der Summe. Kosten: ein Bild mehr
   Verzögerung zwischen Eingabe und Anzeige (20 ms bei 50 fps).

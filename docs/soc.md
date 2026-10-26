@@ -95,6 +95,11 @@ Alle Register sind 32 Bit, Zugriff als Wort.
 | `0xF000_301C`–`304C` | `RS_TEX` … `RS_CTRL` | W | Texturen (`firmware/hw.h`): Byte-Adresse von Texel (0, 0) im SDRAM, Größe und Durchsichtigkeit, Bezugspixel, Q, U, V mit Änderung je Pixel; `RS_CTRL` leert den Textur-Cache; `RS_DRAW` Bit 9 zeichnet texturiert |
 | `0xF000_3050` | `RS_MISSES` | R/W | Textur-Zeilen aus dem SDRAM nachgeladen (Cache-Fehltreffer); Schreiben löscht |
 | `0xF000_3054` | `RS_CLOCKS` | R/W | Takte, in denen der Rasterizer beschäftigt war; Schreiben löscht |
+| `0xF000_3080`, `3084` | `SU_CENTRE`, `SU_SCALE` | W | Setup-Einheit (`setup.v`, bitgenau `firmware/setup.c`): Mitte der Ansicht in 1/16 Pixel (wie `RS_XY`), Brennweite in Pixeln mal 16 |
+| `0xF000_3088`–`3090` | `SU_MODE`, `SU_TEX`, `SU_TEXSIZE` | W | wie `RS_DRAW` Bit 9..0, `RS_TEX`, `RS_TEXSIZE`; gelten ab der nächsten ersten Ecke für das ganze Vieleck |
+| `0xF000_3094`–`30A0` | `SU_R`, `SU_U`, `SU_F`, `SU_S` | W | eine Ecke in Kamerasicht als Float: rechts, oben, vorn (nach der nahen Ebene, > 0), Texel-Spalte |
+| `0xF000_30A4`, `30A8` | `SU_T_NEXT`, `SU_T_FIRST` | W | Texel-Zeile (Float) und Übergabe der Ecke: setzt das Vieleck fort bzw. beginnt ein neues. Ab der dritten Ecke wird mit der ersten und der vorigen ein Dreieck gezeichnet (Fächer). Der Schreibzugriff wartet, bis die Einheit die vorige Ecke übernommen hat; `RS_DRAW` und Framebuffer-Zugriffe warten, bis Setup-Einheit und Rasterizer fertig sind, `RS_DRAW` Bit 0 zeigt beide |
+| `0xF000_30AC` | `SU_CLOCKS` | R/W | Takte, in denen die Setup-Einheit gerechnet hat; Schreiben löscht |
 
 ## Framebuffer
 

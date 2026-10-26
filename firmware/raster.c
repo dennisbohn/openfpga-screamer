@@ -175,7 +175,7 @@ uint32_t rs_textured(volatile uint8_t *fb, const struct rs_clip *clip,
  *   fraction bits; v the same
  * then the texel at (u >> 8, v >> 8), clamped to the texture.
  */
-static uint32_t recip(uint32_t m)
+uint32_t rs_recip(uint32_t m)
 {
     uint32_t r0 = 0xFFFFFFFFu / (0x8000u + ((m >> 5) & 1023u) * 32u + 16u);
     uint64_t p = (uint64_t)m * r0;
@@ -199,7 +199,7 @@ static uint32_t span_texfx(volatile uint8_t *fb, int r, int x0, int x1, const vo
         int e = -16;                                /* bit length - 16 */
         while(e < 16 && q >> (e + 16)) e++;
         uint32_t m = e >= 0 ? q >> e : q << -e;
-        int64_t rc = recip(m);
+        int64_t rc = rs_recip(m);
         int64_t ua = acc[1] >> 8, va = acc[2] >> 8;
         ua = ua < -(1 << 26) ? -(1 << 26) : ua > (1 << 26) - 1 ? (1 << 26) - 1 : ua;
         va = va < -(1 << 26) ? -(1 << 26) : va > (1 << 26) - 1 ? (1 << 26) - 1 : va;

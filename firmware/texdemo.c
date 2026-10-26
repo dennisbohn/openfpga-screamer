@@ -16,7 +16,7 @@ static struct rs_texture tex[TEX_MAX];
 static const volatile uint32_t *palette;
 static float sin_q[65];                 /* sin(2 pi i / 256) for i = 0..64 */
 int texdemo_mode;                       /* TEXDEMO_FLOAT, TEXDEMO_FIXED, TEXDEMO_HW */
-uint32_t (*texdemo_hw)(const struct rs_vertex pos[3], const struct rs_tex_setup *s, const struct rs_texture *t);
+uint32_t (*texdemo_hw)(const struct su_corner c[4], const struct rs_texture *t);
 
 struct v3 { float x, y, z; };
 struct quad { struct v3 p[4]; int tex; };   /* corners from top left, clockwise as seen */
@@ -68,35 +68,45 @@ static struct v3 view(struct v3 p, float sa, float ca)
     return v;
 }
 
+#define FOCAL 250.0f
+
+void texdemo_view(const struct rs_clip *clip, struct su_view *v)
+{
+    v->cx = (clip->x0 + clip->x1) * 8;      /* the centre in 1/16 pixel */
+    v->cy = (clip->y0 + clip->y1) * 8;
+    v->scale = (uint32_t)(FOCAL * 16.0f);
+}
+
+/* a quad: in view space to the setup unit or its C model (scaled by 256: the setup unit
+   takes 8 fraction bits, the projection does not change) */
 static uint32_t draw_quad(volatile uint8_t *fb, const struct rs_clip *clip, const struct v3 v[4],
                           const struct rs_texture *t)
 {
-    const float f = 250.0f, cx = (float)(clip->x0 + clip->x1) / 2, cy = (float)(clip->y0 + clip->y1) / 2;
     const float u[4] = { 0.0f, (float)t->width, (float)t->width, 0.0f };
     const float w[4] = { 0.0f, 0.0f, (float)t->height, (float)t->height };
-    struct rs_tvertex s[4];
-    for(int i = 0; i < 4; i++) {
-        float q = 1.0f / v[i].z;
-        s[i].x = (int32_t)((cx + f * v[i].x * q) * 16.0f + 0.5f);
-        s[i].y = (int32_t)((cy - f * v[i].y * q) * 16.0f + 0.5f);
-        s[i].q = q;
-        s[i].uq = u[i] * q;
-        s[i].vq = w[i] * q;
-    }
-    struct rs_tvertex t0[3] = { s[0], s[1], s[2] }, t1[3] = { s[0], s[2], s[3] };
 #ifdef TEXDEMO_FLOAT_REF                 /* only for the comparison on the PC */
-    if(texdemo_mode == TEXDEMO_FLOAT)
+    if(texdemo_mode == TEXDEMO_FLOAT) {
+        const float f = FOCAL, cx = (float)(clip->x0 + clip->x1) / 2, cy = (float)(clip->y0 + clip->y1) / 2;
+        struct rs_tvertex s[4];
+        for(int i = 0; i < 4; i++) {
+            float q = 1.0f / v[i].z;
+            s[i].x = (int32_t)((cx + f * v[i].x * q) * 16.0f + 0.5f);
+            s[i].y = (int32_t)((cy - f * v[i].y * q) * 16.0f + 0.5f);
+            s[i].q = q;
+            s[i].uq = u[i] * q;
+            s[i].vq = w[i] * q;
+        }
+        struct rs_tvertex t0[3] = { s[0], s[1], s[2] }, t1[3] = { s[0], s[2], s[3] };
         return rs_textured(fb, clip, t0, t) + rs_textured(fb, clip, t1, t);
-#endif
-    uint32_t n = 0;
-    for(int k = 0; k < 2; k++) {
-        const struct rs_tvertex *tv = k ? t1 : t0;
-        struct rs_tex_setup ts;
-        struct rs_vertex pos[3] = { { tv[0].x, tv[0].y }, { tv[1].x, tv[1].y }, { tv[2].x, tv[2].y } };
-        if(!rs_tex_setup(&ts, tv)) continue;
-        n += texdemo_mode == TEXDEMO_HW ? texdemo_hw(pos, &ts, t) : rs_textured_fx(fb, clip, pos, &ts, t);
     }
-    return n;
+#endif
+    struct su_corner c[4];
+    for(int i = 0; i < 4; i++)
+        c[i] = (struct su_corner){ v[i].x * 256.0f, v[i].y * 256.0f, v[i].z * 256.0f, u[i], w[i] };
+    if(texdemo_mode == TEXDEMO_HW) return texdemo_hw(c, t);
+    struct su_view sv;
+    texdemo_view(clip, &sv);
+    return su_polygon(fb, clip, &sv, c, 4, t, 0);
 }
 
 uint32_t texdemo_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t a, uint32_t *tris)

@@ -47,5 +47,9 @@ struct rs_tex_setup {
 };
 
 int rs_tex_setup(struct rs_tex_setup *s, const struct rs_tvertex v[3]);
+
+/* About 2^32 / m for m in [2^15, 2^16): the hardware's reciprocal (a table of 1024 and one
+   Newton step), used per pixel and by the setup unit (setup.h) */
+uint32_t rs_recip(uint32_t m);
 uint32_t rs_textured_fx(volatile uint8_t *fb, const struct rs_clip *clip, const struct rs_vertex pos[3],
                         const struct rs_tex_setup *s, const struct rs_texture *tex);

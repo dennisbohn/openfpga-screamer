@@ -14,6 +14,7 @@ core/src/fpga/core/pll_dps.v
 core/src/fpga/core/soc.v
 core/src/fpga/core/raster.v
 core/src/fpga/core/raster_tex.v
+core/src/fpga/core/setup.v
 core/src/fpga/core/framebuffer.v
 core/src/fpga/core/video_out.v
 sim/models/sdram_model.v
