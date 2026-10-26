@@ -9,8 +9,9 @@
 //   Newton step), each value a + ((b - a) t >> 16).
 // The polygon is copied in (one clock a corner, then the input is free again) and cut in a
 // buffer of two halves, one read and the other written in a pass; its corners then go on
-// one at a time. A corner takes two clocks a pass, a new point about 25 more (one
-// multiplier, operands registered, the product three clocks after it was issued).
+// one at a time. The buffer is block RAM, read one clock after its address is set. A
+// corner takes three clocks a pass, a new point about 25 more (one multiplier, operands
+// registered, the product three clocks after it was issued).
 //
 // A corner: {t[23:0], s[23:0], f, u, r} = 144 bits.
 //
@@ -105,20 +106,25 @@ always @(posedge clk) r_q <= rtab[r_addr];
     endfunction
 
 //
-// the buffer: two halves of 16 corners, read at {cur, ridx}, written at {!cur, m}
+// the buffer: two halves of 16 corners, read at {cur, ridx} (buf_q a clock later), written
+// at {!cur, m}
 //
-    reg  [143:0] buf_c [0:31];
+    (* ramstyle = "no_rw_check, M10K" *) reg  [143:0] buf_c [0:31];
     reg          cur;
     reg  [3:0]   ridx, m;
     reg          we;
     reg  [4:0]   wa;
     reg  [143:0] wd;
-    wire [143:0] buf_q = buf_c[{cur, ridx}];
-always @(posedge clk) if(we) buf_c[wa] <= wd;
+    reg  [143:0] buf_q;
+always @(posedge clk) begin
+    if(we) buf_c[wa] <= wd;
+    buf_q <= buf_c[{cur, ridx}];
+end
 
     localparam  [3:0]   L_IDLE = 4'd0, L_LOAD = 4'd1, L_DECIDE = 4'd2, L_PSTART = 4'd3,
-                        L_READ = 4'd4, L_EDGE = 4'd5, L_X = 4'd6, L_PEND = 4'd7, L_OUT = 4'd8;
-    reg  [3:0]   state = L_IDLE;
+                        L_READ = 4'd4, L_EDGE = 4'd5, L_X = 4'd6, L_PEND = 4'd7, L_OUT = 4'd8,
+                        L_WAIT = 4'd9;          // the buffer reads the new address, then ret
+    reg  [3:0]   state = L_IDLE, ret;
     reg  [3:0]   np;                            // corners of the polygon now
     reg  [2:0]   k;                             // the plane of this pass
     reg  [5:0]   any, all;
@@ -201,12 +207,18 @@ always @(posedge clk) begin
 
     L_DECIDE: begin
         ridx <= 0;
+        state <= L_WAIT;
         if(all != 0) state <= L_IDLE;           // wholly outside one plane
-        else if(any == 0) begin out_valid <= 1; state <= L_OUT; end
+        else if(any == 0) ret <= L_OUT;
         else begin
             k <= plane_from(any, 3'd0);
-            state <= L_PSTART;
+            ret <= L_PSTART;
         end
+    end
+
+    L_WAIT: begin
+        if(ret == L_OUT) out_valid <= 1;
+        state <= ret;
     end
 
     L_PSTART: begin                             // corner 0 is the first edge's a
@@ -216,7 +228,8 @@ always @(posedge clk) begin
         i <= 0;
         m <= 0;
         ridx <= 1;
-        state <= L_READ;
+        ret <= L_READ;
+        state <= L_WAIT;
     end
 
     L_READ: begin                               // edge i: its b and the distance of b
@@ -240,7 +253,8 @@ always @(posedge clk) begin
             da <= db;
             i <= i + 1'b1;
             ridx <= i + 4'd2;
-            state <= i == np - 4'd1 ? L_PEND : L_READ;
+            ret <= L_READ;
+            state <= i == np - 4'd1 ? L_PEND : L_WAIT;
         end
     end
 
@@ -283,7 +297,8 @@ always @(posedge clk) begin
             da <= db;
             i <= i + 1'b1;
             ridx <= i + 4'd2;
-            state <= i == np - 4'd1 ? L_PEND : L_READ;
+            ret <= L_READ;
+            state <= i == np - 4'd1 ? L_PEND : L_WAIT;
         end
         default: ;
         endcase
@@ -293,20 +308,20 @@ always @(posedge clk) begin
         np <= m;
         cur <= !cur;
         ridx <= 0;
+        state <= L_WAIT;
         if(m < 4'd3) state <= L_IDLE;
-        else if(next_k == 3'd6) begin out_valid <= 1; state <= L_OUT; end
+        else if(next_k == 3'd6) ret <= L_OUT;
         else begin
             k <= next_k;
-            state <= L_PSTART;
+            ret <= L_PSTART;
         end
     end
 
-    L_OUT: if(out_take) begin                   // corner ridx taken
+    L_OUT: if(out_take) begin                   // corner ridx taken, the next one read
         ridx <= ridx + 1'b1;
-        if(ridx == np - 4'd1) begin
-            out_valid <= 0;
-            state <= L_IDLE;
-        end
+        out_valid <= 0;
+        ret <= L_OUT;
+        state <= ridx == np - 4'd1 ? L_IDLE : L_WAIT;
     end
 
     default: state <= L_IDLE;
