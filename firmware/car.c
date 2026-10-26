@@ -1,6 +1,7 @@
 /*
- * The player's car (car.h), after OpenScreamer's port/src/main.c (GPL-3.0). Not yet here:
- * the start lights, laps and clocks, the suspension (the body's lean), crashes, the shadow.
+ * The player's car (car.h), after OpenScreamer's port/src/main.c (GPL-3.0), checked against
+ * STARTL.EXE where it says so. Not yet here: the start lights, laps and clocks, the
+ * suspension (the body's lean), the shadow, smoke, the camera's fly-across between views.
  */
 #include "car.h"
 #include <math.h>
@@ -12,17 +13,22 @@
 
 /* the game's views (OpenScreamer's g_views): how far behind, how high, looking down how much */
 struct view_def { float behind, above, down; int incar; };
-static const struct view_def views[CAR_VIEWS] = {
+static const struct view_def views[CAR_VIEWS + 1] = {
     { 1300.0f, 300.0f, 0.1885f, 0 },    /* row 2: near chase */
     { 1700.0f, 300.0f, 0.1257f, 0 },    /* row 6: far chase */
     {    0.0f,   0.0f, 0.0f,    1 },    /* row 0: bumper cam */
+    { 1400.0f, 100.0f, 0.1257f, 0 },    /* row 5: the crash's, not the player's to choose */
 };
+#define CRASH_VIEW  CAR_VIEWS
 
 static struct car_state pc;
 static struct track_model model;
 static int view;
 static int mark_at;                     /* the marker last reached */
-static uint32_t wall_hits;
+static uint32_t wall_hits, crashes;
+
+/* a crash (0x16c90 decides, 0x18518 runs it): thrown up and tumbling, four landings */
+static struct { int on, bounces, view; float height, vy, pitch, roll, pitch_rate, roll_rate; } crash;
 
 /* the body's corners for the walls (player_car, 0x136c8): each wheel's place moved 250 units
    ahead of the front wheels, 150 behind the rear ones; sideways at the wheels. [k][0] is to
@@ -180,8 +186,63 @@ static void walls_step(void)
     if(mx == 0.0f && my == 0.0f) return;                /* off the surface but not at a wall */
     pc.x += mx;
     pc.y += my;
+    if(crash.on) return;                                /* already in the air: no wall response */
     wall_hits++;
+    /* 0x16c90: a crash when speed x (angle off the road's heading / 90 degrees) > 0.3 maxspd,
+       and only out in the open (+0x7b0, the last marker's kind, is 0: not in a tunnel; the
+       game checks that, OpenScreamer does not); the wall response comes all the same (the
+       crash only stops the wall's sound there) */
+    const struct track_dir *d = nearest_dir(pc.x, pc.y);
+    float off = d ? fabsf(pc.yaw - d->angle) : 0.0f;
+    while(off > PI) off -= PI;
+    if(off > PI / 2.0f) off = PI - off;
+    int nm;
+    const struct track_marker *mk = track_markers(&nm);
+    int open = nm == 0 || mk[mark_at].kind == 0;
+    int crashing = pc.speed * (off / (PI / 2.0f)) > pc.k_wall && open;
     drive_hit_wall(&pc, mx, my, (float)(out[2] - out[0]), wall_angle);
+    if(crashing) {
+        /* the crash's start (0x18518 state 2): speed x 0.6, heading the road's, thrown up at
+           3000 units/s, turning 12 rad/s in pitch and in roll, the crash view */
+        crash.on = 1;
+        crash.bounces = 0;
+        crash.view = view;
+        crash.height = crash.pitch = crash.roll = 0.0f;
+        crash.vy = 3000.0f;
+        crash.pitch_rate = crash.roll_rate = 12.0f;
+        pc.speed *= 0.6f;
+        if(d) pc.yaw = d->angle;
+        pc.drift = 0.0f;
+        pc.spin = 0;
+        crashes++;
+        view = CRASH_VIEW;
+        chase.init = 0;
+    }
+}
+
+/* a crash's step: gravity 6000, the turning dies away (damp[97]); each landing throws it up
+   again at 0.4 times the fall, level, with a new small turn; the fourth ends it */
+static void crash_step(void)
+{
+    if(!crash.on) return;
+    crash.height += crash.vy * DRIVE_DT;
+    crash.vy -= DRIVE_DT * 6000.0f;
+    crash.pitch_rate *= drive_damp(97);
+    crash.pitch += crash.pitch_rate * DRIVE_DT;
+    crash.roll_rate *= drive_damp(97);
+    crash.roll += crash.roll_rate * DRIVE_DT;
+    if(crash.height > 0.0f) return;
+    crash.bounces++;
+    crash.height = 0.0f;
+    crash.vy = -crash.vy * 0.4f;
+    crash.pitch = crash.roll = 0.0f;
+    crash.roll_rate = (crash.bounces & 1) ? -0.6f : 0.6f;
+    crash.pitch_rate = -1.0f;
+    if(crash.bounces > 3) {
+        crash.on = 0;
+        view = crash.view;
+        chase.init = 0;
+    }
 }
 
 /* markers_step (0x1820c): the marker last reached and its two neighbours; inside one's
@@ -261,7 +322,8 @@ void car_init(int which)
         q->steers = q->wheel && q->t[2] < 0.0f;
     }
     spin = steer = 0.0f;
-    wall_hits = 0;
+    wall_hits = crashes = 0;
+    crash.on = 0;
 
     /* player_reset: on the road point by the third path point, facing along the path, at
        the path's height until the wheels find the ground; no skidding until a marker */
@@ -287,6 +349,8 @@ void car_step(uint32_t keys, uint32_t keys_before)
     in.brake = (keys & KEY_B) ? 1.0f : 0.0f;
     in.steer = ((keys & KEY_LEFT) ? 1.0f : 0.0f) - ((keys & KEY_RIGHT) ? 1.0f : 0.0f);
     in.shift = (pressed & KEY_R) ? 1 : (pressed & KEY_L) ? -1 : 0;
+    if(crash.on) in.throttle = in.steer = 0.0f;          /* no drive in the air */
+    crash_step();
     drive_step(&pc, &in);
     walls_step();
     markers_step();
@@ -320,7 +384,7 @@ static void block_point(const struct cblock *q, const float sc[4], const float c
     float x3 = x * car[2] - y3 * car[3], y4 = y3 * car[2] + x * car[3];
     w[0] = pc.x + x3 * car[4] - z3 * car[5];
     w[1] = pc.y + x3 * car[5] + z3 * car[4];
-    w[2] = pc.z + y4;
+    w[2] = pc.z + crash.height + y4;
 }
 
 int car_object(const struct track_cam *cam, struct track_object *obj)
@@ -328,8 +392,9 @@ int car_object(const struct track_cam *cam, struct track_object *obj)
     static struct track_block tb[MAX_BLOCKS];
     if(views[view].incar || !ncb) return 0;
     const float sc[4] = { cosf(spin), sinf(spin), cosf(steer), sinf(steer) };
-    float a = pc.yaw + pc.drift;
-    const float car[6] = { cosf(-pc.pitch), sinf(-pc.pitch), cosf(-pc.roll), sinf(-pc.roll), cosf(a), sinf(a) };
+    /* the object's angles (player_sync): the car's, negated, and a crash's tumbling on top */
+    float a = pc.yaw + pc.drift, p = -pc.pitch + crash.pitch, r = -pc.roll + crash.roll;
+    const float car[6] = { cosf(p), sinf(p), cosf(r), sinf(r), cosf(a), sinf(a) };
     /* the texture frame (0x173a9): paint job | 0x4000 not braking | 0x2000 at 4000 units/s or
        under, of which the phase is a quarter (record +0x20 >> 2) */
     uint32_t phase = ((uint32_t)pc.spec.livery | (pc.brake == 0.0f ? 0x4000u : 0) |
@@ -378,6 +443,7 @@ int car_object(const struct track_cam *cam, struct track_object *obj)
 
 void car_view(int v)
 {
+    if(crash.on) return;                                /* the crash view until it is over */
     view = (v % CAR_VIEWS + CAR_VIEWS) % CAR_VIEWS;
     chase.init = 0;
     chase_step();
@@ -413,4 +479,14 @@ const struct car_state *car_state(void)
 uint32_t car_wall_hits(void)
 {
     return wall_hits;
+}
+
+uint32_t car_crashes(void)
+{
+    return crashes;
+}
+
+int car_marker(void)
+{
+    return mark_at;
 }

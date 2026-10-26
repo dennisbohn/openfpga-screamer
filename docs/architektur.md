@@ -197,6 +197,14 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   der Rasen unter der Straße), 1 um 1500, 2 um 800, 4 um 200. OpenScreamer zeichnet mit
   Tiefenpuffer und hat dafür eigene Regeln (Rasen „doppelt so weit“, Objekte über ihrer
   Straße); wir zeichnen wie das Original und brauchen nur dessen Schlüssel.
+- **Der Crash wie im Original** (2026-10-27; Entscheidung `0x16c90` in der EXE gelesen, Ablauf
+  `0x18518` nach OpenScreamers Notes): ein Wandtreffer ist ein Crash, wenn Tempo × (Winkel zur
+  Straße / 90°) > 0,3 × Höchsttempo, aber nur im Freien (`+0x7b0`, die Art des letzten Markers,
+  ist 0; im Tunnel prallt man nur ab), und die Wandreaktion kommt trotzdem (der Crash schaltet
+  im Spiel nur den Wand-Ton ab). OpenScreamer prüft den Tunnel nicht und lässt beim Crash die
+  Wandreaktion weg; wir folgen der EXE. Dann Tempo × 0,6, Richtung der Straße, hochgeworfen mit
+  3000/s, 12 rad/s um Quer- und Längsachse, Schwerkraft 6000, vier Landungen, die Crash-Ansicht
+  (Zeile 5 der Ansichten) und danach die alte.
 - **Bilder überlappen (Pipeline):** CPU, Grafik und Anzeige arbeiten gleichzeitig an Bild
   N+1, N und N−1, die Zeit pro Bild ist das Maximum statt der Summe. Kosten: ein Bild mehr
   Verzögerung zwischen Eingabe und Anzeige (20 ms bei 50 fps).

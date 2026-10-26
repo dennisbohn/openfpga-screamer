@@ -28,6 +28,9 @@ void car_camera(struct track_cam *cam);
    0 when the view is from inside it */
 int car_object(const struct track_cam *cam, struct track_object *obj);
 
-/* For the screen and the log: the state, wall hits so far */
+/* For the screen and the log: the state, wall hits and crashes so far, the marker last
+   reached */
 const struct car_state *car_state(void);
 uint32_t car_wall_hits(void);
+uint32_t car_crashes(void);
+int car_marker(void);

@@ -405,6 +405,12 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec(cs->gear);
             dlog_str(", walls ");
             dlog_dec((int32_t)car_wall_hits());
+            dlog_str(", crashes ");
+            dlog_dec((int32_t)car_crashes());
+            dlog_str(", marker ");
+            dlog_dec(car_marker());
+            dlog_str(" slip x100 ");
+            dlog_dec((int32_t)(cs->surface * 100.0f));
             dlog_str(", steps ");
             dlog_dec((int32_t)steps);
             dlog_str(" (");
