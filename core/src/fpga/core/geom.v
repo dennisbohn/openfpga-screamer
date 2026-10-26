@@ -93,7 +93,7 @@ always @(posedge clk) begin
 end
 
     localparam  [2:0]   C_IDLE = 3'd0, C_LOOK = 3'd1, C_CHECK = 3'd2, C_MISS = 3'd3, C_FILL = 3'd4,
-                        C_INVAL = 3'd5;
+                        C_INVAL = 3'd5, C_SETTLE = 3'd6;
     reg  [2:0]  cstate = C_INVAL;
     reg  [25:0] rd_addr;
     reg         rd_go = 0, rd_done = 0;
@@ -140,9 +140,10 @@ always @(posedge clk) begin
             ct_wd <= {1'b1, rd_addr[25:12]};
             cd_ra <= {rd_addr[11:5], rd_addr[4:2]};
             ct_ra <= rd_addr[11:5];
-            cstate <= C_LOOK;
+            cstate <= C_SETTLE;
         end
     end
+    C_SETTLE: cstate <= C_LOOK;                 // the last word and the tag are written now
     C_INVAL: begin
         ct_we <= 1;
         ct_wa <= inval_cnt;

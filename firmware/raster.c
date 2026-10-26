@@ -175,6 +175,10 @@ uint32_t rs_textured(volatile uint8_t *fb, const struct rs_clip *clip,
  *   fraction bits; v the same
  * then the texel at (u >> 8, v >> 8), clamped to the texture.
  */
+#ifdef RS_TRACE
+void rs_trace(const volatile uint8_t *p);
+#endif
+
 uint32_t rs_recip(uint32_t m)
 {
     uint32_t r0 = 0xFFFFFFFFu / (0x8000u + ((m >> 5) & 1023u) * 32u + 16u);
@@ -207,6 +211,9 @@ static uint32_t span_texfx(volatile uint8_t *fb, int r, int x0, int x1, const vo
         int64_t v = ((va * rc) >> (16 + e)) >> 8;
         int tu = u < 0 ? 0 : u >= t->width ? t->width - 1 : (int)u;
         int tv = v < 0 ? 0 : v >= t->height ? t->height - 1 : (int)v;
+#ifdef RS_TRACE                            /* PC only: the texel addresses for a cache study */
+        rs_trace(&t->data[tv * 256 + tu]);
+#endif
         uint8_t c = t->data[tv * 256 + tu];
         if(c || t->routine != 64) {
             row[x] = c;

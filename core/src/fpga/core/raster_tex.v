@@ -12,8 +12,9 @@
 //
 // Texture cache: 16 KB direct mapped, lines of 32 bytes (index = address[13:5], tag =
 // address[25:14]), filled with one line read from the SDRAM. On a miss the pipeline stops,
-// the line comes in (8 words), the missed pixel's address is read again (one clock) and
-// the pipeline goes on. Invalidated after a reset and on request (512 clocks).
+// the line comes in (8 words), a clock for the last word and the tag to be written, the
+// missed pixel's address is read again (one clock) and the pipeline goes on. Invalidated
+// after a reset and on request (512 clocks).
 //
 
 module raster_tex (
@@ -60,6 +61,7 @@ module raster_tex (
     localparam  [2:0]   M_REQ    = 3'd2;        // line read asked for
     localparam  [2:0]   M_DATA   = 3'd3;        // its words coming in
     localparam  [2:0]   M_REPLAY = 3'd4;        // read the missed address again
+    localparam  [2:0]   M_SETTLE = 3'd5;        // the last word and the tag are written
 
     reg  [2:0]  mstate = M_INVAL;
     reg  [8:0]  inval_cnt = 0;
@@ -245,9 +247,10 @@ always @(posedge clk) begin
             t_we <= 1;
             t_wa <= mem_addr[13:5];
             t_wd <= {1'b1, mem_addr[25:14]};
-            mstate <= M_REPLAY;
+            mstate <= M_SETTLE;
         end
     end
+    M_SETTLE: mstate <= M_REPLAY;           // a read now would still see the old line
     default: mstate <= M_NORMAL;            // M_REPLAY: one clock
     endcase
 
