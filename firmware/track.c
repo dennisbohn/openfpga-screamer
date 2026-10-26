@@ -25,7 +25,6 @@
 #define BLOCK       0x40000     /* bytes per CRC block (tools/make_track.py) */
 #define MAX_PIECES  2048        /* placements; track 1 has 809 (L set), 1164 (H set) */
 #define MAX_OBJ     512         /* meshes; up to 360 on a track */
-#define MAX_VERT    512         /* vertices of one mesh; at most 189 measured */
 
 /* How far the game draws (openscreamer docs/NOTES.md, DETAIL): a piece only while its
    position is within 52000 units of the camera (0x83164: dist^2 >> 2 < 676000000), and
@@ -42,7 +41,6 @@ static const float far_depth[3] = { 27808.0f, 27808.0f, 43808.0f };     /* LOW, 
 
 struct piece { int32_t obj, x, y, h, t; };
 struct pt { int32_t x, y, h; };
-#define cv su_corner                    /* a corner in view space and its texel position */
 
 static const uint8_t *file_start, *mlb, *unr_blob;
 static uint32_t file_size;
@@ -59,7 +57,7 @@ static float far_z = 43808.0f;          /* the far plane of the DETAIL level */
 static float radius[MAX_OBJ];           /* of each mesh around its origin */
 
 int track_mode;
-void (*track_hw_poly)(const struct su_corner *c, int n, const struct rs_texture *t, uint8_t colour);
+void (*track_hw_piece)(const struct gu_piece *p);
 
 #ifdef __riscv
 static inline uint32_t now(void)
@@ -71,11 +69,9 @@ static inline uint32_t now(void)
 #else
 static inline uint32_t now(void) { return 0; }
 #endif
-static uint32_t cyc_out;                /* summed up by polygon() */
 
 static int32_t rd32(const uint8_t *p) { return *(const int32_t *)p; }
 static int16_t rd16(const uint8_t *p) { return *(const int16_t *)p; }
-static uint16_t ru16(const uint8_t *p) { return *(const uint16_t *)p; }
 
 static float sin2048(uint32_t a)
 {
@@ -129,7 +125,7 @@ int track_init(void)
         const uint8_t *obj, *blk = block_of(k, &obj), *v = obj + rd32(blk + 0x1C);
         int n = rd32(blk + 0x10);
         float r2 = 0.0f;
-        for(int i = 0; i < n && i < MAX_VERT; i++, v += 6) {
+        for(int i = 0; i < n && i < GU_MAX_VERT; i++, v += 6) {
             float x = rd16(v), y = rd16(v + 2), z = rd16(v + 4), d = x * x + y * y + z * z;
             if(d > r2) r2 = d;
         }
@@ -141,6 +137,11 @@ int track_init(void)
 const uint32_t *track_palette(void)
 {
     return pal;
+}
+
+const uint8_t *track_mlb(void)
+{
+    return mlb;
 }
 
 uint32_t track_path_length(void)
@@ -177,29 +178,13 @@ void track_view(const struct rs_clip *clip, struct su_view *v)
     v->far8 = (int32_t)(far_z * 256.0f);
 }
 
-struct view { struct su_view su; volatile uint8_t *fb; const struct rs_clip *clip; };
-
-/* a face in view space to the setup unit (or its C model), which cuts it at the planes,
-   projects it and splits it into triangles; returns the triangles of the uncut face */
-static uint32_t polygon(const struct view *w, const struct cv *p, int n, const struct rs_texture *tex,
-                        int colour)
-{
-    uint32_t t0 = now();
-    if(track_mode == TRACK_HW) track_hw_poly(p, n, tex, (uint8_t)colour);
-    else su_polygon(w->fb, w->clip, &w->su, p, n, tex, (uint8_t)colour);
-    cyc_out += now() - t0;
-    return (uint32_t)(n - 2);
-}
-
 struct vis { float d2; int i; };
 static struct vis vis[MAX_PIECES];
-static float vr[MAX_VERT], vu[MAX_VERT], vf[MAX_VERT];
 
 void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, struct track_stats *st)
 {
     uint32_t t_start = now();
     st->pieces = st->faces = st->triangles = st->see_through = st->vertices = 0;
-    st->cyc_vert = cyc_out = 0;
 
     /* the camera on the player's line, looking LOOK points ahead and a little down */
     uint32_t i0 = (pos >> 8) % (uint32_t)npath, i1 = (i0 + 1) % (uint32_t)npath;
@@ -251,83 +236,42 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
     uint32_t t_pieces = now();
     st->cyc_cull = t_pieces - t_start;
 
-    struct view w;
-    track_view(clip, &w.su);
-    w.fb = fb;
-    w.clip = clip;
+    struct su_view view;
+    struct gu_stats gst = { 0, 0, 0, 0 };
+    track_view(clip, &view);
+    uint32_t t_out = 0;
     for(int n = 0; n < nv; n++) {
         const struct piece *pc = &pieces[vis[n].i];
-        const uint8_t *obj, *blk = block_of(pc->obj, &obj);
-        const uint8_t *verts = obj + rd32(blk + 0x1C), *uvs = obj + rd32(blk + 0x24);
-        int nvert = rd32(blk + 0x10);
-        if(nvert > MAX_VERT) continue;
+        struct gu_piece g;
+        g.blk = block_of(pc->obj, &g.obj);
         float ca = sin2048((uint32_t)pc->t + 512), sa = sin2048((uint32_t)pc->t);
         float dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch;
 
         /* local to view: per axis A, A . D + x (Ax cos + Ay sin) + y Ah + z (Ay cos - Ax sin) */
-        float r0 = dx * rx + dy * ry, rxl = rx * ca + ry * sa, rzl = ry * ca - rx * sa;
-        float u0 = dx * ux + dy * uy + dh * uh, uxl = ux * ca + uy * sa, uzl = uy * ca - ux * sa;
-        float f0 = dx * fx + dy * fy + dh * fh, fxl = fx * ca + fy * sa, fzl = fy * ca - fx * sa;
-        const uint8_t *v = verts;
-        uint32_t t_vert = now();
-        for(int i = 0; i < nvert; i++, v += 6) {
-            float x = rd16(v), y = rd16(v + 2), z = rd16(v + 4);
-            vr[i] = r0 + x * rxl + z * rzl;
-            vu[i] = u0 + x * uxl + y * uh + z * uzl;
-            vf[i] = f0 + x * fxl + y * fh + z * fzl;
-        }
-        st->cyc_vert += now() - t_vert;
-        st->vertices += (uint32_t)nvert;
+        const float m[9] = { rx * ca + ry * sa, 0.0f, ry * ca - rx * sa,
+                             ux * ca + uy * sa, uh, uy * ca - ux * sa,
+                             fx * ca + fy * sa, fh, fy * ca - fx * sa };
+        const float o[3] = { dx * rx + dy * ry, dx * ux + dy * uy + dh * uh, dx * fx + dy * fy + dh * fh };
+        for(int k = 0; k < 9; k++) g.m[k] = (int32_t)(m[k] * 65536.0f);
+        for(int k = 0; k < 3; k++) g.t[k] = (int32_t)(o[k] * 256.0f);
 
-        /* the eye in the piece's frame picks the row */
+        /* the eye in the piece's frame picks the row and tells the faces turned away */
         float ex = -dx * ca - dy * sa, ez = dx * sa - dy * ca, ey = -dh;
-        int row = ex >= 0.0f ? (ez >= 0.0f ? (ex < ez ? 0 : 1) : (ex > -ez ? 2 : 3))
-                             : (ez < 0.0f ? (-ex < -ez ? 4 : 5) : (-ex > ez ? 6 : 7));
-        int32_t ro = rd32(blk + 0x28 + 4 * row);
-        if(ro <= 0) continue;
+        g.row = ex >= 0.0f ? (ez >= 0.0f ? (ex < ez ? 0 : 1) : (ex > -ez ? 2 : 3))
+                           : (ez < 0.0f ? (-ex < -ez ? 4 : 5) : (-ex > ez ? 6 : 7));
+        g.e[0] = (int32_t)(ex * 256.0f);
+        g.e[1] = (int32_t)(ey * 256.0f);
+        g.e[2] = (int32_t)(ez * 256.0f);
         st->pieces++;
-        for(const uint8_t *e = blk + ro;; e += 2) {
-            uint16_t fo = ru16(e);
-            if(fo == 0xFFFF) break;
-            const uint8_t *fc = blk + fo;
-            int nc = rd16(fc + 6);
-            if(nc < 3 || nc > 4) continue;
-            const uint8_t *c0 = verts + ru16(fc + 8);
-            float bx = rd16(c0) - ex, by = rd16(c0 + 2) - ey, bz = rd16(c0 + 4) - ez;
-            if(bx * rd16(fc + 0x14) + by * rd16(fc + 0x18) + bz * rd16(fc + 0x1C) < 0.0f) continue;
-
-            const uint8_t *mat = mlb + rd16(fc + 4);
-            int32_t routine = rd32(mat);
-            if(routine == 224) {
-                st->see_through++;
-                continue;
-            }
-            struct rs_texture tex;
-            float sw = 0.0f, sh = 0.0f;
-            if(routine != 128) {
-                const uint8_t *trec = mlb + rd32(mat + 4);
-                int32_t tw = rd32(mat + 8), th = rd32(mat + 12);
-                tex.data = mlb + rd32(trec + 8);
-                tex.width = tw < 1 ? 1 : tw > 256 ? 256 : tw;
-                tex.height = th < 1 ? 1 : th > 256 ? 256 : th;
-                tex.routine = routine == 64 ? 64 : 16;
-                sw = (float)tex.width / 256.0f;
-                sh = (float)tex.height / 256.0f;
-            }
-            struct cv poly[4];
-            for(int j = 0; j < nc; j++) {
-                uint16_t vo = ru16(fc + 8 + 2 * j);
-                int vi = vo / 6;
-                poly[j].r = vr[vi];
-                poly[j].u = vu[vi];
-                poly[j].f = vf[vi];
-                poly[j].s = rd16(uvs + vo) * sw;
-                poly[j].t = rd16(uvs + vo + 2) * sh;
-            }
-            st->faces++;
-            st->triangles += polygon(&w, poly, nc, routine == 128 ? 0 : &tex, rd16(fc + 2) & 255);
-        }
+        uint32_t t0 = now();
+        if(track_mode == TRACK_HW) track_hw_piece(&g);
+        else gu_draw(fb, clip, &view, mlb, &g, &gst);
+        t_out += now() - t0;
     }
-    st->cyc_out = cyc_out;
-    st->cyc_face = now() - t_pieces - st->cyc_vert - cyc_out;
+    st->faces = gst.faces;
+    st->triangles = gst.triangles;
+    st->see_through = gst.see_through;
+    st->vertices = gst.vertices;
+    st->cyc_out = t_out;
+    st->cyc_piece = now() - t_pieces - t_out;
 }

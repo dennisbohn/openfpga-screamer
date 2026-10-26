@@ -190,11 +190,19 @@ int su_triangle(const struct su_point p[3], struct rs_vertex pos[3], struct rs_t
 uint32_t su_polygon(volatile uint8_t *fb, const struct rs_clip *clip, const struct su_view *v,
                     const struct su_corner *c, int n, const struct rs_texture *tex, uint8_t colour)
 {
-    struct su_fixed in[SU_MAX_IN], out[SU_MAX_POLY];
+    struct su_fixed in[SU_MAX_IN];
+    if(n < 3 || n > SU_MAX_IN) return 0;
+    for(int i = 0; i < n; i++) su_fix(&c[i], &in[i]);
+    return su_polygon8(fb, clip, v, in, n, tex, colour);
+}
+
+uint32_t su_polygon8(volatile uint8_t *fb, const struct rs_clip *clip, const struct su_view *v,
+                     const struct su_fixed *in, int n, const struct rs_texture *tex, uint8_t colour)
+{
+    struct su_fixed out[SU_MAX_POLY];
     struct su_point p[3];
     uint32_t pixels = 0;
     if(n < 3 || n > SU_MAX_IN) return 0;
-    for(int i = 0; i < n; i++) su_fix(&c[i], &in[i]);
     n = su_clip(v, in, n, out);
     if(n < 3) return 0;
     su_project(v, &out[0], &p[0]);

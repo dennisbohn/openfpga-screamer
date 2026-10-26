@@ -302,6 +302,18 @@ end
     wire        rs_mem_valid, rs_mem_ready, rs_mem_rsp_valid;     // texture lines (raster.v)
     wire [25:5] rs_mem_addr;
     wire [31:0] rs_mem_rsp_data;
+    wire        gu_mem_valid, gu_mem_ready, gu_mem_rsp_valid;     // mesh lines (geom.v)
+    wire [25:5] gu_mem_addr;
+
+    // the rasterizer and the geometry unit share sdram_port's line port, one line at a time;
+    // the rasterizer first (its pipeline waits for the line)
+    wire        lp_valid = rs_mem_valid || gu_mem_valid, lp_ready, lp_rsp_valid;
+    reg         lp_owner = 0;                   // the line in flight is the geometry unit's
+    assign rs_mem_ready = lp_ready && rs_mem_valid;
+    assign gu_mem_ready = lp_ready && !rs_mem_valid && gu_mem_valid;
+    assign rs_mem_rsp_valid = lp_rsp_valid && !lp_owner;
+    assign gu_mem_rsp_valid = lp_rsp_valid && lp_owner;
+always @(posedge clk) if(lp_ready && lp_valid) lp_owner <= !rs_mem_valid;
 
 sdram_port sdp (
     .clk                ( clk ),
@@ -323,10 +335,10 @@ sdram_port sdp (
     .db_rsp_data        ( sdp_db_rsp_data ),
     .db_rsp_error       ( sdp_db_rsp_error ),
     .db_rsp_last        ( sdp_db_rsp_last ),
-    .rs_cmd_valid       ( rs_mem_valid ),
-    .rs_cmd_ready       ( rs_mem_ready ),
-    .rs_cmd_addr        ( rs_mem_addr ),
-    .rs_rsp_valid       ( rs_mem_rsp_valid ),
+    .rs_cmd_valid       ( lp_valid ),
+    .rs_cmd_ready       ( lp_ready ),
+    .rs_cmd_addr        ( rs_mem_valid ? rs_mem_addr : gu_mem_addr ),
+    .rs_rsp_valid       ( lp_rsp_valid ),
     .rs_rsp_data        ( rs_mem_rsp_data ),
     .br_wr              ( bridge_wr && bridge_sdram ),
     .br_addr            ( bridge_addr[25:2] ),
@@ -540,9 +552,11 @@ psram32 ps0 (
 
 //
 // the rasterizer (raster.v): registers at 0xF000_3000, the framebuffer port while it draws,
-// and the setup unit (setup.v) in front of it: registers at 0xF000_3080. Until both are
-// done, the CPU's framebuffer accesses and its own draw commands wait; a corner for the
-// setup unit waits until the unit can take it.
+// the setup unit (setup.v) in front of it: registers at 0xF000_3080, and the geometry unit
+// (geom.v) in front of that: registers at 0xF000_3100. Until all are done, the CPU's
+// framebuffer accesses and its own draw commands wait; a corner for the setup unit waits
+// until the unit can take it and the geometry unit is done (both fill its input), a piece
+// for the geometry unit until it is done with the last.
 //
     wire        rs_busy, rs_fb_wr, rs_fb_buf;
     wire [31:0] rs_pixels, rs_misses, rs_busy_clocks, rs_fb_data;
@@ -556,10 +570,43 @@ psram32 ps0 (
     wire        rs_start = rs_wr && d_addr[6:2] == 5'd5;
     wire        su_wr = d_write && d_region == R_REG && d_addr[15:7] == 9'h061;   // 0x3080-0x30FC
     wire        su_corner = su_wr && (d_addr[5:2] == 4'd9 || d_addr[5:2] == 4'd10);
-    wire        rs_waits = ((rs_busy || rs_start || su_busy || su_corner) && (cmd_region == R_FB ||
-                           (dbus_cmd_wr && cmd_region == R_REG && dbus_cmd_addr[15:0] == 16'h3014))) ||
-                           ((!su_ready || su_corner) && dbus_cmd_wr && cmd_region == R_REG &&
-                            (dbus_cmd_addr[15:0] == 16'h30A4 || dbus_cmd_addr[15:0] == 16'h30A8));
+    wire        gu_wr = d_write && d_region == R_REG && d_addr[15:7] == 9'h062;   // 0x3100-0x317C
+    wire        gu_go = gu_wr && d_addr[6:2] == 5'd19;
+    wire        gu_busy, gu_poly_valid, gu_poly_ready;
+    wire [31:0] gu_faces, gu_busy_clocks, gu_poly_tex, gu_poly_size;
+    wire [2:0]  gu_poly_n;
+    wire [9:0]  gu_poly_mode;
+    wire [575:0] gu_poly_c;
+    wire        rs_waits = ((rs_busy || rs_start || su_busy || su_corner || gu_busy || gu_go) &&
+                            (cmd_region == R_FB ||
+                             (dbus_cmd_wr && cmd_region == R_REG && dbus_cmd_addr[15:0] == 16'h3014))) ||
+                           ((!su_ready || su_corner || gu_busy || gu_go) && dbus_cmd_wr && cmd_region == R_REG &&
+                            (dbus_cmd_addr[15:0] == 16'h30A4 || dbus_cmd_addr[15:0] == 16'h30A8)) ||
+                           ((gu_busy || gu_go) && dbus_cmd_wr && cmd_region == R_REG &&
+                            dbus_cmd_addr[15:0] == 16'h314C);
+
+geom gu (
+    .clk                ( clk ),
+    .reset              ( cpu_reset ),
+    .wr                 ( gu_wr ),
+    .wr_addr            ( d_addr[6:2] ),
+    .wr_data            ( d_data ),
+    .busy               ( gu_busy ),
+    .faces              ( gu_faces ),
+    .busy_clocks        ( gu_busy_clocks ),
+    .mem_valid          ( gu_mem_valid ),
+    .mem_ready          ( gu_mem_ready ),
+    .mem_addr           ( gu_mem_addr ),
+    .mem_rsp_valid      ( gu_mem_rsp_valid ),
+    .mem_rsp_data       ( rs_mem_rsp_data ),
+    .poly_valid         ( gu_poly_valid ),
+    .poly_ready         ( gu_poly_ready ),
+    .poly_n             ( gu_poly_n ),
+    .poly_mode          ( gu_poly_mode ),
+    .poly_tex           ( gu_poly_tex ),
+    .poly_size          ( gu_poly_size ),
+    .poly_c             ( gu_poly_c )
+);
 
 setup su (
     .clk                ( clk ),
@@ -587,7 +634,14 @@ setup su (
     .t_dx2              ( su_dx2 ),
     .t_dy0              ( su_dy0 ),
     .t_dy1              ( su_dy1 ),
-    .t_dy2              ( su_dy2 )
+    .t_dy2              ( su_dy2 ),
+    .gu_valid           ( gu_poly_valid ),
+    .gu_ready           ( gu_poly_ready ),
+    .gu_n               ( gu_poly_n ),
+    .gu_mode            ( gu_poly_mode ),
+    .gu_tex             ( gu_poly_tex ),
+    .gu_size            ( gu_poly_size ),
+    .gu_c               ( gu_poly_c )
 );
 
 raster rs (
@@ -699,11 +753,13 @@ always @(posedge clk) begin
         16'h2000: reg_q <= key_r;
         16'h2004: reg_q <= joy_r;
         16'h2008: reg_q <= {16'd0, trig_r};
-        16'h3014: reg_q <= {31'd0, rs_busy || su_busy};
+        16'h3014: reg_q <= {31'd0, rs_busy || su_busy || gu_busy};
         16'h3018: reg_q <= rs_pixels;
         16'h3050: reg_q <= rs_misses;
         16'h3054: reg_q <= rs_busy_clocks;
         16'h30AC: reg_q <= su_busy_clocks;
+        16'h3150: reg_q <= gu_faces;
+        16'h3154: reg_q <= gu_busy_clocks;
         default:  reg_q <= 32'd0;
     endcase
 end

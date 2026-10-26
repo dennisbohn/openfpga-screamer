@@ -6,6 +6,7 @@
 #include <stdint.h>
 #include "raster.h"
 #include "setup.h"
+#include "geom.h"
 
 /* how texdemo_draw() draws: the floating-point reference, the C models of the setup unit
    and the rasterizer, or through texdemo_hw (a quad in view space to the setup unit; fb is
@@ -15,6 +16,11 @@
 #define TEXDEMO_HW      2
 extern int texdemo_mode;
 extern uint32_t (*texdemo_hw)(const struct su_corner c[4], const struct rs_texture *t);
+extern void (*texdemo_hw_piece)(const struct gu_piece *p);     /* the cube, to the geometry unit */
+
+/* A cube for the geometry unit in the game's mesh format at mem, its materials in the
+   texture file's free bytes (after texdemo_init); drawn with the scene from then on */
+void texdemo_mesh(volatile uint8_t *file, volatile uint8_t *mem);
 
 /* The projection for clip (for the setup unit's registers) */
 void texdemo_view(const struct rs_clip *clip, struct su_view *v);

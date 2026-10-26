@@ -68,3 +68,7 @@ int su_triangle(const struct su_point p[3], struct rs_vertex pos[3], struct rs_t
    colour). Returns the pixels drawn. */
 uint32_t su_polygon(volatile uint8_t *fb, const struct rs_clip *clip, const struct su_view *v,
                     const struct su_corner *c, int n, const struct rs_texture *tex, uint8_t colour);
+
+/* The same with the corners already in fixed point (as the geometry unit hands them over) */
+uint32_t su_polygon8(volatile uint8_t *fb, const struct rs_clip *clip, const struct su_view *v,
+                     const struct su_fixed *c, int n, const struct rs_texture *tex, uint8_t colour);

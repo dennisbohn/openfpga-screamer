@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 840" width="1440" height="840" role="img" aria-label="Geplante Architektur: Der RISC-V-Prozessor arbeitet an Bild N+1 und schreibt dessen sortierte Objektliste ins SRAM, während die Geometrie-Einheit die Liste von Bild N liest und Dreiecke an den Rasterizer gibt. Der Rasterizer liest Texturen aus PSRAM cram0 und schreibt Pixel in den hinteren der beiden Framebuffer im Block-RAM; video_out zeigt den vorderen, Bild N−1, getauscht wird bei VSync. Code, Daten und Meshes liegen im SDRAM, die Dateien kommen von der SD-Karte über die APF-Bridge.">
-  <title>Screamer auf dem Analogue Pocket – geplante Architektur</title>
-  <desc>Gebaut und auf dem Pocket getestet: APF-Bridge mit Data-Slots, zwei Framebuffer im Block-RAM mit Tausch bei VSync, video_out mit zwei Paletten, VexRiscv RV32IMF mit FPU und CFU, seit Schritt 2 SDRAM-Controller und SRAM-Controller (Speichertest auf dem Pocket bestanden, cram0 asynchron angebunden), seit Schritt 3 der Rasterizer für einfarbige und texturierte Dreiecke mit 16-KB-Textur-Cache. Geplant: Glas und Schatten (Tabelle MAPn.SMG) im Rasterizer, Befehlslisten im SRAM, Geometrie-Einheit, Audio, Textur-Speicher mit Burst-Modus und Cache in cram0. PSRAM cram1 ist frei.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1560 860" width="1560" height="860" role="img" aria-label="Architektur: Die CPU wählt und sortiert die Bauteile der Strecke und schreibt je Bauteil seine Lage in Register der Geometrie-Einheit. Die liest das Mesh aus dem SDRAM, rechnet die Eckpunkte in Kamerasicht um, lässt Rückseiten weg und gibt die Flächen an Clipper und Setup-Einheit, die schneiden, projizieren und die Dreiecke für den Rasterizer vorbereiten. Der Rasterizer liest Texturen über einen Cache aus dem SDRAM und schreibt in den hinteren der beiden Framebuffer im Block-RAM; video_out zeigt den vorderen mit 50 Hz, getauscht wird in der Austastlücke. Programm und Strecke lädt der Pocket auf Anforderung über die APF-Bridge in den SDRAM.">
+  <title>Screamer auf dem Analogue Pocket – Architektur</title>
+  <desc>Gebaut und auf dem Pocket getestet: APF-Bridge mit Data-Slots (Programm und Strecke auf Anforderung), zwei Framebuffer im Block-RAM mit Tausch bei VSync, video_out mit 50 Hz und zwei Paletten, VexRiscv RV32IMF mit FPU und CFU, SDRAM-, SRAM- und PSRAM-Controller, Rasterizer mit 16-KB-Textur-Cache, Setup-Einheit mit Clipper. Gebaut, Test auf dem Pocket steht aus: Geometrie-Einheit. Geplant: Audio, Glas und Schatten (MAPn.SMG) im Rasterizer, Sounds in cram0, Überlappen von Bild N+1 und N. PSRAM cram1 ist frei.</desc>
   <defs>
     <marker id="built" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#2e7d32"/>
@@ -27,27 +27,30 @@
     .ext { fill: #eeeeee; stroke: #999999; stroke-width: 1.2; }
     .free { fill: #ffffff; stroke: #aaaaaa; stroke-width: 1.2; stroke-dasharray: 3 3; }
     .wb { fill: none; stroke: #2e7d32; stroke-width: 1.8; }
+    .wf { fill: none; stroke: #2e7d32; stroke-width: 1.8; stroke-dasharray: 6 4; }
     .wp { fill: none; stroke: #555555; stroke-width: 1.4; stroke-dasharray: 6 4; }
     .we { fill: none; stroke: #888888; stroke-width: 1.4; }
   </style>
 
-  <rect width="1440" height="840" fill="#ffffff"/>
+  <rect width="1560" height="860" fill="#ffffff"/>
 
   <!-- title and legend -->
-  <text x="40" y="44" class="h">Screamer auf dem Analogue Pocket – geplante Architektur</text>
-  <text x="40" y="66" class="l">Datenfluss beim Laden und pro Bild · Stand 25.10.2026</text>
+  <text x="40" y="44" class="h">Screamer auf dem Analogue Pocket – Architektur</text>
+  <text x="40" y="66" class="l">Datenfluss beim Laden und pro Bild · Stand 26.10.2026</text>
 
-  <rect x="1100" y="22" width="22" height="13" rx="3" class="built"/>
-  <text x="1130" y="33" class="l">gebaut, auf dem Pocket getestet</text>
-  <rect x="1100" y="40" width="22" height="13" rx="3" class="plan"/>
-  <text x="1130" y="51" class="l">geplant</text>
-  <rect x="1100" y="58" width="22" height="13" rx="3" class="ext"/>
-  <text x="1130" y="69" class="l">Bauteil des Pocket</text>
+  <rect x="1190" y="16" width="22" height="13" rx="3" class="built"/>
+  <text x="1220" y="27" class="l">gebaut, auf dem Pocket getestet</text>
+  <rect x="1190" y="34" width="22" height="13" rx="3" class="fresh"/>
+  <text x="1220" y="45" class="l">gebaut, Test auf dem Pocket steht aus</text>
+  <rect x="1190" y="52" width="22" height="13" rx="3" class="plan"/>
+  <text x="1220" y="63" class="l">geplant</text>
+  <rect x="1190" y="70" width="22" height="13" rx="3" class="ext"/>
+  <text x="1220" y="81" class="l">Bauteil des Pocket</text>
 
   <!-- SRAM above the FPGA -->
   <rect x="590" y="94" width="170" height="52" rx="6" class="ext"/>
   <text x="675" y="115" class="t c">SRAM · 256 KB</text>
-  <text x="675" y="133" class="b c">Befehlslisten ×2 · Rest Reserve</text>
+  <text x="675" y="133" class="b c">frei (Speichertest)</text>
 
   <!-- outside the FPGA, left -->
   <rect x="40" y="200" width="70" height="40" rx="6" class="ext"/>
@@ -65,144 +68,169 @@
   <text x="115" y="440" class="b c">Audio-DAC</text>
 
   <!-- outside the FPGA, right -->
-  <rect x="1270" y="282" width="140" height="56" rx="6" class="ext"/>
-  <text x="1340" y="306" class="t c">Scaler-FPGA</text>
-  <text x="1340" y="323" class="b c">+ Display</text>
+  <rect x="1390" y="282" width="140" height="56" rx="6" class="ext"/>
+  <text x="1460" y="306" class="t c">Scaler-FPGA</text>
+  <text x="1460" y="323" class="b c">+ Display</text>
 
   <!-- the FPGA -->
-  <rect x="230" y="170" width="1000" height="480" rx="14" fill="#fbfbfb" stroke="#333333" stroke-width="1.5"/>
+  <rect x="230" y="170" width="1120" height="480" rx="14" fill="#fbfbfb" stroke="#333333" stroke-width="1.5"/>
   <text x="248" y="194" class="t">Haupt-FPGA · Cyclone V 5CEBA4</text>
-  <text x="1212" y="194" class="l r">Takte: Bridge 74,25 MHz · System ~100 MHz (offen) · Pixel 12,288 MHz</text>
+  <text x="1332" y="194" class="l r">Takte: System 74,25 MHz · Pixel 12,288 MHz</text>
 
   <rect x="600" y="206" width="150" height="30" rx="6" class="built"/>
   <text x="675" y="226" class="t c">SRAM-Controller</text>
 
-  <!-- row A: bridge, CPU, geometry, raster, video -->
-  <rect x="250" y="260" width="130" height="100" rx="8" class="built"/>
-  <text x="315" y="290" class="t c">APF-Bridge</text>
-  <text x="315" y="310" class="b c">Data-Slots,</text>
-  <text x="315" y="326" class="b c">Tasten, Befehle</text>
+  <!-- row A: bridge, CPU, geometry, setup, raster, video -->
+  <rect x="250" y="260" width="120" height="100" rx="8" class="built"/>
+  <text x="310" y="290" class="t c">APF-Bridge</text>
+  <text x="310" y="310" class="b c">Data-Slots,</text>
+  <text x="310" y="326" class="b c">Tasten, Befehle</text>
 
-  <rect x="460" y="260" width="180" height="100" rx="8" class="built"/>
-  <text x="550" y="288" class="t c">VexRiscv RV32IMF</text>
-  <text x="550" y="306" class="b c">I-/D-Cache · FPU · CFU</text>
-  <text x="550" y="322" class="b c">Spiellogik, Physik, KI</text>
-  <text x="550" y="344" class="p c">arbeitet an Bild N+1</text>
+  <rect x="420" y="260" width="170" height="100" rx="8" class="built"/>
+  <text x="505" y="286" class="t c">VexRiscv RV32IMF</text>
+  <text x="505" y="304" class="b c">I-/D-Cache · FPU · CFU</text>
+  <text x="505" y="320" class="b c">Bauteile wählen, sortieren</text>
+  <text x="505" y="336" class="b c">Spiellogik, Physik: folgt</text>
 
-  <rect x="700" y="260" width="150" height="100" rx="8" class="plan"/>
-  <text x="775" y="288" class="t c">Geometrie-Einheit</text>
-  <text x="775" y="306" class="b c">Transformieren,</text>
-  <text x="775" y="322" class="b c">Projizieren, Clipping</text>
-  <text x="775" y="344" class="p c">zeichnet Bild N</text>
+  <rect x="640" y="260" width="150" height="100" rx="8" class="fresh"/>
+  <text x="715" y="286" class="t c">Geometrie-Einheit</text>
+  <text x="715" y="304" class="b c">Mesh lesen, Eckpunkte</text>
+  <text x="715" y="320" class="b c">umrechnen, Rückseiten,</text>
+  <text x="715" y="336" class="b c">Material · 4-KB-Cache</text>
 
-  <rect x="910" y="260" width="150" height="100" rx="8" class="built"/>
-  <text x="985" y="288" class="t c">Rasterizer</text>
-  <text x="985" y="306" class="b c">einfarbig, Texturen</text>
-  <text x="985" y="322" class="b c">Glas/Schatten: folgt</text>
-  <text x="985" y="344" class="p c">zeichnet Bild N</text>
+  <rect x="840" y="260" width="150" height="100" rx="8" class="built"/>
+  <text x="915" y="286" class="t c">Clipper + Setup</text>
+  <text x="915" y="304" class="b c">schneiden (nah, fern),</text>
+  <text x="915" y="320" class="b c">projizieren, Fächer,</text>
+  <text x="915" y="336" class="b c">Dreiecke vorbereiten</text>
 
-  <rect x="1100" y="260" width="110" height="100" rx="8" class="built"/>
-  <text x="1155" y="288" class="t c">video_out</text>
-  <text x="1155" y="306" class="b c">Palette ×2,</text>
-  <text x="1155" y="322" class="b c">Timing</text>
-  <text x="1155" y="344" class="p c">zeigt Bild N−1</text>
+  <rect x="1040" y="260" width="140" height="100" rx="8" class="built"/>
+  <text x="1110" y="286" class="t c">Rasterizer</text>
+  <text x="1110" y="304" class="b c">einfarbig, Texturen</text>
+  <text x="1110" y="320" class="b c">(1 Pixel/Takt)</text>
+  <text x="1110" y="336" class="b c">Glas/Schatten: folgt</text>
+
+  <rect x="1220" y="260" width="110" height="100" rx="8" class="built"/>
+  <text x="1275" y="288" class="t c">video_out</text>
+  <text x="1275" y="306" class="b c">Palette ×2,</text>
+  <text x="1275" y="322" class="b c">Timing 50 Hz</text>
+  <text x="1275" y="344" class="p c">zeigt Bild N−1</text>
 
   <!-- row B: audio, framebuffers -->
-  <rect x="460" y="400" width="110" height="70" rx="8" class="plan"/>
-  <text x="515" y="424" class="t c">Audio</text>
-  <text x="515" y="442" class="b c">JTOPL (OPL2)</text>
-  <text x="515" y="458" class="b c">PCM-Mixer</text>
+  <rect x="480" y="400" width="110" height="70" rx="8" class="plan"/>
+  <text x="535" y="424" class="t c">Audio</text>
+  <text x="535" y="442" class="b c">JTOPL (OPL2)</text>
+  <text x="535" y="458" class="b c">PCM-Mixer</text>
 
-  <rect x="1075" y="400" width="135" height="70" rx="8" class="built"/>
-  <text x="1142" y="424" class="t c">Framebuffer ×2</text>
-  <text x="1142" y="442" class="b c">Block-RAM</text>
-  <text x="1142" y="458" class="b c">Tausch in Austastung</text>
+  <rect x="1195" y="400" width="135" height="70" rx="8" class="built"/>
+  <text x="1262" y="424" class="t c">Framebuffer ×2</text>
+  <text x="1262" y="442" class="b c">Block-RAM</text>
+  <text x="1262" y="458" class="b c">Tausch in Austastung</text>
 
-  <!-- row C: memory controllers -->
-  <rect x="460" y="540" width="390" height="70" rx="8" class="built"/>
-  <text x="655" y="569" class="t c">SDRAM-Controller</text>
-  <text x="655" y="589" class="b c">Bursts für Cache-Zeilen · zweiter Port für die Bridge</text>
+  <!-- row C: memory controllers, line port, texture cache -->
+  <rect x="420" y="540" width="370" height="70" rx="8" class="built"/>
+  <text x="605" y="566" class="t c">SDRAM-Controller</text>
+  <text x="605" y="584" class="b c">Bursts für Cache-Zeilen · Ports: Bridge, CPU,</text>
+  <text x="605" y="599" class="b c">Zeilen für Rasterizer und Geometrie (geteilt)</text>
 
-  <rect x="910" y="540" width="150" height="70" rx="8" class="built"/>
-  <text x="985" y="564" class="t c">Textur-Cache 16 KB</text>
-  <text x="985" y="582" class="b c">Texturen im SDRAM</text>
-  <text x="985" y="597" class="b c">(cram0 als Option)</text>
+  <rect x="840" y="540" width="150" height="70" rx="8" class="built"/>
+  <text x="915" y="566" class="t c">PSRAM-Controller</text>
+  <text x="915" y="584" class="b c">cram0, 32 Bit</text>
+  <text x="915" y="599" class="b c">für die CPU</text>
+
+  <rect x="1040" y="540" width="140" height="70" rx="8" class="built"/>
+  <text x="1110" y="566" class="t c">Textur-Cache 16 KB</text>
+  <text x="1110" y="584" class="b c">Zeilen aus dem</text>
+  <text x="1110" y="599" class="b c">SDRAM</text>
 
   <!-- external memory chips below -->
-  <rect x="540" y="700" width="230" height="56" rx="6" class="ext"/>
-  <text x="655" y="724" class="t c">SDRAM · 64 MB</text>
-  <text x="655" y="741" class="b c">Code, Daten, Meshes, Sounds</text>
+  <rect x="490" y="700" width="230" height="56" rx="6" class="ext"/>
+  <text x="605" y="724" class="t c">SDRAM · 64 MB</text>
+  <text x="605" y="741" class="b c">Programm, Strecke (Meshes, Texturen)</text>
 
-  <rect x="900" y="700" width="170" height="56" rx="6" class="ext"/>
-  <text x="985" y="724" class="t c">PSRAM cram0 · 16 MB</text>
-  <text x="985" y="741" class="b c">Texturen</text>
+  <rect x="830" y="700" width="170" height="56" rx="6" class="ext"/>
+  <text x="915" y="724" class="t c">PSRAM cram0 · 16 MB</text>
+  <text x="915" y="741" class="b c">Sounds (geplant)</text>
 
-  <rect x="1085" y="700" width="140" height="56" rx="6" class="free"/>
-  <text x="1155" y="724" class="t c" fill="#666666">PSRAM cram1 · 16 MB</text>
-  <text x="1155" y="741" class="b c">frei</text>
+  <rect x="1040" y="700" width="140" height="56" rx="6" class="free"/>
+  <text x="1110" y="724" class="t c" fill="#666666">PSRAM cram1 · 16 MB</text>
+  <text x="1110" y="741" class="b c">frei</text>
 
   <!-- built connections -->
   <path d="M190,298 H248" class="wb" marker-end="url(#built)"/>
-  <text x="220" y="277" class="l c">max.</text>
-  <text x="220" y="290" class="l c">3,4 MB/s</text>
+  <text x="220" y="277" class="l c">auf</text>
+  <text x="220" y="290" class="l c">Abruf</text>
 
-  <path d="M1170,398 V362" class="wb" marker-end="url(#built)"/>
-  <text x="1177" y="386" class="l">vorn</text>
+  <path d="M372,302 H418" class="wb" marker-start="url(#built)" marker-end="url(#built)"/>
+  <text x="395" y="255" class="l c">Firmware,</text>
+  <text x="395" y="268" class="l c">Tasten,</text>
+  <text x="395" y="281" class="l c">Protokoll</text>
 
-  <path d="M1210,310 H1268" class="wb" marker-end="url(#built)"/>
+  <path d="M330,362 V575 H418" class="wb" marker-end="url(#built)"/>
+  <text x="322" y="486" class="l r">program.bin,</text>
+  <text x="322" y="500" class="l r">Strecke</text>
+  <text x="322" y="514" class="l r">(~1,4 MB/s)</text>
 
-  <path d="M382,302 H458" class="wb" marker-start="url(#built)" marker-end="url(#built)"/>
-  <text x="420" y="267" class="l c">Firmware,</text>
-  <text x="420" y="280" class="l c">Tasten,</text>
-  <text x="420" y="293" class="l c">Protokoll</text>
-  <text x="1240" y="302" class="l c">320×200</text>
-  <text x="1240" y="324" class="l c">50 Hz</text>
+  <path d="M675,148 V204" class="wb" marker-start="url(#built)" marker-end="url(#built)"/>
+  <text x="684" y="164" class="l">16 Bit</text>
+  <path d="M560,258 V221 H598" class="wb" marker-end="url(#built)"/>
+
+  <path d="M990,310 H1038" class="wb" marker-end="url(#built)"/>
+  <text x="1014" y="300" class="l c">Dreiecke</text>
+
+  <path d="M1180,340 H1205 V398" class="wb" marker-end="url(#built)"/>
+  <text x="1198" y="386" class="l r">Pixel</text>
+
+  <path d="M1290,398 V362" class="wb" marker-end="url(#built)"/>
+  <text x="1297" y="386" class="l">vorn</text>
+
+  <path d="M1330,310 H1388" class="wb" marker-end="url(#built)"/>
+  <text x="1360" y="302" class="l c">320×200</text>
+  <text x="1360" y="324" class="l c">50 Hz</text>
+
+  <path d="M440,362 V538" class="wb" marker-start="url(#built)" marker-end="url(#built)"/>
+  <text x="447" y="500" class="l">Code, Daten</text>
+  <text x="447" y="514" class="l">(Cache-Zeilen)</text>
+
+  <path d="M575,362 V380 H707 A8,8 0 0 1 723,380 H880 V538" class="wb" marker-start="url(#built)" marker-end="url(#built)"/>
+  <text x="887" y="500" class="l">Daten</text>
+
+  <path d="M1110,540 V362" class="wb" marker-end="url(#built)"/>
+  <text x="1117" y="500" class="l">Texel</text>
+
+  <path d="M760,612 V632 H907 A8,8 0 0 1 923,632 H1070 V614" class="wb" marker-end="url(#built)"/>
+  <text x="1062" y="626" class="l r">Texturzeilen</text>
+
+  <path d="M605,612 V698" class="wb" marker-start="url(#built)" marker-end="url(#built)"/>
+  <text x="612" y="676" class="l">16 Bit</text>
+
+  <path d="M915,612 V698" class="wb" marker-start="url(#built)" marker-end="url(#built)"/>
+  <text x="922" y="676" class="l">16 Bit</text>
+
+
+  <!-- connections of the geometry unit (built, Pocket test pending) -->
+  <path d="M592,300 H638" class="wf" marker-end="url(#built)"/>
+  <text x="615" y="247" class="l c">Register</text>
+  <text x="615" y="258" class="l c">je Bauteil</text>
+
+  <path d="M792,300 H838" class="wf" marker-end="url(#built)"/>
+  <text x="815" y="247" class="l c">Flächen</text>
+  <text x="815" y="258" class="l c">(Festkomma)</text>
+
+  <path d="M715,540 V362" class="wf" marker-end="url(#built)"/>
+  <text x="722" y="486" class="l">Meshes,</text>
+  <text x="722" y="500" class="l">Materialien</text>
+  <text x="722" y="514" class="l">(Zeilen)</text>
 
   <!-- planned connections -->
-  <path d="M675,148 V204" class="wp" marker-start="url(#plan)" marker-end="url(#plan)"/>
-  <text x="684" y="160" class="l">16 Bit</text>
+  <path d="M535,362 V398" class="wp" marker-end="url(#plan)"/>
+  <text x="542" y="390" class="l">Register</text>
 
-  <path d="M620,258 V238" class="wp" marker-end="url(#plan)"/>
-  <text x="613" y="252" class="l r">schreibt Liste N+1</text>
-
-  <path d="M730,238 V258" class="wp" marker-end="url(#plan)"/>
-  <text x="738" y="252" class="l">liest Liste N</text>
-
-
-  <path d="M850,310 H908" class="wp" marker-end="url(#plan)"/>
-  <text x="880" y="301" class="l c">Dreiecke</text>
-
-  <path d="M1060,340 H1085 V398" class="wp" marker-start="url(#plan)" marker-end="url(#plan)"/>
-  <text x="1078" y="384" class="l r">Pixel lesen/</text>
-  <text x="1070" y="397" class="l r">schreiben</text>
-
-  <path d="M515,362 V398" class="wp" marker-end="url(#plan)"/>
-  <text x="522" y="386" class="l">Register</text>
-
-  <path d="M350,362 V575 H458" class="wp" marker-end="url(#plan)"/>
-  <text x="342" y="500" class="l r">Firmware,</text>
-  <text x="342" y="514" class="l r">Spieldaten</text>
-
-  <path d="M460,435 H358 A8,8 0 0 0 342,435 H192" class="wp" marker-end="url(#plan)"/>
+  <path d="M480,435 H448 A8,8 0 0 0 432,435 H338 A8,8 0 0 0 322,435 H192" class="wp" marker-end="url(#plan)"/>
   <text x="270" y="427" class="l c">I²S</text>
 
-  <path d="M610,362 V538" class="wp" marker-start="url(#plan)" marker-end="url(#plan)"/>
-  <text x="617" y="490" class="l">Code, Daten</text>
-  <text x="617" y="504" class="l">(Cache-Zeilen)</text>
-
-  <path d="M775,540 V362" class="wp" marker-end="url(#plan)"/>
-  <text x="782" y="490" class="l">Meshes</text>
-
-  <path d="M985,540 V362" class="wp" marker-end="url(#plan)"/>
-  <text x="992" y="490" class="l">Texel</text>
-
-  <path d="M655,612 V698" class="wp" marker-start="url(#plan)" marker-end="url(#plan)"/>
-  <text x="662" y="676" class="l">16 Bit</text>
-
-  <path d="M985,612 V698" class="wp" marker-start="url(#plan)" marker-end="url(#plan)"/>
-  <text x="992" y="676" class="l">16 Bit</text>
-
   <!-- notes -->
-  <text x="40" y="798" class="l">Bild N+1, N und N−1: CPU, Grafik und Anzeige arbeiten gleichzeitig an drei aufeinanderfolgenden Bildern; Befehlslisten und Framebuffer sind doppelt gepuffert.</text>
-  <text x="40" y="816" class="l">Heute (Schritt 3): Der Rasterizer zeichnet einfarbige und texturierte Dreiecke in Hardware (Texturen 1 Pixel/Takt, 16-KB-Cache), 50 Hz. Belegung: 5.970 von 18.480 ALMs (32 %), 217 von 308 M10K, 22 von 66 DSP.</text>
+  <text x="40" y="798" class="l">Pro Bild: Die CPU wählt die Bauteile in Reichweite, sortiert sie von hinten nach vorn (Maler-Algorithmus) und gibt sie nacheinander an die Geometrie-Einheit; dahinter arbeiten Geometrie, Setup und Rasterizer gleichzeitig.</text>
+  <text x="40" y="816" class="l">Gezeigt wird nur ein fertiges Bild (Doppelpufferung, Tausch in der Austastlücke, höchstens 50 Bilder pro Sekunde). Geplant: Bild N+1 und N überlappen, Glas/Schatten, Audio, schnellerer Rasterizer.</text>
+  <text x="40" y="834" class="l">Belegung mit Geometrie-Einheit: 13.836 von 18.480 ALMs (75 %), 237 von 308 M10K (77 %), 30 von 66 DSP (45 %); Timing hält bei 74,25 MHz.</text>
 </svg>

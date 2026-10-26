@@ -87,6 +87,7 @@ static uint32_t draw_wait;              /* cycles the DRAW writes waited for the
 struct demo_stats { uint32_t triangles, pixels, cycles; };
 
 #define CHECK_BUF   ((volatile uint8_t *)(SDRAM_BASE + 0x100000))  /* the C model's picture */
+#define MESH_MEM    ((volatile uint8_t *)(SDRAM_BASE + 0x1F00000)) /* the test scene's cube */
 
 /* the player's triangle: 2 pixels a frame, kept inside the demo area */
 static void player(struct rs_vertex v[3], uint32_t keys)
@@ -142,6 +143,22 @@ static uint32_t hw_quad(const struct su_corner c[4], const struct rs_texture *t)
     return 0;
 }
 
+/* a piece to the geometry unit: its place in view space and its mesh; the start waits
+   while the unit is busy with the piece before */
+static void hw_piece(const struct gu_piece *g)
+{
+    for (int k = 0; k < 9; k++) GU_M(k) = (uint32_t)g->m[k];
+    for (int k = 0; k < 3; k++) {
+        GU_T(k) = (uint32_t)g->t[k];
+        GU_E(k) = (uint32_t)g->e[k];
+    }
+    GU_OBJ = (uint32_t)((uintptr_t)g->obj - SDRAM_BASE);
+    GU_BLK = (uint32_t)((uintptr_t)g->blk - SDRAM_BASE);
+    uint32_t t0 = rdcycle();
+    GU_GO = (uint32_t)g->row;
+    draw_wait += rdcycle() - t0;
+}
+
 static struct demo_stats draw_demo(uint32_t frame, const struct rs_vertex pv[3], int buf)
 {
     struct demo_stats d;
@@ -153,6 +170,8 @@ static struct demo_stats draw_demo(uint32_t frame, const struct rs_vertex pv[3],
     struct su_view v;
     texdemo_view(&demo_clip, &v);
     su_view_regs(&v);
+    GU_MLB = (uint32_t)((uintptr_t)TEX_FILE - SDRAM_BASE);
+    GU_MODE = (uint32_t)buf << 8;
     texdemo_mode = TEXDEMO_HW;
     texdemo_draw(0, &demo_clip, frame, &d.triangles);
     for (int k = 0; k < 3; k++) RS_V(k) = RS_XY(pv[k].x, pv[k].y);
@@ -281,7 +300,9 @@ static void __attribute__((noreturn)) run_track(void)
     struct su_view view;
     track_view(&track_clip, &view);
     track_mode = TRACK_HW;
-    track_hw_poly = hw_poly;
+    track_hw_piece = hw_piece;
+    GU_MLB = (uint32_t)((uintptr_t)track_mlb() - SDRAM_BASE);
+    GU_INVAL = 1;
     for (;;) {
         uint32_t st = wait_swap_done(), keys = IN_KEY;
         frames_shown = drawn;
@@ -304,7 +325,8 @@ static void __attribute__((noreturn)) run_track(void)
         fb_fill(fb, 0, track_clip.y1, FB_W, FB_H - track_clip.y1, col_bg);
         con_text(fb, 1, 2, "SCREAMER POCKET - STRECKE 1", col_text, col_bg);
 
-        /* the geometry on the CPU, the faces to the setup unit, its triangles to the rasterizer */
+        /* the pieces from the CPU to the geometry unit, its faces to the setup unit, the
+           triangles to the rasterizer */
         struct track_stats ts;
         uint32_t t0 = rdcycle();
         draw_buf = !(st & VID_FRONT);
@@ -312,6 +334,9 @@ static void __attribute__((noreturn)) run_track(void)
         RS_MISSES = 0;
         RS_CLOCKS = 0;
         SU_CLOCKS = 0;
+        GU_CLOCKS = 0;
+        GU_FACES = 0;
+        GU_MODE = draw_buf << 8;
         draw_wait = 0;
         RS_CLIP0 = RS_XY(track_clip.x0, track_clip.y0);
         RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
@@ -320,7 +345,8 @@ static void __attribute__((noreturn)) run_track(void)
         while (RS_DRAW & RS_BUSY)
             ;
         uint32_t cycles = rdcycle() - t0, raster = RS_CLOCKS, pixels = RS_PIXELS, misses = RS_MISSES;
-        uint32_t setup = SU_CLOCKS;
+        uint32_t setup = SU_CLOCKS, geom = GU_CLOCKS;
+        ts.faces = GU_FACES;
         if (drawn == 2) track_check(fb, pos, col_sky);
 
         if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
@@ -330,8 +356,7 @@ static void __attribute__((noreturn)) run_track(void)
         }
         char buf[CON_COLS + 1], *p;
         p = fmt_udec(fmt_str(buf, "Teile "), ts.pieces);
-        p = fmt_udec(fmt_str(p, " Flaechen "), ts.faces);
-        fmt_udec(fmt_str(p, " Dreiecke "), ts.triangles);
+        fmt_udec(fmt_str(p, " Flaechen "), ts.faces);
         con_text(fb, 1, 22, buf, col_text, col_bg);
         p = fmt_udec(fmt_str(buf, "CPU "), cycles);
         p = fmt_udec(fmt_str(p, " Raster "), raster);
@@ -351,11 +376,11 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_str(" pieces, ");
             dlog_dec((int32_t)ts.faces);
             dlog_str(" faces, ");
-            dlog_dec((int32_t)ts.triangles);
-            dlog_str(" tris, ");
             dlog_dec((int32_t)pixels);
             dlog_str(" px, cpu ");
             dlog_dec((int32_t)cycles);
+            dlog_str(", geometry ");
+            dlog_dec((int32_t)geom);
             dlog_str(", setup ");
             dlog_dec((int32_t)setup);
             dlog_str(", raster ");
@@ -376,18 +401,14 @@ static void __attribute__((noreturn)) run_track(void)
             }
             dlog_str("\n  cycles: cull ");
             dlog_dec((int32_t)ts.cyc_cull);
-            dlog_str(", vertices ");
-            dlog_dec((int32_t)ts.cyc_vert);
-            dlog_str(" (");
-            dlog_dec((int32_t)ts.vertices);
-            dlog_str("), faces ");
-            dlog_dec((int32_t)ts.cyc_face);
+            dlog_str(", pieces ");
+            dlog_dec((int32_t)ts.cyc_piece);
             dlog_str(", out ");
             dlog_dec((int32_t)ts.cyc_out);
             dlog_str(" (wait ");
             dlog_dec((int32_t)draw_wait);
             dlog_str("), after ");
-            dlog_dec((int32_t)(cycles - ts.cyc_cull - ts.cyc_vert - ts.cyc_face - ts.cyc_out));
+            dlog_dec((int32_t)(cycles - ts.cyc_cull - ts.cyc_piece - ts.cyc_out));
             dlog_str("\n");
         }
         VID_SWAP = 1;
@@ -448,9 +469,14 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     while (!(MEM_STATUS & MEM_WRITES_IDLE))
         ;
     textures = texdemo_init(TEX_FILE);
+    texdemo_mesh((volatile uint8_t *)TEX_FILE, MESH_MEM);
+    while (!(MEM_STATUS & MEM_WRITES_IDLE))
+        ;
+    GU_INVAL = 1;
     dlog_str("textures: test patterns\n");
     RS_CTRL = 1;                    /* the texture cache forgets what it held */
     texdemo_hw = hw_quad;
+    texdemo_hw_piece = hw_piece;
 
     uint32_t drawn = 0;
     for (;;) {

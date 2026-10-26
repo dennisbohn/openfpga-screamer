@@ -146,9 +146,13 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   58 % Zuschneiden. Wie im Original an der nahen Ebene (Tiefe 128) und der fernen der
   DETAIL-Stufe; dazu ein Schutzband bei 14 × Tiefe, nur damit die Bildschirmkoordinaten in
   16 Bit passen (den Bildrand schneidet der Rasterizer). Das Objektiv ist das des
-  Originals: Brennweite 128, Augenhöhe bei 65 % der Bildhöhe. Auswahl, Sortieren,
-  Eckpunkte und Flächenlisten bleiben vorerst auf der CPU; als Nächstes die
-  Geometrie-Einheit, die die Bauteile selbst aus dem SDRAM liest.
+  Originals: Brennweite 128, Augenhöhe bei 65 % der Bildhöhe. Danach blieben der CPU
+  1,5–2,7 Mio. Takte je Bild, vor allem Flächenlisten und das Schreiben der Ecken. Die
+  Geometrie-Einheit (`geom.v`, C-Modell `firmware/geom.c`) nimmt ihr das ab: Die CPU wählt
+  die Bauteile aus, sortiert sie und schreibt je Bauteil 17 Register (Matrix, Ursprung,
+  Auge, Mesh, Flächenliste); die Einheit liest das Mesh selbst aus dem SDRAM, rechnet die
+  Eckpunkte um, lässt Rückseiten weg, schlägt die Materialien nach und gibt die Flächen an
+  den Clipper. Damit bleibt der CPU Zeit für Autos und Spiellogik.
 - **Bilder überlappen (Pipeline):** CPU, Grafik und Anzeige arbeiten gleichzeitig an Bild
   N+1, N und N−1, die Zeit pro Bild ist das Maximum statt der Summe. Kosten: ein Bild mehr
   Verzögerung zwischen Eingabe und Anzeige (20 ms bei 50 fps).

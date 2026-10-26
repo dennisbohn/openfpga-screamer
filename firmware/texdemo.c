@@ -17,6 +17,8 @@ static const volatile uint32_t *palette;
 static float sin_q[65];                 /* sin(2 pi i / 256) for i = 0..64 */
 int texdemo_mode;                       /* TEXDEMO_FLOAT, TEXDEMO_FIXED, TEXDEMO_HW */
 uint32_t (*texdemo_hw)(const struct su_corner c[4], const struct rs_texture *t);
+void (*texdemo_hw_piece)(const struct gu_piece *p);
+static const uint8_t *mesh_mlb, *mesh_obj, *mesh_blk;  /* the cube (texdemo_mesh) */
 
 struct v3 { float x, y, z; };
 struct quad { struct v3 p[4]; int tex; };   /* corners from top left, clockwise as seen */
@@ -110,6 +112,105 @@ static uint32_t draw_quad(volatile uint8_t *fb, const struct rs_clip *clip, cons
     return su_polygon(fb, clip, &sv, c, 4, t, 0);
 }
 
+/*
+ * A cube for the geometry unit, in the game's mesh format (track.c, geom.h): 1 scene unit
+ * wide (256 mesh units a scene unit), its faces' normals pointing inwards (away from the
+ * side they are seen from), all eight face rows the same list of the six faces; the
+ * materials (textured, one colour, texel 0 see-through) at 0x100 and their texture records
+ * at 0x180 of the texture file (free bytes before the palette), so the file is the MLB.
+ */
+static void put32(volatile uint8_t *p, uint32_t v) { *(volatile uint32_t *)p = v; }
+static void put16(volatile uint8_t *p, uint32_t v) { *(volatile uint16_t *)p = (uint16_t)v; }
+
+void texdemo_mesh(volatile uint8_t *file, volatile uint8_t *mem)
+{
+    static const uint8_t corner[6][4] = { { 4, 5, 7, 6 }, { 0, 2, 3, 1 }, { 2, 6, 7, 3 },
+                                          { 0, 1, 5, 4 }, { 1, 3, 7, 5 }, { 0, 4, 6, 2 } };
+    static const int16_t normal[6][3] = { { -16384, 0, 0 }, { 16384, 0, 0 }, { 0, -16384, 0 },
+                                          { 0, 16384, 0 }, { 0, 0, -16384 }, { 0, 0, 16384 } };
+    static const uint32_t routine[6] = { 16, 16, 128, 64, 16, 16 };
+    static const uint8_t texture[6] = { 0, 1, 0, 2, 3, 4 };
+    for(int k = 0; k < 6; k++) {                /* materials and texture records */
+        volatile uint8_t *m = file + 0x100 + 16 * k, *r = file + 0x180 + 16 * k;
+        const struct rs_texture *tx = &tex[texture[k]];
+        put32(m, routine[k]);
+        put32(m + 4, 0x180u + 16u * (uint32_t)k);
+        put32(m + 8, (uint32_t)tx->width);
+        put32(m + 12, (uint32_t)tx->height);
+        put32(r, 1);
+        put32(r + 4, 0);
+        put32(r + 8, (uint32_t)(tx->data - file));
+    }
+    volatile uint8_t *obj = mem, *blk = mem + 0x40;
+    put32(obj + 0x18, 0x40);                    /* the block */
+    put32(blk + 0x10, 8);                       /* vertices */
+    put32(blk + 0x1C, 0x100);                   /* vertex array, from the object */
+    put32(blk + 0x24, 0x140);                   /* texture coordinates, from the object */
+    for(int r = 0; r < 8; r++) put32(blk + 0x28 + 4 * r, 0x300);    /* the face rows */
+    for(int i = 0; i < 8; i++) {
+        put16(obj + 0x100 + 6 * i, i & 4 ? 128 : -128);
+        put16(obj + 0x102 + 6 * i, i & 2 ? 128 : -128);
+        put16(obj + 0x104 + 6 * i, i & 1 ? 128 : -128);
+        put16(obj + 0x140 + 6 * i, ((i >> 2) ^ i) & 1 ? 255 : 0);
+        put16(obj + 0x142 + 6 * i, i & 2 ? 0 : 255);
+        put16(obj + 0x144 + 6 * i, 0);
+    }
+    for(int k = 0; k < 6; k++) {
+        volatile uint8_t *f = blk + 0x200 + 0x20 * k;
+        put16(f + 2, 200);                      /* colour (one-colour material) */
+        put16(f + 4, 0x100u + 16u * (uint32_t)k);
+        put16(f + 6, 4);
+        for(int j = 0; j < 4; j++) put16(f + 8 + 2 * j, 6u * corner[k][j]);
+        put16(f + 0x14, (uint16_t)normal[k][0]);
+        put16(f + 0x18, (uint16_t)normal[k][1]);
+        put16(f + 0x1C, (uint16_t)normal[k][2]);
+        put16(blk + 0x300 + 2 * k, 0x200u + 0x20u * (uint32_t)k);
+    }
+    put16(blk + 0x30C, 0xFFFF);
+    mesh_mlb = (const uint8_t *)file;
+    mesh_obj = (const uint8_t *)obj;
+    mesh_blk = (const uint8_t *)blk;
+}
+
+/* the cube at (0, 0.5, 0): its place in view space from where view() takes the axes */
+static uint32_t draw_mesh(volatile uint8_t *fb, const struct rs_clip *clip, float sa, float ca)
+{
+    const struct v3 pos = { 0.0f, 0.5f, 0.0f };
+    struct v3 o = view(pos, sa, ca), b = view((struct v3){ 0, 0, 0 }, sa, ca);
+    struct v3 ax[3] = { view((struct v3){ pos.x + 1, pos.y, pos.z }, sa, ca),
+                        view((struct v3){ pos.x, pos.y + 1, pos.z }, sa, ca),
+                        view((struct v3){ pos.x, pos.y, pos.z + 1 }, sa, ca) };
+    float a[3][3];                              /* scene axis c in view space: a[.][c] */
+    for(int c = 0; c < 3; c++) {
+        a[0][c] = ax[c].x - o.x;
+        a[1][c] = ax[c].y - o.y;
+        a[2][c] = ax[c].z - o.z;
+    }
+    struct gu_piece g;
+    for(int r = 0; r < 3; r++)
+        for(int c = 0; c < 3; c++) g.m[3 * r + c] = (int32_t)(a[r][c] * 65536.0f);
+    g.t[0] = (int32_t)(o.x * 65536.0f);
+    g.t[1] = (int32_t)(o.y * 65536.0f);
+    g.t[2] = (int32_t)(o.z * 65536.0f);
+    /* the camera in the scene: -a^T b; in the cube's frame with 8 fraction bits */
+    for(int c = 0; c < 3; c++) {
+        float cam = -(a[0][c] * b.x + a[1][c] * b.y + a[2][c] * b.z);
+        float p = c == 0 ? pos.x : c == 1 ? pos.y : pos.z;
+        g.e[c] = (int32_t)((cam - p) * 65536.0f);
+    }
+    g.row = 0;
+    g.obj = mesh_obj;
+    g.blk = mesh_blk;
+    if(texdemo_mode == TEXDEMO_HW) {
+        texdemo_hw_piece(&g);
+        return 0;
+    }
+    struct su_view sv;
+    struct gu_stats st = { 0, 0, 0, 0 };
+    texdemo_view(clip, &sv);
+    return gu_draw(fb, clip, &sv, mesh_mlb, &g, &st);
+}
+
 uint32_t texdemo_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t a, uint32_t *tris)
 {
     static const struct quad ground[2] = {
@@ -130,6 +231,7 @@ uint32_t texdemo_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t
         for(int k = 0; k < 4; k++) v[k] = view(ground[i].p[k], sa, ca);
         n += draw_quad(fb, clip, v, &tex[ground[i].tex]);
     }
+    if(mesh_obj) n += draw_mesh(fb, clip, sa, ca);
 
     /* upright quads from far to near by the depth of their centres */
     float depth[3];
@@ -155,7 +257,7 @@ uint32_t texdemo_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t
         for(int k = 0; k < 4; k++) v[k] = view(qd->p[k], sa, ca);
         n += draw_quad(fb, clip, v, &tex[qd->tex]);
     }
-    *tris = 2 * 5;
+    *tris = 2 * 5 + (mesh_obj ? 6 : 0);
     return n;
 }
 

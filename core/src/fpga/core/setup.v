@@ -51,7 +51,16 @@ module setup (
     output  reg     [9:0]   t_draw,
     output  reg     [31:0]  t_a0, t_a1, t_a2,
     output  reg     [31:0]  t_dx0, t_dx1, t_dx2,
-    output  reg     [31:0]  t_dy0, t_dy1, t_dy2
+    output  reg     [31:0]  t_dy0, t_dy1, t_dy2,
+
+    // a polygon from the geometry unit (geom.v), taken instead of the CPU's corners in a
+    // clock with gu_valid and gu_ready (the CPU writes none meanwhile)
+    input   wire            gu_valid,
+    output  wire            gu_ready,
+    input   wire    [2:0]   gu_n,
+    input   wire    [9:0]   gu_mode,
+    input   wire    [31:0]  gu_tex, gu_size,
+    input   wire    [575:0] gu_c
 );
 
 //
@@ -186,6 +195,14 @@ always @(posedge clk) begin
             ib_size <= in_size;
         end
         if(tw_idx == tw_n - 3'd1) ib_full <= 1;
+    end
+    if(gu_valid && gu_ready) begin
+        ib <= gu_c;
+        ib_n <= gu_n;
+        ib_mode <= gu_mode;
+        ib_tex <= gu_tex;
+        ib_size <= gu_size;
+        ib_full <= 1;
     end
     if(ib_full && cl_idle) begin
         cl_mode <= ib_mode;
@@ -333,6 +350,7 @@ end
     assign cu_take = cu_done && !tu_busy && !go;
     assign co_take = co_valid && !cu_busy && !cu_done;
     assign ready = !ib_full && !tw;
+    assign gu_ready = !ib_full && !tw;
     assign busy = tw || ib_full || !cl_idle || cu_busy || cu_done || tu_busy || go;
 
     // per triangle

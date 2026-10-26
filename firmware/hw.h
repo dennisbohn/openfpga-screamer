@@ -140,6 +140,19 @@
 #define SU_FAR          REG32(0xF00030B0u)  /* W: far plane depth with 8 fraction bits */
 #define SU_CORNERS(n)   ((uint32_t)(n) << 10)  /* SU_MODE: corners of the polygon, 3 or 4 */
 
+/* the geometry unit (core/src/fpga/core/geom.v, C model geom.h): a piece of the track */
+#define GU_M(k)         REG32(0xF0003100u + 4u * (k))  /* W: local to view, rows r, u, f; 16 fraction bits */
+#define GU_T(k)         REG32(0xF0003124u + 4u * (k))  /* W: origin in view space, 8 fraction bits */
+#define GU_E(k)         REG32(0xF0003130u + 4u * (k))  /* W: eye in the piece's frame, 8 fraction bits */
+#define GU_OBJ          REG32(0xF000313Cu)  /* W: SDRAM byte address of the mesh's object */
+#define GU_BLK          REG32(0xF0003140u)  /* W: ... and of its block */
+#define GU_MLB          REG32(0xF0003144u)  /* W: SDRAM byte address of the MLB */
+#define GU_MODE         REG32(0xF0003148u)  /* W: [8] the buffer drawn into */
+#define GU_GO           REG32(0xF000314Cu)  /* W: the face row, starts the piece; waits while busy */
+#define GU_FACES        REG32(0xF0003150u)  /* R: faces handed on; W: clears */
+#define GU_CLOCKS       REG32(0xF0003154u)  /* R: clocks busy; W: clears */
+#define GU_INVAL        REG32(0xF0003158u)  /* W: forget the cached mesh lines */
+
 /* Cache maintenance: invalidate the whole data cache (it is write-through, so nothing is
    lost), and make the instruction cache fetch code written with stores (fence.i, then
    three instructions that may still come from the old line). */
