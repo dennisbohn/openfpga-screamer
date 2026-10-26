@@ -143,19 +143,17 @@ static uint32_t hw_quad(const struct su_corner c[4], const struct rs_texture *t)
     return 0;
 }
 
-/* a piece to the geometry unit: its place in view space and its mesh; the start waits
-   while the unit is busy with the piece before */
+/* a piece into the geometry unit's buffer: its place in view space and its mesh; a word
+   waits only while the buffer is full */
 static void hw_piece(const struct gu_piece *g)
 {
-    for (int k = 0; k < 9; k++) GU_M(k) = (uint32_t)g->m[k];
-    for (int k = 0; k < 3; k++) {
-        GU_T(k) = (uint32_t)g->t[k];
-        GU_E(k) = (uint32_t)g->e[k];
-    }
-    GU_OBJ = (uint32_t)((uintptr_t)g->obj - SDRAM_BASE);
-    GU_BLK = (uint32_t)((uintptr_t)g->blk - SDRAM_BASE);
     uint32_t t0 = rdcycle();
-    GU_GO = (uint32_t)g->row;
+    for (int k = 0; k < 9; k++) GU_PUSH = (uint32_t)g->m[k];
+    for (int k = 0; k < 3; k++) GU_PUSH = (uint32_t)g->t[k];
+    for (int k = 0; k < 3; k++) GU_PUSH = (uint32_t)g->e[k];
+    GU_PUSH = (uint32_t)((uintptr_t)g->obj - SDRAM_BASE);
+    GU_PUSH = (uint32_t)((uintptr_t)g->blk - SDRAM_BASE);
+    GU_PUSH = (uint32_t)g->row;
     draw_wait += rdcycle() - t0;
 }
 

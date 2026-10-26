@@ -101,14 +101,11 @@ Alle Register sind 32 Bit, Zugriff als Wort.
 | `0xF000_30A4`, `30A8` | `SU_T_NEXT`, `SU_T_FIRST` | W | Texel-Zeile (Float) und Übergabe der Ecke: setzt das Vieleck fort bzw. beginnt ein neues. Mit der letzten Ecke geht das Vieleck an den Clipper: geschnitten an der nahen Ebene (Tiefe 128), am Schutzband (\|r\|, \|u\| ≤ 14 × Tiefe) und an der fernen Ebene, dann ein Fächer von Dreiecken aus der ersten Ecke. Der Schreibzugriff wartet, solange der Eingang noch das vorige Vieleck hält; `RS_DRAW` und Framebuffer-Zugriffe warten, bis Setup-Einheit und Rasterizer fertig sind, `RS_DRAW` Bit 0 zeigt beide |
 | `0xF000_30AC` | `SU_CLOCKS` | R/W | Takte, in denen die Setup-Einheit gerechnet hat; Schreiben löscht |
 | `0xF000_30B0` | `SU_FAR` | W | Tiefe der fernen Ebene mit 8 Nachkommabits (ganze Zahl) |
-| `0xF000_3100`–`3120` | `GU_M(0..8)` | W | Geometrie-Einheit (`geom.v`, bitgenau `firmware/geom.c`): ein Bauteil der Strecke. Lokal nach Kamerasicht, Zeilen r, u, f der Spalten x, y, z, 16 Nachkommabits (innerhalb ±2^17) |
-| `0xF000_3124`–`312C` | `GU_T(0..2)` | W | Ursprung des Bauteils in Kamerasicht, 8 Nachkommabits |
-| `0xF000_3130`–`3138` | `GU_E(0..2)` | W | Auge im Rahmen des Bauteils, 8 Nachkommabits (für den Rückseitentest) |
-| `0xF000_313C`, `3140` | `GU_OBJ`, `GU_BLK` | W | SDRAM-Byte-Adresse des Mesh-Objekts und seines Blocks (UNR-Format, `firmware/track.c`) |
 | `0xF000_3144`, `3148` | `GU_MLB`, `GU_MODE` | W | SDRAM-Byte-Adresse der Materialdatei (MLB); Bit 8 der Puffer, in den gezeichnet wird |
 | `0xF000_314C` | `GU_GO` | W | Bit 2..0 die Flächenliste für die Seite des Auges, startet das Bauteil. Wartet, solange die Einheit am vorigen arbeitet; die Register davor dürfen schon für das nächste geschrieben werden. Die Einheit liest das Mesh selbst (4-KB-Lese-Cache, Zeilen über den Port des Rasterizers), rechnet die Eckpunkte um, lässt Rückseiten und Material 224 weg und gibt jede Fläche an die Setup-Einheit; Ecken der CPU an die Setup-Einheit warten, bis sie fertig ist |
 | `0xF000_3150`, `3154` | `GU_FACES`, `GU_CLOCKS` | R/W | weitergegebene Flächen, Takte beschäftigt; Schreiben löscht |
 | `0xF000_3158` | `GU_INVAL` | W | den Lese-Cache leeren (nachdem sich Mesh-Daten geändert haben) |
+| `0xF000_315C` | `GU_PUSH` | W | Geometrie-Einheit (`geom.v`, bitgenau `firmware/geom.c`): das nächste Wort eines Bauteils in ihren Puffer (2048 Wörter, 113 Bauteile); wartet nur, wenn er voll ist. Ein Bauteil sind 18 Wörter: lokal nach Kamerasicht (Zeilen r, u, f der Spalten x, y, z, 16 Nachkommabits, innerhalb ±2^17), Ursprung in Kamerasicht und Auge im Rahmen des Bauteils (je 8 Nachkommabits), SDRAM-Byte-Adressen von Mesh-Objekt und Block, Bit 2..0 die Flächenliste für die Seite des Auges. Die Einheit nimmt ein Bauteil, sobald es ganz im Puffer liegt, liest das Mesh selbst (4-KB-Lese-Cache, Zeilen über den Port des Rasterizers), rechnet die Eckpunkte um, lässt Rückseiten und Material 224 weg und gibt jede Fläche an die Setup-Einheit; Ecken der CPU an die Setup-Einheit warten, bis sie fertig ist |
 
 ## Framebuffer
 

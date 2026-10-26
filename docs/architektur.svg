@@ -96,7 +96,7 @@
   <text x="715" y="286" class="t c">Geometrie-Einheit</text>
   <text x="715" y="304" class="b c">Mesh lesen, Eckpunkte</text>
   <text x="715" y="320" class="b c">umrechnen, Rückseiten,</text>
-  <text x="715" y="336" class="b c">Material · 4-KB-Cache</text>
+  <text x="715" y="336" class="b c">Material · Puffer, Cache</text>
 
   <rect x="840" y="260" width="150" height="100" rx="8" class="built"/>
   <text x="915" y="286" class="t c">Clipper + Setup</text>
@@ -210,8 +210,8 @@
 
   <!-- connections of the geometry unit -->
   <path d="M592,300 H638" class="wb" marker-end="url(#built)"/>
-  <text x="615" y="247" class="l c">Register</text>
-  <text x="615" y="258" class="l c">je Bauteil</text>
+  <text x="615" y="247" class="l c">Bauteile</text>
+  <text x="615" y="258" class="l c">(Puffer)</text>
 
   <path d="M792,300 H838" class="wb" marker-end="url(#built)"/>
   <text x="815" y="247" class="l c">Flächen</text>
@@ -230,7 +230,7 @@
   <text x="270" y="427" class="l c">I²S</text>
 
   <!-- notes -->
-  <text x="40" y="798" class="l">Pro Bild: Die CPU wählt die Bauteile in Reichweite, sortiert sie von hinten nach vorn (Maler-Algorithmus) und gibt sie nacheinander an die Geometrie-Einheit; dahinter arbeiten Geometrie, Setup und Rasterizer gleichzeitig.</text>
+  <text x="40" y="798" class="l">Pro Bild: Die CPU wählt die Bauteile in Reichweite, sortiert sie von hinten nach vorn (Maler-Algorithmus) und schreibt sie in den Puffer der Geometrie-Einheit (113 Bauteile); dahinter arbeiten Geometrie, Setup und Rasterizer gleichzeitig.</text>
   <text x="40" y="816" class="l">Gezeigt wird nur ein fertiges Bild (Doppelpufferung, Tausch in der Austastlücke, höchstens 50 Bilder pro Sekunde). Geplant: Bild N+1 und N überlappen, Glas/Schatten, Audio, schnellerer Rasterizer.</text>
-  <text x="40" y="834" class="l">Streckendurchflug meist 50 fps (schwere Bilder 43–45), CPU-Anteil etwa 20 % eines Bildes. Belegung: 13.836 von 18.480 ALMs (75 %), 237 von 308 M10K (77 %), 30 von 66 DSP (45 %); Timing hält bei 74,25 MHz.</text>
+  <text x="40" y="834" class="l">Streckendurchflug meist 50 fps (schwere Bilder 43–45), CPU-Anteil etwa 20 % eines Bildes. Belegung: 13.812 von 18.480 ALMs (75 %), 245 von 308 M10K (80 %), 30 von 66 DSP (45 %); Timing hält bei 74,25 MHz.</text>
 </svg>

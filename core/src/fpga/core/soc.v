@@ -555,8 +555,8 @@ psram32 ps0 (
 // the setup unit (setup.v) in front of it: registers at 0xF000_3080, and the geometry unit
 // (geom.v) in front of that: registers at 0xF000_3100. Until all are done, the CPU's
 // framebuffer accesses and its own draw commands wait; a corner for the setup unit waits
-// until the unit can take it and the geometry unit is done (both fill its input), a piece
-// for the geometry unit until it is done with the last.
+// until the unit can take it and the geometry unit is done (both fill its input), a word of
+// a piece for the geometry unit while its piece buffer is full.
 //
     wire        rs_busy, rs_fb_wr, rs_fb_buf;
     wire [31:0] rs_pixels, rs_misses, rs_busy_clocks, rs_fb_data;
@@ -571,19 +571,19 @@ psram32 ps0 (
     wire        su_wr = d_write && d_region == R_REG && d_addr[15:7] == 9'h061;   // 0x3080-0x30FC
     wire        su_corner = su_wr && (d_addr[5:2] == 4'd9 || d_addr[5:2] == 4'd10);
     wire        gu_wr = d_write && d_region == R_REG && d_addr[15:7] == 9'h062;   // 0x3100-0x317C
-    wire        gu_go = gu_wr && d_addr[6:2] == 5'd19;
-    wire        gu_busy, gu_poly_valid, gu_poly_ready;
+    wire        gu_push = gu_wr && d_addr[6:2] == 5'd23;
+    wire        gu_busy, gu_full, gu_poly_valid, gu_poly_ready;
     wire [31:0] gu_faces, gu_busy_clocks, gu_poly_tex, gu_poly_size;
     wire [2:0]  gu_poly_n;
     wire [9:0]  gu_poly_mode;
     wire [575:0] gu_poly_c;
-    wire        rs_waits = ((rs_busy || rs_start || su_busy || su_corner || gu_busy || gu_go) &&
+    wire        rs_waits = ((rs_busy || rs_start || su_busy || su_corner || gu_busy || gu_push) &&
                             (cmd_region == R_FB ||
                              (dbus_cmd_wr && cmd_region == R_REG && dbus_cmd_addr[15:0] == 16'h3014))) ||
-                           ((!su_ready || su_corner || gu_busy || gu_go) && dbus_cmd_wr && cmd_region == R_REG &&
+                           ((!su_ready || su_corner || gu_busy || gu_push) && dbus_cmd_wr && cmd_region == R_REG &&
                             (dbus_cmd_addr[15:0] == 16'h30A4 || dbus_cmd_addr[15:0] == 16'h30A8)) ||
-                           ((gu_busy || gu_go) && dbus_cmd_wr && cmd_region == R_REG &&
-                            dbus_cmd_addr[15:0] == 16'h314C);
+                           ((gu_full || gu_push) && dbus_cmd_wr && cmd_region == R_REG &&
+                            dbus_cmd_addr[15:0] == 16'h315C);
 
 geom gu (
     .clk                ( clk ),
@@ -592,6 +592,7 @@ geom gu (
     .wr_addr            ( d_addr[6:2] ),
     .wr_data            ( d_data ),
     .busy               ( gu_busy ),
+    .full               ( gu_full ),
     .faces              ( gu_faces ),
     .busy_clocks        ( gu_busy_clocks ),
     .mem_valid          ( gu_mem_valid ),

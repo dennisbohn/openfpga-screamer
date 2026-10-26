@@ -1,7 +1,9 @@
 //
-// Geometry unit: one piece of the track (a placed mesh) at a time, bit for bit the C model
-// firmware/geom.c (geom.h has the arithmetic). The CPU hands over the piece's place in view
-// space; the unit reads the mesh from the SDRAM itself (block header, vertices, the face
+// Geometry unit: the pieces of the track (placed meshes) one after the other, bit for bit
+// the C model firmware/geom.c (geom.h has the arithmetic). The CPU writes each piece's place
+// in view space into a buffer of 2048 words (113 pieces) and goes on with its work; the
+// unit takes a piece once all of it is in and reads the mesh from the SDRAM itself (block
+// header, vertices, the face
 // row for the eye's side, faces, texture coordinates, MLB materials), takes the vertices
 // into view space (block RAM, up to 512), leaves out the faces turned away and those of
 // routine 224, and hands each other face to the setup unit as a polygon in fixed point.
@@ -11,16 +13,15 @@
 // sequence below either reads a value (two clocks when it hits) or works on what it read.
 //
 // Registers (soc.v maps them at 0xF000_3100 + 4 * wr_addr):
-//   0..8    local to view: rows r, u, f of columns x, y, z, 16 fraction bits (within +-2^17)
-//   9..11   the piece's origin in view space, 8 fraction bits
-//   12..14  the eye in the piece's frame, 8 fraction bits
-//   15, 16  SDRAM byte addresses of the mesh's object and its block
 //   17      SDRAM byte address of the MLB      18  [8] the buffer drawn into
-//   19      write: [2:0] the face row, starts the piece (soc.v holds the write back while busy;
-//           0..18 are taken then, so the next piece can be written meanwhile)
 //   20      faces handed on since the last clear (write: clear)
 //   21      clocks busy since the last clear (write: clear)
 //   22      write: forget the cached lines (after the mesh data changed)
+//   23      write: the next word of a piece into the buffer (soc.v holds the write back while
+//           it is full). A piece is 18 words: local to view (rows r, u, f of columns x, y, z,
+//           16 fraction bits, within +-2^17), its origin in view space and the eye in its
+//           frame (8 fraction bits each), the SDRAM byte addresses of the mesh's object and
+//           its block, and [2:0] the face row for the eye's side.
 //
 
 module geom (
@@ -31,6 +32,7 @@ module geom (
     input   wire    [4:0]   wr_addr,
     input   wire    [31:0]  wr_data,
     output  wire            busy,
+    output  wire            full,               // the piece buffer takes no word now
     output  reg     [31:0]  faces = 0,
     output  reg     [31:0]  busy_clocks = 0,
 
@@ -52,27 +54,24 @@ module geom (
 );
 
 //
-// registers the CPU writes; taken when a piece starts
+// registers the CPU writes, and the piece buffer
 //
-    reg  signed [31:0] in_m [0:8];
-    reg  signed [31:0] in_t [0:2];
-    reg  signed [31:0] in_e [0:2];
-    reg  [25:0] in_obj, in_blk, mlb;
+    reg  [25:0] mlb;
     reg         buffer;
-    wire        go = wr && wr_addr == 5'd19 && !reset;
     reg         inval_req = 1;
+    (* ramstyle = "no_rw_check, M10K" *) reg  [31:0] fifo [0:2047];
+    reg  [11:0] f_wp = 0, f_rp = 0;             // a wrap bit over the address
+    reg  [10:0] f_ra;
+    reg  [31:0] f_q;
+    wire [11:0] f_count = f_wp - f_rp;
+    wire        push = wr && wr_addr == 5'd23 && !reset;
+    assign full = f_count >= 12'd2046;          // room for the write soc.v may have under way
 
-    integer     ri;
 always @(posedge clk) begin
-    for(ri = 0; ri < 9; ri = ri + 1) if(wr && wr_addr == ri[4:0]) in_m[ri] <= wr_data;
-    for(ri = 0; ri < 3; ri = ri + 1) begin
-        if(wr && wr_addr == 5'd9 + ri[4:0]) in_t[ri] <= wr_data;
-        if(wr && wr_addr == 5'd12 + ri[4:0]) in_e[ri] <= wr_data;
-    end
-    if(wr && wr_addr == 5'd15) in_obj <= wr_data[25:0];
-    if(wr && wr_addr == 5'd16) in_blk <= wr_data[25:0];
     if(wr && wr_addr == 5'd17) mlb <= wr_data[25:0];
     if(wr && wr_addr == 5'd18) buffer <= wr_data[8];
+    if(push) fifo[f_wp[10:0]] <= wr_data;
+    f_q <= fifo[f_ra];
 end
 
 //
@@ -199,6 +198,10 @@ end
 // the sequence
 //
     reg  [5:0]  pc = 0, ret;
+    reg  [4:0]  pk;                             // word of the piece being taken
+    wire [4:0]  pk_m5 = pk - 5'd1, pk_t5 = pk - 5'd10, pk_e5 = pk - 5'd13;
+    wire [3:0]  pk_m = pk_m5[3:0];
+    wire [1:0]  pk_t = pk_t5[1:0], pk_e = pk_e5[1:0];
     reg  signed [31:0] m [0:8];
     reg  signed [31:0] t [0:2];
     reg  signed [31:0] e [0:2];
@@ -217,9 +220,9 @@ end
     reg  signed [23:0] cs;
     reg  signed [53:0] dot;
 
-    localparam  [5:0]   P_IDLE = 6'd0, P_READ = 6'd1, P_DONE = 6'd2;
+    localparam  [5:0]   P_IDLE = 6'd0, P_READ = 6'd1, P_DONE = 6'd2, P_TAKE = 6'd48;
 
-    assign busy = pc != P_IDLE || poly_valid;
+    assign busy = pc != P_IDLE || poly_valid || f_count != 0;
 
     wire [25:0] mat_now = mlb + {{10{rd_half[15]}}, rd_half};
     wire        col_x = ms == 4'd0 || ms == 4'd3 || ms == 4'd6, col_y = ms == 4'd1 || ms == 4'd4 || ms == 4'd7;
@@ -238,7 +241,6 @@ end
         end
     endtask
 
-    integer     k;
 always @(posedge clk) begin
     v_we <= 0;
     if(pc != P_IDLE) busy_clocks <= busy_clocks + 1'b1;
@@ -249,13 +251,28 @@ always @(posedge clk) begin
     if(poly_valid && poly_ready) poly_valid <= 0;
 
     case(pc)
-    P_IDLE: if(go) begin
-        for(k = 0; k < 9; k = k + 1) m[k] <= in_m[k];
-        for(k = 0; k < 3; k = k + 1) begin t[k] <= in_t[k]; e[k] <= in_e[k]; end
-        obj <= in_obj;
-        blk <= in_blk;
-        row <= wr_data[2:0];
-        pc <= 6'd3;
+    P_IDLE: if(f_count >= 12'd18) begin         // a whole piece is in: word 0 is read
+        f_ra <= f_rp[10:0];
+        f_rp <= f_rp + 1'b1;
+        pk <= 0;
+        pc <= P_TAKE;
+    end
+
+    P_TAKE: begin                               // word pk - 1 comes out, word pk + 1 is read
+        pk <= pk + 1'b1;
+        if(pk < 5'd17) begin
+            f_ra <= f_rp[10:0];
+            f_rp <= f_rp + 1'b1;
+        end
+        if(pk >= 5'd1 && pk <= 5'd9) m[pk_m] <= f_q;
+        if(pk >= 5'd10 && pk <= 5'd12) t[pk_t] <= f_q;
+        if(pk >= 5'd13 && pk <= 5'd15) e[pk_e] <= f_q;
+        if(pk == 5'd16) obj <= f_q[25:0];
+        if(pk == 5'd17) blk <= f_q[25:0];
+        if(pk == 5'd18) begin
+            row <= f_q[2:0];
+            pc <= 6'd3;
+        end
     end
 
     P_READ: begin                               // the cache took the address; then the value
@@ -423,10 +440,13 @@ always @(posedge clk) begin
     default: pc <= P_IDLE;
     endcase
 
+    if(push) f_wp <= f_wp + 1'b1;
     if(reset) begin
         pc <= P_IDLE;
         rd_go <= 0;
         poly_valid <= 0;
+        f_wp <= 0;
+        f_rp <= 0;
     end
 end
 
