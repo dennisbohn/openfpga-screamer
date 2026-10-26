@@ -64,6 +64,7 @@ static void contact(void)
     float cr = fabsf(cosf(pc.roll)), cp = fabsf(cosf(pc.pitch));
     float a = pc.yaw + pc.drift, cs = cosf(a), sn = sinf(a);
     float jolted[4];
+    int found[4];
     if(!ct.ready)
         for(int n = 0; n < 4; n++) ct.h[n] = ct.hc[n] = pc.z;
     pc.rough = 0;
@@ -71,7 +72,8 @@ static void contact(void)
         float x = lx[n] * cr, z = lz[n] * cp;
         float wx = pc.x + x * cs - z * sn, wy = pc.y + x * sn + z * cs, h;
         int grass;
-        if(track_under(wx, wy, &h, &grass)) {
+        found[n] = track_under(wx, wy, &h, &grass);
+        if(found[n]) {
             ct.h[n] = h;
             pc.grass[n] = grass;                /* the wheel's own flag, kept over nothing */
             if(grass && !(n & 1)) pc.rough = 1;
@@ -82,10 +84,13 @@ static void contact(void)
             jolted[n] += (float)((spot & 2) ? -(spot & 0xf) : (spot & 0xf));
         }
     }
+    /* the same turned by the heading alone: the same places while the body does not slip */
     float cs2 = cosf(pc.yaw), sn2 = sinf(pc.yaw);
     for(int n = 0; n < 4; n++) {
         float x = lx[n] * cr, z = lz[n] * cp, h;
-        if(track_under(pc.x + x * cs2 - z * sn2, pc.y + x * sn2 + z * cs2, &h, 0)) ct.hc[n] = h;
+        if(pc.drift == 0.0f) {
+            if(found[n]) ct.hc[n] = ct.h[n];
+        } else if(track_under(pc.x + x * cs2 - z * sn2, pc.y + x * sn2 + z * cs2, &h, 0)) ct.hc[n] = h;
     }
     ct.cam_pitch = atanf((ct.hc[2] - ct.hc[3]) / (af + ar));
     ct.cam_roll  = atanf((ct.hc[2] - ct.hc[0]) / (2.0f * tr));

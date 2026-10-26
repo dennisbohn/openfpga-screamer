@@ -71,6 +71,18 @@ static int nwalls;
 static float anim;                      /* the animation clock, 0..1 */
 static uint32_t piece_phase;            /* the pieces' texture phase: the clock (record +0x20 is -1) */
 static int16_t class_key[MAX_OBJ];      /* the key's change for each mesh's class (+0x32c) */
+
+/* What track_under() reads, made once from the drivable meshes: each mesh's faces of its
+   first face row in that order, with corners (x, z), normal, first corner, a box around them
+   and whether the face is convex with an area (only then a point outside the box cannot be
+   over it: a flat or bent face always gets the full test, so the answers stay the same) */
+struct cface { float x0, x1, z0, z1; int16_t x[4], z[4], n[3], v[3]; uint8_t nc, boxed; };
+#define MAX_CFACES  8192
+static struct cface cfaces[MAX_CFACES];
+static int ncfaces;
+static int32_t cobj_first[MAX_OBJ];     /* -1: no table (not drivable, or the table was full) */
+static int16_t cobj_count[MAX_OBJ];
+static uint8_t cobj_grass[MAX_OBJ];
 static float sin_q[513];                /* sin(2 pi i / 2048) for i = 0..512 */
 static float far_z = 43808.0f;          /* the far plane of the DETAIL level */
 static float radius[MAX_OBJ];           /* of each mesh around its origin */
@@ -152,6 +164,52 @@ int track_init(void)
         float t = c * dc - s * ds;
         s = s * dc + c * ds;
         c = t;
+    }
+
+    ncfaces = 0;
+    for(int k = 0; k < unr_count; k++) cobj_first[k] = -1;
+    for(int i = 0; i < ground_first[65536]; i++) {
+        int k = pieces[ground_list[i]].obj;
+        if(k < 0 || k >= unr_count || cobj_first[k] >= 0) continue;
+        const uint8_t *obj, *blk = block_of(k, &obj), *verts = obj + rd32(blk + 0x1C);
+        int nface = rd32(blk + 0x14), ro = rd32(blk + 0x28), first = ncfaces;
+        if(ro <= 0 || ncfaces + nface > MAX_CFACES) continue;
+        for(int j = 0; j < nface; j++) {
+            uint16_t e = *(const uint16_t *)(blk + ro + 2 * j);
+            if(e == 0xFFFF) continue;                   /* an end mark, no face */
+            const uint8_t *fc = blk + e;
+            struct cface *q = &cfaces[ncfaces++];
+            int nc = rd16(fc + 6);
+            q->nc = (uint8_t)(nc < 3 ? 3 : nc > 4 ? 4 : nc);
+            for(int c = 0; c < q->nc; c++) {
+                int vo = rd16(fc + 8 + 2 * c);
+                if(vo < 0) { q->nc = 0; break; }       /* a corner that is none: never over it */
+                q->x[c] = rd16(verts + vo);
+                q->z[c] = rd16(verts + vo + 4);
+                if(c == 0) q->v[0] = q->x[0], q->v[1] = rd16(verts + vo + 2), q->v[2] = q->z[0];
+            }
+            for(int c = 0; c < 3; c++) q->n[c] = rd16(fc + 0x14 + 4 * c);
+            q->boxed = 0;
+            if(!q->nc) continue;
+            int64_t s = 0;
+            int pos = 0, neg = 0;
+            q->x0 = q->x1 = q->x[0];
+            q->z0 = q->z1 = q->z[0];
+            for(int c = 0; c < q->nc; c++) {
+                int a = c, b = (c + 1) % q->nc, d = (c + 2) % q->nc;
+                int64_t t = (int64_t)(q->x[b] - q->x[a]) * (q->z[d] - q->z[b]) - (int64_t)(q->z[b] - q->z[a]) * (q->x[d] - q->x[b]);
+                pos += t > 0; neg += t < 0;
+                s += (int64_t)q->x[a] * q->z[b] - (int64_t)q->x[b] * q->z[a];
+                if(q->x[c] < q->x0) q->x0 = q->x[c];
+                if(q->x[c] > q->x1) q->x1 = q->x[c];
+                if(q->z[c] < q->z0) q->z0 = q->z[c];
+                if(q->z[c] > q->z1) q->z1 = q->z[c];
+            }
+            q->boxed = s != 0 && !(pos && neg) && pos + neg == q->nc;
+        }
+        cobj_first[k] = first;
+        cobj_count[k] = (int16_t)(ncfaces - first);
+        cobj_grass[k] = blk[0x6b] == 'e';
     }
 
     for(int k = 0; k < unr_count; k++) {
@@ -251,37 +309,31 @@ int track_under(float x, float y, float *h, int *grass)
         for(int at = ground_first[ky * 256 + kx]; at < ground_first[ky * 256 + kx + 1]; at++) {
             const struct piece *pc = &pieces[ground_list[at]];
             if(pc->obj < 0 || pc->obj >= unr_count) continue;
-            const uint8_t *obj, *blk = block_of(pc->obj, &obj), *verts = obj + rd32(blk + 0x1C);
+            if(cobj_first[pc->obj] < 0) continue;
+            const uint8_t *obj, *blk = block_of(pc->obj, &obj);
             float dx = x - (float)pc->x, dy = y - (float)pc->y;
             float r = (float)rd32(blk), bx = dx - (float)rd16(blk + 4), by = dy - (float)rd16(blk + 8);
             if(bx * bx + by * by > r * r) continue;
             float c = sin2048((uint32_t)pc->t + 512), s = sin2048((uint32_t)pc->t);
             float lx = dx * c + dy * s, lz = -dx * s + dy * c;  /* into the piece's frame */
-            int nface = rd32(blk + 0x14), ro = rd32(blk + 0x28);
-            if(ro <= 0) continue;
+            const struct cface *f0 = &cfaces[cobj_first[pc->obj]], *fe = f0 + cobj_count[pc->obj];
             for(int tries = 0; tries < 3; tries++, lx += 10.0f, lz += 10.0f)
-                for(int k = 0; k < nface; k++) {
-                    uint16_t e = *(const uint16_t *)(blk + ro + 2 * k);
-                    if(e == 0xFFFF) continue;                   /* an end mark, no face */
-                    const uint8_t *fc = blk + e;
-                    int nc = rd16(fc + 6), pos = 0, neg = 0, ok = 1;
-                    nc = nc < 3 ? 3 : nc > 4 ? 4 : nc;
+                for(const struct cface *q = f0; q < fe; q++) {
+                    if(q->boxed && (lx < q->x0 || lx > q->x1 || lz < q->z0 || lz > q->z1)) continue;
+                    int nc = q->nc, pos = 0, neg = 0;
+                    if(!nc) continue;
                     for(int j = 0; j < nc; j++) {
-                        int va = rd16(fc + 8 + 2 * j), vb = rd16(fc + 8 + 2 * ((j + 1) % nc));
-                        if(va < 0 || vb < 0) { ok = 0; break; }
-                        const uint8_t *a = verts + va, *b = verts + vb;
-                        float ax = rd16(a), az = rd16(a + 4);
-                        float cr = (rd16(b) - ax) * (lz - az) - (rd16(b + 4) - az) * (lx - ax);
+                        int b = j + 1 < nc ? j + 1 : 0;
+                        float ax = q->x[j], az = q->z[j];
+                        float cr = (q->x[b] - ax) * (lz - az) - (q->z[b] - az) * (lx - ax);
                         if(cr > 0.0f) pos++; else if(cr < 0.0f) neg++;
                     }
-                    if(!ok || (pos && neg)) continue;
-                    if(grass) *grass = blk[0x6b] == 'e';
+                    if(pos && neg) continue;
+                    if(grass) *grass = cobj_grass[pc->obj];
                     if(!h) return 1;
-                    int nx = rd16(fc + 0x14), ny = rd16(fc + 0x18), nz = rd16(fc + 0x1C);
-                    if(ny == 0) continue;
-                    const uint8_t *v0 = verts + rd16(fc + 8);
-                    int num = ((int)lx - rd16(v0)) * nx + ((int)lz - rd16(v0 + 4)) * nz;
-                    *h = (float)pc->h + (float)rd16(v0 + 2) + (float)(-num / ny);
+                    if(q->n[1] == 0) continue;
+                    int num = ((int)lx - q->v[0]) * q->n[0] + ((int)lz - q->v[2]) * q->n[2];
+                    *h = (float)pc->h + (float)q->v[1] + (float)(-num / q->n[1]);
                     return 1;
                 }
         }

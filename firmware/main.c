@@ -324,10 +324,12 @@ static void __attribute__((noreturn)) run_track(void)
         last_frame = VID_FRAME(st);
         if (n > 4) n = 4;
         if ((keys & ~keys_before) & KEY_SELECT) car_view(++car_v);
+        uint32_t t_phys = rdcycle();
         for (uint32_t k = 0; k < n; k++) {
             car_step(keys, keys_before);
             keys_before = keys;
         }
+        t_phys = rdcycle() - t_phys;
         steps += n;
         track_clock(n);
         const struct car_state *cs = car_state();
@@ -405,6 +407,11 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)car_wall_hits());
             dlog_str(", steps ");
             dlog_dec((int32_t)steps);
+            dlog_str(" (");
+            dlog_dec((int32_t)n);
+            dlog_str(" now, ");
+            dlog_dec((int32_t)t_phys);
+            dlog_str(" cycles)");
             dlog_str(", ");
             dlog_dec((int32_t)ts.pieces);
             dlog_str(" pieces, ");
