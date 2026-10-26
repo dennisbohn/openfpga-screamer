@@ -366,7 +366,7 @@ end
 // bridge target commands
 // synchronous to clk_74a
 
-    reg             target_dataslot_read;       
+    wire            target_dataslot_read;       // from soc: program.bin and the track (deferload)
     reg             target_dataslot_write;
     reg             target_dataslot_getfile;    // require additional param/resp structs to be mapped
     reg             target_dataslot_openfile;   // require additional param/resp structs to be mapped
@@ -375,10 +375,10 @@ end
     wire            target_dataslot_done;
     wire    [2:0]   target_dataslot_err;
 
-    reg     [15:0]  target_dataslot_id;
-    reg     [31:0]  target_dataslot_slotoffset;
-    reg     [31:0]  target_dataslot_bridgeaddr;
-    reg     [31:0]  target_dataslot_length;
+    wire    [15:0]  target_dataslot_id;
+    wire    [31:0]  target_dataslot_slotoffset;
+    wire    [31:0]  target_dataslot_bridgeaddr;
+    wire    [31:0]  target_dataslot_length;
     
     wire    [31:0]  target_buffer_param_struct; // to be mapped/implemented when using some Target commands
     wire    [31:0]  target_buffer_resp_struct;  // to be mapped/implemented when using some Target commands
@@ -593,6 +593,13 @@ soc soc (
     .phase_later        ( phase_later ),
     .phase_busy         ( phase_busy ),
     .phase_count        ( phase_count ),
+    .ds_read            ( target_dataslot_read ),
+    .ds_id              ( target_dataslot_id ),
+    .ds_offset          ( target_dataslot_slotoffset ),
+    .ds_addr            ( target_dataslot_bridgeaddr ),
+    .ds_length          ( target_dataslot_length ),
+    .ds_done            ( target_dataslot_done ),
+    .ds_err             ( target_dataslot_err ),
     .sram_a             ( sram_a ),
     .sram_dq_o          ( sram_dq_o ),
     .sram_dq_oe         ( sram_dq_oe ),

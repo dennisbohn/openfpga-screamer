@@ -31,7 +31,16 @@ module soc_system (
     output  wire    [31:0]  sdram_errors,       // model error counts
     output  wire    [31:0]  sram_errors,
     output  wire    [31:0]  psram_errors,
-    output  wire    [31:0]  sdram_max_refresh   // longest gap between AUTO REFRESH, clocks
+    output  wire    [31:0]  sdram_max_refresh,  // longest gap between AUTO REFRESH, clocks
+
+    // the core's data slot reads (deferload), answered by the testbench like the APF
+    output  wire            ds_read,
+    output  wire    [15:0]  ds_id,
+    output  wire    [31:0]  ds_offset,
+    output  wire    [31:0]  ds_addr,
+    output  wire    [31:0]  ds_length,
+    input   wire            ds_done,
+    input   wire    [2:0]   ds_err
 );
 
     wire            fb_wr_en, fb_buf;
@@ -116,6 +125,13 @@ soc soc (
     .phase_later        ( phase_later ),
     .phase_busy         ( phase_busy ),
     .phase_count        ( phase_count ),
+    .ds_read            ( ds_read ),
+    .ds_id              ( ds_id ),
+    .ds_offset          ( ds_offset ),
+    .ds_addr            ( ds_addr ),
+    .ds_length          ( ds_length ),
+    .ds_done            ( ds_done ),
+    .ds_err             ( ds_err ),
     .sram_a             ( sram_a ),
     .sram_dq_o          ( sram_dq_o ),
     .sram_dq_oe         ( sram_dq_oe ),

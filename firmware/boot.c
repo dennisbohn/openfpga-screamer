@@ -122,7 +122,7 @@ int main(void)
 
     /* no program to start: the results stay on screen */
     const char *note = full ? "Voller Test: Neustart fuer das Programm" : "program.bin fehlt oder ist defekt";
-    dlog_str(full ? "boot: full memory test, program.bin overwritten: restart the core\n"
+    dlog_str(full ? "boot: full memory test, its results stay on screen: restart the core for the program\n"
                   : "boot: no program to start\n");
     uint32_t drawn = 0;
     for (;;) {

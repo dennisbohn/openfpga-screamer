@@ -1,7 +1,8 @@
 /*
  * Memory test of step 2 (docs/speicher.md). One set of tests for all three memories,
  * given their base addresses, size and die size; the SDRAM gets a few of its own: the
- * copy the APF loaded, the clock phase window, code, refresh and the write status.
+ * clock phase window, code, refresh, the write status, and program.bin, which it asks the
+ * APF for only after them (slot.h).
  *
  * In the simulation (SYS_FLAGS) only the window sizes shrink: the first and the last
  * window of each memory and of each PSRAM die are tested, so loop ends, the die switch and
@@ -15,6 +16,7 @@
 #include "dlog.h"
 #include "memtest.h"
 #include "crc32.h"
+#include "slot.h"
 
 #define V32(a)          (*(volatile uint32_t *)(uintptr_t)(a))
 #define V16(a)          (*(volatile uint16_t *)(uintptr_t)(a))
@@ -343,14 +345,23 @@ static void phase_step(int later)
         ;
 }
 
-/* program.bin (data slot 2) in the SDRAM: header, size and CRC-32. Still there after a
-   reload of firmware.bin from the menu, which writes only the reloaded slot. */
+/* program.bin (data slot 2, deferload): asked for from the APF once the SDRAM clock phase
+   is found and the SDRAM tested, the 16-byte header first for the size, then the file;
+   header, size and CRC-32 checked */
 static void t_program(void)
 {
     const volatile uint32_t *h = (const volatile uint32_t *)PROG_BASE;
-    uint32_t t0 = rdcycle(), before = begin(sd, "program"), size = h[1];
-    if(h[0] != PROG_MAGIC || size < 16 || size > PROG_MAX) {
-        dlog_str("program.bin: not in the SDRAM (data slot 2)\n");
+    uint32_t t0 = rdcycle(), before = begin(sd, "program"), size = 0;
+    int e = slot_read(2, 0, PROG_BASE, 16);
+    if(!e) {
+        size = h[1];
+        if(h[0] == PROG_MAGIC && size >= 16 && size <= PROG_MAX)
+            e = slot_read(2, 0, PROG_BASE, (size + 3) & ~3u);
+    }
+    if(e || h[0] != PROG_MAGIC || size < 16 || size > PROG_MAX) {
+        dlog_str("program.bin: not loaded (data slot 2, result ");
+        dlog_dec(e);
+        dlog_str(")\n");
         fail(sd, PROG_BASE - SDRAM_BASE, PROG_MAGIC, h[0]);
     } else {
         uint32_t c = crc32((const uint8_t *)PROG_BASE + 16, (const uint8_t *)PROG_BASE + size);
@@ -391,37 +402,15 @@ static int quick(uint32_t seed)
     return bad == 0;
 }
 
-/* A checksum of one MB of the SDRAM through the cache */
-static uint32_t mb_sum(uint32_t mb)
-{
-    const volatile uint32_t *p = (const volatile uint32_t *)(SDRAM_BASE + (mb << 20)), *e = p + (1u << 18);
-    uint32_t s = mb;
-    for(; p < e; p += 8) {
-        s = (s << 5 | s >> 27) + p[0];
-        s = (s << 5 | s >> 27) + p[1];
-        s = (s << 5 | s >> 27) + p[2];
-        s = (s << 5 | s >> 27) + p[3];
-        s = (s << 5 | s >> 27) + p[4];
-        s = (s << 5 | s >> 27) + p[5];
-        s = (s << 5 | s >> 27) + p[6];
-        s = (s << 5 | s >> 27) + p[7];
-    }
-    return s;
-}
-
 /* Move dram_clk over one clock period in steps of 168 ps, initialise and check at each,
    then settle in the middle of the longest good run (around the circle on the Pocket).
-   On the Pocket the SDRAM from 1 MB on (the sweep writes below) is summed up before and
-   after: at a bad phase the chip may take commands and addresses wrongly, and what the
-   APF loaded is already there. */
+   At a bad phase the chip may take commands and addresses wrongly and write anywhere
+   (measured: 15 of 63 MB changed), so nothing is loaded into the SDRAM before. */
 static void t_phase(void)
 {
     int n = sim ? 4 : PHASE_STEPS_MAX, best = 0, first = 0;
     uint8_t good[PHASE_STEPS_MAX];
-    uint32_t sums[SDRAM_SIZE >> 20];
     uint32_t t0 = rdcycle(), before = begin(sd, "phase");
-    if(!sim)
-        for(uint32_t mb = 1; mb < SDRAM_SIZE >> 20; mb++) sums[mb] = mb_sum(mb);
     for(int i = 0; i < n; i++) {
         if(i) phase_step(1);
         good[i] = sdram_reinit() && quick(0x1234567u + (uint32_t)i);
@@ -458,17 +447,6 @@ static void t_phase(void)
     dlog_str(" steps of 168 ps, now at step ");
     dlog_dec(phase_centre);
     dlog_char('\n');
-    if(!sim) {
-        int changed = 0;
-        dcache_invalidate();
-        dlog_str("phase sweep: SDRAM from 1 MB on ");
-        for(uint32_t mb = 1; mb < SDRAM_SIZE >> 20; mb++)
-            if(mb_sum(mb) != sums[mb]) {
-                dlog_str(changed++ ? " " : "CHANGED in MB ");
-                dlog_dec((int32_t)mb);
-            }
-        dlog_str(changed ? "\n" : "unchanged\n");
-    }
     end(sd, B_SD_PHASE, before, t0);
 }
 
@@ -623,20 +601,13 @@ uint32_t memtest_run(int full, void (*cb)(const char *what, uint32_t addr))
 
     if(st & MEM_READY) {
         results |= 1u << B_SD_READY;
-        t_program();                    /* first: the full test overwrites it */
         t_phase();
         t_memory(sd);
         t_code();
         t_refresh();
         t_status();
         measure();
-        /* the quick tests leave program.bin alone: if it changed anyway, it is not run */
-        const volatile uint32_t *h = (const volatile uint32_t *)PROG_BASE;
-        if(!full && prog_entry &&
-           crc32((const uint8_t *)PROG_BASE + 16, (const uint8_t *)PROG_BASE + h[1]) != h[2]) {
-            dlog_str("program.bin: CHANGED in the SDRAM during the tests, not started\n");
-            prog_entry = 0;
-        }
+        t_program();                    /* last: loaded only now */
     } else {
         dlog_str("SDRAM not ready: its tests skipped\n");
     }

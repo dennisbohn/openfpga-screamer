@@ -8,7 +8,8 @@
 // bridge delivers big-endian words, the CPU is little-endian: bridge data into and out
 // of the CPU's memories is byte-swapped, and so is the framebuffer, whose words keep the
 // leftmost pixel in [31:24]. The SDRAM, SRAM and PSRAM controllers are not reset with
-// the CPU: the bridge loads slots into the SDRAM while the CPU is held.
+// the CPU. The SDRAM slots are deferload: the CPU asks the APF for them (ds_*) once the
+// SDRAM clock phase is found, because the sweep may write anywhere at a bad phase.
 //
 // Bridge reads are answered one read later, as the APF expects (io_bridge_peripheral.v:
 // "reads are buffered by 1 word"): the data for the address of a read is latched at its
@@ -82,6 +83,16 @@ module soc (
     output  reg             phase_later,            // its direction
     input   wire            phase_busy,
     input   wire    [15:0]  phase_count,            // steps from the start phase, signed
+
+    // a data slot read the core asks the APF for (core_bridge_cmd's target command 0x0180;
+    // the deferload slots): held from the start until done
+    output  reg             ds_read = 0,
+    output  reg     [15:0]  ds_id,
+    output  reg     [31:0]  ds_offset,
+    output  reg     [31:0]  ds_addr,
+    output  reg     [31:0]  ds_length,
+    input   wire            ds_done,
+    input   wire    [2:0]   ds_err,
 
     // SRAM pins (data bus split)
     output  wire    [16:0]  sram_a,
@@ -606,6 +617,8 @@ end
     reg  [31:0] key_r, joy_r;
     reg  [15:0] trig_r;
     wire        swap_pending = swap_req_toggle != ack_s[1];
+    reg         ds_started = 0;                 // the data slot read's command has begun
+    reg  [2:0]  ds_result = 0;                  // the last one's result, 0 = ok
     reg  [31:0] reg_q;
     wire        writes_idle = sdram_cpu_writes_idle && !sram_busy && !sram_start &&
                               !psram_busy && !psram_start;
@@ -625,6 +638,7 @@ always @(posedge clk) begin
         16'h0010: reg_q <= {8'd0, br_words};
         16'h0014: reg_q <= sdram_refreshes;
         16'h0018: reg_q <= {phase_count, 14'd0, sdram_ready, phase_busy || phase_step};
+        16'h0030: reg_q <= {25'd0, ds_result, 3'd0, ds_read};
         16'h1000: reg_q <= {frame_count, 14'd0, swap_pending, ack_s[1]};
         16'h2000: reg_q <= key_r;
         16'h2004: reg_q <= joy_r;
@@ -647,10 +661,21 @@ always @(posedge clk) begin
     phase_step <= 0;
     sdram_reinit <= 0;
 
+    // a data slot read: done once core_bridge_cmd's done went low (the command started)
+    // and high again
+    if(ds_read) begin
+        if(!ds_done) ds_started <= 1;
+        else if(ds_started) begin
+            ds_read <= 0;
+            ds_result <= ds_err;
+        end
+    end
+
     if(cpu_reset) begin
         d_state <= D_IDLE;
         swap_req_toggle <= 0;               // video_out's acknowledge restarts at 0 too
         sim_status <= 0;
+        ds_read <= 0;
     end else begin
         // a command: remember it; a write happens next clock, a read blocks
         if(d_fire) begin
@@ -677,6 +702,14 @@ always @(posedge clk) begin
                     phase_step <= d_data[0] && !phase_busy;
                     phase_later <= d_data[1];
                     sdram_reinit <= d_data[8];
+                end
+                if(d_addr[15:0] == 16'h0020) ds_id <= d_data[15:0];
+                if(d_addr[15:0] == 16'h0024) ds_offset <= d_data;
+                if(d_addr[15:0] == 16'h0028) ds_addr <= d_data;
+                if(d_addr[15:0] == 16'h002C) ds_length <= d_data;
+                if(d_addr[15:0] == 16'h0030 && d_data[0] && !ds_read) begin
+                    ds_read <= 1;
+                    ds_started <= 0;
                 end
                 if(d_addr[15:0] == 16'h1004 && !swap_pending) swap_req_toggle <= ~swap_req_toggle;
                 if(d_addr[15:10] == 6'b000101) begin        // 0x1400-0x17FC

@@ -10,10 +10,13 @@
 //
 // Loading like the APF: the core held in reset, a bridge word at most every 88 clocks
 // (io_bridge_peripheral.v), firmware.bin to bridge address 0, the debug log slot filled
-// with 0xFF (debug.txt does not exist yet; the core must ignore it), then, after waiting
-// for the acknowledge core_top gives a slot write once the SDRAM is ready, program.bin (next
-// to firmware.bin, if it is there) into the SDRAM at 0x1300_0000 (data slot 2). Then reset
-// is released: the boot loader tests, checks program.bin and starts it.
+// with 0xFF (debug.txt does not exist yet; the core must ignore it), then the wait for the
+// acknowledge core_top gives a slot write once the SDRAM is ready. Then reset is released.
+// program.bin (next to firmware.bin) is deferload: the boot loader asks for it after the
+// SDRAM tests (ds_read, core_bridge_cmd's target command 0x0180) and the testbench answers
+// like the APF: done low, the words over the bridge, done high with the result (2 for a
+// slot without a file, as the track's here). The boot loader checks program.bin and
+// starts it.
 //
 // Run until the firmware reports through SYS_SIM, then capture two more frames and check:
 // SYS_SIM, the model error counts and the longest refresh gap, the debug log's slot size
@@ -29,6 +32,7 @@
 // tools/sim.sh): SYS_SIM must show exactly those tests failed, the log must report a
 // failure, and the resets are left out.
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdint>
 #include <cstdlib>
@@ -86,6 +90,26 @@ struct Sim {
             bridge_write(base + a, uint32_t(f[a]) << 24 | f[a + 1] << 16 | f[a + 2] << 8 | f[a + 3]);
     }
 
+    // the APF's side of a data slot read the core asked for: slot 2 is program.bin, any
+    // other slot has no file. The clocks it takes do not count as frames of run().
+    std::vector<uint8_t> prog;
+    int slot_reads = 0;
+    void serve_read() {
+        top.ds_done = 0; top.eval();
+        rise_74(8);
+        uint32_t id = top.ds_id, off = top.ds_offset, addr = top.ds_addr, len = top.ds_length, err = 2;
+        if (id == 2 && off < prog.size()) {
+            size_t end = std::min<size_t>(prog.size(), size_t(off) + len);
+            load(addr, std::vector<uint8_t>(prog.begin() + off, prog.begin() + end));
+            err = 0;
+        }
+        printf("data slot read %u: %u bytes from %u to 0x%08x, result %u\n", id, len, off, addr, err);
+        slot_reads++;
+        rise_74(8);
+        top.ds_err = err; top.ds_done = 1; top.eval();
+        while (top.ds_read) rise_74();
+    }
+
     // Run until SYS_SIM says done, then two more frames; returns the frames run and leaves
     // the last whole frame in last. done = false at the timeout. unasked: the buffer in
     // front changed before the CPU's swap request changed (since the call). max_clocks
@@ -100,6 +124,7 @@ struct Sim {
         while (now <= limit) {
             int e = step();
             if (!e) continue;
+            if (e == 1 && top.ds_read) serve_read();
             asked |= top.swap_req != req0;
             if (top.front != prev_front) { unasked |= !asked; prev_front = top.front; }
             if (e == 1 && max_clocks && ++clocks >= max_clocks) break;
@@ -225,7 +250,8 @@ int main(int argc, char **argv) {
     while (fw.size() % 4) fw.push_back(0);
 
     // program.bin next to firmware.bin (tools/fw.sh builds both)
-    std::vector<uint8_t> prog;
+    Sim s;
+    std::vector<uint8_t> &prog = s.prog;
     {
         std::string path = argv[1];
         size_t slash = path.find_last_of("/\\");
@@ -241,13 +267,13 @@ int main(int argc, char **argv) {
         printf("%s: %zu bytes\n", path.c_str(), prog.size());
     }
 
-    Sim s;
     Vsoc_system &top = s.top;
     top.clk_74a = 0; top.clk_vid = 0; top.reset_n = 0; top.bridge_wr = 0; top.bridge_rd = 0; top.cont1_key = 0;
+    top.ds_done = 0; top.ds_err = 0;
     top.eval();
 
-    // as the APF does it: slot 0 (firmware), slot 1 (no debug.txt yet: 0xFF), slot 2 after
-    // the acknowledge (the SDRAM is ready)
+    // as the APF does it: slot 0 (firmware), slot 1 (no debug.txt yet: 0xFF), then it waits
+    // for the acknowledge (the SDRAM is ready); slots 2 and 3 only when the core asks
     int fails = 0;
     s.load(0, fw);
     s.load(0x00100000, std::vector<uint8_t>(4096, 0xFF));
@@ -262,7 +288,6 @@ int main(int argc, char **argv) {
     uint64_t wait_from = s.now;
     while (!top.sdram_ready) s.rise_74();
     printf("SDRAM ready %.1f us after the first two slots\n", double(s.now - wait_from) / 1e6);
-    s.load(0x13000000, prog);
     s.rise_74(16);
     top.reset_n = 1; top.eval();
 
@@ -271,6 +296,11 @@ int main(int argc, char **argv) {
     int frames = s.run(timeout_frames, last, done, unasked);
     fails += check_run(s, argv[2], frames, done, last, expect, timeout_frames,
                        expect_trap || negative ? nullptr : "SDRAM program: ok");
+    if (!expect_trap && !negative && s.slot_reads < 2) {
+        printf("FAIL: the core asked for %d data slot reads, expected program.bin's header and the file\n",
+               s.slot_reads);
+        fails++;
+    }
 
     if (!expect_trap && !negative) {
         // a reset as when the firmware is reloaded from the menu (Reset Enter, the slot

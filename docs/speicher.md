@@ -76,6 +76,12 @@ Hold; die Phasenmessung auf dem Pocket zeigt, wo es wirklich liegt. Deshalb:
   die Phase in 168-ps-Schritten über eine ganze Periode, initialisiert das SDRAM bei jedem
   Schritt kurz neu, prüft mit harten Mustern, schreibt das Fenster ins Protokoll und stellt die
   Mitte des Fensters ein. Der Bitstream startet mit 9932 ps.
+- **Die Suche zerstört Speicherinhalt:** In den schlechten Phasen übernimmt der SDRAM-Chip
+  Befehle und Adressen offenbar falsch. Eine Prüfsumme je MB vor und nach der Suche zeigte
+  15 von 63 MB verändert, nicht nur die 4 KB des Tests (2026-10-26). Vorher geladene Daten
+  waren betroffen: einmal eine leere Strecke, einmal ein Absturz an einem kaputten Verweis.
+  Deshalb lädt der Pocket nichts mehr vorab ins SDRAM (`deferload`), der Lader fordert
+  `program.bin` erst nach der Suche und den Tests an (`docs/soc.md`).
 - **Constraints genau so** (`core_constraints.sdc`): `create_generated_clock -name
   dram_clk_pin -source [PLL-Ausgang divclk] [get_ports dram_clk]` (ohne `-invert`; bei der
   PLL mit Phasenverschiebung heißt die Quelle `…|cyclonev_pll|counter[0].output_counter|divclk`);
@@ -278,9 +284,8 @@ SDRAM, in dieser Reihenfolge:
 1. **Bereitschaft:** bis 0,5 s auf `MEM_STATUS` Bit 1 warten, `SYS_FLAGS`, `MEM_STATUS` und
    `MEM_BRIDGE_WORDS` ins Protokoll; ist das SDRAM nicht bereit, werden die SDRAM-Tests
    übersprungen, SRAM und `cram0` trotzdem geprüft.
-2. **Von der Bridge geladen:** wenn `MEM_BRIDGE_WORDS` × 4 ≥ Größe des Boot-Abbilds, CRC-32
-   der Kopie an `0x1000_0000` gegen die des Boot-Abbilds, dazu die Bits „übergelaufen" und
-   „verworfen"; sonst „skipped (not loaded in this run)". Läuft vor allen schreibenden Tests.
+2. **program.bin:** läuft jetzt als letzter SDRAM-Test: vom Pocket angefordert (Kopf, dann
+   die Datei), Kopf, Größe und CRC-32 geprüft, dazu die Bits „übergelaufen" und „verworfen".
 3. **Phasen-Fenster:** 80 Schritte zu 168 ps (Simulation: 4), bei jedem kurz neu
    initialisieren und prüfen: 4 KB Pseudozufall über Cache-Zeilen (Simulation: 512 Byte) und 64
    Byte Umschaltmuster ungecacht. Die längste Folge guter Schritte (auf dem Pocket rund um den

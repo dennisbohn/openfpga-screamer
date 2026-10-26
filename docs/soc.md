@@ -11,15 +11,22 @@ etwas daran ändert, ändert beide Seiten und dieses Dokument.
   SDRAM-Controller. Nur `dram_clk` kommt aus einer eigenen PLL mit verstellbarer Phase
   (`docs/speicher.md`). Ein höherer Systemtakt ist ein späterer eigener Schritt.
 - **Reset:** Die CPU steht im Reset, solange `reset_n` aus `core_bridge_cmd` low ist. Der
-  Pocket lädt alle Data-Slots vor „Reset Exit“, die Firmware liegt beim Start also schon im
-  Boot-RAM. Beim Neuladen der Firmware aus dem Menü setzt der Pocket den Core zurück
+  Pocket lädt die Data-Slots ohne `deferload` vor „Reset Exit“, die Firmware liegt beim Start
+  also schon im Boot-RAM. Beim Neuladen der Firmware aus dem Menü setzt der Pocket den Core zurück
   (Parameter-Bit 6), lädt aber keinen neuen Bitstream. Nach jedem Reset ist Puffer 0 vorn,
   kein Tausch steht aus und `SYS_SIM` ist 0. Bis zum ersten Tausch zeigt `video_out` Puffer 0
   mit Palette 0: nach dem Laden des Cores schwarz, nach einem Neuladen der Firmware, was der
   vorige Lauf dort hinterlassen hat.
 - **Firmware:** zwei Teile. Data-Slot 0 `firmware.bin` (höchstens 32 KB) an Bridge-Adresse
   `0x00000000` ins Boot-RAM: der Lader (Selbsttests, Speichertest). Data-Slot 2
-  `program.bin` an `0x1300_0000` ins SDRAM: das Programm. Die Bridge liefert 32-Bit-Wörter
+  `program.bin` an `0x1300_0000` ins SDRAM: das Programm.
+- **Slots im SDRAM erst nach der Phasensuche:** Die Slots 2 (`program.bin`) und 3 (Strecke)
+  haben `deferload`, der Pocket lädt sie nicht von selbst. Die Phasensuche des Speichertests
+  stellt den SDRAM auch in schlechte Phasen, dort kann der Chip Befehle und Adressen falsch
+  übernehmen und irgendwo schreiben (gemessen: 15 von 63 MB verändert). Der Lader fordert
+  `program.bin` deshalb erst nach den SDRAM-Tests an (`DS_*`, der Ziel-Befehl 0x0180 von
+  `core_bridge_cmd`), zuerst die 16 Bytes des Kopfes, in dem die Größe steht, dann die Datei;
+  das Programm holt die Strecke genauso (`firmware/slot.c`). Die Bridge liefert 32-Bit-Wörter
   big-endian (das erste Byte der Datei in Bit 31:24), die CPU ist little-endian: `soc.v`
   dreht die Byte-Reihenfolge beim Schreiben um, beide sind ganz normale little-endian-Abbilder.
 - **Start des Programms:** `program.bin` beginnt mit einem Kopf aus vier Wörtern: `"SCRP"`
@@ -28,15 +35,15 @@ etwas daran ändert, ändert beide Seiten und dieses Dokument.
   `fence.i` und springt mit `a0` = seine Ergebnisse (`SYS_SIM`-Bits), `a1`, `a2` = Position
   und angefangenes Wort im Protokoll. Das Programm setzt eigenes `gp`, `tp` und `mtvec`, sein
   Stack liegt oben im Boot-RAM (ab `0x8000` abwärts bis `0x6000`; der Lader bleibt darunter).
-  Der kurze Speichertest schreibt im SDRAM nur unterhalb von 32 MB und ins letzte Fenster, der
-  volle (Select beim Start) überschreibt das Programm: Dann bleiben nur die Ergebnisse stehen.
+  Nach dem vollen Speichertest (Select beim Start) bleiben die Ergebnisse stehen; das Programm
+  startet erst beim nächsten Start des Cores.
 
 ## Speicherkarte der CPU
 
 | Adresse | Größe | Inhalt | Cache |
 |---|---|---|---|
 | `0x0000_0000` | 32 KB | Boot-RAM: der Lader, darüber der Stack des Programms. Reset-Vektor `0x0000_0000`, `mtvec` nach Reset `0x0000_0020` | ja |
-| `0x1000_0000` | 64 MB | SDRAM: Texturen ab `0x1210_0000` (Slot 3), das Programm ab `0x1300_0000` (Slot 2) | ja |
+| `0x1000_0000` | 64 MB | SDRAM: die Strecke ab `0x1210_0000` (Slot 3), das Programm ab `0x1300_0000` (Slot 2) | ja |
 | `0xF000_0000` | 4 KB | System- und Speicher-Register | nein |
 | `0xF000_1000` | 4 KB | Video-Register und Palette | nein |
 | `0xF000_2000` | 4 KB | Eingabe | nein |
@@ -70,6 +77,11 @@ Alle Register sind 32 Bit, Zugriff als Wort.
 | `0xF000_0010` | `MEM_BRIDGE_WORDS` | R | Bridge-Wörter ins SDRAM seit dem Einschalten oder seit Reset Enter |
 | `0xF000_0014` | `MEM_REFRESH` | R | Zahl der AUTO REFRESH an das SDRAM seit dem Einschalten |
 | `0xF000_0018` | `MEM_PHASE` | R/W | Schreiben: Bit 0 = `dram_clk` um einen Schritt (168 ps) verschieben, Bit 1 = später (sonst früher), Bit 8 = SDRAM neu initialisieren. Lesen: Bit 0 Verschiebung läuft, Bit 1 SDRAM bereit, Bit 31..16 Schritte seit dem Start (vorzeichenbehaftet; 80 Schritte = eine Periode) |
+| `0xF000_0020` | `DS_ID` | W | Data-Slot-Lesen beim Pocket anfordern: Slot-Nummer |
+| `0xF000_0024` | `DS_OFFSET` | W | Byte-Versatz in der Datei |
+| `0xF000_0028` | `DS_ADDR` | W | Bridge-Adresse, an die geladen wird (im SDRAM gleich der CPU-Adresse) |
+| `0xF000_002C` | `DS_LENGTH` | W | Bytes, ein Vielfaches von 4 |
+| `0xF000_0030` | `DS_CTRL` | R/W | Schreiben: Bit 0 = anfordern. Lesen: Bit 0 läuft noch, Bit 6..4 Ergebnis des Pocket (0 = gut, 2 z. B. keine Datei im Slot) |
 | `0xF000_1000` | `VID_STATUS` | R | Bit 0: vorderer Puffer (0/1). Bit 1: Tausch angefordert, noch nicht vollzogen. Bit 31..16: Bildzähler, zählt jedes Videobild (50 Hz) |
 | `0xF000_1004` | `VID_SWAP` | W | beliebiger Wert: Tausch anfordern. Er geschieht in der nächsten Austastlücke; solange er aussteht (Bit 1), werden weitere Anforderungen ignoriert |
 | `0xF000_1400` + 4·i | `VID_PAL[i]` | W | Palette des **hinteren** Puffers, Eintrag i (0..255): `0x00RRGGBB`. Nur solange kein Tausch aussteht (`VID_STATUS` Bit 1 = 0); sonst trifft es den Puffer, der gerade angezeigt wird |

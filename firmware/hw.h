@@ -90,6 +90,15 @@
 #define PHASE_LATER     (1u << 1)           /* ... later, else earlier */
 #define PHASE_REINIT    (1u << 8)           /* initialise the SDRAM again */
 #define PHASE_BUSY      (1u << 0)
+
+/* a data slot read from the APF (deferload slots, slot.h) */
+#define DS_ID           REG32(0xF0000020u)  /* W: slot id */
+#define DS_OFFSET       REG32(0xF0000024u)  /* W: byte offset in the file */
+#define DS_ADDR         REG32(0xF0000028u)  /* W: bridge address to load to */
+#define DS_LENGTH       REG32(0xF000002Cu)  /* W: bytes, a multiple of 4 */
+#define DS_CTRL         REG32(0xF0000030u)  /* W: DS_START; R: DS_BUSY, [6:4] the APF's result, 0 = ok */
+#define DS_START        (1u << 0)
+#define DS_BUSY         (1u << 0)
 #define PHASE_STEPS(r)  ((int16_t)((r) >> 16))
 
 /* Rasterizer (raster.v): the same pixels as raster.c. Vertices and clip may be written while

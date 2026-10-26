@@ -15,6 +15,7 @@
 #include "raster.h"
 #include "texdemo.h"
 #include "screen.h"
+#include "slot.h"
 #include "track.h"
 
 uint32_t frames_shown;             /* read by the trap handler */
@@ -358,9 +359,15 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     log_head("frames drawn: ", 0);
     dlog_str("program.bin: running in the SDRAM\n");
 
-    /* the track file is only read once all its blocks are as written */
-    int placements = 0;
-    if (track_open(TEX_FILE)) {
+    /* the track (data slot 3, deferload): its header has the file's size; the file is only
+       read once all its blocks are as written */
+    int placements = 0, e = slot_read(3, 0, (uint32_t)(uintptr_t)TEX_FILE, 0x100);
+    if (!e && track_open(TEX_FILE)) e = slot_read(3, 0, (uint32_t)(uintptr_t)TEX_FILE, (track_size() + 3) & ~3u);
+    if (e) {
+        dlog_str("track1.bin: not loaded (data slot 3, result ");
+        dlog_dec(e);
+        dlog_str(")\n");
+    } else if (track_open(TEX_FILE)) {
         dlog_str("track1.bin: ");
         dlog_dec((int32_t)track_size());
         dlog_str(" bytes, CRC of the 256 KB blocks:");
@@ -387,25 +394,12 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         RS_CTRL = 1;
         run_track();
     }
+    /* no track: the scene with test patterns, written before the rasterizer reads them */
+    texdemo_synth((volatile uint8_t *)TEX_FILE);
+    while (!(MEM_STATUS & MEM_WRITES_IDLE))
+        ;
     textures = texdemo_init(TEX_FILE);
-    if (textures) {
-        const volatile uint32_t *pal = texdemo_palette();
-        col_bg = nearest(pal, 0, 0, 0);
-        col_text = nearest(pal, 255, 255, 255);
-        col_dim = nearest(pal, 120, 200, 120);
-        col_alert = nearest(pal, 230, 25, 178);
-        col_player = nearest(pal, 85, 170, 255);
-        dlog_str("textures: ");
-        dlog_dec(textures);
-        dlog_str(" from data slot 3\n");
-    } else {
-        /* no textures.bin: test patterns instead, written before the rasterizer reads them */
-        texdemo_synth((volatile uint8_t *)TEX_FILE);
-        while (!(MEM_STATUS & MEM_WRITES_IDLE))
-            ;
-        textures = texdemo_init(TEX_FILE);
-        dlog_str("textures: none in data slot 3, test patterns instead\n");
-    }
+    dlog_str("textures: test patterns\n");
     RS_CTRL = 1;                    /* the texture cache forgets what it held */
     texdemo_hw = hw_textured;
 
