@@ -314,6 +314,9 @@ end
     assign rs_mem_rsp_valid = lp_rsp_valid && !lp_owner;
     assign gu_mem_rsp_valid = lp_rsp_valid && lp_owner;
 always @(posedge clk) if(lp_ready && lp_valid) lp_owner <= !rs_mem_valid;
+always @(posedge clk)
+    if(rs_wr && d_addr[6:2] == 5'd21) rs_starved <= 0;
+    else if(!rs_busy && (su_busy || gu_busy)) rs_starved <= rs_starved + 1'b1;
 
 sdram_port sdp (
     .clk                ( clk ),
@@ -560,6 +563,8 @@ psram32 ps0 (
 //
     wire        rs_busy, rs_fb_wr, rs_fb_buf;
     wire [31:0] rs_pixels, rs_misses, rs_busy_clocks, rs_fb_data;
+    wire [31:0] rs_miss_clocks, rs_edge_clocks, rs_row_clocks, rs_drain_clocks;
+    reg  [31:0] rs_starved = 0;                 // clocks the rasterizer had nothing while the units in front worked
     wire [13:0] rs_fb_addr;
     wire [3:0]  rs_fb_be;
     wire        su_busy, su_ready, su_go;
@@ -655,6 +660,10 @@ raster rs (
     .pixels             ( rs_pixels ),
     .misses             ( rs_misses ),
     .busy_clocks        ( rs_busy_clocks ),
+    .miss_clocks        ( rs_miss_clocks ),
+    .edge_clocks        ( rs_edge_clocks ),
+    .row_clocks         ( rs_row_clocks ),
+    .drain_clocks       ( rs_drain_clocks ),
     .fb_wr              ( rs_fb_wr ),
     .fb_buf             ( rs_fb_buf ),
     .fb_addr            ( rs_fb_addr ),
@@ -758,6 +767,11 @@ always @(posedge clk) begin
         16'h3018: reg_q <= rs_pixels;
         16'h3050: reg_q <= rs_misses;
         16'h3054: reg_q <= rs_busy_clocks;
+        16'h3058: reg_q <= rs_miss_clocks;
+        16'h305C: reg_q <= rs_edge_clocks;
+        16'h3060: reg_q <= rs_row_clocks;
+        16'h3064: reg_q <= rs_drain_clocks;
+        16'h3068: reg_q <= rs_starved;
         16'h30AC: reg_q <= su_busy_clocks;
         16'h3150: reg_q <= gu_faces;
         16'h3154: reg_q <= gu_busy_clocks;

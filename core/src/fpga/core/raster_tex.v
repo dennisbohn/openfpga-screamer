@@ -38,6 +38,7 @@ module raster_tex (
 
     output  wire            busy,
     output  reg     [31:0]  misses = 0,         // lines fetched since the last clear
+    output  wire            stalled,            // the pipeline waits for a line (or the invalidation)
     input   wire            clear_misses,
 
     // framebuffer writes, one pixel each
@@ -157,6 +158,7 @@ end
     wire        hit = t_q[12] && t_q[11:0] == a_c2[25:14];
     wire [7:0]  texel = d_q[8 * a_c2[1:0] +: 8];
     assign stall = mstate != M_NORMAL || (c2 && !hit);
+    assign stalled = stall;
     assign busy = mstate != M_NORMAL || v1 || v2 || v3 || v4 || v5 || v6 || v7 || v8 || v9 ||
                   c1 || c2 || out_wr;
 

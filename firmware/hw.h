@@ -117,7 +117,12 @@
 #define RS_DY(k)        REG32(0xF0003040u + 4u * (k))   /* ... in y */
 #define RS_CTRL         REG32(0xF000304Cu)  /* W: any value forgets the cached texture lines */
 #define RS_MISSES       REG32(0xF0003050u)  /* R: texture lines fetched from the SDRAM; W: clears */
-#define RS_CLOCKS       REG32(0xF0003054u)  /* R: clocks the rasterizer was busy; W: clears */
+#define RS_CLOCKS       REG32(0xF0003054u)  /* R: clocks the rasterizer was busy; W: clears (and the 5 below) */
+#define RS_MISS_CLOCKS  REG32(0xF0003058u)  /* R: clocks the texture pipeline waited for a line */
+#define RS_EDGE_CLOCKS  REG32(0xF000305Cu)  /* R: clocks in edge setup */
+#define RS_ROW_CLOCKS   REG32(0xF0003060u)  /* R: clocks in the work of a row (span, first pixel) */
+#define RS_DRAIN_CLOCKS REG32(0xF0003064u)  /* R: clocks idle while the texture pipeline drained */
+#define RS_STARVED      REG32(0xF0003068u)  /* R: clocks idle while the setup or geometry unit worked */
 #define RS_BUSY         (1u << 0)
 #define RS_TEXTURED     (1u << 9)           /* RS_DRAW: textured with RS_TEX ... RS_DY */
 #define RS_CUT          (1u << 31)          /* RS_TEXSIZE: texel 0 is see-through */

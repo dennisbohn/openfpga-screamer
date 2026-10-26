@@ -6,8 +6,8 @@
 //   (y1 - y0) truncated towards zero, x = (x0 << 12) + floor(slope * (yc - y0) / 16) in
 //   16.16 pixels, one slope added per row; a row's span is [ceil(left - 0.5), ceil(right -
 //   0.5)), limited to the clip rectangle.
-// Vertices are signed 16 bit in 1/16 pixel. Setup: one division per edge (32 clocks, one
-// quotient bit a clock) and one multiplication, two or three edges a triangle. Then three
+// Vertices are signed 16 bit in 1/16 pixel. Setup: one division per edge (16 clocks, two
+// quotient bits a clock) and one multiplication, two or three edges a triangle. Then three
 // clocks per row and, for one colour, one per framebuffer word: up to four pixels a clock.
 // Textured (raster_tex.v): Q, U, V at the span's first pixel from the triangle's reference
 // pixel, a = (A << 8) + dx (x0 - xr) + dy (r - yr) (four clocks a row), then one pixel a
@@ -29,7 +29,10 @@
 //   13..15  their change per pixel in x, 8 fraction bits    16..18  the same in y
 //   19    write: forget the cached texture lines (after the CPU changed textures)
 //   20    texture lines fetched from the SDRAM (cache misses); write: clear
-//   21    clocks the rasterizer was busy; write: clear
+//   21    clocks the rasterizer was busy; write: clear (and the counters below)
+// Counters (outputs, cleared with 21): clocks the texture pipeline waited for a line, in
+// edge setup, in the work of a row (rows, span, the values at its first pixel), and idle
+// waiting for the texture pipeline to drain before the next triangle.
 //
 
 module raster (
@@ -43,6 +46,10 @@ module raster (
     output  reg     [31:0]  pixels = 0,         // pixels drawn since the last clear
     output  wire    [31:0]  misses,             // texture cache misses since the last clear
     output  reg     [31:0]  busy_clocks = 0,    // clocks with busy since the last clear
+    output  reg     [31:0]  miss_clocks = 0,
+    output  reg     [31:0]  edge_clocks = 0,
+    output  reg     [31:0]  row_clocks = 0,
+    output  reg     [31:0]  drain_clocks = 0,
 
     // framebuffer drawing port, a word of four pixels; be[3] is the leftmost pixel
     output  wire            fb_wr,
@@ -82,7 +89,7 @@ module raster (
     reg         flat_wr = 0;                    // one-colour words
     reg  [13:0] flat_addr;
     reg  [3:0]  flat_be;
-    wire        tex_busy, tex_wr, tex_ready;
+    wire        tex_busy, tex_wr, tex_ready, tex_stalled;
     wire [13:0] tex_word;
     wire [3:0]  tex_be;
     wire [7:0]  tex_texel;
@@ -199,6 +206,7 @@ raster_tex rt (
     .tex_cut            ( t_cut ),
     .busy               ( tex_busy ),
     .misses             ( misses ),
+    .stalled            ( tex_stalled ),
     .clear_misses       ( wr && wr_addr == 5'd20 ),
     .out_wr             ( tex_wr ),
     .out_word           ( tex_word ),
@@ -224,7 +232,13 @@ raster_tex rt (
     reg  [31:0] e_quo;
     reg signed [32:0] e_slope;
     reg signed [52:0] e_prod;
+    // two steps of the restoring division a clock: the first bit, then the second from it
     wire [16:0] e_try = {e_rem[15:0], e_num[31]};
+    wire        e_q1 = e_try >= {1'b0, e_den};
+    wire [16:0] e_rem1 = e_q1 ? e_try - {1'b0, e_den} : e_try;
+    wire [16:0] e_try2 = {e_rem1[15:0], e_num[30]};
+    wire        e_q2 = e_try2 >= {1'b0, e_den};
+    wire [16:0] e_rem2 = e_q2 ? e_try2 - {1'b0, e_den} : e_try2;
     wire signed [19:0] e_dyc = $signed({e_r, 4'd8}) - $signed({{4{e_y0[15]}}, e_y0});    // yc - y0, >= 0
     wire signed [35:0] e_x = $signed({{8{e_x0[15]}}, e_x0, 12'd0}) + $signed(e_prod[39:4]);
 
@@ -267,8 +281,20 @@ end
 
 always @(posedge clk) begin
     flat_wr <= 0;
-    if(wr && wr_addr == 5'd21) busy_clocks <= 0;
-    else if(busy) busy_clocks <= busy_clocks + 1'b1;
+    if(wr && wr_addr == 5'd21) begin
+        busy_clocks <= 0;
+        miss_clocks <= 0;
+        edge_clocks <= 0;
+        row_clocks <= 0;
+        drain_clocks <= 0;
+    end else begin
+        if(busy) busy_clocks <= busy_clocks + 1'b1;
+        if(tex_stalled && tex_busy) miss_clocks <= miss_clocks + 1'b1;
+        if(state == S_EDGE) edge_clocks <= edge_clocks + 1'b1;
+        if(state == S_ROWS || state == S_ROW || state == S_CLIP || state == S_SPAN || state == S_ACC)
+            row_clocks <= row_clocks + 1'b1;
+        if(state == S_IDLE && tex_busy) drain_clocks <= drain_clocks + 1'b1;
+    end
     if(wr && wr_addr == 5'd6) pixels <= 0;
     else if(fb_wr) pixels <= pixels + fb_be[0] + fb_be[1] + fb_be[2] + fb_be[3];
 
@@ -330,17 +356,12 @@ always @(posedge clk) begin
 
     S_EDGE: begin
         case(e_phase)
-        2'd0: begin                             // one quotient bit a clock
-            e_num <= {e_num[30:0], 1'b0};
-            if(e_try >= {1'b0, e_den}) begin
-                e_rem <= e_try - {1'b0, e_den};
-                e_quo <= {e_quo[30:0], 1'b1};
-            end else begin
-                e_rem <= e_try;
-                e_quo <= {e_quo[30:0], 1'b0};
-            end
+        2'd0: begin                             // two quotient bits a clock
+            e_num <= {e_num[29:0], 2'b00};
+            e_rem <= e_rem2;
+            e_quo <= {e_quo[29:0], e_q1, e_q2};
             e_cnt <= e_cnt + 1'b1;
-            if(e_cnt == 6'd31) e_phase <= 1;
+            if(e_cnt == 6'd15) e_phase <= 1;
         end
         2'd1: begin
             e_slope <= e_neg ? -$signed({1'b0, e_quo}) : $signed({1'b0, e_quo});

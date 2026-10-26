@@ -344,6 +344,8 @@ static void __attribute__((noreturn)) run_track(void)
             ;
         uint32_t cycles = rdcycle() - t0, raster = RS_CLOCKS, pixels = RS_PIXELS, misses = RS_MISSES;
         uint32_t setup = SU_CLOCKS, geom = GU_CLOCKS;
+        uint32_t r_miss = RS_MISS_CLOCKS, r_edge = RS_EDGE_CLOCKS, r_row = RS_ROW_CLOCKS;
+        uint32_t r_drain = RS_DRAIN_CLOCKS, r_starved = RS_STARVED;
         ts.faces = GU_FACES;
         if (drawn == 2) track_check(fb, pos, col_sky);
 
@@ -407,6 +409,16 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)draw_wait);
             dlog_str("), after ");
             dlog_dec((int32_t)(cycles - ts.cyc_cull - ts.cyc_piece - ts.cyc_out));
+            dlog_str("\n  raster: miss ");
+            dlog_dec((int32_t)r_miss);
+            dlog_str(", edges ");
+            dlog_dec((int32_t)r_edge);
+            dlog_str(", rows ");
+            dlog_dec((int32_t)r_row);
+            dlog_str(", drain ");
+            dlog_dec((int32_t)r_drain);
+            dlog_str(", starved ");
+            dlog_dec((int32_t)r_starved);
             dlog_str("\n");
         }
         VID_SWAP = 1;

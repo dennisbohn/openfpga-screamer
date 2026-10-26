@@ -32,7 +32,7 @@
   </style>
   <rect width="1440" height="900" fill="#ffffff"/>
   <text x="40" y="44" class="h">Der Rasterizer: wie aus einem Dreieck Pixel werden</text>
-  <text x="40" y="66" class="l">raster.v (Hardware) und raster.c (C-Modell) rechnen genau gleich · einfarbig und mit Texturen gebaut und auf dem Pocket getestet · Stand 25.10.2026</text>
+  <text x="40" y="66" class="l">raster.v (Hardware) und raster.c (C-Modell) rechnen genau gleich · einfarbig und mit Texturen gebaut und auf dem Pocket getestet · Stand 26.10.2026</text>
   <text x="40" y="104" class="s">1. Welche Pixel gehören dazu?</text>
   <text x="40" y="124" class="l">Ein Pixel wird gezeichnet, wenn seine Mitte im Dreieck liegt</text>
   <text x="40" y="138" class="l">(liegt sie genau auf der linken oder oberen Kante, zählt sie mit).</text>
@@ -283,8 +283,8 @@
   <text x="540" y="520" class="b">kein Tiefenpuffer): die Reihenfolge kommt aus den Spieldaten.</text>
   <text x="1010" y="104" class="s">3. Ablauf in raster.v</text>
   <rect x="1030" y="130" width="330" height="54" rx="8" class="built"/>
-  <text x="1042" y="150" class="t">CPU schreibt Register</text>
-  <text x="1042" y="167" class="b">3 Ecken, Clip, Farbe, DRAW</text>
+  <text x="1042" y="150" class="t">Setup-Einheit liefert</text>
+  <text x="1042" y="167" class="b">3 Ecken, Werte, Textur</text>
   <text x="1350" y="150" class="l r">solange das vorige zeichnet</text>
   <rect x="1030" y="206" width="330" height="54" rx="8" class="built"/>
   <text x="1042" y="226" class="t">Sortieren nach y</text>
@@ -294,7 +294,7 @@
   <rect x="1030" y="282" width="330" height="54" rx="8" class="built"/>
   <text x="1042" y="302" class="t">Kanten aufsetzen</text>
   <text x="1042" y="319" class="b">Steigung (Division) und Start-x</text>
-  <text x="1350" y="302" class="l r">je Kante ~35 Takte, 2–3 Kanten</text>
+  <text x="1350" y="302" class="l r">je Kante ~19 Takte, 2–3 Kanten</text>
   <path d="M1195.0,262 V280" class="wb" marker-end="url(#arr)"/>
   <rect x="1030" y="358" width="330" height="54" rx="8" class="built"/>
   <text x="1042" y="378" class="t">Zeile: Schnittpunkte</text>

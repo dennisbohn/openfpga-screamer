@@ -94,7 +94,8 @@ Alle Register sind 32 Bit, Zugriff als Wort.
 | `0xF000_3018` | `RS_PIXELS` | R/W | gezeichnete Pixel; Schreiben löscht |
 | `0xF000_301C`–`304C` | `RS_TEX` … `RS_CTRL` | W | Texturen (`firmware/hw.h`): Byte-Adresse von Texel (0, 0) im SDRAM, Größe und Durchsichtigkeit, Bezugspixel, Q, U, V mit Änderung je Pixel; `RS_CTRL` leert den Textur-Cache; `RS_DRAW` Bit 9 zeichnet texturiert |
 | `0xF000_3050` | `RS_MISSES` | R/W | Textur-Zeilen aus dem SDRAM nachgeladen (Cache-Fehltreffer); Schreiben löscht |
-| `0xF000_3054` | `RS_CLOCKS` | R/W | Takte, in denen der Rasterizer beschäftigt war; Schreiben löscht |
+| `0xF000_3054` | `RS_CLOCKS` | R/W | Takte, in denen der Rasterizer beschäftigt war; Schreiben löscht (auch die fünf folgenden) |
+| `0xF000_3058`–`3068` | `RS_MISS_CLOCKS` … `RS_STARVED` | R | Takte, in denen das Textur-Fließband auf eine Zeile aus dem SDRAM wartete; in der Kantenvorbereitung; im Aufwand je Zeile (Zeilen, Spanne, Werte am ersten Pixel); untätig, bis das Fließband leer war; untätig, während Setup- oder Geometrie-Einheit arbeiteten |
 | `0xF000_3080`, `3084` | `SU_CENTRE`, `SU_SCALE` | W | Setup-Einheit (`setup.v` mit `clipper.v`, bitgenau `firmware/setup.c`): Mitte der Ansicht in 1/16 Pixel (wie `RS_XY`), Brennweite in Pixeln mal 16 |
 | `0xF000_3088`–`3090` | `SU_MODE`, `SU_TEX`, `SU_TEXSIZE` | W | wie `RS_DRAW` Bit 9..0, `RS_TEX`, `RS_TEXSIZE`, dazu in `SU_MODE` Bit 12..10 die Zahl der Ecken (3 oder 4); gelten ab der nächsten ersten Ecke für das ganze Vieleck |
 | `0xF000_3094`–`30A0` | `SU_R`, `SU_U`, `SU_F`, `SU_S` | W | eine Ecke in Kamerasicht als Float: rechts, oben, vorn (nach der nahen Ebene, > 0), Texel-Spalte |
