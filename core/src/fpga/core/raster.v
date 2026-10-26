@@ -32,7 +32,11 @@
 //   21    clocks the rasterizer was busy; write: clear (and the counters below)
 // Counters (outputs, cleared with 21): clocks the texture pipeline waited for a line, in
 // edge setup, in the work of a row (rows, span, the values at its first pixel), and idle
-// waiting for the texture pipeline to drain before the next triangle.
+// with the setup unit's next triangle waiting for the texture pipeline.
+//
+// The setup unit's triangle is taken while the texture pipeline still draws the one before:
+// a textured one into the same buffer once the pixels have passed its front (the queue
+// keeps what they need), anything else once it is empty.
 //
 
 module raster (
@@ -66,8 +70,9 @@ module raster (
     input   wire    [31:0]  mem_rsp_data,
 
     // a triangle from the setup unit (setup.v): taken instead of the registers 0..18 and the
-    // draw word in a clock with su_go when not busy
+    // draw word in a clock with su_go and su_accept
     input   wire            su_go,
+    output  wire            su_accept,
     input   wire    [31:0]  su_v0, su_v1, su_v2, su_ref, su_tex, su_size,
     input   wire    [9:0]   su_draw,
     input   wire    [31:0]  su_a0, su_a1, su_a2,
@@ -89,7 +94,7 @@ module raster (
     reg         flat_wr = 0;                    // one-colour words
     reg  [13:0] flat_addr;
     reg  [3:0]  flat_be;
-    wire        tex_busy, tex_wr, tex_ready, tex_stalled;
+    wire        tex_busy, tex_front, tex_wr, tex_ready, tex_stalled;
     wire [13:0] tex_word;
     wire [3:0]  tex_be;
     wire [7:0]  tex_texel;
@@ -104,7 +109,9 @@ module raster (
     reg  [31:0] dx_reg [0:2];
     reg  [31:0] dy_reg [0:2];
     wire        start = wr && wr_addr == 5'd5 && state == S_IDLE && !reset;
-    wire        su_take = su_go && !busy && !reset;    // the setup unit's triangle
+    assign su_accept = state == S_IDLE && !flat_wr && !reset &&
+                       (su_draw[9] && su_draw[8] == fb_buf ? !tex_front : !tex_busy);
+    wire        su_take = su_go && su_accept;           // the setup unit's triangle
     wire [4:0]  wr_a5 = wr_addr - 5'd10, wr_dx5 = wr_addr - 5'd13, wr_dy5 = wr_addr - 5'd16;
     wire [1:0]  wr_addr_a = wr_a5[1:0], wr_addr_dx = wr_dx5[1:0], wr_addr_dy = wr_dy5[1:0];
 
@@ -187,7 +194,7 @@ end
     assign fb_wr = flat_wr || tex_wr;
     assign fb_addr = tex_wr ? tex_word : flat_addr;
     assign fb_be = tex_wr ? tex_be : flat_be;
-    assign fb_data = textured ? {4{tex_texel}} : {4{colour}};
+    assign fb_data = tex_wr ? {4{tex_texel}} : {4{colour}};
 
 raster_tex rt (
     .clk                ( clk ),
@@ -205,6 +212,7 @@ raster_tex rt (
     .tex_h              ( t_h ),
     .tex_cut            ( t_cut ),
     .busy               ( tex_busy ),
+    .front_busy         ( tex_front ),
     .misses             ( misses ),
     .stalled            ( tex_stalled ),
     .clear_misses       ( wr && wr_addr == 5'd20 ),
@@ -293,7 +301,7 @@ always @(posedge clk) begin
         if(state == S_EDGE) edge_clocks <= edge_clocks + 1'b1;
         if(state == S_ROWS || state == S_ROW || state == S_CLIP || state == S_SPAN || state == S_ACC)
             row_clocks <= row_clocks + 1'b1;
-        if(state == S_IDLE && tex_busy) drain_clocks <= drain_clocks + 1'b1;
+        if(state == S_IDLE && su_go && !su_accept) drain_clocks <= drain_clocks + 1'b1;
     end
     if(wr && wr_addr == 5'd6) pixels <= 0;
     else if(fb_wr) pixels <= pixels + fb_be[0] + fb_be[1] + fb_be[2] + fb_be[3];

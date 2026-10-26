@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900" width="1440" height="900" role="img" aria-label="So zeichnet der Rasterizer ein Dreieck: Ecken nach y sortiert, Zeile für Zeile die Schnittpunkte mit den Kanten, alle Pixel, deren Mitte dazwischen liegt, in Wörtern zu vier Pixeln in den Framebuffer; unten der geplante Texturpfad als Fließband mit einem Pixel pro Takt.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 960" width="1440" height="960" role="img" aria-label="So zeichnet der Rasterizer ein Dreieck: Ecken nach y sortiert, Zeile für Zeile die Schnittpunkte mit den Kanten, alle Pixel, deren Mitte dazwischen liegt, in Wörtern zu vier Pixeln in den Framebuffer; unten der Texturpfad als Fließband mit einem Pixel pro Takt, dessen Cache Fehltreffer schon vor einer Warteschlange erkennt und die Zeilen vorausladen lässt.">
   <title>Rasterizer – wie ein Dreieck zu Pixeln wird</title>
-  <desc>Teil 1: Pixelraster mit einem Dreieck a, b, c; ein Pixel gehört dazu, wenn seine Mitte im Dreieck liegt. Teil 2: eine Zeile als Framebuffer-Wörter mit Byte-Enables. Teil 3: Ablauf in raster.v mit Takten. Teil 4: geplanter Texturpfad.</desc>
+  <desc>Teil 1: Pixelraster mit einem Dreieck a, b, c; ein Pixel gehört dazu, wenn seine Mitte im Dreieck liegt. Teil 2: eine Zeile als Framebuffer-Wörter mit Byte-Enables. Teil 3: Ablauf in raster.v mit Takten. Teil 4: Texturpfad mit Tag-Prüfung vor der Warteschlange, Zeilenpuffer und Cache.</desc>
   <defs>
     <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#2e7d32"/>
@@ -30,7 +30,7 @@
     .wb { fill: none; stroke: #2e7d32; stroke-width: 1.8; }
     .wp { fill: none; stroke: #555555; stroke-width: 1.4; stroke-dasharray: 6 4; }
   </style>
-  <rect width="1440" height="900" fill="#ffffff"/>
+  <rect width="1440" height="960" fill="#ffffff"/>
   <text x="40" y="44" class="h">Der Rasterizer: wie aus einem Dreieck Pixel werden</text>
   <text x="40" y="66" class="l">raster.v (Hardware) und raster.c (C-Modell) rechnen genau gleich · einfarbig und mit Texturen gebaut und auf dem Pocket getestet · Stand 26.10.2026</text>
   <text x="40" y="104" class="s">1. Welche Pixel gehören dazu?</text>
@@ -314,36 +314,61 @@
   <text x="1010" y="552" class="b">Firmware dieselben Dreiecke mit beiden und vergleicht die</text>
   <text x="1010" y="570" class="b">Bilder Pixel für Pixel („raster check“ im Protokoll).</text>
   <line x1="40" y1="630" x2="1400" y2="630" stroke="#dddddd" stroke-width="1"/>
-  <text x="40" y="660" class="s">4. Texturen als Fließband – ein Pixel pro Takt (raster_tex.v)</text>
-  <text x="40" y="680" class="l">Jede Stufe arbeitet gleichzeitig an einem anderen Pixel: hintereinander bräuchte ein Pixel viele Takte, als Fließband kommt trotzdem in jedem Takt einer heraus. In der Hardware sind es 12 Stufen; ein Cache-Fehltreffer hält das Band an, bis die Zeile aus dem SDRAM da ist.</text>
-  <rect x="40" y="704" width="196" height="62" rx="8" class="built"/>
-  <text x="138.0" y="730" class="t c">u/z, v/z, 1/z</text>
-  <text x="138.0" y="748" class="b c">pro Pixel addieren</text>
-  <text x="138.0" y="788" class="m c">Pixel 6</text>
-  <rect x="266" y="704" width="196" height="62" rx="8" class="built"/>
-  <text x="364.0" y="730" class="t c">Kehrwert z</text>
-  <text x="364.0" y="748" class="b c">Tabelle + Newton-Schritt</text>
-  <text x="364.0" y="788" class="m c">Pixel 5</text>
-  <path d="M239,735.0 H263" class="wb" marker-end="url(#arr)"/>
-  <rect x="492" y="704" width="196" height="62" rx="8" class="built"/>
-  <text x="590.0" y="730" class="t c">u, v</text>
-  <text x="590.0" y="748" class="b c">zwei Multiplikationen</text>
-  <text x="590.0" y="788" class="m c">Pixel 4</text>
-  <path d="M465,735.0 H489" class="wb" marker-end="url(#arr)"/>
-  <rect x="718" y="704" width="196" height="62" rx="8" class="built"/>
-  <text x="816.0" y="730" class="t c">Texel holen</text>
-  <text x="816.0" y="748" class="b c">16-KB-Cache, SDRAM</text>
-  <text x="816.0" y="788" class="m c">Pixel 3</text>
-  <path d="M691,735.0 H715" class="wb" marker-end="url(#arr)"/>
-  <rect x="944" y="704" width="196" height="62" rx="8" class="built"/>
-  <text x="1042.0" y="730" class="t c">Zeichenart</text>
-  <text x="1042.0" y="748" class="b c">16, 64 (224 folgt)</text>
-  <text x="1042.0" y="788" class="m c">Pixel 2</text>
-  <path d="M917,735.0 H941" class="wb" marker-end="url(#arr)"/>
-  <rect x="1170" y="704" width="196" height="62" rx="8" class="built"/>
-  <text x="1268.0" y="730" class="t c">schreiben</text>
-  <text x="1268.0" y="748" class="b c">Framebuffer</text>
-  <text x="1268.0" y="788" class="m c">Pixel 1</text>
-  <path d="M1143,735.0 H1167" class="wb" marker-end="url(#arr)"/>
-  <text x="40" y="816" class="l">Im selben Takt: Pixel 6 wird gerade erst begonnen, Pixel 1 schon geschrieben. Zeichenart 224 (Glas, Schatten, Scheinwerfer) liest dazu den Pixel im Bild und schlägt das Ergebnis in der Tabelle MAPn.SMG nach.</text>
+  <text x="40" y="660" class="s">4. Texturen als Fließband – ein Pixel pro Takt, Texturzeilen vorausgeladen (raster_tex.v)</text>
+  <text x="40" y="680" class="l">Jede Stufe arbeitet gleichzeitig an einem anderen Pixel: hintereinander bräuchte ein Pixel viele Takte, als Fließband kommt trotzdem in jedem Takt einer heraus (11 Stufen bis zur Warteschlange).</text>
+  <text x="40" y="696" class="l">Die Cache-Tags werden schon vor der Warteschlange geprüft: Eine fehlende Zeile wird sofort angefordert und lädt aus dem SDRAM, während die Pixel davor gezeichnet werden (Vorausschauen nach Igehy u. a., 1998).</text>
+  <rect x="40" y="716" width="170" height="76" rx="8" class="built"/>
+  <text x="125.0" y="740" class="t c">u/z, v/z, 1/z</text>
+  <text x="125.0" y="758" class="b c">pro Pixel addieren</text>
+  <text x="125.0" y="779" class="m c">Pixel 70</text>
+  <rect x="240" y="716" width="170" height="76" rx="8" class="built"/>
+  <text x="325.0" y="740" class="t c">Kehrwert z</text>
+  <text x="325.0" y="758" class="b c">Tabelle + Newton-Schritt</text>
+  <text x="325.0" y="779" class="m c">Pixel 66</text>
+  <path d="M213,754.0 H237" class="wb" marker-end="url(#arr)"/>
+  <rect x="440" y="716" width="170" height="76" rx="8" class="built"/>
+  <text x="525.0" y="740" class="t c">u, v</text>
+  <text x="525.0" y="758" class="b c">zwei Multiplikationen</text>
+  <text x="525.0" y="779" class="m c">Pixel 63</text>
+  <path d="M413,754.0 H437" class="wb" marker-end="url(#arr)"/>
+  <rect x="640" y="716" width="170" height="76" rx="8" class="built"/>
+  <text x="725.0" y="740" class="t c">Adresse, Tag prüfen</text>
+  <text x="725.0" y="758" class="b c">Fehltreffer: Zeile anfordern</text>
+  <text x="725.0" y="779" class="m c">Pixel 61</text>
+  <path d="M613,754.0 H637" class="wb" marker-end="url(#arr)"/>
+  <rect x="840" y="716" width="170" height="76" rx="8" class="built"/>
+  <text x="925.0" y="740" class="t c">Warteschlange</text>
+  <text x="925.0" y="758" class="b c">64 Pixel, in Reihenfolge</text>
+  <text x="925.0" y="779" class="m c">Pixel 3 … 60</text>
+  <path d="M813,754.0 H837" class="wb" marker-end="url(#arr)"/>
+  <rect x="1040" y="716" width="170" height="76" rx="8" class="built"/>
+  <text x="1125.0" y="740" class="t c">Texel lesen</text>
+  <text x="1125.0" y="758" class="b c">16-KB-Cache</text>
+  <text x="1125.0" y="779" class="m c">Pixel 2</text>
+  <path d="M1013,754.0 H1037" class="wb" marker-end="url(#arr)"/>
+  <rect x="1240" y="716" width="170" height="76" rx="8" class="built"/>
+  <text x="1325.0" y="740" class="t c">schreiben</text>
+  <text x="1325.0" y="758" class="b c">Framebuffer</text>
+  <text x="1325.0" y="779" class="m c">Pixel 1</text>
+  <path d="M1213,754.0 H1237" class="wb" marker-end="url(#arr)"/>
+  <path d="M725.0,795 V847" class="wb" marker-end="url(#arr)"/>
+  <text x="717.0" y="818" class="l r">Fehltreffer: Tag gleich neu,</text>
+  <text x="717.0" y="832" class="l r">Pixel markiert, Zeile angefordert</text>
+  <rect x="640" y="850" width="170" height="62" rx="8" class="built"/>
+  <text x="725.0" y="874" class="t c">SDRAM</text>
+  <text x="725.0" y="892" class="b c">eine Zeile (32 B) nach der</text>
+  <text x="725.0" y="906" class="b c">anderen, je ~30 Takte</text>
+  <path d="M813,881.0 H837" class="wb" marker-end="url(#arr)"/>
+  <rect x="840" y="850" width="170" height="62" rx="8" class="built"/>
+  <text x="925.0" y="874" class="t c">Zeilenpuffer</text>
+  <text x="925.0" y="892" class="b c">bis 16 Zeilen</text>
+  <text x="925.0" y="906" class="b c">unterwegs</text>
+  <path d="M1013,881.0 H1125.0 V795" class="wb" marker-end="url(#arr)"/>
+  <text x="1133.0" y="818" class="l">Ist der markierte Pixel vorne und</text>
+  <text x="1133.0" y="832" class="l">seine Zeile da, kommt sie in den Cache</text>
+  <text x="1133.0" y="846" class="l">(nur er wartet, nicht das ganze Band)</text>
+  <text x="40" y="868" class="l">Die Pixel verlassen die Warteschlange in</text>
+  <text x="40" y="882" class="l">Reihenfolge: eine alte Zeile wird erst ersetzt,</text>
+  <text x="40" y="896" class="l">wenn alle Pixel davor sie gelesen haben.</text>
+  <text x="40" y="940" class="l">Zeichenart 16 und 64 (Texel 0 durchsichtig) beim Schreiben; Zeichenart 224 (Glas, Schatten, Scheinwerfer) folgt: sie liest den Pixel im Bild und schlägt das Ergebnis in der Tabelle MAPn.SMG nach.</text>
 </svg>

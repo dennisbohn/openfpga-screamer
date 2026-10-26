@@ -42,9 +42,9 @@ module setup (
     output  wire            busy,                   // corners or triangles in work
     output  reg     [31:0]  busy_clocks = 0,        // clocks computing since the last clear
 
-    // a triangle for the rasterizer: taken in a clock with go and rs_idle
+    // a triangle for the rasterizer: taken in a clock with go and rs_accept
     output  reg             go = 0,
-    input   wire            rs_idle,
+    input   wire            rs_accept,
     output  reg     [31:0]  t_v0, t_v1, t_v2,       // [15:0] x, [31:16] y
     output  reg     [31:0]  t_ref,
     output  reg     [31:0]  t_tex, t_size,
@@ -582,8 +582,8 @@ always @(posedge clk) begin
     endcase
 
     // the rasterizer takes the triangle; the new corner is the next triangle's corner 1
-    if(go && rs_idle) go <= 0;
-    if((go && rs_idle) || (tu_busy && tu_step == 6'd6 && td == 0)) begin
+    if(go && rs_accept) go <= 0;
+    if((go && rs_accept) || (tu_busy && tu_step == 6'd6 && td == 0)) begin
         px1 <= px2; py1 <= py2; prc1 <= prc2; pl1 <= pl2; psr1 <= psr2; ptr1 <= ptr2;
     end
 

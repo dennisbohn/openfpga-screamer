@@ -561,7 +561,7 @@ psram32 ps0 (
 // until the unit can take it and the geometry unit is done (both fill its input), a word of
 // a piece for the geometry unit while its piece buffer is full.
 //
-    wire        rs_busy, rs_fb_wr, rs_fb_buf;
+    wire        rs_busy, rs_fb_wr, rs_fb_buf, rs_su_accept;
     wire [31:0] rs_pixels, rs_misses, rs_busy_clocks, rs_fb_data;
     wire [31:0] rs_miss_clocks, rs_edge_clocks, rs_row_clocks, rs_drain_clocks;
     reg  [31:0] rs_starved = 0;                 // clocks the rasterizer had nothing while the units in front worked
@@ -624,7 +624,7 @@ setup su (
     .busy               ( su_busy ),
     .busy_clocks        ( su_busy_clocks ),
     .go                 ( su_go ),
-    .rs_idle            ( !rs_busy ),
+    .rs_accept          ( rs_su_accept ),
     .t_v0               ( su_v0 ),
     .t_v1               ( su_v1 ),
     .t_v2               ( su_v2 ),
@@ -675,6 +675,7 @@ raster rs (
     .mem_rsp_valid      ( rs_mem_rsp_valid ),
     .mem_rsp_data       ( rs_mem_rsp_data ),
     .su_go              ( su_go ),
+    .su_accept          ( rs_su_accept ),
     .su_v0              ( su_v0 ),
     .su_v1              ( su_v1 ),
     .su_v2              ( su_v2 ),

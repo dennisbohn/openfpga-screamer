@@ -159,8 +159,13 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Texel-Adressen des C-Modells halb so viele Fehltreffer wie gezählt: beide Caches holten
   jede fehlende Zeile zweimal. Behoben hält der Durchflug stabil 50 fps, das schwerste Bild
   braucht 73 % eines Bildes. Kacheln im Textur-Speicher brächten laut Studie kaum etwas
-  (die meisten Fehltreffer sind Erstzugriffe, ~7.800 Zeilen je Bild); als Nächstes holt
-  der Rasterizer Texturzeilen voraus, so dass das Laden neben dem Zeichnen läuft.
+  (die meisten Fehltreffer sind Erstzugriffe, ~7.800 Zeilen je Bild). Deshalb holt der
+  Rasterizer Texturzeilen voraus (nach Igehy, Eldridge, Proudfoot 1998): Die Tags werden
+  vor einer Warteschlange von 64 Pixeln geprüft, eine fehlende Zeile wird sofort
+  angefordert (bis 16 unterwegs, in einen Zeilenpuffer), und nur der Pixel, der sie
+  braucht, wartet vorn in der Schlange; erst dann kommt sie in den Cache, wenn alle Pixel
+  davor die alte Zeile gelesen haben. Das nächste texturierte Dreieck beginnt, sobald die
+  Pixel des vorigen in der Warteschlange sind.
 - **Bilder überlappen (Pipeline):** CPU, Grafik und Anzeige arbeiten gleichzeitig an Bild
   N+1, N und N−1, die Zeit pro Bild ist das Maximum statt der Summe. Kosten: ein Bild mehr
   Verzögerung zwischen Eingabe und Anzeige (20 ms bei 50 fps).

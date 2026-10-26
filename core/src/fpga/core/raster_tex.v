@@ -7,14 +7,20 @@
 //   S3  table address m[14:5]                  S4  p = m r0, r0 = floor((2^32-1) / (2^15 + 32 i + 16))
 //   S5  c = r0 (2^32 - p)                      S6  r = r0 + (c >> 32), about 2^32 / m
 //   S7  U r, V r                               S8  u = U r >> (24 + e), v the same, clamped to the texture
-//   C1  texel address, cache read              C2  tag compare; a miss holds the pipeline
-//   out byte write into the framebuffer, unless the texel is 0 and the texture see-through
+//   A   texel address, tag read                T   tag compare, into the queue
+// then a queue of 64 pixels and the back end: texel out of the cache, byte into the
+// framebuffer unless the texel is 0 and the texture see-through.
 //
-// Texture cache: 16 KB direct mapped, lines of 32 bytes (index = address[13:5], tag =
-// address[25:14]), filled with one line read from the SDRAM. On a miss the pipeline stops,
-// the line comes in (8 words), a clock for the last word and the tag to be written, the
-// missed pixel's address is read again (one clock) and the pipeline goes on. Invalidated
-// after a reset and on request (512 clocks).
+// Texture cache with prefetch (Igehy, Eldridge, Proudfoot: "Prefetching in a Texture
+// Cache Architecture", 1998): 16 KB direct mapped, lines of 32 bytes (index =
+// address[13:5], tag = address[25:14]). The tags are checked at T, ahead of the queue: a
+// miss writes the new tag at once and asks for the line (up to 16 lines under way, read
+// from the SDRAM one after the other into a line buffer); the pixel goes into the queue
+// marked. The back end takes the pixels in order: a marked one waits until its line is
+// in, writes it into the cache and takes its texel from the line buffer. So a line is
+// replaced only after every pixel before it has used the old one, and the loading runs
+// while the pixels before it are drawn. Invalidated after a reset and on request (512
+// clocks).
 //
 
 module raster_tex (
@@ -31,15 +37,17 @@ module raster_tex (
     input   wire    [13:0]  in_word,
     input   wire    [1:0]   in_lane,
 
-    // the triangle's texture: SDRAM byte address of texel (0, 0), rows of 256 bytes
+    // the triangle's texture: SDRAM byte address of texel (0, 0), rows of 256 bytes; used
+    // up to T, so they may change once front_busy is low
     input   wire    [25:0]  tex_base,
     input   wire    [8:0]   tex_w,              // 1..256
     input   wire    [8:0]   tex_h,
     input   wire            tex_cut,            // texel 0 is see-through
 
     output  wire            busy,
+    output  wire            front_busy,         // pixels before the queue
     output  reg     [31:0]  misses = 0,         // lines fetched since the last clear
-    output  wire            stalled,            // the pipeline waits for a line (or the invalidation)
+    output  wire            stalled,            // the back end waits for a line
     input   wire            clear_misses,
 
     // framebuffer writes, one pixel each
@@ -56,21 +64,6 @@ module raster_tex (
     input   wire    [31:0]  mem_rsp_data
 );
 
-    localparam  [2:0]   M_INVAL  = 3'd0;        // clearing the tags
-    localparam  [2:0]   M_NORMAL = 3'd1;
-    localparam  [2:0]   M_REQ    = 3'd2;        // line read asked for
-    localparam  [2:0]   M_DATA   = 3'd3;        // its words coming in
-    localparam  [2:0]   M_REPLAY = 3'd4;        // read the missed address again
-    localparam  [2:0]   M_SETTLE = 3'd5;        // the last word and the tag are written
-
-    reg  [2:0]  mstate = M_INVAL;
-    reg  [8:0]  inval_cnt = 0;
-    reg  [2:0]  fill_cnt;
-
-    wire        stall;
-    wire        adv = !stall;
-    assign in_ready = adv;
-
 //
 // reciprocal table: r0[i] = floor((2^32 - 1) / (2^15 + 32 i + 16))
 //
@@ -86,10 +79,10 @@ module raster_tex (
     end
 
 //
-// pipeline registers
+// front: pipeline registers
 //
-    reg         v1 = 0, v2 = 0, v3 = 0, v4 = 0, v5 = 0, v6 = 0, v7 = 0, v8 = 0, c1 = 0, c2 = 0;
-    reg  [15:0] w1, w2, w3, w4, w5, w6, w7, w8, wc1, wc2;  // {framebuffer word, lane}
+    reg         v1 = 0, v2 = 0, v3 = 0, v4 = 0, v5 = 0, v6 = 0, v7 = 0, v8 = 0, v9 = 0, va = 0, vt = 0;
+    reg  [15:0] w1, w2, w3, w4, w5, w6, w7, w8, w9, wa, wt;    // {framebuffer word, lane}
     reg signed [43:0] q1, u1, va1;
     reg  [30:0] q2;
     reg signed [26:0] u2, u3, u4, u5, u6, u7;
@@ -102,9 +95,7 @@ module raster_tex (
     reg  [17:0] r7;
     reg signed [45:0] up8, vp8;
     reg  [7:0]  tu9, tv9;
-    reg         v9 = 0;
-    reg  [15:0] w9;
-    reg  [25:0] a_c1, a_c2;                     // texel byte address in the SDRAM
+    reg  [25:0] a_a, a_t;                       // texel byte address in the SDRAM
 
     // S1 -> S2
     wire signed [35:0] q1s = q1[43:8];             // >> 8
@@ -136,39 +127,110 @@ end
     wire [7:0]  tu_lim = tu_raw < 46'sd0 ? 8'd0 : tu_raw >= $signed({37'd0, tex_w}) ? tex_w[7:0] - 8'd1 : tu_raw[7:0];
     wire [7:0]  tv_lim = tv_raw < 46'sd0 ? 8'd0 : tv_raw >= $signed({37'd0, tex_h}) ? tex_h[7:0] - 8'd1 : tv_raw[7:0];
 
+    assign front_busy = v1 || v2 || v3 || v4 || v5 || v6 || v7 || v8 || v9 || va || vt;
+
 //
-// cache memories
+// tags: read when the pixel moves from A to T (held while T waits), written at T on a
+// miss; the pixel right behind gets that write forwarded (the RAM would give the old tag)
 //
-    reg  [31:0] dmem [0:4095];
-    reg  [12:0] tmem [0:511];                   // {valid, tag}
-    reg  [31:0] d_q;
+    (* ramstyle = "no_rw_check, M10K" *) reg  [12:0] tags [0:511];    // {valid, tag}
     reg  [12:0] t_q;
-    wire [25:0] rd_addr = mstate == M_REPLAY ? a_c2 : a_c1;
-    reg         d_we, t_we;
-    reg  [11:0] d_wa;
-    reg  [8:0]  t_wa;
-    reg  [31:0] d_wd;
-    reg  [12:0] t_wd;
+    reg         inval = 1;
+    reg  [8:0]  inval_cnt = 0;
+    reg         t_fwd = 0;
+    reg  [11:0] t_fwd_tag;
+    reg         t_stale = 0;                    // T's tag was read before an invalidation
+    wire [12:0] tag_t = t_fwd ? {1'b1, t_fwd_tag} : t_q;
+    wire        hit_t = !t_stale && tag_t[12] && tag_t[11:0] == a_t[25:14];
+
+//
+// line slots: the lines asked for, in order, each a line address and its 8 words (one
+// small RAM per word, so a whole line reads in one clock)
+//
+    reg  [20:0] s_addr [0:15];
+    reg  [15:0] s_ready = 0;
+    reg  [4:0]  s_alloc = 0, s_fetch = 0, s_use = 0;    // a wrap bit over the slot number
+    wire [4:0]  s_used = s_alloc - s_use;
+    wire        s_free = s_used != 5'd16;
+    wire [3:0]  s_ru = s_use[3:0];
+    reg  [2:0]  fill_cnt;
+    reg         m_busy = 0;                     // a line read under way
+    reg         f_last = 0;                     // its last word came in the clock before
+    reg  [3:0]  f_slot;
+    wire        f_we = m_busy && !mem_valid && mem_rsp_valid;
+    wire [7:0]  f_lane = 8'd1 << fill_cnt;
+
+    genvar      gi;
+generate for(gi = 0; gi < 8; gi = gi + 1) begin : lbuf
+    (* ramstyle = "MLAB, no_rw_check" *) reg  [31:0] words [0:15];
+    reg  [31:0] q;
+    always @(posedge clk) begin
+        if(f_we && f_lane[gi]) words[s_fetch[3:0]] <= mem_rsp_data;
+        q <= words[s_ru];
+    end
+end endgenerate
+    wire [255:0] line_q = {lbuf[7].q, lbuf[6].q, lbuf[5].q, lbuf[4].q,
+                           lbuf[3].q, lbuf[2].q, lbuf[1].q, lbuf[0].q};
+    reg         lq_ok = 0;                      // line_q holds the slot s_use
+
+//
+// the queue: 64 x {marked, index, offset in the line, framebuffer word and pixel,
+// see-through}; its head read a clock ahead (a pixel written into the empty queue waits
+// one clock more)
+//
+    (* ramstyle = "no_rw_check, M10K" *) reg  [31:0] pq [0:63];
+    reg  [31:0] pq_q;
+    reg         q_ok = 0;                       // pq_q holds the entry at pq_rp
+    reg  [6:0]  pq_wp = 0, pq_rp = 0;
+    wire [6:0]  pq_n = pq_wp - pq_rp;
+    wire        h_fill = pq_q[31];
+    wire [8:0]  h_index = pq_q[30:22];
+    wire [4:0]  h_off = pq_q[21:17];
+    wire [15:0] h_w = pq_q[16:1];
+    wire        h_cut = pq_q[0];
+
+    // T goes into the queue when there is room and, for a miss, a free slot
+    wire        t_commit = vt && !inval && pq_n != 7'd64 && (hit_t || s_free);
+    wire        t_miss = t_commit && !hit_t;
+    wire        adv = !inval && (!vt || t_commit);
+    assign in_ready = adv;
+
+    // the back end takes the head when it is not marked or its line is in
+    wire        h_go = q_ok && pq_n != 7'd0 && (!h_fill || (s_ready[s_ru] && lq_ok));
+    wire [5:0]  pq_ra = h_go ? pq_rp[5:0] + 6'd1 : pq_rp[5:0];
+    assign stalled = pq_n != 7'd0 && h_fill && !s_ready[s_ru];
 
 always @(posedge clk) begin
-    d_q <= dmem[rd_addr[13:2]];
-    t_q <= tmem[rd_addr[13:5]];
-    if(d_we) dmem[d_wa] <= d_wd;
-    if(t_we) tmem[t_wa] <= t_wd;
+    if(inval) tags[inval_cnt] <= 13'd0;
+    else if(t_miss) tags[a_t[13:5]] <= {1'b1, a_t[25:14]};
+    if(adv) t_q <= tags[a_a[13:5]];
+    if(t_commit) pq[pq_wp[5:0]] <= {t_miss, a_t[13:5], a_t[4:0], wt, tex_cut};
+    pq_q <= pq[pq_ra];
 end
 
-    wire        hit = t_q[12] && t_q[11:0] == a_c2[25:14];
-    wire [7:0]  texel = d_q[8 * a_c2[1:0] +: 8];
-    assign stall = mstate != M_NORMAL || (c2 && !hit);
-    assign stalled = stall;
-    assign busy = mstate != M_NORMAL || v1 || v2 || v3 || v4 || v5 || v6 || v7 || v8 || v9 ||
-                  c1 || c2 || out_wr;
+//
+// cache lines: 512 x 32 bytes; a marked pixel writes its line
+//
+    (* ramstyle = "no_rw_check, M10K" *) reg  [255:0] lines [0:511];
+    reg  [255:0] l_q;
+always @(posedge clk) begin
+    if(h_go && h_fill) lines[h_index] <= line_q;
+    l_q <= lines[h_index];
+end
+
+    // B2: the byte, from the line buffer for a marked pixel, else from the cache
+    reg         b2 = 0, b2_fill, b2_cut;
+    reg  [4:0]  b2_off;
+    reg  [15:0] b2_w;
+    reg  [7:0]  b2_texel;
+    wire [7:0]  texel = b2_fill ? b2_texel : l_q[8 * b2_off +: 8];
+
+    assign busy = inval || front_busy || pq_n != 7'd0 || b2 || out_wr || s_used != 5'd0 || f_last;
 
 always @(posedge clk) begin
     out_wr <= 0;
-    d_we <= 0;
-    t_we <= 0;
 
+    // front
     if(adv) begin
         // S1
         v1 <= in_valid;
@@ -204,65 +266,90 @@ always @(posedge clk) begin
         // S9: texel coordinates
         v9 <= v8; w9 <= w8;
         tu9 <= tu_lim; tv9 <= tv_lim;
-        // C1: texel address, cache read
-        c1 <= v9; wc1 <= w9;
-        a_c1 <= tex_base + {10'd0, tv9, tu9};
-        // C2: compare
-        c2 <= c1; wc2 <= wc1; a_c2 <= a_c1;
-        // out
-        if(c2) begin
-            out_wr <= !(tex_cut && texel == 8'd0);
-            out_word <= wc2[15:2];
-            out_be <= 4'b1000 >> wc2[1:0];
-            out_texel <= texel;
+        // A: texel address
+        va <= v9; wa <= w9;
+        a_a <= tex_base + {10'd0, tv9, tu9};
+        // T
+        vt <= va; wt <= wa;
+        a_t <= a_a;
+        t_fwd <= t_miss && a_a[13:5] == a_t[13:5];
+        t_fwd_tag <= a_t[25:14];
+    end
+    if(inval) t_stale <= 1;
+    else if(adv) t_stale <= 0;
+
+    // T: into the queue; a miss takes a slot
+    if(t_commit) pq_wp <= pq_wp + 1'b1;
+    if(t_miss) begin
+        s_addr[s_alloc[3:0]] <= a_t[25:5];
+        s_alloc <= s_alloc + 1'b1;
+        misses <= misses + 1'b1;
+    end
+    q_ok <= !(t_commit && pq_wp[5:0] == pq_ra);
+
+    // memory: the slots' lines, one after the other; a slot is ready a clock after its last
+    // word, when line_q can show it
+    f_last <= 0;
+    if(f_last) s_ready[f_slot] <= 1;
+    if(!m_busy && s_fetch != s_alloc) begin
+        mem_valid <= 1;
+        mem_addr <= s_addr[s_fetch[3:0]];
+        fill_cnt <= 0;
+        m_busy <= 1;
+    end
+    if(mem_valid && mem_ready) mem_valid <= 0;
+    if(f_we) begin
+        fill_cnt <= fill_cnt + 1'b1;
+        if(fill_cnt == 3'd7) begin
+            f_last <= 1;
+            f_slot <= s_fetch[3:0];
+            s_fetch <= s_fetch + 1'b1;
+            m_busy <= 0;
         end
     end
 
-    // misses, fills, invalidation
-    case(mstate)
-    M_INVAL: begin
-        t_we <= 1;
-        t_wa <= inval_cnt;
-        t_wd <= 13'd0;
-        inval_cnt <= inval_cnt + 1'b1;
-        if(inval_cnt == 9'd511) mstate <= M_NORMAL;
-    end
-    M_NORMAL: if(c2 && !hit) begin
-        misses <= misses + 1'b1;
-        mem_valid <= 1;
-        mem_addr <= a_c2[25:5];
-        mstate <= M_REQ;
-    end
-    M_REQ: if(mem_ready) begin
-        mem_valid <= 0;
-        fill_cnt <= 0;
-        mstate <= M_DATA;
-    end
-    M_DATA: if(mem_rsp_valid) begin
-        d_we <= 1;
-        d_wa <= {mem_addr[13:5], fill_cnt};
-        d_wd <= mem_rsp_data;
-        fill_cnt <= fill_cnt + 1'b1;
-        if(fill_cnt == 3'd7) begin
-            t_we <= 1;
-            t_wa <= mem_addr[13:5];
-            t_wd <= {1'b1, mem_addr[25:14]};
-            mstate <= M_SETTLE;
+    // back end, B1: the head out of the queue; a marked pixel frees its slot
+    b2 <= h_go;
+    lq_ok <= !(h_go && h_fill);
+    if(h_go) begin
+        pq_rp <= pq_rp + 1'b1;
+        b2_fill <= h_fill;
+        b2_off <= h_off;
+        b2_w <= h_w;
+        b2_cut <= h_cut;
+        b2_texel <= line_q[8 * h_off +: 8];
+        if(h_fill) begin
+            s_ready[s_ru] <= 0;
+            s_use <= s_use + 1'b1;
         end
     end
-    M_SETTLE: mstate <= M_REPLAY;           // a read now would still see the old line
-    default: mstate <= M_NORMAL;            // M_REPLAY: one clock
-    endcase
+    // B2: the byte into the framebuffer
+    if(b2) begin
+        out_wr <= !(b2_cut && texel == 8'd0);
+        out_word <= b2_w[15:2];
+        out_be <= 4'b1000 >> b2_w[1:0];
+        out_texel <= texel;
+    end
+
+    // invalidation: every tag cleared; lines under way still come in
+    if(inval) begin
+        inval_cnt <= inval_cnt + 1'b1;
+        if(inval_cnt == 9'd511) inval <= 0;
+    end
 
     if(clear_misses) misses <= 0;
     if(reset || invalidate) begin
-        mstate <= M_INVAL;
+        inval <= 1;
         inval_cnt <= 0;
-        mem_valid <= 0;
     end
     if(reset) begin
         v1 <= 0; v2 <= 0; v3 <= 0; v4 <= 0; v5 <= 0; v6 <= 0; v7 <= 0; v8 <= 0; v9 <= 0;
-        c1 <= 0; c2 <= 0;
+        va <= 0; vt <= 0; b2 <= 0;
+        pq_wp <= 0; pq_rp <= 0; q_ok <= 0;
+        s_alloc <= 0; s_fetch <= 0; s_use <= 0; s_ready <= 0; lq_ok <= 0;
+        mem_valid <= 0;
+        m_busy <= 0;
+        f_last <= 0;
     end
 end
 
