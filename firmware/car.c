@@ -319,6 +319,31 @@ float car_progress(void)
     return progress;
 }
 
+float car_circles(float cx[2], float cy[2])
+{
+    float nose = model.axle_front + 250.0f, tail = model.axle_rear + 150.0f, q = (nose + tail) * 0.25f;
+    float fx = sinf(pc.yaw), fy = -cosf(pc.yaw), zf = nose - q, zr = -(tail - q);
+    cx[0] = pc.x + fx * zf; cy[0] = pc.y + fy * zf;
+    cx[1] = pc.x + fx * zr; cy[1] = pc.y + fy * zr;
+    return q;
+}
+
+void car_shift(float dx, float dy)
+{
+    pc.x += dx;
+    pc.y += dy;
+}
+
+void car_rammed(float nx, float ny, int left)
+{
+    pc.shove = pc.speed * 0.21f;
+    pc.shove_x = nx;
+    pc.shove_y = ny;
+    pc.yaw_rate = pc.speed * (left ? 0.0002f : -0.0002f);
+    pc.speed *= drive_damp(90);
+    wall_hits++;
+}
+
 /* chase_step (0x1a53d): the camera eases to the car's heading (without its skid angle) and
    to the lean and nose-up of the heading-only wheel set; its height to the car's + above -
    behind sin(pitch) */

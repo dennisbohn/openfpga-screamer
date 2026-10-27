@@ -5,9 +5,10 @@ Stand: 2026-10-27. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 au
 CPU (VexRiscv RV32IMF mit FPU und CFU, `docs/soc.md`); Geometrie-Einheit, Clipper,
 Setup-Einheit und Rasterizer mit vorausladendem Textur-Cache; Strecke 1 mit dem Auto des
 Spielers, fahrbar, mit dem HUD aus dem Blitter, der Füllregel des Originals (keine Lücken
-an Fugen), dem Hintergrundbild `MAPn.BCK` und neun Gegnern (Startaufstellung, ihre Linien,
-Platzierung; noch ohne Berührung). Gebaut, Test auf dem Pocket steht aus: die schnellere
-Grafik-Kette (50 fps auch am Start mit allen zehn Autos). Belegung siehe
+an Fugen), dem Hintergrundbild `MAPn.BCK`, neun Gegnern (Startaufstellung, ihre Linien,
+Platzierung) und der schnelleren Grafik-Kette (50 fps auch am Start mit allen zehn Autos).
+Gebaut, Test auf dem Pocket steht aus: Berührungen zwischen den Autos, Überholen, Crash
+eines Gegners. Belegung siehe
 „Belegung“; geschätzt ist nur noch, was fehlt (Audio, Glas/Schatten).
 
 ## Hardware des Pocket (Haupt-FPGA)
@@ -269,8 +270,21 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Zeilen von `CARS.DTR` nach der des Spielers (`0x142e8`). Die Werte kommen aus der Datei der
   Schwierigkeit (`'A'` + Stufe, `0x13251`); wir nehmen NORMAL (`MAP1B.DTR`, Bonuszeit 40 s statt
   50 s bei ROOKIE), die Stufe, die das Intro setzt (`0x2777f`). Gezeichnet wird ein Gegner nur,
-  wenn seine Kugel (Radius 1200) im Blickfeld liegt. Noch nicht: Berührung zwischen Autos,
-  Überholen, Crash eines Gegners.
+  wenn seine Kugel (Radius 1200) im Blickfeld liegt. **Berührungen** (2026-10-28): Jedes Auto
+  sind zwei Kreise auf der Mittellinie (`0x136c8`, `0x142e8`: die Karosserie von 250 vor der
+  Vorderachse bis 150 hinter der Hinterachse, Länge L, jeder Kreis L/4 vom Ende und L/4
+  groß). Spieler und Gegner (nur innerhalb 1500, `0x12378`; `0x17818`, Konstanten 0,5,
+  0,0001, π/2, 0,21, 0,7 in der EXE nachgesehen): Der Gegner weicht um die Überlappung,
+  außer das schöbe ihn von der Fahrbahn, dann weicht der Spieler; fährt der Spieler auf, wird
+  der Gegner mit halbem Spielertempo weitergeschoben und angedreht, der Spieler mit 0,21 ×
+  Tempo zurückgeschoben, um die Nase gedreht und verliert je Schritt 5 % Tempo (ein
+  Wandtreffer); fährt der Gegner auf, behält er 70 %. Zwei Gegner (`0x1cffc`, `0x1d1f0`):
+  Der schnellere fällt auf das Mittel, der spätere wird zur Seite geschoben. Überholen
+  (`0x1e404`): Steht der langsamere Spieler drei Radien vor einem Gegner, verschiebt der
+  seine Linie gerade so weit, dass er vorbeikommt. Ein Gegner, der mit mehr als 3000 von der
+  Fahrbahn gedrängt wird, steht sofort (`0x1cb9c`); verliert er in einem Schritt mehr als 5000
+  Einheiten/s, crasht er (`0x1d824`): je nach Stelle überschlägt er sich wie der Spieler oder
+  dreht sich zweimal auf der Fahrbahn. Der Versatz aus Stößen klingt nach 3 s ab.
 - **Das Hintergrundbild wie im Original** (2026-10-27, aus der EXE): Das Rennen zeichnet
   vor der Szene `MAPn.BCK` (ein PCX, 512 × 256) mit `0x83a68`: eine reine Kopie, die Spalte
   `(2047 − Kurs) / 2 mod 512` am linken Rand (zweimal um das Bild je Umdrehung), die oberste

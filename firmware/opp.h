@@ -1,8 +1,9 @@
 /*
  * The opponents on the track: up to nine cars, each driving its own curve of MAPnOPP.SPL at
  * the speed its row of OPPONENTS allows on the stretch it is on, standing on the road under
- * its middle, and the running order between them and the player. After OpenScreamer's
- * port/src/main.c (GPL-3.0), which took it from the game (docs/NOTES.md section 11).
+ * its middle, the running order between them and the player, and contact between the cars
+ * (pushed aside, slowed, crashing). After OpenScreamer's port/src/main.c (GPL-3.0), which took
+ * it from the game (docs/NOTES.md section 11).
  */
 #pragma once
 #include <stdint.h>
