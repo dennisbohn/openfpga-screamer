@@ -30,6 +30,7 @@ static struct car_race race;
 static uint8_t mark_seen[64];
 static int mark_count;
 static float needle;
+static float progress;                  /* how far round the race (marker_progress) */
 
 /* a crash (0x16c90 decides, 0x18518 runs it): thrown up and tumbling, four landings */
 static struct { int on, bounces, view; float height, vy, pitch, roll, pitch_rate, roll_rate; } crash;
@@ -41,13 +42,13 @@ static float corner[4][2];
 #define MAX_WALLS   1024
 static float wall_in[MAX_WALLS];        /* which side of each wall the track is on */
 
-/* the car's blocks (mesh.c): place, the middle the drawing order goes by, how much further
-   off it counts, whether it is a wheel and what it does */
-#define MAX_BLOCKS  16
+/* a car model's blocks (mesh.c): place, the middle the drawing order goes by, how much further
+   off it counts, whether it is a wheel and what it does; made the first time a car needs it */
+#define MAX_BLOCKS  CAR_BLOCKS
+#define MAX_MODELS  8
 struct cblock { const uint8_t *blk; float t[3], mid[3]; int back, wheel, spins, steers; };
-static const uint8_t *mesh;
-static struct cblock cb[MAX_BLOCKS];
-static int ncb;
+static struct cmodel { const uint8_t *mesh; struct cblock cb[MAX_BLOCKS]; int ncb, ready; } cmodels[MAX_MODELS];
+static int pmodel;                      /* the player's */
 static float spin, steer;               /* the wheels' turn and the front ones' angle (wheels_step) */
 
 /* the four wheels' ground (front-left, rear-left, front-right, rear-right), and the same
@@ -296,6 +297,26 @@ static void markers_step(void)
             if((m->flags & 2) && race.clock_on && !race.finished) race.timer = race.timer / 5.0f + bonus;
         }
     }
+    progress = car_marker_progress(mark_at, race.laps, pc.x, pc.y);
+}
+
+/* how far a car has got (0x1820c's last lines for the player, 0x1db84's for an opponent):
+   laps x 100 + the marker last reached + its distance from that marker over the distance from
+   that marker to the next, both cut to whole twentieths of a unit */
+float car_marker_progress(int at, int laps, float x, float y)
+{
+    int n;
+    const struct track_marker *mk = track_markers(&n);
+    if(n == 0) return 0.0f;
+    const struct track_marker *a = &mk[at], *b = &mk[(at + 1) % n];
+    float sx = (float)(b->x - a->x), sy = (float)(b->y - a->y), gx = x - (float)a->x, gy = y - (float)a->y;
+    int span = (int)(sqrtf(sx * sx + sy * sy) * 0.05f), gone = (int)(sqrtf(gx * gx + gy * gy) * 0.05f);
+    return (span ? (float)gone / (float)span : 0.0f) + (float)at + (float)(laps * 100);
+}
+
+float car_progress(void)
+{
+    return progress;
 }
 
 /* chase_step (0x1a53d): the camera eases to the car's heading (without its skid angle) and
@@ -327,7 +348,7 @@ void car_init(int which)
     const struct car_spec *cars = track_cars(&n);
     const struct track_model *models = track_models(&nm);
     const struct car_spec *sp = &cars[(which % n + n) % n];
-    int k = (sp->name[4] - '0') * 10 + (sp->name[5] - '0');            /* "AUTO03" -> 3 */
+    int k = car_model_index(sp);
     model = models[k >= 0 && k < nm ? k : 0];
     drive_init(&pc, sp, model.wheelbase > 0.0f ? model.wheelbase : 935.0f);
     float zf = model.axle_front + 250.0f, zr = model.axle_rear + 150.0f;
@@ -336,26 +357,7 @@ void car_init(int which)
     corner[2][0] =  model.half_track; corner[2][1] =  zf;
     corner[3][0] =  model.half_track; corner[3][1] = -zr;
     walls_prepare();
-
-    /* the blocks: a name of three letters ending in i (a tyre, the arches' insides) counts
-       4000 further off, one ending in x (a hub) 1000, unless it starts with A */
-    mesh = track_model_mesh(k < nm ? k : 0);
-    ncb = 0;
-    for(int b = 0; b < *(const int32_t *)(mesh + 0x14) && ncb < MAX_BLOCKS; b++) {
-        struct cblock *q = &cb[ncb++];
-        q->blk = mesh + *(const int32_t *)(mesh + 0x18 + 4 * b);
-        int32_t so = *(const int32_t *)(q->blk + 0x0C);
-        for(int j = 0; j < 3; j++) q->t[j] = so > 0 ? (float)*(const int32_t *)(mesh + so + 0x10 + 4 * j) : 0.0f;
-        for(int j = 0; j < 3; j++) q->mid[j] = (float)*(const int16_t *)(q->blk + 4 + 2 * j) + q->t[j];
-        const uint8_t *nmz = q->blk + 0x68;
-        int named = nmz[0] != 'A' && nmz[0] != 'a' && nmz[3] == 0;
-        q->back = named && nmz[2] == 'i' ? 4000 : named && nmz[2] == 'x' ? 1000 : 0;
-        /* a wheel sits off-centre; only its hub disc (flags 0x800) turns, the tyre block is
-           the lower half of the tread and stays; the front ones (local -z) steer */
-        q->wheel = q->t[0] != 0.0f;
-        q->spins = q->wheel && (*(const int32_t *)(q->blk + 0x18) & 0x800);
-        q->steers = q->wheel && q->t[2] < 0.0f;
-    }
+    pmodel = k;
     spin = steer = 0.0f;
     wall_hits = crashes = 0;
     crash.on = 0;
@@ -375,6 +377,7 @@ void car_init(int which)
     pc.z = ph;
     pc.surface = 0.0f;
     mark_at = 0;
+    progress = 0.0f;
     ct.ready = 0;
     contact();
     chase.init = 0;
@@ -429,11 +432,52 @@ float car_needle(void)
     return needle;
 }
 
-/* A block's point p (as stored) in the world (block_to_view, tilt, place): a wheel turned
-   about its axle and steered, moved to its place on the car, the car's pitch and roll, its
-   heading with the skid angle, its place */
-static void block_point(const struct cblock *q, const float sc[4], const float car[6], const float p[3], float w[3])
+/* model k (AUTOk) */
+static const struct cmodel *cmodel(int k)
 {
+    int nm;
+    track_models(&nm);
+    if(k < 0 || k >= nm || k >= MAX_MODELS) k = 0;
+    struct cmodel *m = &cmodels[k];
+    if(m->ready) return m;
+    /* the blocks: a name of three letters ending in i (a tyre, the arches' insides) counts
+       4000 further off, one ending in x (a hub) 1000, unless it starts with A */
+    m->mesh = track_model_mesh(k);
+    m->ncb = 0;
+    for(int b = 0; b < *(const int32_t *)(m->mesh + 0x14) && m->ncb < MAX_BLOCKS; b++) {
+        struct cblock *q = &m->cb[m->ncb++];
+        q->blk = m->mesh + *(const int32_t *)(m->mesh + 0x18 + 4 * b);
+        int32_t so = *(const int32_t *)(q->blk + 0x0C);
+        for(int j = 0; j < 3; j++) q->t[j] = so > 0 ? (float)*(const int32_t *)(m->mesh + so + 0x10 + 4 * j) : 0.0f;
+        for(int j = 0; j < 3; j++) q->mid[j] = (float)*(const int16_t *)(q->blk + 4 + 2 * j) + q->t[j];
+        const uint8_t *nmz = q->blk + 0x68;
+        int named = nmz[0] != 'A' && nmz[0] != 'a' && nmz[3] == 0;
+        q->back = named && nmz[2] == 'i' ? 4000 : named && nmz[2] == 'x' ? 1000 : 0;
+        /* a wheel sits off-centre; only its hub disc (flags 0x800) turns, the tyre block is
+           the lower half of the tread and stays; the front ones (local -z) steer */
+        q->wheel = q->t[0] != 0.0f;
+        q->spins = q->wheel && (*(const int32_t *)(q->blk + 0x18) & 0x800);
+        q->steers = q->wheel && q->t[2] < 0.0f;
+    }
+    m->ready = 1;
+    return m;
+}
+
+int car_model_index(const struct car_spec *sp)
+{
+    return (sp->name[4] - '0') * 10 + (sp->name[5] - '0');           /* "AUTO03" -> 3 */
+}
+
+/* a car as it is drawn: the cos and sin of the wheels' turn and the front ones' angle, of the
+   object's pitch, roll and heading, of the body's own pitch and roll, and its place */
+struct pose { float sc[4], car[6], body[4]; int lean; float x, y, z; };
+
+/* A block's point p (as stored) in the world (block_to_view, tilt, place): a wheel turned
+   about its axle and steered, moved to its place on the car, a body block leant on its own,
+   the object's pitch and roll, its heading, its place */
+static void block_point(const struct cblock *q, const struct pose *ps, const float p[3], float w[3])
+{
+    const float *sc = ps->sc, *car = ps->car;
     float x = p[0], y = p[1], z = p[2];
     if(q->wheel) {
         float wcs = q->spins ? sc[0] : 1.0f, wsn = q->spins ? sc[1] : 0.0f;
@@ -445,66 +489,84 @@ static void block_point(const struct cblock *q, const float sc[4], const float c
         y = y2;
     }
     x += q->t[0]; y += q->t[1]; z += q->t[2];
+    if(ps->lean && !q->wheel) {                         /* the body's lean (an opponent in a bend) */
+        float yb = y * ps->body[0] - z * ps->body[1], zb = z * ps->body[0] + y * ps->body[1];
+        float xb = x * ps->body[2] - yb * ps->body[3];
+        y = yb * ps->body[2] + x * ps->body[3];
+        x = xb;
+        z = zb;
+    }
     /* tilt: the object's pitch and roll are the car's, negated (player_sync) */
     float y3 = y * car[0] + z * car[1], z3 = z * car[0] - y * car[1];
     float x3 = x * car[2] - y3 * car[3], y4 = y3 * car[2] + x * car[3];
-    w[0] = pc.x + x3 * car[4] - z3 * car[5];
-    w[1] = pc.y + x3 * car[5] + z3 * car[4];
-    w[2] = pc.z + crash.height + y4;
+    w[0] = ps->x + x3 * car[4] - z3 * car[5];
+    w[1] = ps->y + x3 * car[5] + z3 * car[4];
+    w[2] = ps->z + y4;
 }
 
-int car_object(const struct track_cam *cam, struct track_object *obj)
+int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, struct track_block *out,
+             struct track_object *obj)
 {
     static struct track_block tb[MAX_BLOCKS];
-    if(views[view].incar || !ncb) return 0;
-    const float sc[4] = { cosf(spin), sinf(spin), cosf(steer), sinf(steer) };
-    /* the object's angles (player_sync): the car's, negated, and a crash's tumbling on top */
-    float a = pc.yaw + pc.drift, p = -pc.pitch + crash.pitch, r = -pc.roll + crash.roll;
-    const float car[6] = { cosf(p), sinf(p), cosf(r), sinf(r), cosf(a), sinf(a) };
-    /* the texture frame (0x173a9): paint job | 0x4000 not braking | 0x2000 at 4000 units/s or
-       under, of which the phase is a quarter (record +0x20 >> 2) */
-    uint32_t phase = ((uint32_t)pc.spec.livery | (pc.brake == 0.0f ? 0x4000u : 0) |
-                      (pc.speed <= 4000.0f ? 0x2000u : 0)) >> 2;
+    const struct cmodel *m = cmodel(model);
+    if(!m->ncb) return 0;
+    struct pose ps = { { cosf(lk->spin), sinf(lk->spin), cosf(lk->steer), sinf(lk->steer) },
+                       { cosf(lk->pitch), sinf(lk->pitch), cosf(lk->roll), sinf(lk->roll), cosf(lk->yaw), sinf(lk->yaw) },
+                       { cosf(lk->body_pitch), sinf(lk->body_pitch), cosf(lk->body_roll), sinf(lk->body_roll) },
+                       lk->body_pitch != 0.0f || lk->body_roll != 0.0f, lk->x, lk->y, lk->z };
     int ord[MAX_BLOCKS];
     float key[MAX_BLOCKS];
-    for(int b = 0; b < ncb; b++) {
+    for(int b = 0; b < m->ncb; b++) {
         static const float zero[3] = { 0.0f, 0.0f, 0.0f }, ex[3] = { 1.0f, 0.0f, 0.0f };
         static const float ey[3] = { 0.0f, 1.0f, 0.0f }, ez[3] = { 0.0f, 0.0f, 1.0f };
-        const struct cblock *q = &cb[b];
+        const struct cblock *q = &m->cb[b];
         struct track_block *t = &tb[b];
         float o[3], px[3], py[3], pz[3], mid[3], mw[3];
-        block_point(q, sc, car, zero, o);
-        block_point(q, sc, car, ex, px);
-        block_point(q, sc, car, ey, py);
-        block_point(q, sc, car, ez, pz);
+        block_point(q, &ps, zero, o);
+        block_point(q, &ps, ex, px);
+        block_point(q, &ps, ey, py);
+        block_point(q, &ps, ez, pz);
         for(int j = 0; j < 3; j++) {
             t->o[j] = o[j];
             t->m[3 * j] = px[j] - o[j];
             t->m[3 * j + 1] = py[j] - o[j];
             t->m[3 * j + 2] = pz[j] - o[j];
         }
-        t->file = mesh;
+        t->file = m->mesh;
         t->blk = q->blk;
-        t->phase = phase;
+        t->phase = lk->phase;
         /* the drawing order (0x8ac58, 0x8af24): the furthest middle first, the tyres and
            hubs counted further off; on a tie the lower block first */
         for(int j = 0; j < 3; j++) mid[j] = q->mid[j] - q->t[j];
-        block_point(q, sc, car, mid, mw);
+        block_point(q, &ps, mid, mw);
         float dx = mw[0] - cam->x, dy = mw[1] - cam->y, dh = mw[2] - cam->h;
         key[b] = -rintf(sqrtf(dx * dx + dy * dy + dh * dh)) - (float)q->back;
         int i = b;
         while(i > 0 && key[ord[i - 1]] > key[b]) { ord[i] = ord[i - 1]; i--; }
         ord[i] = b;
     }
-    static struct track_block sorted[MAX_BLOCKS];
-    for(int b = 0; b < ncb; b++) sorted[b] = tb[ord[b]];
-    obj->x = pc.x;
-    obj->y = pc.y;
-    obj->h = pc.z;
+    for(int b = 0; b < m->ncb; b++) out[b] = tb[ord[b]];
+    obj->x = lk->x;
+    obj->y = lk->y;
+    obj->h = lk->z;
     obj->radius = 1200.0f;
-    obj->n = ncb;
-    obj->b = sorted;
+    obj->n = m->ncb;
+    obj->b = out;
     return 1;
+}
+
+int car_object(const struct track_cam *cam, struct track_object *obj)
+{
+    static struct track_block blocks[MAX_BLOCKS];
+    if(views[view].incar) return 0;
+    /* the object's angles (player_sync): the car's, negated, and a crash's tumbling on top;
+       the texture frame (0x173a9): paint job | 0x4000 not braking | 0x2000 at 4000 units/s or
+       under, of which the phase is a quarter (record +0x20 >> 2) */
+    struct car_look lk = { pc.x, pc.y, pc.z + crash.height, pc.yaw + pc.drift, -pc.pitch + crash.pitch,
+                           -pc.roll + crash.roll, 0.0f, 0.0f, spin, steer,
+                           ((uint32_t)pc.spec.livery | (pc.brake == 0.0f ? 0x4000u : 0) |
+                            (pc.speed <= 4000.0f ? 0x2000u : 0)) >> 2 };
+    return car_draw(pmodel, &lk, cam, blocks, obj);
 }
 
 void car_view(int v)

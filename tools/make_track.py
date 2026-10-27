@@ -7,7 +7,7 @@ Usage: python tools/make_track.py <GFX/MAPnL.DAT> <DATA/MAPn.DAT> <DATA/GEN.DAT>
 Formats from openscreamer docs/NOTES.md ("How the track is built", sections 1-4, 6-9, 11).
 The output, for data slot 3 (core/data.json), little-endian:
 
-  0x00  "SCRK", u32 version 5
+  0x00  "SCRK", u32 version 6
   0x08  u32 offset, size of MAPn.MLB     materials and pixel pages, unchanged
   0x10  u32 offset, size of MAPn.UNR     the meshes, unchanged
   0x18  u32 offset of the palette        256 x 0x00RRGGBB (MAPn.COL is 6-bit VGA)
@@ -35,8 +35,9 @@ The output, for data slot 3 (core/data.json), little-endian:
   0x4C  u32 offset, count of road points MAPn.MMP cell array 2: float angle, int32 x, y
   0x54  u32 offset, count of walls       MAPn.MMP cell array 3: float angle, int32 x, y, x1,
                                          y1, x2, y2
-  0x5C  int32 x, y, float heading        where the player starts: the road point nearest the
-                                         third path point, facing along the path
+  0x5C  int32 x, y, float heading        where the player starts: its place on the grid, the
+                                         start node of MAPnOPP.SPL's tenth spline (its own point),
+                                         facing along that spline
   0x68  u32 offset, size of the race screen: u32 images, u32 fonts; per image u32 offset
                                          (from the section), u16 width, height, int16 x, y;
                                          per font u32 height, first character, count, widest,
@@ -50,14 +51,20 @@ The output, for data slot 3 (core/data.json), little-endian:
                                          see-through between them), x, y the place on the
                                          screen; u32 first box, count of each of the two after
                                          the fonts
-  0x70  int32 bonus_time, camera_hi      TRACK_DATA of MAPnA.DTR
+  0x70  int32 bonus_time, camera_hi      TRACK_DATA of MAPnB.DTR (the difficulty's file, below)
   0x78  u32 offset of the backdrop       MAPn.BCK (a PCX) unpacked: 512 x 256 palette
                                          indices, rows of 512 bytes, and its last row once more
                                          (the game's copy, 0x83a68, runs on past a row's end
                                          into the next row)
   0x7C  u32 ground colour                TRACK_DATA's color: the palette index below the
                                          backdrop
-  0x80  u32 file size, u32 n, n x u32    CRC-32 (zlib) of each 256 KB block from 0x100 on,
+  0x80  u32 offset, size of the opponents: u32 splines, u32 rows; rows x float max_spd,
+                                         accel, brakes, skill, sband (OPPONENTS of the
+                                         difficulty's file); then per spline of MAPnOPP.SPL
+                                         (opponent k drives spline k, the tenth is the player's)
+                                         u32 start node, u32 nodes, nodes x int32 x, y, z (the
+                                         node's own point), next, in x, y, out x, y (its handles)
+  0x88  u32 file size, u32 n, n x u32    CRC-32 (zlib) of each 256 KB block from 0x100 on,
                                          so the core can tell where a load went wrong
 
 Sections start on 256-byte boundaries. The output is made from game data: it stays in
@@ -270,6 +277,39 @@ def race_screen(game, local):
             b"".join(struct.pack("<2I", *pc) for pc in pictures) + texts + blob)
 
 
+# the difficulty is the letter of the track's data file: 'A' + difficulty (0x13251), 0 ROOKIE,
+# 1 NORMAL, 2 PRO; NORMAL is what the game's intro sets (0x2777f) and openscreamer's default
+DIFFICULTY = "B"
+
+
+def opponents(spl, dtr):
+    """The opponents section: OPPONENTS rows of dtr, every spline of spl"""
+    s = dtr.decode("latin-1")
+    rows = []
+    for line in s[s.index("OPPONENTS"):].splitlines()[1:]:
+        f = line.split()
+        if f and f[0].startswith("END_LIST"):
+            break
+        if len(f) >= 5 and all(v.startswith("f") for v in f[:5]):
+            rows.append([float(v[1:]) for v in f[:5]])
+    sp = splines(spl)
+    out = struct.pack("<2I", len(sp), len(rows)) + b"".join(struct.pack("<5f", *r) for r in rows)
+    for start, nodes in sp:
+        out += struct.pack("<2I", start, len(nodes))
+        for n in nodes:
+            out += struct.pack("<8i", n["x"], n["y"], n["z"], n["next"], *n["in"], *n["out"])
+    return out, len(sp), len(rows)
+
+
+def grid_pose(spl):
+    """The player's place on the grid: the start node of the tenth spline, its own point,
+    facing along the curve there (piece 0 at u = 0 runs from the node's in handle to its out)"""
+    start, nodes = splines(spl)[9]
+    n = nodes[start]
+    yaw = math.atan2(n["out"][0] - n["in"][0], -(n["out"][1] - n["in"][1]))
+    return struct.pack("<2if", n["x"], n["y"], yaw)
+
+
 def pcx(data):
     """A PCX picture (8 bits, one plane, run-length coded) as (width, height, indices)"""
     assert data[0] == 10 and data[2] == 1 and data[3] == 8 and data[65] == 1, "not an 8-bit PCX"
@@ -294,17 +334,6 @@ def track_data(dtr):
     rows = [l.split() for l in s[s.index("TRACK_DATA"):].splitlines()[1:]]
     row = next(r for r in rows if r and not r[0].startswith("*"))
     return [int(v[1:]) for v in row[:4]]
-
-
-def start_pose(path, dirs):
-    """openscreamer's player_reset(path, 2): the road point nearest the third path point,
-    facing the way the path goes"""
-    (x, y, _), (x1, y1, _) = path[2], path[3]
-    yaw = math.atan2(x1 - x, -(y1 - y))
-    best = min(dirs, key=lambda d: (struct.unpack_from("<i", d, 4)[0] - x) ** 2 + (struct.unpack_from("<i", d, 8)[0] - y) ** 2)
-    a, dx, dy = struct.unpack("<f2i", best)
-    along = math.sin(a) * math.sin(yaw) + -math.cos(a) * -math.cos(yaw)
-    return struct.pack("<2if", dx, dy, a + (math.pi if along < 0 else 0.0))
 
 
 def splines(spl):
@@ -372,14 +401,16 @@ def main():
     here = os.path.dirname(os.path.abspath(gfx))
     hud = race_screen(datfile.read(os.path.join(here, "GAME.DAT")),
                       datfile.read(os.path.join(here, "..", "DATA", "LOCAL.DAT")))
-    colour, camera_hi, bonus_time, carnage = track_data(datfile.extract(d, track + "A.DTR"))
+    dtr = datfile.extract(d, track + DIFFICULTY + ".DTR")
+    colour, camera_hi, bonus_time, carnage = track_data(dtr)
+    opp, nspl, nrows = opponents(spl, dtr)
     bw, bh, back = pcx(datfile.extract(g, track + ".BCK"))
     assert (bw, bh) == (512, 256), f"backdrop {bw} x {bh}"
     back += back[-512:]
 
     sections = [mlb, unr, pal, b"".join(struct.pack("<5i", *p) for p in pl),
                 b"".join(struct.pack("<3i", *p) for p in path), ground, mrk[4:4 + 32 * nmark],
-                cars, models, b"".join(dirs), b"".join(walls), hud, back]
+                cars, models, b"".join(dirs), b"".join(walls), hud, back, opp]
     counts = [len(mlb), len(unr), 0, len(pl), len(path), nground, nmark, ncars, 7, len(dirs), len(walls),
               len(hud)]
     offs, pos = [], 0x100
@@ -390,13 +421,14 @@ def main():
     for o, s in zip(offs, sections):
         blob[o:o + len(s)] = s
     crcs = [zlib.crc32(blob[o:o + BLOCK]) for o in range(0x100, pos, BLOCK)]
-    head = b"SCRK" + struct.pack("<I", 5) + struct.pack("<2I", offs[0], counts[0]) + \
+    head = b"SCRK" + struct.pack("<I", 6) + struct.pack("<2I", offs[0], counts[0]) + \
         struct.pack("<2I", offs[1], counts[1]) + struct.pack("<I", offs[2]) + \
         b"".join(struct.pack("<2I", offs[k], counts[k]) for k in range(3, 11)) + \
-        start_pose(path, dirs) + struct.pack("<2I", offs[11], counts[11]) + \
+        grid_pose(spl) + struct.pack("<2I", offs[11], counts[11]) + \
         struct.pack("<2i", bonus_time, camera_hi) + struct.pack("<2I", offs[12], colour) + \
+        struct.pack("<2I", offs[13], len(opp)) + \
         struct.pack("<2I", pos, len(crcs)) + struct.pack(f"<{len(crcs)}I", *crcs)
-    assert len(head) == 0x88 + 4 * len(crcs)
+    assert len(head) == 0x90 + 4 * len(crcs)
     assert len(head) <= 0x100, "file too large for the block CRCs in the header"
     blob[:len(head)] = head
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
@@ -428,7 +460,8 @@ def main():
     print(f"{out}: {len(blob)} bytes: MLB {len(mlb)}, UNR {len(unr)}, {len(pl)} placements "
           f"({nground} drivable), {len(path)} path points, {nmark} markers, {ncars} cars, "
           f"{len(dirs)} road points, {len(walls)} walls, race screen {len(hud)} bytes "
-          f"(bonus {bonus_time} s, camera {camera_hi}), backdrop {bw} x {bh} over colour {colour}; "
+          f"(bonus {bonus_time} s, camera {camera_hi}), backdrop {bw} x {bh} over colour {colour}, "
+          f"{nspl} splines and {nrows} opponents (difficulty {DIFFICULTY}); "
           f"preview {preview}")
 
 

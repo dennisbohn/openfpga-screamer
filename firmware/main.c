@@ -21,6 +21,7 @@
 #include "track.h"
 #include "car.h"
 #include "hud.h"
+#include "opp.h"
 
 uint32_t frames_shown;             /* read by the trap handler */
 
@@ -327,6 +328,7 @@ static void __attribute__((noreturn)) run_track(void)
     uint32_t fps = 0, fps_drawn = 0, fps_frame = 0;
     int car_v = 0;
     car_init(0);
+    opp_init(0);
     car_view(car_v);
     struct su_view view;
     track_view(&track_clip, &view);
@@ -353,6 +355,7 @@ static void __attribute__((noreturn)) run_track(void)
         uint32_t t_phys = rdcycle();
         for (uint32_t k = 0; k < n; k++) {
             car_step(keys, keys_before);
+            opp_step();
             keys_before = keys;
         }
         t_phys = rdcycle() - t_phys;
@@ -360,9 +363,11 @@ static void __attribute__((noreturn)) run_track(void)
         track_clock(n);
         const struct car_state *cs = car_state();
         struct track_cam cam;
-        struct track_object car_obj;
+        struct track_object objs[1 + OPP_MAX];
         car_camera(&cam);
-        int nobj = car_object(&cam, &car_obj);
+        int nobj = car_object(&cam, &objs[0]);
+        int nopp_seen = opp_objects(&track_clip, &cam, objs + nobj, OPP_MAX);
+        nobj += nopp_seen;
 
         /* the backdrop (the game's 0x83a68): the blitter copies it while the CPU culls the
            scene; the first piece for the geometry unit waits until it is done (hw_piece) */
@@ -391,7 +396,7 @@ static void __attribute__((noreturn)) run_track(void)
         RS_CLIP0 = RS_XY(track_clip.x0, track_clip.y0);
         RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
         su_view_regs(&view);
-        track_draw_cam(0, &track_clip, &cam, &car_obj, nobj, &ts);
+        track_draw_cam(0, &track_clip, &cam, objs, nobj, &ts);
         /* the race screen: the blitter draws it once the scene is done */
         BL_CLOCKS = 0;
         hud_build(&hud, draw_buf);
@@ -404,7 +409,7 @@ static void __attribute__((noreturn)) run_track(void)
         uint32_t r_miss = RS_MISS_CLOCKS, r_edge = RS_EDGE_CLOCKS, r_row = RS_ROW_CLOCKS;
         uint32_t r_drain = RS_DRAIN_CLOCKS, r_starved = RS_STARVED;
         ts.faces = GU_FACES;
-        if (drawn == 2) track_check(fb, &cam, &car_obj, nobj, &back, &hud);
+        if (drawn == 2) track_check(fb, &cam, objs, nobj, &back, &hud);
 
         if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
             fps = drawn - fps_drawn;
@@ -430,6 +435,13 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)car_crashes());
             dlog_str(", marker ");
             dlog_dec(car_marker());
+            dlog_str(", place ");
+            dlog_dec(opp_player_rank());
+            dlog_str(" (");
+            dlog_dec(nopp_seen);
+            dlog_str(" of ");
+            dlog_dec(opp_count());
+            dlog_str(" seen)");
             dlog_str(" slip x100 ");
             dlog_dec((int32_t)(cs->surface * 100.0f));
             dlog_str(", steps ");

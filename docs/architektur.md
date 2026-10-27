@@ -4,9 +4,10 @@ Stand: 2026-10-27. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 au
 8-Bit-Framebuffern im Block-RAM, je mit eigener Palette, getauscht in der Austastlücke; die
 CPU (VexRiscv RV32IMF mit FPU und CFU, `docs/soc.md`); Geometrie-Einheit, Clipper,
 Setup-Einheit und Rasterizer mit vorausladendem Textur-Cache; Strecke 1 mit dem Auto des
-Spielers, fahrbar, mit dem HUD aus dem Blitter und der Füllregel des Originals (keine
-Lücken an Fugen). Gebaut, Test auf dem Pocket steht aus: das Hintergrundbild `MAPn.BCK`.
-Belegung siehe „Belegung“; geschätzt ist nur noch, was fehlt (Audio, Glas/Schatten).
+Spielers, fahrbar, mit dem HUD aus dem Blitter, der Füllregel des Originals (keine Lücken
+an Fugen) und dem Hintergrundbild `MAPn.BCK`. Gebaut, Test auf dem Pocket steht aus: neun
+Gegner (Startaufstellung, ihre Linien, Platzierung), noch ohne Berührung. Belegung siehe
+„Belegung“; geschätzt ist nur noch, was fehlt (Audio, Glas/Schatten).
 
 ## Hardware des Pocket (Haupt-FPGA)
 
@@ -232,6 +233,23 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   liegen (die gespeicherten Winkel sind bis 2,5 Einheiten zu kurz), landen so meist auf
   demselben Pixel. Die Setup-Einheit und der Rasterizer schneiden deshalb die Ecken auf
   ganze Pixel ab, statt sie auf 1/16 Pixel zu runden.
+- **Die Gegner** (2026-10-27, nach OpenScreamer, dessen Adressen aus der EXE stammen; Notes
+  Abschnitt 11): `MAPnOPP.SPL` hat zehn Splines, Gegner k fährt Spline k, der zehnte ist die
+  Linie des Spielers; die Startknoten sind die Startaufstellung (zwei Spalten, der Spieler
+  zuletzt, Platz 10). Die Kurve (`0x1d54c`, `0x1e7a4`) ist ein gleichmäßiger quadratischer
+  B-Spline über die Griffe der Knoten. Ein Gegner lenkt nicht und rutscht nicht: Er fährt mit
+  `max_spd` × PACE des zuletzt erreichten Markers (+ `skill`, solange der Spieler vor ihm
+  liegt; `0x1ced0`), beschleunigt mit `accel`, bremst mit `brakes`, und rückt so weit auf
+  seiner Kurve vor (`0x1d2fc`). Er steht auf einem Punkt, der Fahrbahn unter seiner Mitte,
+  gekippt nach der Normalen dieser Fläche × 1,117 (`0x1cb9c`), dreht in Kurven die Nase ein
+  und neigt die Karosserie (`0x1df24`, `sband`). Seine Marker und Runden zählt er wie der
+  Spieler (`0x1db84`); die Platzierung (`0x20418`) tauscht je Schritt höchstens einen Gegner
+  mit dem Spieler, sobald der über die Linie ist, Gegner untereinander nie. Die Autos sind die
+  Zeilen von `CARS.DTR` nach der des Spielers (`0x142e8`). Die Werte kommen aus der Datei der
+  Schwierigkeit (`'A'` + Stufe, `0x13251`); wir nehmen NORMAL (`MAP1B.DTR`, Bonuszeit 40 s statt
+  50 s bei ROOKIE), die Stufe, die das Intro setzt (`0x2777f`). Gezeichnet wird ein Gegner nur,
+  wenn seine Kugel (Radius 1200) im Blickfeld liegt. Noch nicht: Berührung zwischen Autos,
+  Überholen, Crash eines Gegners.
 - **Das Hintergrundbild wie im Original** (2026-10-27, aus der EXE): Das Rennen zeichnet
   vor der Szene `MAPn.BCK` (ein PCX, 512 × 256) mit `0x83a68`: eine reine Kopie, die Spalte
   `(2047 − Kurs) / 2 mod 512` am linken Rand (zweimal um das Bild je Umdrehung), die oberste

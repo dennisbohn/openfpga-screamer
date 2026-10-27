@@ -28,6 +28,16 @@ void car_camera(struct track_cam *cam);
    0 when the view is from inside it */
 int car_object(const struct track_cam *cam, struct track_object *obj);
 
+/* Any car as an object: model AUTOnn (car_model_index of its CARS.DTR row) drawn at place
+   x, y, z, heading yaw, the object's pitch and roll (the car's negated), its body's own lean
+   on top (not the wheels'), the wheels' turn and the front ones' angle, the texture phase
+   (geom.h). Its blocks go into out (CAR_BLOCKS), in the game's order for the camera. */
+#define CAR_BLOCKS  16
+struct car_look { float x, y, z, yaw, pitch, roll, body_pitch, body_roll, spin, steer; uint32_t phase; };
+int car_model_index(const struct car_spec *sp);
+int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, struct track_block *out,
+             struct track_object *obj);
+
 /* The race (0x18a04, 0x1820c, 0x19490, 0x20d45; OpenScreamer's markers_step): the clock
    since the start, whose start lights go green at 6 s; the countdown from 15 s, which at the
    line and at each checkpoint becomes what is left / 5 + TRACK_DATA's bonus; the total and
@@ -38,6 +48,10 @@ struct car_race {
     int laps, total_laps, on, clock_on, time_out, finished, game_over;
 };
 const struct car_race *car_race(void);
+/* how far round the race: laps x 100 + the marker last reached + the share of the way to the
+   next (0x1820c), for the player and for any car at (x, y) */
+float car_progress(void);
+float car_marker_progress(int at, int laps, float x, float y);
 /* the outside views' rev counter needle: rpm / maxrpm x pi, eased (dash_step) */
 float car_needle(void);
 

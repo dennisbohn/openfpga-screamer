@@ -36,6 +36,9 @@ void track_path_point(uint32_t i, float *x, float *y, float *h);
    row; the first face the point is over (its corners all on one side) answers, its plane
    from the face's normal, the division cut off. */
 int track_under(float x, float y, float *h, int *grass);
+/* after track_under found a height: the tilt that lays a thing heading yaw on that face, as the
+   game stands an opponent (0x1cb9c); pitch + nose up, roll + right side up */
+void track_under_tilt(float yaw, float *pitch, float *roll);
 
 /* MAPn.MRK: the lap's markers. slip is the cornering factor from that marker on (0 on the
    straights), flags 2 the line or a checkpoint */
@@ -65,6 +68,15 @@ void track_start(float *x, float *y, float *yaw);
 /* TRACK_DATA of MAPnA.DTR: seconds added at the line and checkpoints, the bumper cam's height */
 int track_bonus_time(void);
 int track_camera_hi(void);
+
+/* The opponents (MAPnOPP.SPL, OPPONENTS of the difficulty's MAPn?.DTR): opponent k drives
+   spline k, the last spline is the player's line; a spline is nodes with a point (the start
+   node's is a place on the grid), the next node and two handles. Returns the splines. */
+struct track_opp_row { float max_spd, accel, brakes, skill, sband; };
+struct track_spline_node { int32_t x, y, z, next, in_x, in_y, out_x, out_y; };
+int track_opp_count(int *rows);
+const struct track_opp_row *track_opp_rows(void);
+const struct track_spline_node *track_opp_spline(int k, int *start, int *n);
 
 /* The backdrop (MAPn.BCK): 512 x 256 palette indices, rows of 512 bytes, the last row twice;
    the palette index below it (TRACK_DATA's color) */
@@ -118,6 +130,9 @@ void track_view(const struct rs_clip *clip, struct su_view *v);
 /* A camera: place, heading as the car's (forward = (sin yaw, -cos yaw)), pitch (+ looks up)
    and roll (+ tips the camera's right-hand side up) */
 struct track_cam { float x, y, h, yaw, pitch, roll; };
+
+/* whether a ball (x, y, h, radius) can be seen from cam through clip (as track_draw_cam culls) */
+int track_in_view(const struct rs_clip *clip, const struct track_cam *cam, float x, float y, float h, float rad);
 
 /* the blitter's commands for the backdrop behind the view clip, seen from cam (the game's
    0x83a68; track.c) */

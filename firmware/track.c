@@ -1,8 +1,8 @@
 /*
- * The track (track.h). The file (tools/make_track.py): "SCRK", version 5, then MAPn.MLB and
+ * The track (track.h). The file (tools/make_track.py): "SCRK", version 6, then MAPn.MLB and
  * MAPn.UNR unchanged, the palette, the placements, the camera path, the ground index, the
  * markers, the cars, the car models, road points and walls, the start, the race screen, the
- * backdrop and its ground colour.
+ * backdrop and its ground colour, the opponents' curves and numbers.
  *
  * The game's structures (openscreamer docs/NOTES.md, "How the track is built"):
  *   UNR    int32 blob size, int32 count, count offsets into the blob; an object's block at
@@ -85,6 +85,7 @@ static int32_t cobj_first[MAX_OBJ];     /* -1: no table (not drivable, or the ta
 static int16_t cobj_count[MAX_OBJ];
 static uint8_t cobj_grass[MAX_OBJ];
 static float sin_q[513];                /* sin(2 pi i / 2048) for i = 0..512 */
+static float under_n[3];                /* track_under's face: its normal in world axes (x, y, up) */
 static float far_z = 43808.0f;          /* the far plane of the DETAIL level */
 static float radius[MAX_OBJ];           /* of each mesh around its origin */
 
@@ -121,11 +122,11 @@ static const uint8_t *block_of(int k, const uint8_t **obj)
 int track_open(const volatile uint8_t *file)
 {
     const uint8_t *f = (const uint8_t *)file;
-    if(rd32(f) != 0x4B524353 || rd32(f + 4) != 5) return 0;    /* "SCRK", version 5 */
+    if(rd32(f) != 0x4B524353 || rd32(f + 4) != 6) return 0;    /* "SCRK", version 6 */
     file_start = f;
-    file_size = (uint32_t)rd32(f + 0x80);
-    nblocks = rd32(f + 0x84);
-    if(nblocks < 1 || 0x88 + 4 * nblocks > 0x100) return 0;
+    file_size = (uint32_t)rd32(f + 0x88);
+    nblocks = rd32(f + 0x8C);
+    if(nblocks < 1 || 0x90 + 4 * nblocks > 0x100) return 0;
     return 1;
 }
 
@@ -413,11 +414,78 @@ int track_under(float x, float y, float *h, int *grass)
                     if(q->n[1] == 0) continue;
                     int num = ((int)lx - q->v[0]) * q->n[0] + ((int)lz - q->v[2]) * q->n[2];
                     *h = (float)pc->h + (float)q->v[1] + (float)(-num / q->n[1]);
+                    under_n[0] = (float)q->n[0] * c - (float)q->n[2] * s;
+                    under_n[1] = (float)q->n[0] * s + (float)q->n[2] * c;
+                    under_n[2] = (float)q->n[1];
                     return 1;
                 }
         }
     }
     return 0;
+}
+
+/* how the game stands a thing heading yaw on the face track_under found (0x1cb9c, an
+   opponent): the face's normal turned into its frame, each level part x pi / 46080 of the
+   normal's 16384 units an angle (1.117 x the slope); pitch + nose up, roll + right side up */
+void track_under_tilt(float yaw, float *pitch, float *roll)
+{
+    float nx = under_n[0], ny = under_n[1], nz = under_n[2];
+    float len = sqrtf(nx * nx + ny * ny + nz * nz);
+    if(nz < 0.0f) len = -len;
+    if(len != 0.0f) { nx /= len; ny /= len; }
+    float fx = sinf(yaw), fy = -cosf(yaw);
+    *pitch = -1.117f * (nx * fx + ny * fy);
+    *roll = 1.117f * (nx * -fy + ny * fx);
+}
+
+int track_opp_count(int *rows)
+{
+    const uint8_t *o = file_start + rd32(file_start + 0x80);
+    *rows = rd32(o + 4);
+    return rd32(o);
+}
+
+const struct track_opp_row *track_opp_rows(void)
+{
+    return (const struct track_opp_row *)(file_start + rd32(file_start + 0x80) + 8);
+}
+
+const struct track_spline_node *track_opp_spline(int k, int *start, int *n)
+{
+    const uint8_t *o = file_start + rd32(file_start + 0x80), *p = o + 8 + 20 * rd32(o + 4);
+    for(int j = 0; j < k; j++) p += 8 + 32 * rd32(p + 4);
+    *start = rd32(p);
+    *n = rd32(p + 4);
+    return (const struct track_spline_node *)(p + 8);
+}
+
+/* the camera's frame (track_draw_cam): forward, right, up */
+static void cam_frame(const struct track_cam *cam, float f[3], float r[3], float u[3])
+{
+    float sy = sinf(cam->yaw), cy = cosf(cam->yaw), sp = sinf(cam->pitch), cp = cosf(cam->pitch);
+    float sr = sinf(cam->roll), cr = cosf(cam->roll);
+    f[0] = sy * cp; f[1] = -cy * cp; f[2] = sp;
+    /* level right = forward x up, level up = right x forward, then the roll about forward */
+    const float r0[3] = { -cy, -sy, 0.0f };
+    const float u0[3] = { r0[1] * f[2], -r0[0] * f[2], r0[0] * f[1] - r0[1] * f[0] };
+    r[0] = r0[0] * cr + u0[0] * sr; r[1] = r0[1] * cr + u0[1] * sr; r[2] = u0[2] * sr;
+    u[0] = u0[0] * cr - r0[0] * sr; u[1] = u0[1] * cr - r0[1] * sr; u[2] = u0[2] * cr;
+}
+
+int track_in_view(const struct rs_clip *clip, const struct track_cam *cam, float x, float y, float h, float rad)
+{
+    float f[3], r[3], u[3];
+    cam_frame(cam, f, r, u);
+    const float half_w = (float)(clip->x1 - clip->x0) / 2.0f / FOCAL;
+    const float up = (float)(clip->y1 - clip->y0) * EYE_LINE / FOCAL;
+    const float down = (float)(clip->y1 - clip->y0) * (1.0f - EYE_LINE) / FOCAL;
+    float dx = x - cam->x, dy = y - cam->y, dh = h - cam->h;
+    float vf = dx * f[0] + dy * f[1] + dh * f[2], vr = dx * r[0] + dy * r[1] + dh * r[2];
+    float vu = dx * u[0] + dy * u[1] + dh * u[2];
+    if(vf + rad < NEAR || vf - rad > far_z) return 0;
+    if(vr - rad > half_w * (vf + rad) || vr + rad < -half_w * (vf + rad)) return 0;
+    if(vu - rad > up * (vf + rad) || vu + rad < -down * (vf + rad)) return 0;
+    return 1;
 }
 
 void track_detail(int level)
@@ -438,7 +506,7 @@ int track_blocks(void)
 int track_block_ok(int k)
 {
     uint32_t o = 0x100 + (uint32_t)k * BLOCK, e = o + BLOCK < file_size ? o + BLOCK : file_size;
-    return o < e && crc32(file_start + o, file_start + e) == (uint32_t)rd32(file_start + 0x88 + 4 * k);
+    return o < e && crc32(file_start + o, file_start + e) == (uint32_t)rd32(file_start + 0x90 + 4 * k);
 }
 
 void track_view(const struct rs_clip *clip, struct su_view *v)
@@ -451,7 +519,7 @@ void track_view(const struct rs_clip *clip, struct su_view *v)
 }
 
 struct vis { int32_t k; int i; };              /* key << 16 | i; i: a piece, or npieces + an object */
-#define MAX_OBJS    8
+#define MAX_OBJS    16
 static struct vis vis[MAX_PIECES + MAX_OBJS];
 
 /* A block placed at o with m (world from local) as a piece for the geometry unit */
@@ -594,15 +662,9 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const float c
 void track_draw_cam(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam,
                     const struct track_object *objs, int nobj, struct track_stats *st)
 {
-    float sy = sinf(cam->yaw), cy = cosf(cam->yaw), sp = sinf(cam->pitch), cp = cosf(cam->pitch);
-    float sr = sinf(cam->roll), cr = cosf(cam->roll);
     const float c[3] = { cam->x, cam->y, cam->h };
-    const float f[3] = { sy * cp, -cy * cp, sp };
-    /* level right = forward x up, level up = right x forward, then the roll about forward */
-    const float r0[3] = { -cy, -sy, 0.0f };
-    const float u0[3] = { r0[1] * f[2], -r0[0] * f[2], r0[0] * f[1] - r0[1] * f[0] };
-    const float r[3] = { r0[0] * cr + u0[0] * sr, r0[1] * cr + u0[1] * sr, u0[2] * sr };
-    const float u[3] = { u0[0] * cr - r0[0] * sr, u0[1] * cr - r0[1] * sr, u0[2] * cr };
+    float f[3], r[3], u[3];
+    cam_frame(cam, f, r, u);
     draw(fb, clip, c, f, r, u, objs, nobj, st);
 }
 

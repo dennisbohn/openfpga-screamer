@@ -6,6 +6,7 @@
 #include "hud.h"
 #include <math.h>
 #include "car.h"
+#include "opp.h"
 #include "track.h"
 
 static const uint8_t *base;
@@ -101,7 +102,8 @@ void hud_build(struct blit_list *l, int buffer)
     int w = text(l, 8, 0x0B, buf, 1, 5);
     put_dec(buf, (uint32_t)r->total_laps, 1);
     text(l, w + 5, 0x14, buf, 4, 5);
-    put_dec(buf, 1, 1);                                 /* the position: alone for now */
+    int rank = opp_player_rank();
+    put_dec(buf, (uint32_t)rank, 1);                    /* the position in the running order */
     text(l, 0x114, 0x0B, buf, 1, 5);
     clock_text(buf, r->total);
     text(l, 8, 0x38, buf, 3, 2);
@@ -112,11 +114,12 @@ void hud_build(struct blit_list *l, int buffer)
 
     if(r->clock < 8.0f) sprite(l, 0x78, 0x36, (int)r->clock / 2);     /* the start lights */
 
-    /* the end (0x21048): GREAT! and the position, the total time; or TIME OVER */
+    /* the end (0x21048): GREAT! for the winner, the position (1ST .. 10TH POSITION), the total
+       time; or TIME OVER */
     if(r->finished) {
-        centred(l, 0x3E, track_hud_text(11), 0, 2);
+        if(rank == 1) centred(l, 0x3E, track_hud_text(11), 0, 2);
         p = buf;
-        const char *t = track_hud_text(1), *pos = track_hud_text(0);
+        const char *t = track_hud_text(rank >= 1 && rank <= 10 ? rank : 10), *pos = track_hud_text(0);
         while(*t && p < buf + 6) *p++ = *t++;
         *p++ = ' ';
         *p = 0;
