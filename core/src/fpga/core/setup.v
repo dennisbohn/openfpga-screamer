@@ -258,8 +258,10 @@ clipper cl (
     reg  signed [52:0] cm_p1, cm_p2;
     reg  [3:0]  cm_t0 = 0, cm_t1 = 0, cm_t2 = 0;
     wire signed [49:0] cm_shift = $signed(cm_p2[49:0]) >>> c_l;
-    wire signed [52:0] cm_x = $signed({{21{cen_x[15]}}, cen_x, 16'd0}) + cm_p2 + 53'sd32768;
-    wire signed [52:0] cm_y = $signed({{21{cen_y[15]}}, cen_y, 16'd0}) - cm_p2 + 53'sd32768;
+    // on whole pixels, the fraction cut off as the game's projection does (0x83420)
+    wire signed [52:0] cm_x = $signed({{21{cen_x[15]}}, cen_x, 16'd0}) + cm_p2;
+    wire signed [52:0] cm_y = $signed({{21{cen_y[15]}}, cen_y, 16'd0}) - cm_p2;
+    wire [15:0] cm_xs = sat16(cm_x >>> 16), cm_ys = sat16(cm_y >>> 16);
 
     wire        cu_take;                        // the triangle part takes the corner
     wire [15:0] c_norm = norm16({3'd0, c_f}, c_l);
@@ -322,8 +324,8 @@ always @(posedge clk) begin
     C_PY: c_py <= sat21(cm_shift);
     C_SR: c_sr <= cm_p2[41:0];
     C_TR: c_tr <= cm_p2[41:0];
-    C_X:  c_x <= sat16(cm_x >>> 16);
-    C_Y:  c_y <= sat16(cm_y >>> 16);
+    C_X:  c_x <= {cm_xs[15:4], 4'd0};
+    C_Y:  c_y <= {cm_ys[15:4], 4'd0};
     default: ;
     endcase
 

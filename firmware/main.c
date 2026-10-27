@@ -20,6 +20,7 @@
 #include "slot.h"
 #include "track.h"
 #include "car.h"
+#include "hud.h"
 
 uint32_t frames_shown;             /* read by the trap handler */
 
@@ -257,12 +258,25 @@ static void draw_status(volatile uint8_t *fb, uint32_t st, uint32_t drawn, const
  * The flythrough: the camera drives the player's line; every frame the counts on screen,
  * every 250 frames a line in the log
  */
-static const struct rs_clip track_clip = { 0, 30, FB_W, 176 };
+static const struct rs_clip track_clip = { 0, 0, FB_W, FB_H };     /* the whole screen, as the game's views */
+static struct blit_list hud;            /* this frame's race screen, for the blitter (and the check) */
+
+/* the blitter's commands (blit.v): a copy's first word is its SDRAM byte address */
+static void hw_blit(const struct blit_list *l)
+{
+    for (int i = 0; i < l->n; i++) {
+        const uint32_t *c = l->c[i];
+        BL_PUSH = (c[1] >> 28 & 3) == BLIT_LINE ? c[0] : (uint32_t)((uintptr_t)l->src[i] - SDRAM_BASE);
+        BL_PUSH = c[1];
+        BL_PUSH = c[2];
+        BL_PUSH = c[3];
+    }
+}
 
 /* Once per run: the frame just drawn against the C models of the setup unit and the
    rasterizer, drawn into the SDRAM; the track area compared pixel by pixel */
 static void track_check(volatile uint8_t *fb, const struct track_cam *cam, const struct track_object *objs,
-                        int nobj, uint8_t sky)
+                        int nobj, const struct blit_list *bl, uint8_t sky)
 {
     volatile uint8_t *m = CHECK_BUF;
     struct track_stats ts;
@@ -270,6 +284,7 @@ static void track_check(volatile uint8_t *fb, const struct track_cam *cam, const
     fb_fill(m, track_clip.x0, track_clip.y0, track_clip.x1 - track_clip.x0, track_clip.y1 - track_clip.y0, sky);
     track_mode = TRACK_MODEL;
     track_draw_cam(m, &track_clip, cam, objs, nobj, &ts);
+    blit_model(m, bl);
     track_mode = TRACK_HW;
     for (int y = track_clip.y0; y < track_clip.y1; y++)
         for (int x = track_clip.x0; x < track_clip.x1; x++)
@@ -340,11 +355,7 @@ static void __attribute__((noreturn)) run_track(void)
 
         volatile uint8_t *fb = FB(!(st & VID_FRONT));
         for (int i = 0; i < 256; i++) VID_PAL[i] = pal[i];
-        draw_band(fb);
-        fb_fill(fb, 0, BAND_H, FB_W, track_clip.y0 - BAND_H, col_bg);
-        fb_fill(fb, 0, track_clip.y0, FB_W, track_clip.y1 - track_clip.y0, col_sky);
-        fb_fill(fb, 0, track_clip.y1, FB_W, FB_H - track_clip.y1, col_bg);
-        con_text(fb, 1, 2, "SCREAMER POCKET - STRECKE 1", col_text, col_bg);
+        fb_fill(fb, 0, 0, FB_W, FB_H, col_sky);
 
         /* the pieces from the CPU to the geometry unit, its faces to the setup unit, the
            triangles to the rasterizer */
@@ -363,33 +374,25 @@ static void __attribute__((noreturn)) run_track(void)
         RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
         su_view_regs(&view);
         track_draw_cam(0, &track_clip, &cam, &car_obj, nobj, &ts);
+        /* the race screen: the blitter draws it once the scene is done */
+        BL_CLOCKS = 0;
+        hud_build(&hud, draw_buf);
+        hw_blit(&hud);
         while (RS_DRAW & RS_BUSY)
             ;
+        uint32_t blit = BL_CLOCKS;
         uint32_t cycles = rdcycle() - t0, raster = RS_CLOCKS, pixels = RS_PIXELS, misses = RS_MISSES;
         uint32_t setup = SU_CLOCKS, geom = GU_CLOCKS;
         uint32_t r_miss = RS_MISS_CLOCKS, r_edge = RS_EDGE_CLOCKS, r_row = RS_ROW_CLOCKS;
         uint32_t r_drain = RS_DRAIN_CLOCKS, r_starved = RS_STARVED;
         ts.faces = GU_FACES;
-        if (drawn == 2) track_check(fb, &cam, &car_obj, nobj, col_sky);
+        if (drawn == 2) track_check(fb, &cam, &car_obj, nobj, &hud, col_sky);
 
         if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
             fps = drawn - fps_drawn;
             fps_drawn = drawn;
             fps_frame = VID_FRAME(st);
         }
-        char buf[CON_COLS + 1], *p;
-        p = fmt_udec(fmt_str(buf, "Teile "), ts.pieces);
-        fmt_udec(fmt_str(p, " Flaechen "), ts.faces);
-        con_text(fb, 1, 22, buf, col_text, col_bg);
-        p = fmt_udec(fmt_str(buf, "CPU "), cycles);
-        p = fmt_udec(fmt_str(p, " Raster "), raster);
-        fmt_udec(fmt_str(p, " Miss "), misses);
-        con_text(fb, 1, 23, buf, col_text, col_bg);
-        p = fmt_udec(fmt_str(buf, "FPS "), fps);
-        p = fmt_udec(fmt_str(p, "  "), (uint32_t)drive_kmh(cs));
-        p = fmt_udec(fmt_str(p, " km/h  Gang "), (uint32_t)cs->gear);
-        fmt_udec(fmt_str(p, "  U/min "), (uint32_t)cs->rpm);
-        con_text(fb, 1, 24, buf, col_text, col_bg);
         if (drawn % 250 == 2) {
             dlog_str("track frame ");
             dlog_dec((int32_t)drawn);
@@ -434,6 +437,8 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)raster);
             dlog_str(", misses ");
             dlog_dec((int32_t)misses);
+            dlog_str(", blit ");
+            dlog_dec((int32_t)blit);
             dlog_str(", fps ");
             dlog_dec((int32_t)fps);
             if (drawn == 2) {                   /* the log has 4 KB: once */

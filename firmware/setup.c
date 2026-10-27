@@ -125,10 +125,13 @@ void su_project(const struct su_view *v, const struct su_fixed *c, struct su_poi
     /* r / f and u / f with 16 fraction bits, within +-16 */
     int64_t px = clamp64(((int64_t)r * rc) >> l, -(1 << 20) + 1, (1 << 20) - 1);
     int64_t py = clamp64(((int64_t)u * rc) >> l, -(1 << 20) + 1, (1 << 20) - 1);
-    int64_t x = (((int64_t)v->cx << 16) + (int64_t)v->scale * px + 32768) >> 16;
-    int64_t y = (((int64_t)v->cy << 16) - (int64_t)v->scale * py + 32768) >> 16;
-    p->x = (int32_t)clamp64(x, -32768, 32767);
-    p->y = (int32_t)clamp64(y, -32768, 32767);
+    /* on whole pixels, the fraction cut off, as the game's projection does (0x83420: the
+       high word of a 16.16 x; its fillers take whole pixels): corners of neighbouring pieces
+       a few units apart land on the same pixel, and the joins have no cracks */
+    int64_t x = (((int64_t)v->cx << 16) + (int64_t)v->scale * px) >> 16;
+    int64_t y = (((int64_t)v->cy << 16) - (int64_t)v->scale * py) >> 16;
+    p->x = (int32_t)clamp64(x, -32768, 32767) & ~15;
+    p->y = (int32_t)clamp64(y, -32768, 32767) & ~15;
     p->rc = rc;
     p->l = l;
     p->sr = s * rc;

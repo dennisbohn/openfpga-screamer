@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1560 860" width="1560" height="860" role="img" aria-label="Architektur: Die CPU wählt und sortiert die Bauteile der Strecke und schreibt je Bauteil seine Lage in Register der Geometrie-Einheit. Die liest das Mesh aus dem SDRAM, rechnet die Eckpunkte in Kamerasicht um, lässt Rückseiten weg und gibt die Flächen an Clipper und Setup-Einheit, die schneiden, projizieren und die Dreiecke für den Rasterizer vorbereiten. Der Rasterizer liest Texturen über einen Cache aus dem SDRAM, der fehlende Zeilen schon vor einer Warteschlange anfordert, und schreibt in den hinteren der beiden Framebuffer im Block-RAM; video_out zeigt den vorderen mit 50 Hz, getauscht wird in der Austastlücke. Programm und Strecke lädt der Pocket auf Anforderung über die APF-Bridge in den SDRAM.">
   <title>Screamer auf dem Analogue Pocket – Architektur</title>
-  <desc>Gebaut und auf dem Pocket getestet: APF-Bridge mit Data-Slots (Programm und Strecke auf Anforderung), zwei Framebuffer im Block-RAM mit Tausch bei VSync, video_out mit 50 Hz und zwei Paletten, VexRiscv RV32IMF mit FPU und CFU, SDRAM-Controller, Rasterizer mit 16-KB-Textur-Cache, der fehlende Zeilen vorauslädt, Setup-Einheit mit Clipper. Seit Schritt 4 auch die Geometrie-Einheit; mit ihr hält der Streckendurchflug stabil 50 fps, die CPU braucht davon etwa 20 % eines Bildes. Geplant: Audio, Glas und Schatten (MAPn.SMG) im Rasterizer, Sounds im SDRAM, Überlappen von Bild N+1 und N. SRAM und PSRAM sind nicht benutzt.</desc>
+  <desc>Gebaut und auf dem Pocket getestet: APF-Bridge mit Data-Slots (Programm und Strecke auf Anforderung), zwei Framebuffer im Block-RAM mit Tausch bei VSync, video_out mit 50 Hz und zwei Paletten, VexRiscv RV32IMF mit FPU und CFU, SDRAM-Controller, Rasterizer mit 16-KB-Textur-Cache, der fehlende Zeilen vorauslädt, Setup-Einheit mit Clipper. Seit Schritt 4 auch die Geometrie-Einheit, dazu ein Blitter, der die Rennanzeige nach der Szene in den Framebuffer kopiert; mit ihr hält der Streckendurchflug stabil 50 fps, die CPU braucht davon etwa 20 % eines Bildes. Geplant: Audio, Glas und Schatten (MAPn.SMG) im Rasterizer, Sounds im SDRAM, Überlappen von Bild N+1 und N. SRAM und PSRAM sind nicht benutzt.</desc>
   <defs>
     <marker id="built" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#2e7d32"/>
@@ -36,7 +36,7 @@
 
   <!-- title and legend -->
   <text x="40" y="44" class="h">Screamer auf dem Analogue Pocket – Architektur</text>
-  <text x="40" y="66" class="l">Datenfluss beim Laden und pro Bild · Stand 26.10.2026</text>
+  <text x="40" y="66" class="l">Datenfluss beim Laden und pro Bild · Stand 27.10.2026</text>
 
   <rect x="1190" y="16" width="22" height="13" rx="3" class="built"/>
   <text x="1220" y="27" class="l">gebaut, auf dem Pocket getestet</text>
@@ -85,22 +85,25 @@
   <text x="310" y="326" class="b c">Tasten, Befehle</text>
 
   <rect x="420" y="260" width="170" height="100" rx="8" class="built"/>
-  <text x="505" y="286" class="t c">VexRiscv RV32IMF</text>
-  <text x="505" y="304" class="b c">I-/D-Cache · FPU · CFU</text>
-  <text x="505" y="320" class="b c">Bauteile wählen, sortieren</text>
-  <text x="505" y="336" class="b c">Fahrphysik · Spiellogik: folgt</text>
+  <text x="505" y="282" class="t c">VexRiscv RV32IMF</text>
+  <text x="505" y="299" class="b c">I-/D-Cache · FPU · CFU</text>
+  <text x="505" y="314" class="b c">Bauteile wählen, sortieren</text>
+  <text x="505" y="329" class="b c">Fahrphysik, Rennablauf, HUD</text>
+  <text x="505" y="344" class="b c">Gegner, Ton: folgt</text>
 
   <rect x="640" y="260" width="150" height="100" rx="8" class="built"/>
-  <text x="715" y="286" class="t c">Geometrie-Einheit</text>
-  <text x="715" y="304" class="b c">Mesh lesen, Eckpunkte</text>
-  <text x="715" y="320" class="b c">umrechnen, Rückseiten,</text>
-  <text x="715" y="336" class="b c">Material · Puffer, Cache</text>
+  <text x="715" y="282" class="t c">Geometrie-Einheit</text>
+  <text x="715" y="299" class="b c">Mesh lesen, Eckpunkte</text>
+  <text x="715" y="314" class="b c">umrechnen, Rückseiten,</text>
+  <text x="715" y="329" class="b c">Material, Texturbild,</text>
+  <text x="715" y="344" class="b c">Puffer, Cache</text>
 
   <rect x="840" y="260" width="150" height="100" rx="8" class="built"/>
-  <text x="915" y="286" class="t c">Clipper + Setup</text>
-  <text x="915" y="304" class="b c">schneiden (nah, fern),</text>
-  <text x="915" y="320" class="b c">projizieren, Fächer,</text>
-  <text x="915" y="336" class="b c">Dreiecke vorbereiten</text>
+  <text x="915" y="282" class="t c">Clipper + Setup</text>
+  <text x="915" y="299" class="b c">schneiden (nah, fern),</text>
+  <text x="915" y="314" class="b c">projizieren auf</text>
+  <text x="915" y="329" class="b c">ganze Pixel, Fächer,</text>
+  <text x="915" y="344" class="b c">Dreiecke vorbereiten</text>
 
   <rect x="1040" y="260" width="140" height="100" rx="8" class="built"/>
   <text x="1110" y="286" class="t c">Rasterizer</text>
@@ -120,6 +123,14 @@
   <text x="535" y="442" class="b c">JTOPL (OPL2)</text>
   <text x="535" y="458" class="b c">PCM-Mixer</text>
 
+  <rect x="1205" y="505" width="125" height="70" rx="8" class="fresh"/>
+  <text x="1267" y="529" class="t c">Blitter (HUD)</text>
+  <text x="1267" y="547" class="b c">Bilder, Schrift, Linien</text>
+  <text x="1267" y="563" class="b c">nach der Szene</text>
+  <path d="M1267,503 V472" class="wf" marker-end="url(#built)"/>
+  <path d="M1070,632 H1267 V577" class="wf" marker-end="url(#built)"/>
+  <text x="1275" y="622" class="l">HUD-Bilder</text>
+
   <rect x="1195" y="400" width="135" height="70" rx="8" class="built"/>
   <text x="1262" y="424" class="t c">Framebuffer ×2</text>
   <text x="1262" y="442" class="b c">Block-RAM</text>
@@ -129,7 +140,7 @@
   <rect x="420" y="540" width="370" height="70" rx="8" class="built"/>
   <text x="605" y="566" class="t c">SDRAM-Controller</text>
   <text x="605" y="584" class="b c">Bursts für Cache-Zeilen · Ports: Bridge, CPU,</text>
-  <text x="605" y="599" class="b c">Zeilen für Rasterizer und Geometrie (geteilt)</text>
+  <text x="605" y="599" class="b c">Zeilen für Rasterizer, Geometrie, Blitter (geteilt)</text>
 
 
   <rect x="1040" y="540" width="140" height="70" rx="8" class="built"/>
@@ -218,6 +229,6 @@
 
   <!-- notes -->
   <text x="40" y="798" class="l">Pro Bild: Die CPU wählt die Bauteile in Reichweite, sortiert sie von hinten nach vorn (Maler-Algorithmus) und schreibt sie in den Puffer der Geometrie-Einheit (113 Bauteile); dahinter arbeiten Geometrie, Setup und Rasterizer gleichzeitig.</text>
-  <text x="40" y="816" class="l">Gezeigt wird nur ein fertiges Bild (Doppelpufferung, Tausch in der Austastlücke, höchstens 50 Bilder pro Sekunde). Geplant: Bild N+1 und N überlappen, Glas/Schatten, Audio.</text>
-  <text x="40" y="834" class="l">Streckendurchflug stabil 50 fps (schwerstes Bild 64 % eines Bildes), CPU-Anteil etwa 20 %. Belegung: 14.469 von 18.480 ALMs (78 %), 252 von 308 M10K (82 %), 31 von 66 DSP (47 %); Timing hält bei 74,25 MHz.</text>
+  <text x="40" y="816" class="l">Gezeigt wird nur ein fertiges Bild (Doppelpufferung, Tausch in der Austastlücke, höchstens 50 Bilder pro Sekunde). Geplant: Gegner, Radar, Hintergrund (MAPn.BCK), Glas/Schatten, Audio, Bild N+1 und N überlappen.</text>
+  <text x="40" y="834" class="l">Streckendurchflug stabil 50 fps (schwerstes Bild 64 % eines Bildes), CPU-Anteil etwa 20 %. Belegung: 14.573 von 18.480 ALMs (79 %), 254 von 308 M10K (82 %), 31 von 66 DSP (47 %); Timing hält bei 74,25 MHz.</text>
 </svg>

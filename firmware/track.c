@@ -120,11 +120,11 @@ static const uint8_t *block_of(int k, const uint8_t **obj)
 int track_open(const volatile uint8_t *file)
 {
     const uint8_t *f = (const uint8_t *)file;
-    if(rd32(f) != 0x4B524353 || rd32(f + 4) != 3) return 0;    /* "SCRK", version 3 */
+    if(rd32(f) != 0x4B524353 || rd32(f + 4) != 4) return 0;    /* "SCRK", version 4 */
     file_start = f;
-    file_size = (uint32_t)rd32(f + 0x68);
-    nblocks = rd32(f + 0x6C);
-    if(nblocks < 1 || 0x70 + 4 * nblocks > 0x100) return 0;
+    file_size = (uint32_t)rd32(f + 0x80);
+    nblocks = rd32(f + 0x84);
+    if(nblocks < 1 || 0x88 + 4 * nblocks > 0x100) return 0;
     return 1;
 }
 
@@ -292,6 +292,48 @@ void track_clock(uint32_t steps)
     piece_phase = (uint32_t)(anim * 65535.0f) & 0x3FFF;
 }
 
+int track_bonus_time(void)
+{
+    return rd32(file_start + 0x70);
+}
+
+int track_camera_hi(void)
+{
+    return rd32(file_start + 0x74);
+}
+
+const uint8_t *track_hud(void)
+{
+    return file_start + rd32(file_start + 0x68);
+}
+
+const struct blit_image *track_hud_images(int *n)
+{
+    const uint8_t *h = track_hud();
+    *n = rd32(h);
+    return (const struct blit_image *)(h + 8);
+}
+
+const struct blit_font *track_hud_fonts(int *n)
+{
+    const uint8_t *h = track_hud();
+    *n = rd32(h + 4);
+    return (const struct blit_font *)(h + 8 + 12 * rd32(h));
+}
+
+void track_hud_picture(int k, int *first, int *count)
+{
+    const uint8_t *h = track_hud(), *p = h + 8 + 12 * rd32(h) + 20 * rd32(h + 4) + 8 * k;
+    *first = rd32(p);
+    *count = rd32(p + 4);
+}
+
+const char *track_hud_text(int k)
+{
+    const uint8_t *h = track_hud();
+    return (const char *)(h + 8 + 12 * rd32(h) + 20 * rd32(h + 4) + 16 + 32 * k);
+}
+
 void track_start(float *x, float *y, float *yaw)
 {
     *x = (float)start->x;
@@ -359,7 +401,7 @@ int track_blocks(void)
 int track_block_ok(int k)
 {
     uint32_t o = 0x100 + (uint32_t)k * BLOCK, e = o + BLOCK < file_size ? o + BLOCK : file_size;
-    return o < e && crc32(file_start + o, file_start + e) == (uint32_t)rd32(file_start + 0x70 + 4 * k);
+    return o < e && crc32(file_start + o, file_start + e) == (uint32_t)rd32(file_start + 0x88 + 4 * k);
 }
 
 void track_view(const struct rs_clip *clip, struct su_view *v)

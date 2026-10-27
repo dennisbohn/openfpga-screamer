@@ -147,6 +147,8 @@
 #define GU_FACES        REG32(0xF0003150u)  /* R: faces handed on; W: clears */
 #define GU_CLOCKS       REG32(0xF0003154u)  /* R: clocks busy; W: clears */
 #define GU_INVAL        REG32(0xF0003158u)  /* W: forget the cached mesh lines */
+#define BL_PUSH         REG32(0xF0003180u)  /* W: next word of a blitter command; waits while its buffer is full */
+#define BL_CLOCKS       REG32(0xF0003184u)  /* R: clocks busy; W: clears */
 #define GU_PUSH         REG32(0xF000315Cu)  /* W: next word of a piece into the buffer; waits while it is full.
                                                18 words: m[9], t[3], e[3], object, block (SDRAM byte
                                                addresses), face row (struct gu_piece) */

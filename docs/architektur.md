@@ -1,11 +1,12 @@
 # Architektur
 
-Stand: 2026-10-25. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 aus zwei
-8-Bit-Framebuffern im Block-RAM, je mit eigener Palette, getauscht in der Austastlücke, und
-die CPU (VexRiscv RV32IMF mit FPU und CFU, `docs/soc.md`), die in Schritt 1 selbst in die
-Framebuffer zeichnet und ein Protokoll auf die SD-Karte schreibt. Belegung: 3.679 ALMs,
-176 M10K, 11 DSP-Blöcke. Davor lief der Framebuffer im PSRAM `cram1` (Commit `b148783`).
-Alles Weitere sind Schätzungen, bis die Synthese echte Zahlen liefert.
+Stand: 2026-10-27. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 aus zwei
+8-Bit-Framebuffern im Block-RAM, je mit eigener Palette, getauscht in der Austastlücke; die
+CPU (VexRiscv RV32IMF mit FPU und CFU, `docs/soc.md`); Geometrie-Einheit, Clipper,
+Setup-Einheit und Rasterizer mit vorausladendem Textur-Cache; Strecke 1 mit dem Auto des
+Spielers, fahrbar. Gebaut, Test auf dem Pocket steht aus: der Blitter für das HUD und Ecken
+auf ganzen Pixeln. Belegung siehe „Belegung“; geschätzt ist nur noch, was fehlt (Audio,
+Glas/Schatten).
 
 ## Hardware des Pocket (Haupt-FPGA)
 
@@ -65,40 +66,48 @@ braucht. 33 Dateien, eine mehr als die 32 Slots: offen, z. B. zwei Dateien in ei
   Option DETAIL: L bei LOW, H ab MID; nicht die Auflösung)
 - `TABS/`: `PERSP01.TAB`, `VIS.TAB`
 
-## Geschätzte Belegung
+## Belegung
 
-Die Schätzung unten stammt vom 2026-10-25 (mit SRAM-Controller, der inzwischen entfallen
-ist). Gemessen am 2026-10-26, mit Geometrie-Einheit, Clipper, Setup-Einheit und
-vorausladendem Textur-Cache, ohne SRAM- und PSRAM-Controller, mit Auto und Texturbildern: 14.469 von 18.480 ALMs (78 %), 252
-von 308 M10K (82 %), 31 von 66 DSP (47 %).
+Gemessen am 2026-10-27 (Quartus-Build mit Blitter und Ecken auf ganzen Pixeln, Timing hält
+bei 74,25 MHz: Setup +0,40 ns, Hold +0,01 ns): 14.573 von 18.480 ALMs (79 %), 254 von 308
+M10K (82 %), 31 von 66 DSP (47 %). Geschätzt ist nur, was noch fehlt.
 
-![Platzbudget im FPGA: Logik geplant 55–77 %, Block-RAM 67–74 %, DSP 42–61 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik heute 79 %, mit Geplantem 86–90 %; Block-RAM heute 82 %, mit Geplantem 89–90 %; DSP heute 47 %, mit Geplantem 48–52 %](ressourcen.svg)
 
-Die Grafik erzeugt `tools/make_budget_svg.py` aus denselben Zahlen wie diese Tabelle; wenn
-die Synthese eine Schätzung ersetzt, beides anpassen.
+Die Grafik erzeugt `tools/make_budget_svg.py`: die gemessenen Zeilen aus dem Fitter-Report
+(`core/src/fpga/output_files/ap_core.fit.rpt`, Tabelle „Resource Utilization by Entity“), die
+geplanten aus Schätzungen im Skript. Nach einem Build neu erzeugen und diese Tabelle
+nachziehen.
 
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
-| Analogue-Rahmen (**gemessen**, unverändertes Template) | 414 | 2 | 0 |
-| Framebuffer ×2 + Video (**gemessen**: `framebuffer`, `video_out`, `fb_bridge`) | 78 | 130 | 0 |
-| VexRiscv RV32IM + 2× 8 KB Cache (einzeln synthetisiert: 1.268–1.278) | 1.250–1.300 | 19 | 4 |
-| FPU (RV32F, einzeln synthetisiert: ~1.780) | 1.750–1.800 | 5 | 4 |
-| CFU (eigene Befehle, z. B. 16.16-Multiplikation) | 30–100 | – | 3 |
-| Boot-RAM 4–16 KB (Startcode, Speichertest) | 20–50 | 4–16 | – |
-| Speicher-Controller (SDRAM, `cram0`) + Arbiter | 900–1.400 | 2–4 | 0 |
-| SRAM-Controller (Befehlslisten) | 100–200 | – | 0 |
-| Geometrie-Einheit | 2.500–4.000 | 4–8 | 12–18 |
-| Rasterizer (Logik) | 2.000–3.000 | 3–6 | 4–8 |
-| Textur-Cache 16 KB | 100–200 | 16 | – |
-| Transparenztabelle (`MAPn.SMG`, 64 × 256 Byte) | – | 16 | – |
-| JTOPL | 800–1.200 | 3–5 | 0–1 |
-| PCM-Mixer | 300–500 | 2 | 1–2 |
-| **Summe** | **10.242–14.242 (55–77 %)** | **206–229 (67–74 %)** | **28–40 (42–61 %)** |
+| Analogue-Rahmen (Bridge, PLLs, Pads) | 474 | 2 | 0 |
+| Framebuffer ×2 + Video | 139 | 130 | 0 |
+| VexRiscv + 2× 8 KB Cache | 1.350 | 19 | 4 |
+| FPU (RV32F) | 1.504 | 5 | 4 |
+| CFU (16.16-Multiplikation) | 9 | – | 3 |
+| Boot-RAM 32 KB + Protokoll | – | 36 | – |
+| Geometrie-Einheit | 1.853 | 18 | 3 |
+| Clipper | 2.812 | 6 | 2 |
+| Setup-Einheit | 2.937 | 4 | 4 |
+| Rasterizer | 1.598 | – | 7 |
+| Texturen: Pipeline + Cache | 690 | 30 | 4 |
+| Blitter (HUD) | 394 | 2 | – |
+| SDRAM-Controller + Ports | 324 | 2 | – |
+| Bus, Register, Arbiter | 489 | – | – |
+| **gebaut** | **14.573 (79 %)** | **254 (82 %)** | **31 (47 %)** |
+| geplant: Glas/Schatten (`MAPn.SMG`, 64 × 256 Byte) | 150–400 | 16 | – |
+| geplant: JTOPL (OPL2) | 800–1.200 | 3–5 | 0–1 |
+| geplant: PCM-Mixer | 300–500 | 2 | 1–2 |
+| **mit Geplantem** | **15.823–16.673 (86–90 %)** | **275–277 (89–90 %)** | **32–34 (48–52 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
-Taktfrequenz zu halten. Block-RAM trägt die beiden Framebuffer (128 M10K); CPU-Caches und
-Textur-Cache teilen sich den Rest und werden später an Messungen ausgerichtet. Einen
-Tiefenpuffer gibt es nicht, siehe „Entschieden“.
+Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es
+und probiert weitere Fitter-Seeds), nicht als Instabilität auf dem Pocket, solange das Timing
+hält. Die größten Posten sind Setup-Einheit und Clipper (zusammen 5.749 ALMs): je nur ein
+Multiplizierer und eine Kehrwerttabelle, aber breite Register (eine Ecke 144 Bit, der Clipper
+nimmt vier auf einmal) und Auswahlschaltungen vor dem Multiplizierer. Dort ist am meisten zu
+holen, falls Audio nicht mehr passt. Einen Tiefenpuffer gibt es nicht, siehe „Entschieden“.
 
 VexRiscv und FPU stammen aus einer Synthese der CPU allein für den 5CEBA4F23C8 mit Quartus
 18.1.1 (Recherche 2026-10-25): RV32IM mit 2 × 8 KB Cache 1.268–1.278 ALMs, 19 M10K, 4 DSP,
@@ -205,6 +214,26 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Wandreaktion weg; wir folgen der EXE. Dann Tempo × 0,6, Richtung der Straße, hochgeworfen mit
   3000/s, 12 rad/s um Quer- und Längsachse, Schwerkraft 6000, vier Landungen, die Crash-Ansicht
   (Zeile 5 der Ansichten) und danach die alte.
+- **Die Rennanzeige über einen Blitter** (2026-10-27): Das Original zeichnet sie in Software
+  nach der Szene: Schrift aus `GAMEL.FNT` (Farbe × 16 + Schattierung), Sprites aus
+  `GAMEL.SPR`, die Bilder `IMPLET_L`/`IMPRES_L` (.PKC), Nadeln als Linien, an den Plätzen von
+  `0x23400`/`0x2367c`. Hier kopiert sie ein Blitter (`blit.v`) Pixel für Pixel 1:1 in den
+  Framebuffer, ohne Geometrie, Setup und Rasterizer: Befehle mit x, y, w, h (Kopie, Schrift)
+  oder als Linie, in einer Warteschlange hinter den Teilen des Bildes, ausgeführt, sobald die
+  3D-Einheiten fertig sind. Die Bilder zerlegt `make_track.py` in Kästen um ihre Pixel, so
+  dass der ganze HUD unter 1 % eines Bildes kostet; ein eigener HUD-Puffer (64 KB je Puffer)
+  oder eine Maske für den Rasterizer brächten dafür zu wenig. Ampel, Countdown, Runden und
+  Zeiten wie im Spiel (OpenScreamers `markers_step`, Notes Abschnitt 12).
+- **Ecken auf ganzen Pixeln wie im Original** (2026-10-27, aus der EXE): Die Projektion
+  (`0x83420`ff.) legt x als 16.16 an und behält nur das obere Halbwort, und alle Füllroutinen
+  (`0xd5350` Texturen, `0xd8844` eine Farbe) lesen die Ecken als ganze Pixel aus der Tabelle
+  bei `0x54e94`. Ecken benachbarter Teile, die in der Welt ein paar Einheiten auseinander
+  liegen (die gespeicherten Winkel sind bis 2,5 Einheiten zu kurz), landen so meist auf
+  demselben Pixel: der Asphalt hat keine Haarrisse. Die Setup-Einheit schneidet deshalb die
+  Ecken auf ganze Pixel ab, statt sie auf 1/16 Pixel zu runden; in der ersten Steilkurve von
+  Strecke 1 bleiben danach wenige einzelne Pixel an Fugen. Das Original rastert dabei
+  spaltenweise (für den VGA-Speicher seiner Zeit); unser Framebuffer hält vier Pixel einer
+  Zeile in einem Wort, daher bleibt der Rasterizer zeilenweise.
 - **Bilder überlappen (Pipeline):** CPU, Grafik und Anzeige arbeiten gleichzeitig an Bild
   N+1, N und N−1, die Zeit pro Bild ist das Maximum statt der Summe. Kosten: ein Bild mehr
   Verzögerung zwischen Eingabe und Anzeige (20 ms bei 50 fps).

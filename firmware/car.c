@@ -8,8 +8,8 @@
 #include "hw.h"
 
 #define PI          3.14159265f
-/* the bumper cam's height over the car: camera_hi in TRACK_DATA of MAP1A.DTR (track 1) */
-#define CAMERA_HI   300.0f
+/* the bumper cam's height over the car: camera_hi in TRACK_DATA of MAPnA.DTR */
+#define CAMERA_HI   ((float)track_camera_hi())
 
 /* the game's views (OpenScreamer's g_views): how far behind, how high, looking down how much */
 struct view_def { float behind, above, down; int incar; };
@@ -26,6 +26,10 @@ static struct track_model model;
 static int view;
 static int mark_at;                     /* the marker last reached */
 static uint32_t wall_hits, crashes;
+static struct car_race race;
+static uint8_t mark_seen[64];
+static int mark_count;
+static float needle;
 
 /* a crash (0x16c90 decides, 0x18518 runs it): thrown up and tumbling, four landings */
 static struct { int on, bounces, view; float height, vy, pitch, roll, pitch_rate, roll_rate; } crash;
@@ -245,13 +249,25 @@ static void crash_step(void)
     }
 }
 
-/* markers_step (0x1820c): the marker last reached and its two neighbours; inside one's
-   circle it becomes the last reached and its slip the surface factor of the cornering force */
+/* markers_step (0x1820c, 0x19490): the clocks run; the marker last reached and its two
+   neighbours: inside one's circle it becomes the last reached and its slip the surface factor
+   of the cornering force; the line starts the clocks, and once every other marker has been
+   passed it counts a lap; the line and a checkpoint (flag 2) give the bonus */
 static void markers_step(void)
 {
+    if(race.on && !race.finished) {
+        if(race.clock_on) {
+            race.lap += DRIVE_DT;
+            race.total += DRIVE_DT;
+        }
+        race.timer -= DRIVE_DT;                         /* 0x18ad0 */
+        race.time_out = race.timer < 0.0f;
+        if(race.time_out) race.timer = 0.0f;
+    }
     int n;
     const struct track_marker *mk = track_markers(&n);
     if(n == 0) return;
+    float bonus = (float)track_bonus_time();
     for(int k = -1; k <= 1; k++) {
         int i = ((mark_at + k) % n + n) % n;
         const struct track_marker *m = &mk[i];
@@ -260,6 +276,25 @@ static void markers_step(void)
         if(sqrtf(dx * dx + dy * dy) > rad) continue;
         mark_at = i;
         pc.surface = m->slip;
+        if(i == 0 && !race.clock_on && race.on) {        /* the start: clocks on */
+            race.clock_on = 1;
+            race.lap = 0.0f;
+            race.timer = race.timer / 5.0f + bonus;
+        } else if(i == 0 && mark_count >= n - 1) {        /* across the line */
+            if(race.laps + 1 >= race.total_laps) race.finished = 1;
+            else if(!race.finished) race.timer = race.timer / 5.0f + bonus;
+            race.laps++;
+            race.last = race.lap;
+            if(race.best == 0.0f || race.last < race.best) race.best = race.last;
+            for(int j = 0; j < n && j < 64; j++) mark_seen[j] = 0;
+            mark_count = 0;
+            race.lap = 0.0f;
+        }
+        if(i != 0 && i < 64 && !mark_seen[i]) {
+            mark_seen[i] = 1;
+            mark_count++;
+            if((m->flags & 2) && race.clock_on && !race.finished) race.timer = race.timer / 5.0f + bonus;
+        }
     }
 }
 
@@ -324,6 +359,13 @@ void car_init(int which)
     spin = steer = 0.0f;
     wall_hits = crashes = 0;
     crash.on = 0;
+    race = (struct car_race){ 0 };
+    race.timer = 15.0f;
+    race.total_laps = 3;                                /* the option's default (0x1d2ac) */
+    for(int j = 0; j < 64; j++) mark_seen[j] = 0;
+    mark_count = 0;
+    needle = 0.0f;
+    pc.waiting = 1;
 
     /* player_reset: on the road point by the third path point, facing along the path, at
        the path's height until the wheels find the ground; no skidding until a marker */
@@ -349,6 +391,15 @@ void car_step(uint32_t keys, uint32_t keys_before)
     in.brake = (keys & KEY_B) ? 1.0f : 0.0f;
     in.steer = ((keys & KEY_LEFT) ? 1.0f : 0.0f) - ((keys & KEY_RIGHT) ? 1.0f : 0.0f);
     in.shift = (pressed & KEY_R) ? 1 : (pressed & KEY_L) ? -1 : 0;
+    /* the start lights: green at 6 s; until then the pedal only revs the engine */
+    race.clock += DRIVE_DT;
+    race.on = race.clock >= 6.0f;
+    pc.waiting = !race.on;
+    if(race.time_out) {                                 /* 0x18a04: out of time and stopped: over */
+        in.throttle = 0.0f;
+        if(pc.speed < 1.0f) race.game_over = 1;
+    }
+    if(race.finished || race.game_over) { in.throttle = 0.0f; in.brake = 0.4f; }
     if(crash.on) in.throttle = in.steer = 0.0f;          /* no drive in the air */
     crash_step();
     drive_step(&pc, &in);
@@ -361,6 +412,21 @@ void car_step(uint32_t keys, uint32_t keys_before)
        lock, the sign as OpenScreamer has it since its fix (the model's +x is the car's left) */
     spin = fmodf(spin - pc.speed * DRIVE_DT / 108.6f, 6.2831853f);
     steer = -(pc.steer_max > 0.0f ? pc.steer / pc.steer_max : 0.0f) / 1.5f;
+
+    /* dash_step: the rev counter's needle eases to rpm / maxrpm x pi */
+    float want = pc.rpm / pc.spec.maxrpm * PI;
+    if(want > PI) want = PI;
+    needle = want + (needle - want) * drive_damp(0x5a);
+}
+
+const struct car_race *car_race(void)
+{
+    return &race;
+}
+
+float car_needle(void)
+{
+    return needle;
 }
 
 /* A block's point p (as stored) in the world (block_to_view, tilt, place): a wheel turned

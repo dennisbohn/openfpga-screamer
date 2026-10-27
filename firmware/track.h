@@ -12,6 +12,7 @@
 #include "setup.h"
 #include "geom.h"
 #include "drive.h"
+#include "blit.h"
 
 /* Whether a track file is at file (its header); then its blocks can be checked with
    track_block_ok() before track_init() reads the rest. track_init() returns the number of
@@ -60,6 +61,19 @@ void track_clock(uint32_t steps);
 
 /* where the player starts: place and heading (forward = (sin a, -cos a)) */
 void track_start(float *x, float *y, float *yaw);
+
+/* TRACK_DATA of MAPnA.DTR: seconds added at the line and checkpoints, the bumper cam's height */
+int track_bonus_time(void);
+int track_camera_hi(void);
+
+/* The race screen section (tools/make_track.py): its start, the image table, the fonts, the
+   two pictures' boxes (IMPLET_L the labels, IMPRES_L the outside views' rev counter: first
+   image, count), GAME.TXT's line k */
+const uint8_t *track_hud(void);
+const struct blit_image *track_hud_images(int *n);
+const struct blit_font *track_hud_fonts(int *n);
+void track_hud_picture(int k, int *first, int *count);
+const char *track_hud_text(int k);
 
 /* The game's DETAIL option, 0 LOW, 1 MID, 2 HI (the default): how deep faces are drawn.
    The track file goes with it: the L set at LOW, the H set from MID up. */

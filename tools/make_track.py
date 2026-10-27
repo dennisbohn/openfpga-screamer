@@ -2,11 +2,12 @@
 
 Usage: python tools/make_track.py <GFX/MAPnL.DAT> <DATA/MAPn.DAT> <DATA/GEN.DAT> <out.bin>
                                   <preview.png>
+(GFX/GAME.DAT and DATA/LOCAL.DAT are taken from beside them.)
 
 Formats from openscreamer docs/NOTES.md ("How the track is built", sections 1-4, 6-9, 11).
 The output, for data slot 3 (core/data.json), little-endian:
 
-  0x00  "SCRK", u32 version 3
+  0x00  "SCRK", u32 version 4
   0x08  u32 offset, size of MAPn.MLB     materials and pixel pages, unchanged
   0x10  u32 offset, size of MAPn.UNR     the meshes, unchanged
   0x18  u32 offset of the palette        256 x 0x00RRGGBB (MAPn.COL is 6-bit VGA)
@@ -36,7 +37,22 @@ The output, for data slot 3 (core/data.json), little-endian:
                                          y1, x2, y2
   0x5C  int32 x, y, float heading        where the player starts: the road point nearest the
                                          third path point, facing along the path
-  0x68  u32 file size, u32 n, n x u32    CRC-32 (zlib) of each 256 KB block from 0x100 on,
+  0x68  u32 offset, size of the race screen: u32 images, u32 fonts; per image u32 offset
+                                         (from the section), u16 width, height, int16 x, y;
+                                         per font u32 height, first character, count, widest,
+                                         first image; the pictures' boxes (below); GAME.TXT's
+                                         lines, 26 x 32 bytes; then the
+                                         images, one byte a pixel, 0 see-through: the 63 sprites
+                                         of GAMEL.SPR (x, y their offsets), the characters of
+                                         GAMEL.FNT's fonts (each pixel its shade 1..15), then
+                                         IMPLET_L and IMPRES_L (.PKC) each as the boxes round its
+                                         groups of pixels (so the blitter does not walk the
+                                         see-through between them), x, y the place on the
+                                         screen; u32 first box, count of each of the two after
+                                         the fonts
+  0x70  int32 bonus_time, camera_hi      TRACK_DATA of MAPnA.DTR
+  0x78  8 bytes 0
+  0x80  u32 file size, u32 n, n x u32    CRC-32 (zlib) of each 256 KB block from 0x100 on,
                                          so the core can tell where a load went wrong
 
 Sections start on 256-byte boundaries. The output is made from game data: it stays in
@@ -167,6 +183,96 @@ def car_model(x3d):
     return struct.pack("<4f", hi - lo, -lo, hi, half) if seen else struct.pack("<4f", 935.0, 445.0, 490.0, 226.0)
 
 
+def pkc(data):
+    """A .PKC picture (320 x 200): negative = skip so many (see-through), positive = so many
+    pixels follow; as the boxes round its groups of pixels: [(x, y, w, h, bytes)]"""
+    px = bytearray(64000)
+    p = at = 0
+    while p + 4 <= len(data) and at < 64000:
+        n = struct.unpack_from("<i", data, p)[0]
+        p += 4
+        if n < 0:
+            at -= n
+            continue
+        px[at:at + n] = data[p:p + n]
+        p += n
+        at += n
+    # groups: rows with pixels split into bands at empty rows, each band into boxes at runs
+    # of more than 8 empty columns
+    boxes = []
+    rows = [y for y in range(200) if any(px[y * 320:(y + 1) * 320])]
+    bands, start = [], None
+    for y in range(201):
+        on = y < 200 and y in rows
+        if on and start is None:
+            start = y
+        if not on and start is not None:
+            bands.append((start, y))
+            start = None
+    for y0, y1 in bands:
+        cols = [x for x in range(320) if any(px[y * 320 + x] for y in range(y0, y1))]
+        x0 = prev = cols[0]
+        for x in cols[1:] + [10 ** 6]:
+            if x - prev > 9:
+                boxes.append((x0, y0, prev + 1 - x0, y1 - y0,
+                              b"".join(bytes(px[y * 320 + x0:y * 320 + prev + 1]) for y in range(y0, y1))))
+                x0 = x
+            prev = x
+    return boxes
+
+
+def race_screen(game, local):
+    """The race screen section (see the header): sprites, pictures, fonts, texts"""
+    images, fonts = [], []
+    spr = datfile.extract(game, "GAMEL.SPR")
+    n, size = struct.unpack_from("<2i", spr, 0)
+    pixels = 8 + 20 * n
+    for k in range(n):
+        ox, oy, w, h, at = struct.unpack_from("<5i", spr, 8 + 20 * k)
+        images.append((ox, oy, w, h, spr[pixels + at:pixels + at + w * h]))
+    fnt = datfile.extract(game, "GAMEL.FNT")
+    nf, o = fnt[0] + 1, 1
+    heads = []
+    for i in range(nf):
+        heads.append(struct.unpack_from("<3i", fnt, o))
+        o += 12
+    glyphs = []
+    for h, first, count in heads:
+        glyphs.append([struct.unpack_from("<2i", fnt, o + 8 * k) for k in range(count)])
+        o += 8 * count
+    o += 4                                              # the pixels' size
+    for (h, first, count), gl in zip(heads, glyphs):
+        fonts.append((h, first, count, max([1] + [w for w, _ in gl]), len(images)))
+        for w, at in gl:                                # two pixels a byte, the high half first
+            bw = (w + 1) // 2
+            img = bytes((fnt[o + at + r * bw + c // 2] >> (0 if c & 1 else 4)) & 15
+                        for r in range(h) for c in range(w))
+            images.append((0, 0, w, h, img))
+    pictures = []
+    for name in ("IMPLET_L.PKC", "IMPRES_L.PKC"):
+        boxes = pkc(datfile.extract(game, name))
+        pictures.append((len(images), len(boxes)))
+        images += boxes
+    lines = datfile.extract(local, "GAME.TXT").decode("latin-1").splitlines()[:26]
+    texts = b"".join(l.encode("latin-1")[:31].ljust(32, b"\0") for l in lines + [""] * (26 - len(lines)))
+    head = 8 + 12 * len(images) + 20 * len(fonts) + 16 + len(texts)
+    table, blob = b"", b""
+    for x, y, w, h, img in images:
+        table += struct.pack("<I2H2h", head + len(blob), w, h, x, y)
+        blob += img
+    return (struct.pack("<2I", len(images), len(fonts)) + table +
+            b"".join(struct.pack("<5I", *f) for f in fonts) +
+            b"".join(struct.pack("<2I", *pc) for pc in pictures) + texts + blob)
+
+
+def track_data(dtr):
+    """TRACK_DATA of MAPnA.DTR: color, camera_hi, bonus_time, carnage"""
+    s = dtr.decode("latin-1")
+    rows = [l.split() for l in s[s.index("TRACK_DATA"):].splitlines()[1:]]
+    row = next(r for r in rows if r and not r[0].startswith("*"))
+    return [int(v[1:]) for v in row[:4]]
+
+
 def start_pose(path, dirs):
     """openscreamer's player_reset(path, 2): the road point nearest the third path point,
     facing the way the path goes"""
@@ -240,11 +346,16 @@ def main():
         files += f + b"\0" * (-len(f) % 256)
     models += files
     dirs, walls = cell_arrays(mmp)
+    here = os.path.dirname(os.path.abspath(gfx))
+    hud = race_screen(datfile.read(os.path.join(here, "GAME.DAT")),
+                      datfile.read(os.path.join(here, "..", "DATA", "LOCAL.DAT")))
+    colour, camera_hi, bonus_time, carnage = track_data(datfile.extract(d, track + "A.DTR"))
 
     sections = [mlb, unr, pal, b"".join(struct.pack("<5i", *p) for p in pl),
                 b"".join(struct.pack("<3i", *p) for p in path), ground, mrk[4:4 + 32 * nmark],
-                cars, models, b"".join(dirs), b"".join(walls)]
-    counts = [len(mlb), len(unr), 0, len(pl), len(path), nground, nmark, ncars, 7, len(dirs), len(walls)]
+                cars, models, b"".join(dirs), b"".join(walls), hud]
+    counts = [len(mlb), len(unr), 0, len(pl), len(path), nground, nmark, ncars, 7, len(dirs), len(walls),
+              len(hud)]
     offs, pos = [], 0x100
     for s in sections:
         offs.append(pos)
@@ -253,11 +364,13 @@ def main():
     for o, s in zip(offs, sections):
         blob[o:o + len(s)] = s
     crcs = [zlib.crc32(blob[o:o + BLOCK]) for o in range(0x100, pos, BLOCK)]
-    head = b"SCRK" + struct.pack("<I", 3) + struct.pack("<2I", offs[0], counts[0]) + \
+    head = b"SCRK" + struct.pack("<I", 4) + struct.pack("<2I", offs[0], counts[0]) + \
         struct.pack("<2I", offs[1], counts[1]) + struct.pack("<I", offs[2]) + \
         b"".join(struct.pack("<2I", offs[k], counts[k]) for k in range(3, 11)) + \
-        start_pose(path, dirs) + struct.pack("<2I", pos, len(crcs)) + struct.pack(f"<{len(crcs)}I", *crcs)
-    assert len(head) == 0x70 + 4 * len(crcs)
+        start_pose(path, dirs) + struct.pack("<2I", offs[11], counts[11]) + \
+        struct.pack("<2i", bonus_time, camera_hi) + bytes(8) + \
+        struct.pack("<2I", pos, len(crcs)) + struct.pack(f"<{len(crcs)}I", *crcs)
+    assert len(head) == 0x88 + 4 * len(crcs)
     assert len(head) <= 0x100, "file too large for the block CRCs in the header"
     blob[:len(head)] = head
     os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
@@ -288,7 +401,8 @@ def main():
     png(preview, W, H, bytes(img))
     print(f"{out}: {len(blob)} bytes: MLB {len(mlb)}, UNR {len(unr)}, {len(pl)} placements "
           f"({nground} drivable), {len(path)} path points, {nmark} markers, {ncars} cars, "
-          f"{len(dirs)} road points, {len(walls)} walls; preview {preview}")
+          f"{len(dirs)} road points, {len(walls)} walls, race screen {len(hud)} bytes "
+          f"(bonus {bonus_time} s, camera {camera_hi}); preview {preview}")
 
 
 main()

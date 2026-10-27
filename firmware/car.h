@@ -28,6 +28,19 @@ void car_camera(struct track_cam *cam);
    0 when the view is from inside it */
 int car_object(const struct track_cam *cam, struct track_object *obj);
 
+/* The race (0x18a04, 0x1820c, 0x19490, 0x20d45; OpenScreamer's markers_step): the clock
+   since the start, whose start lights go green at 6 s; the countdown from 15 s, which at the
+   line and at each checkpoint becomes what is left / 5 + TRACK_DATA's bonus; the total and
+   lap time from the first crossing of the line; three laps; time over once the countdown is
+   out and the car has stopped */
+struct car_race {
+    float clock, timer, total, lap, best, last;
+    int laps, total_laps, on, clock_on, time_out, finished, game_over;
+};
+const struct car_race *car_race(void);
+/* the outside views' rev counter needle: rpm / maxrpm x pi, eased (dash_step) */
+float car_needle(void);
+
 /* For the screen and the log: the state, wall hits and crashes so far, the marker last
    reached */
 const struct car_state *car_state(void);

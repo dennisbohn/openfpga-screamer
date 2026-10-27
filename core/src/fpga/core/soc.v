@@ -280,16 +280,20 @@ end
     wire [31:0] rs_mem_rsp_data;
     wire        gu_mem_valid, gu_mem_ready, gu_mem_rsp_valid;     // mesh lines (geom.v)
     wire [25:5] gu_mem_addr;
+    wire        bl_mem_valid, bl_mem_ready, bl_mem_rsp_valid;     // picture lines (blit.v)
+    wire [25:5] bl_mem_addr;
 
-    // the rasterizer and the geometry unit share sdram_port's line port, one line at a time;
-    // the rasterizer first (its pipeline waits for the line)
-    wire        lp_valid = rs_mem_valid || gu_mem_valid, lp_ready, lp_rsp_valid;
-    reg         lp_owner = 0;                   // the line in flight is the geometry unit's
+    // the rasterizer, the geometry unit and the blitter share sdram_port's line port, one line
+    // at a time; the rasterizer first (its pipeline waits for the line), then the geometry unit
+    wire        lp_valid = rs_mem_valid || gu_mem_valid || bl_mem_valid, lp_ready, lp_rsp_valid;
+    reg  [1:0]  lp_owner = 0;                   // the line in flight: 0 rasterizer, 1 geometry, 2 blitter
     assign rs_mem_ready = lp_ready && rs_mem_valid;
     assign gu_mem_ready = lp_ready && !rs_mem_valid && gu_mem_valid;
-    assign rs_mem_rsp_valid = lp_rsp_valid && !lp_owner;
-    assign gu_mem_rsp_valid = lp_rsp_valid && lp_owner;
-always @(posedge clk) if(lp_ready && lp_valid) lp_owner <= !rs_mem_valid;
+    assign bl_mem_ready = lp_ready && !rs_mem_valid && !gu_mem_valid && bl_mem_valid;
+    assign rs_mem_rsp_valid = lp_rsp_valid && lp_owner == 2'd0;
+    assign gu_mem_rsp_valid = lp_rsp_valid && lp_owner == 2'd1;
+    assign bl_mem_rsp_valid = lp_rsp_valid && lp_owner == 2'd2;
+always @(posedge clk) if(lp_ready && lp_valid) lp_owner <= rs_mem_valid ? 2'd0 : gu_mem_valid ? 2'd1 : 2'd2;
 always @(posedge clk)
     if(rs_wr && d_addr[6:2] == 5'd21) rs_starved <= 0;
     else if(!rs_busy && (su_busy || gu_busy)) rs_starved <= rs_starved + 1'b1;
@@ -316,7 +320,7 @@ sdram_port sdp (
     .db_rsp_last        ( sdp_db_rsp_last ),
     .rs_cmd_valid       ( lp_valid ),
     .rs_cmd_ready       ( lp_ready ),
-    .rs_cmd_addr        ( rs_mem_valid ? rs_mem_addr : gu_mem_addr ),
+    .rs_cmd_addr        ( rs_mem_valid ? rs_mem_addr : gu_mem_valid ? gu_mem_addr : bl_mem_addr ),
     .rs_rsp_valid       ( lp_rsp_valid ),
     .rs_rsp_data        ( rs_mem_rsp_data ),
     .br_wr              ( bridge_wr && bridge_sdram ),
@@ -497,18 +501,50 @@ end
     wire        su_corner = su_wr && (d_addr[5:2] == 4'd9 || d_addr[5:2] == 4'd10);
     wire        gu_wr = d_write && d_region == R_REG && d_addr[15:7] == 9'h062;   // 0x3100-0x317C
     wire        gu_push = gu_wr && d_addr[6:2] == 5'd23;
+    wire        bl_wr = d_write && d_region == R_REG && d_addr[15:7] == 9'h063;   // 0x3180-0x31FC
+    wire        bl_push = bl_wr && d_addr[6:2] == 5'd0;
+    wire        bl_busy, bl_full, bl_fb_wr, bl_fb_buf;
+    wire [31:0] bl_busy_clocks, bl_fb_data;
+    wire [13:0] bl_fb_addr;
+    wire [3:0]  bl_fb_be;
     wire        gu_busy, gu_full, gu_poly_valid, gu_poly_ready;
     wire [31:0] gu_faces, gu_busy_clocks, gu_poly_tex, gu_poly_size;
     wire [2:0]  gu_poly_n;
     wire [9:0]  gu_poly_mode;
     wire [575:0] gu_poly_c;
-    wire        rs_waits = ((rs_busy || rs_start || su_busy || su_corner || gu_busy || gu_push) &&
+    wire        rs_waits = ((rs_busy || rs_start || su_busy || su_corner || gu_busy || gu_push || bl_busy || bl_push) &&
                             (cmd_region == R_FB ||
                              (dbus_cmd_wr && cmd_region == R_REG && dbus_cmd_addr[15:0] == 16'h3014))) ||
                            ((!su_ready || su_corner || gu_busy || gu_push) && dbus_cmd_wr && cmd_region == R_REG &&
                             (dbus_cmd_addr[15:0] == 16'h30A4 || dbus_cmd_addr[15:0] == 16'h30A8)) ||
                            ((gu_full || gu_push) && dbus_cmd_wr && cmd_region == R_REG &&
-                            dbus_cmd_addr[15:0] == 16'h315C);
+                            dbus_cmd_addr[15:0] == 16'h315C) ||
+                           ((bl_full || bl_push) && dbus_cmd_wr && cmd_region == R_REG &&
+                            dbus_cmd_addr[15:0] == 16'h3180);
+
+// the blitter (blit.v): registers at 0xF000_3180; it draws the race screen once the units
+// above are done, through the framebuffer port when the rasterizer does not have it
+blit bl (
+    .clk                ( clk ),
+    .reset              ( cpu_reset ),
+    .wr                 ( bl_wr ),
+    .wr_addr            ( d_addr[6:2] ),
+    .wr_data            ( d_data ),
+    .busy               ( bl_busy ),
+    .full               ( bl_full ),
+    .busy_clocks        ( bl_busy_clocks ),
+    .go                 ( !rs_busy && !su_busy && !gu_busy ),
+    .fb_wr              ( bl_fb_wr ),
+    .fb_buf             ( bl_fb_buf ),
+    .fb_addr            ( bl_fb_addr ),
+    .fb_data            ( bl_fb_data ),
+    .fb_be              ( bl_fb_be ),
+    .mem_valid          ( bl_mem_valid ),
+    .mem_ready          ( bl_mem_ready ),
+    .mem_addr           ( bl_mem_addr ),
+    .mem_rsp_valid      ( bl_mem_rsp_valid ),
+    .mem_rsp_data       ( rs_mem_rsp_data )
+);
 
 geom gu (
     .clk                ( clk ),
@@ -627,11 +663,11 @@ raster rs (
     // the framebuffer port belongs to the rasterizer while it draws; otherwise it follows the
     // command being worked on, like the RAM ports below: a posted write goes out in the clock
     // after its command, a read's address too
-    assign fb_wr_en = rs_busy ? rs_fb_wr : d_write && d_region == R_FB;
-    assign fb_buf = rs_busy ? rs_fb_buf : d_addr[16];
-    assign fb_addr = rs_busy ? rs_fb_addr : d_addr[15:2];
-    assign fb_wr_data = rs_busy ? rs_fb_data : swap32(d_data);
-    assign fb_wr_be = rs_busy ? rs_fb_be : {d_mask[0], d_mask[1], d_mask[2], d_mask[3]};
+    assign fb_wr_en = rs_busy ? rs_fb_wr : bl_busy ? bl_fb_wr : d_write && d_region == R_FB;
+    assign fb_buf = rs_busy ? rs_fb_buf : bl_busy ? bl_fb_buf : d_addr[16];
+    assign fb_addr = rs_busy ? rs_fb_addr : bl_busy ? bl_fb_addr : d_addr[15:2];
+    assign fb_wr_data = rs_busy ? rs_fb_data : bl_busy ? bl_fb_data : swap32(d_data);
+    assign fb_wr_be = rs_busy ? rs_fb_be : bl_busy ? bl_fb_be : {d_mask[0], d_mask[1], d_mask[2], d_mask[3]};
 
     // the boot RAM's port B: bridge while the CPU is in reset, else the dBus
 always @(*) begin
@@ -682,7 +718,7 @@ always @(posedge clk) begin
         16'h2000: reg_q <= key_r;
         16'h2004: reg_q <= joy_r;
         16'h2008: reg_q <= {16'd0, trig_r};
-        16'h3014: reg_q <= {31'd0, rs_busy || su_busy || gu_busy};
+        16'h3014: reg_q <= {31'd0, rs_busy || su_busy || gu_busy || bl_busy};
         16'h3018: reg_q <= rs_pixels;
         16'h3050: reg_q <= rs_misses;
         16'h3054: reg_q <= rs_busy_clocks;
@@ -694,6 +730,7 @@ always @(posedge clk) begin
         16'h30AC: reg_q <= su_busy_clocks;
         16'h3150: reg_q <= gu_faces;
         16'h3154: reg_q <= gu_busy_clocks;
+        16'h3184: reg_q <= bl_busy_clocks;
         default:  reg_q <= 32'd0;
     endcase
 end

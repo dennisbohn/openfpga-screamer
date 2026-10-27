@@ -32,7 +32,7 @@
   </style>
   <rect width="1440" height="960" fill="#ffffff"/>
   <text x="40" y="44" class="h">Der Rasterizer: wie aus einem Dreieck Pixel werden</text>
-  <text x="40" y="66" class="l">raster.v (Hardware) und raster.c (C-Modell) rechnen genau gleich · einfarbig und mit Texturen gebaut und auf dem Pocket getestet · Stand 26.10.2026</text>
+  <text x="40" y="66" class="l">raster.v (Hardware) und raster.c (C-Modell) rechnen genau gleich · einfarbig und mit Texturen gebaut und auf dem Pocket getestet · Stand 27.10.2026</text>
   <text x="40" y="104" class="s">1. Welche Pixel gehören dazu?</text>
   <text x="40" y="124" class="l">Ein Pixel wird gezeichnet, wenn seine Mitte im Dreieck liegt</text>
   <text x="40" y="138" class="l">(liegt sie genau auf der linken oder oberen Kante, zählt sie mit).</text>
@@ -284,12 +284,12 @@
   <text x="1010" y="104" class="s">3. Ablauf in raster.v</text>
   <rect x="1030" y="130" width="330" height="54" rx="8" class="built"/>
   <text x="1042" y="150" class="t">Setup-Einheit liefert</text>
-  <text x="1042" y="167" class="b">3 Ecken, Werte, Textur</text>
+  <text x="1042" y="167" class="b">3 Ecken (ganze Pixel), Werte, Textur</text>
   <text x="1350" y="150" class="l r">solange das vorige zeichnet</text>
   <rect x="1030" y="206" width="330" height="54" rx="8" class="built"/>
   <text x="1042" y="226" class="t">Sortieren nach y</text>
   <text x="1042" y="243" class="b">Zeilen a, b, c bestimmen</text>
-  <text x="1350" y="226" class="l r">2 Takte</text>
+  <text x="1350" y="226" class="l r">3 Takte</text>
   <path d="M1195.0,186 V204" class="wb" marker-end="url(#arr)"/>
   <rect x="1030" y="282" width="330" height="54" rx="8" class="built"/>
   <text x="1042" y="302" class="t">Kanten aufsetzen</text>
