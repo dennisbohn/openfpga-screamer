@@ -106,10 +106,11 @@
   <text x="915" y="344" class="b c">Dreiecke vorbereiten</text>
 
   <rect x="1040" y="260" width="140" height="100" rx="8" class="built"/>
-  <text x="1110" y="286" class="t c">Rasterizer</text>
-  <text x="1110" y="304" class="b c">einfarbig, Texturen</text>
-  <text x="1110" y="320" class="b c">(1 Pixel/Takt)</text>
-  <text x="1110" y="336" class="b c">Glas/Schatten: folgt</text>
+  <text x="1110" y="282" class="t c">Rasterizer</text>
+  <text x="1110" y="299" class="b c">einfarbig, Texturen</text>
+  <text x="1110" y="314" class="b c">(1 Pixel/Takt), Füll-</text>
+  <text x="1110" y="329" class="b c">regel des Originals</text>
+  <text x="1110" y="344" class="b c">Glas/Schatten: folgt</text>
 
   <rect x="1220" y="260" width="110" height="100" rx="8" class="built"/>
   <text x="1275" y="288" class="t c">video_out</text>
@@ -123,12 +124,12 @@
   <text x="535" y="442" class="b c">JTOPL (OPL2)</text>
   <text x="535" y="458" class="b c">PCM-Mixer</text>
 
-  <rect x="1205" y="505" width="125" height="70" rx="8" class="fresh"/>
+  <rect x="1205" y="505" width="125" height="70" rx="8" class="built"/>
   <text x="1267" y="529" class="t c">Blitter (HUD)</text>
   <text x="1267" y="547" class="b c">Bilder, Schrift, Linien</text>
   <text x="1267" y="563" class="b c">nach der Szene</text>
-  <path d="M1267,503 V472" class="wf" marker-end="url(#built)"/>
-  <path d="M1070,632 H1267 V577" class="wf" marker-end="url(#built)"/>
+  <path d="M1267,503 V472" class="wb" marker-end="url(#built)"/>
+  <path d="M1070,632 H1267 V577" class="wb" marker-end="url(#built)"/>
   <text x="1275" y="622" class="l">HUD-Bilder</text>
 
   <rect x="1195" y="400" width="135" height="70" rx="8" class="built"/>
@@ -230,5 +231,5 @@
   <!-- notes -->
   <text x="40" y="798" class="l">Pro Bild: Die CPU wählt die Bauteile in Reichweite, sortiert sie von hinten nach vorn (Maler-Algorithmus) und schreibt sie in den Puffer der Geometrie-Einheit (113 Bauteile); dahinter arbeiten Geometrie, Setup und Rasterizer gleichzeitig.</text>
   <text x="40" y="816" class="l">Gezeigt wird nur ein fertiges Bild (Doppelpufferung, Tausch in der Austastlücke, höchstens 50 Bilder pro Sekunde). Geplant: Gegner, Radar, Hintergrund (MAPn.BCK), Glas/Schatten, Audio, Bild N+1 und N überlappen.</text>
-  <text x="40" y="834" class="l">Streckendurchflug stabil 50 fps (schwerstes Bild 64 % eines Bildes), CPU-Anteil etwa 20 %. Belegung: 14.819 von 18.480 ALMs (80 %), 254 von 308 M10K (82 %), 31 von 66 DSP (47 %); Timing hält bei 74,25 MHz.</text>
+  <text x="40" y="834" class="l">Streckendurchflug stabil 50 fps (schwerstes Bild 64 % eines Bildes), CPU-Anteil etwa 20 %. Belegung: 14.868 von 18.480 ALMs (80 %), 254 von 308 M10K (82 %), 31 von 66 DSP (47 %); Timing hält bei 74,25 MHz.</text>
 </svg>

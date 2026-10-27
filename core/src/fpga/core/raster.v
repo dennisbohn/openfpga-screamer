@@ -1,13 +1,16 @@
 //
 // Rasterizer: flat triangles into the framebuffer's drawing port, exactly the pixels of the
-// C model firmware/raster.c:
-//   rows have their centres at yc = 16r + 8 and a triangle (vertices sorted by y) covers
-//   a.y <= yc < c.y; an edge is evaluated from its upper end, slope = ((x1 - x0) << 16) /
-//   (y1 - y0) truncated towards zero, x = (x0 << 12) + floor(slope * (yc - y0) / 16) in
-//   16.16 pixels, one slope added per row; a row's span is [ceil(left - 0.5), ceil(right -
-//   0.5)), limited to the clip rectangle.
+// C model firmware/raster.c, with the game's fill rule: pixel (x, r) is drawn when the
+// triangle touches the segment from (x, r) to (x, r + 1), its lower end excluded:
+//   corners cut to whole pixels after sorting by y (a.y <= b.y <= c.y), rows a.y .. c.y;
+//   an edge is evaluated from its upper end, slope = ((x1 - x0) << 16) / (y1 - y0)
+//   truncated towards zero, x = (x0 << 12) + slope * (16 r - y0) / 16 in 16.16 pixels at
+//   the top of row r, one slope added per row, the corner's x at its lower end; in a row
+//   above c.y an edge from xt (top) to xb (bottom) gives [min(ceil xt, floor xb + 1),
+//   max(floor xt + 1, ceil xb)), the span from the left edge's start to the right edge's
+//   end; row c.y is the corners on it. Limited to the clip rectangle.
 // Vertices are signed 16 bit in 1/16 pixel. Setup: one division per edge (16 clocks, two
-// quotient bits a clock) and one multiplication, two or three edges a triangle. Then three
+// quotient bits a clock) and one multiplication, two or three edges a triangle. Then four
 // clocks per row and, for one colour, one per framebuffer word: up to four pixels a clock.
 // Textured (raster_tex.v): Q, U, V at the span's first pixel from the triangle's reference
 // pixel, a = (A << 8) + dx (x0 - xr) + dy (r - yr) (four clocks a row), then one pixel a
@@ -83,7 +86,8 @@ module raster (
     localparam  [3:0]   S_IDLE = 4'd0;
     localparam  [3:0]   S_ROWS = 4'd1;          // first, middle and last row
     localparam  [3:0]   S_EDGE = 4'd2;          // edge setup (div, mul, add)
-    localparam  [3:0]   S_ROW  = 4'd3;          // a row: left and right edge, rounded
+    localparam  [3:0]   S_ROW  = 4'd3;          // a row: both edges at its top and bottom
+    localparam  [3:0]   S_ROW2 = 4'd10;         // each edge's first and end pixel
     localparam  [3:0]   S_CLIP = 4'd4;          // limited to the clip rectangle
     localparam  [3:0]   S_SPAN = 4'd5;          // its words, or the next row if empty
     localparam  [3:0]   S_FILL = 4'd6;          // the words of one colour
@@ -152,13 +156,18 @@ end
         limit = v < 0 ? 16'sd0 : v > hi ? hi : v;
     endfunction
 
-    // first row whose centre is at or below y: ceil((y - 8) / 16)
-    function signed [15:0] row_from(input signed [15:0] y);
-        reg signed [16:0] t;
-        begin
-            t = ($signed({y[15], y}) + 17'sd7) >>> 4;
-            row_from = t[15:0];
-        end
+    // a corner cut to a whole pixel (1/16 pixel units), and its pixel
+    function signed [15:0] whole(input signed [15:0] v);
+        whole = {v[15:4], 4'd0};
+    endfunction
+    function signed [15:0] pix(input signed [15:0] v);
+        pix = {{4{v[15]}}, v[15:4]};
+    endfunction
+    function signed [15:0] min16(input signed [15:0] p, input signed [15:0] q);
+        min16 = p < q ? p : q;
+    endfunction
+    function signed [15:0] max16(input signed [15:0] p, input signed [15:0] q);
+        max16 = p > q ? p : q;
     endfunction
 
 //
@@ -167,7 +176,8 @@ end
     reg signed [15:0] ax, ay, bx, by, cx, cy;
     reg  [7:0]  colour;
     reg signed [15:0] cx0, cy0, cx1, cy1;       // clip, within the screen
-    reg signed [15:0] r, rb, r1, r0;
+    reg signed [15:0] r, rb, r1, r0, rc;        // rows: b's, end (exclusive), first, c's
+    reg signed [15:0] last0, last1;             // row rc: the corners on it, first and last pixel
     reg  [1:0]  job;                            // edge being set up: 0 long, 1 short, 2 b-c later
     reg signed [35:0] l_x, s_x, s2_x;           // 16.16 pixels
     reg signed [32:0] l_dx, s_dx, s2_dx;        // slopes
@@ -248,7 +258,7 @@ raster_tex rt (
     wire [16:0] e_try2 = {e_rem1[15:0], e_num[30]};
     wire        e_q2 = e_try2 >= {1'b0, e_den};
     wire [16:0] e_rem2 = e_q2 ? e_try2 - {1'b0, e_den} : e_try2;
-    wire signed [19:0] e_dyc = $signed({e_r, 4'd8}) - $signed({{4{e_y0[15]}}, e_y0});    // yc - y0, >= 0
+    wire signed [19:0] e_dyc = $signed({e_r, 4'd0}) - $signed({{4{e_y0[15]}}, e_y0});    // 16 r - y0, >= 0
     wire signed [35:0] e_x = $signed({{8{e_x0[15]}}, e_x0, 12'd0}) + $signed(e_prod[39:4]);
 
     task edge_start(input signed [15:0] x0, input signed [15:0] y0, input signed [15:0] x1,
@@ -267,13 +277,25 @@ raster_tex rt (
     endtask
 
 //
-// a row's span from the two edge positions, over three clocks (S_ROW, S_CLIP, S_SPAN)
+// a row's span from the two edges, over four clocks (S_ROW, S_ROW2, S_CLIP, S_SPAN)
 //
-    wire signed [35:0] left = l_x < s_x ? l_x : s_x;
-    wire signed [35:0] right = l_x < s_x ? s_x : l_x;
-    reg signed [35:0] left_h, right_h;          // + 0.5 - 1/65536, so that >> 16 is ceil(x - 0.5)
-    wire signed [19:0] col_l = left_h[35:16];
-    wire signed [19:0] col_r = right_h[35:16];
+    // a row (S_ROW): each edge at its top (t) and bottom (b), the corner's x at its lower end
+    reg signed [35:0] lt, lb, st, sb;
+    wire signed [35:0] bx16 = {{8{bx[15]}}, bx, 12'd0}, cx16 = {{8{cx[15]}}, cx, 12'd0};
+    reg         row_last;                       // row rc
+    // (S_ROW2): each edge's first pixel min(ceil t, floor b + 1) and end max(floor t + 1, ceil b)
+    wire signed [35:0] lt_c = lt + 36'sh0FFFF, lb_c = lb + 36'sh0FFFF;
+    wire signed [35:0] st_c = st + 36'sh0FFFF, sb_c = sb + 36'sh0FFFF;
+    wire signed [19:0] l_lo_a = lt_c[35:16], l_lo_b = lb[35:16] + 20'sd1;
+    wire signed [19:0] l_hi_a = lt[35:16] + 20'sd1, l_hi_b = lb_c[35:16];
+    wire signed [19:0] s_lo_a = st_c[35:16], s_lo_b = sb[35:16] + 20'sd1;
+    wire signed [19:0] s_hi_a = st[35:16] + 20'sd1, s_hi_b = sb_c[35:16];
+    reg signed [19:0] l_lo, l_hi, s_lo, s_hi;
+    reg         long_left;
+    reg         row_last2;
+    // (S_CLIP): the span from the left edge's first pixel to the right edge's end
+    wire signed [19:0] col_l = row_last2 ? {{4{last0[15]}}, last0} : long_left ? l_lo : s_lo;
+    wire signed [19:0] col_r = row_last2 ? {{4{last1[15]}}, last1} + 20'sd1 : long_left ? s_hi : l_hi;
     wire signed [19:0] clip_l = {{4{cx0[15]}}, cx0}, clip_r = {{4{cx1[15]}}, cx1};
     wire [9:0]  span_l = col_l < clip_l ? cx0[9:0] : col_l > clip_r ? cx1[9:0] : col_l[9:0];
     wire [9:0]  span_r = col_r < clip_l ? cx0[9:0] : col_r > clip_r ? cx1[9:0] : col_r[9:0];
@@ -300,7 +322,8 @@ always @(posedge clk) begin
         if(busy) busy_clocks <= busy_clocks + 1'b1;
         if(tex_stalled && tex_busy) miss_clocks <= miss_clocks + 1'b1;
         if(state == S_EDGE) edge_clocks <= edge_clocks + 1'b1;
-        if(state == S_ROWS || state == S_GO || state == S_ROW || state == S_CLIP || state == S_SPAN || state == S_ACC)
+        if(state == S_ROWS || state == S_GO || state == S_ROW || state == S_ROW2 || state == S_CLIP ||
+           state == S_SPAN || state == S_ACC)
             row_clocks <= row_clocks + 1'b1;
         if(state == S_IDLE && su_go && !su_accept) drain_clocks <= drain_clocks + 1'b1;
     end
@@ -309,9 +332,9 @@ always @(posedge clk) begin
 
     case(state)
     S_IDLE: if(start || su_take) begin
-        ax <= sx[0]; ay <= sy[0];
-        bx <= sx[1]; by <= sy[1];
-        cx <= sx[2]; cy <= sy[2];
+        ax <= whole(sx[0]); ay <= whole(sy[0]);
+        bx <= whole(sx[1]); by <= whole(sy[1]);
+        cx <= whole(sx[2]); cy <= whole(sy[2]);
         if(su_go) begin
             colour <= su_draw[7:0];
             fb_buf <= su_draw[8];
@@ -349,16 +372,21 @@ always @(posedge clk) begin
     end
 
     S_ROWS: begin
-        // r0 = max(first row, clip y0), r1 = min(end row, clip y1)
-        r0 <= row_from(ay) < cy0 ? cy0 : row_from(ay);
-        r  <= row_from(ay) < cy0 ? cy0 : row_from(ay);
-        rb <= row_from(by);
-        r1 <= row_from(cy) > cy1 ? cy1 : row_from(cy);
+        // r0 = max(a's row, clip y0), r1 = min(c's row + 1, clip y1)
+        r0 <= pix(ay) < cy0 ? cy0 : pix(ay);
+        r  <= pix(ay) < cy0 ? cy0 : pix(ay);
+        rb <= pix(by);
+        rc <= pix(cy);
+        r1 <= pix(cy) + 16'sd1 > cy1 ? cy1 : pix(cy) + 16'sd1;
+        last0 <= by != cy ? pix(cx) : ay != cy ? min16(pix(bx), pix(cx)) : min16(pix(ax), min16(pix(bx), pix(cx)));
+        last1 <= by != cy ? pix(cx) : ay != cy ? max16(pix(bx), pix(cx)) : max16(pix(ax), max16(pix(bx), pix(cx)));
         state <= S_GO;
     end
 
     S_GO: begin                                 // (a clock of its own: the rows are registers)
+        row_base <= {r0[7:0], 6'd0} + {2'd0, r0[7:0], 4'd0};
         if(r0 >= r1) state <= S_IDLE;           // nothing to draw
+        else if(r0 >= rc) state <= S_ROW;       // row c.y alone: no edge needed
         else begin
             edge_start(ax, ay, cx, cy, r0);
             job <= 0;
@@ -393,20 +421,31 @@ always @(posedge clk) begin
                 job <= 1;
                 if(r0 < rb) edge_start(ax, ay, bx, by, r0);
                 else edge_start(bx, by, cx, cy, r0);
-            end else if(job == 2'd1 && r0 < rb && rb < r1) begin
+            end else if(job == 2'd1 && r0 < rb && rb < rc && rb < r1) begin
                 job <= 2;
                 edge_start(bx, by, cx, cy, rb);
-            end else begin
-                row_base <= {r0[7:0], 6'd0} + {2'd0, r0[7:0], 4'd0};
+            end else
                 state <= S_ROW;
-            end
         end
         endcase
     end
 
     S_ROW: begin
-        left_h <= left + 36'sh7FFF;
-        right_h <= right + 36'sh7FFF;
+        lt <= l_x;
+        st <= s_x;
+        lb <= r + 16'sd1 == rc ? cx16 : l_x + {{3{l_dx[32]}}, l_dx};
+        sb <= r + 16'sd1 == rb ? bx16 : r + 16'sd1 == rc ? cx16 : s_x + {{3{s_dx[32]}}, s_dx};
+        row_last <= r == rc;
+        state <= S_ROW2;
+    end
+
+    S_ROW2: begin
+        l_lo <= l_lo_a < l_lo_b ? l_lo_a : l_lo_b;
+        l_hi <= l_hi_a > l_hi_b ? l_hi_a : l_hi_b;
+        s_lo <= s_lo_a < s_lo_b ? s_lo_a : s_lo_b;
+        s_hi <= s_hi_a > s_hi_b ? s_hi_a : s_hi_b;
+        long_left <= lt < st || (lt == st && lb < sb);
+        row_last2 <= row_last;
         state <= S_CLIP;
     end
 
@@ -457,7 +496,8 @@ always @(posedge clk) begin
     if(reset) state <= S_IDLE;
 end
 
-    // to the next row: both edges one row on; from row rb on the edge b-c
+    // to the next row: both edges one row on; from row rb on the edge b-c (not needed when
+    // rb is c's row: that row takes its corners)
     task next_row;
         begin
             r <= r + 16'sd1;

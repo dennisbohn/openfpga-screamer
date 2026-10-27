@@ -1,16 +1,22 @@
 /*
  * Rasterizer C model (raster.h). Which pixels a triangle covers is integer arithmetic only,
- * so the hardware can match it bit for bit (the texture lookup is still floating point):
+ * so the hardware can match it bit for bit (the texture lookup is still floating point).
+ * The rule is the game's (STARTL.EXE: the fillers from 0xd8844 walk the polygon column by
+ * column, 0xda330, and fill each column from the truncated upper to the truncated lower edge,
+ * both ends drawn, 0xda478): pixel (x, r) is drawn when the triangle touches the segment from
+ * (x, r) to (x, r + 1), its lower end excluded. So neighbours overlap along a shared edge and
+ * leave no gap, also where a corner of one lies on the edge of the other.
  *
- * - Rows: pixel row r has its centre at yc = 16r + 8; a triangle with vertices sorted by y
- *   (a.y <= b.y <= c.y) covers the rows with a.y <= yc < c.y.
+ * - Corners are cut to whole pixels (as the game's projection does) after sorting by y
+ *   (a.y <= b.y <= c.y); the triangle covers the rows a.y .. c.y, both drawn.
  * - Edges are always evaluated from their upper end (x0, y0) to their lower end (x1, y1):
- *   slope = ((x1 - x0) << 16) / (y1 - y0), truncated towards zero, and at row centre yc
- *   x = (x0 << 12) + floor(slope * (yc - y0) / 16), in 16.16 pixels (64 bits: a nearly flat
- *   edge has a large slope). The same edge gives the same x in every triangle that uses it,
- *   and stepping one row adds exactly slope.
- * - In each row the span runs from the left to the right edge; pixel x is drawn when its
- *   centre lies in [left, right): from ceil(left - 0.5) up to ceil(right - 0.5) - 1.
+ *   slope = ((x1 - x0) << 16) / (y1 - y0), truncated towards zero, and at the top of row r
+ *   x = (x0 << 16) + slope (r - y0), in 16.16 pixels (64 bits: a nearly flat edge has a large
+ *   slope); at its lower end the corner's x itself. The same edge gives the same x in every
+ *   triangle that uses it, and stepping one row adds exactly slope.
+ * - In a row above c.y the left edge runs from xt at its top to xb at its bottom: the span
+ *   starts at min(ceil(xt), floor(xb) + 1); the right one ends at max(floor(xt), ceil(xb) - 1),
+ *   that pixel drawn. Row c.y is the bottom corner (or edge) alone.
  */
 #include "raster.h"
 
@@ -18,27 +24,21 @@
 
 struct edge { int64_t x, slope; };
 
-/* the edge from (x0, y0) to (x1, y1), y0 < y1, at the centre of row r */
+/* the edge from (x0, y0) to (x1, y1), y0 < y1 (1/16 pixel, whole pixels), at the top of row r */
 static struct edge edge_at(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int r)
 {
     struct edge e;
     int32_t dx = x1 - x0;               /* |dx| < 2^16, so |dx| << 16 fits 32 bits unsigned */
     uint32_t q = ((uint32_t)(dx < 0 ? -dx : dx) << 16) / (uint32_t)(y1 - y0);
     e.slope = dx < 0 ? -(int64_t)q : (int64_t)q;
-    e.x = ((int64_t)x0 << 12) + ((e.slope * (16 * r + 8 - y0)) >> 4);
+    e.x = ((int64_t)x0 << 12) + ((e.slope * (16 * r - y0)) >> 4);
     return e;
 }
 
-/* first row whose centre is at or below y (1/16 pixel) */
-static int row_from(int32_t y)
-{
-    return (y + 7) >> 4;                /* ceil((y - 8) / 16) */
-}
+static int64_t ceil16(int64_t x) { return (x + 0xFFFF) >> 16; }
 
-/* first pixel whose centre is at or right of x (16.16), limited to [lo, hi] */
-static int col_from(int64_t x, int lo, int hi)
+static int clamp_col(int64_t c, int lo, int hi)
 {
-    int64_t c = (x + 0x7FFF) >> 16;     /* ceil(x - 0.5) */
     return c < lo ? lo : c > hi ? hi : (int)c;
 }
 
@@ -61,27 +61,50 @@ static uint32_t span_flat(volatile uint8_t *fb, int r, int x0, int x1, const voi
 static uint32_t walk(volatile uint8_t *fb, const struct rs_clip *clip, const struct rs_vertex v[3],
                      span_fn span, const void *ctx)
 {
-    const struct rs_vertex *a = &v[0], *b = &v[1], *c = &v[2], *t;
-    if(b->y < a->y) { t = a; a = b; b = t; }
-    if(c->y < b->y) { t = b; b = c; c = t; }
-    if(b->y < a->y) { t = a; a = b; b = t; }
+    const struct rs_vertex *p = &v[0], *q = &v[1], *u = &v[2], *t;
+    if(q->y < p->y) { t = p; p = q; q = t; }
+    if(u->y < q->y) { t = q; q = u; u = t; }
+    if(q->y < p->y) { t = p; p = q; q = t; }
+    struct rs_vertex a = { p->x & ~15, p->y & ~15 }, b = { q->x & ~15, q->y & ~15 },
+                     c = { u->x & ~15, u->y & ~15 };
 
     /* rows to draw: those of the triangle inside the clip rectangle */
-    int r0 = row_from(a->y), rb = row_from(b->y), r1 = row_from(c->y);
-    if(r0 < clip->y0) r0 = clip->y0;
-    if(r1 > clip->y1) r1 = clip->y1;
-    if(r0 >= r1) return 0;              /* also every triangle without a row centre */
+    int ya = a.y >> 4, yb = b.y >> 4, yc = c.y >> 4;
+    int r0 = ya < clip->y0 ? clip->y0 : ya, r1 = yc + 1 > clip->y1 ? clip->y1 : yc + 1;
+    if(r0 >= r1) return 0;
 
-    /* rows before rb use the short edge a-b, from rb on b-c; an edge only gets evaluated
-       when it has a row, so its y1 > y0 */
-    struct edge l = edge_at(a->x, a->y, c->x, c->y, r0), s;
-    if(r0 < rb) s = edge_at(a->x, a->y, b->x, b->y, r0);
-    else s = edge_at(b->x, b->y, c->x, c->y, r0);
+    /* row yc: the corners on it */
+    int last0 = c.x >> 4, last1 = last0;
+    if(b.y == c.y) { if(b.x >> 4 < last0) last0 = b.x >> 4; else last1 = b.x >> 4; }
+    if(a.y == c.y) { if(a.x >> 4 < last0) last0 = a.x >> 4; if(a.x >> 4 > last1) last1 = a.x >> 4; }
+
+    /* rows before yb use the short edge a-b, from yb on b-c; an edge only gets evaluated
+       when it has a row above yc, so its y1 > y0 */
+    struct edge l = { 0, 0 }, s = { 0, 0 };
+    if(r0 < yc) {
+        l = edge_at(a.x, a.y, c.x, c.y, r0);
+        if(r0 < yb) s = edge_at(a.x, a.y, b.x, b.y, r0);
+        else s = edge_at(b.x, b.y, c.x, c.y, r0);
+    }
+    int64_t xb = (int64_t)b.x << 12, xc = (int64_t)c.x << 12;
     uint32_t n = 0;
     for(int r = r0; r < r1; r++) {
-        if(r == rb && r > r0) s = edge_at(b->x, b->y, c->x, c->y, r);
-        int64_t left = l.x < s.x ? l.x : s.x, right = l.x < s.x ? s.x : l.x;
-        int x0 = col_from(left, clip->x0, clip->x1), x1 = col_from(right, clip->x0, clip->x1);
+        int64_t left, right;
+        if(r == yc) {
+            left = last0;
+            right = last1;
+        } else {
+            if(r == yb && r > r0) s = edge_at(b.x, b.y, c.x, c.y, r);
+            int64_t lt = l.x, lb = r + 1 == yc ? xc : l.x + l.slope;
+            int64_t st = s.x, sb = r + 1 == yb ? xb : r + 1 == yc ? xc : s.x + s.slope;
+            int long_left = lt < st || (lt == st && lb < sb);
+            int64_t L0 = long_left ? lt : st, L1 = long_left ? lb : sb;
+            int64_t R0 = long_left ? st : lt, R1 = long_left ? sb : lb;
+            int64_t la = ceil16(L0), lz = (L1 >> 16) + 1, ra = R0 >> 16, rz = ceil16(R1) - 1;
+            left = la < lz ? la : lz;
+            right = ra > rz ? ra : rz;
+        }
+        int x0 = clamp_col(left, clip->x0, clip->x1), x1 = clamp_col(right + 1, clip->x0, clip->x1);
         if(x0 < x1) n += span(fb, r, x0, x1, ctx);
         l.x += l.slope;
         s.x += s.slope;

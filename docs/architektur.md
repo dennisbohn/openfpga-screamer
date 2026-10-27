@@ -4,9 +4,9 @@ Stand: 2026-10-27. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 au
 8-Bit-Framebuffern im Block-RAM, je mit eigener Palette, getauscht in der Austastlücke; die
 CPU (VexRiscv RV32IMF mit FPU und CFU, `docs/soc.md`); Geometrie-Einheit, Clipper,
 Setup-Einheit und Rasterizer mit vorausladendem Textur-Cache; Strecke 1 mit dem Auto des
-Spielers, fahrbar. Gebaut, Test auf dem Pocket steht aus: der Blitter für das HUD und Ecken
-auf ganzen Pixeln. Belegung siehe „Belegung“; geschätzt ist nur noch, was fehlt (Audio,
-Glas/Schatten).
+Spielers, fahrbar, mit dem HUD aus dem Blitter. Gebaut, Test auf dem Pocket steht aus: die
+Füllregel des Originals (keine Lücken an Fugen). Belegung siehe „Belegung“; geschätzt ist
+nur noch, was fehlt (Audio, Glas/Schatten).
 
 ## Hardware des Pocket (Haupt-FPGA)
 
@@ -68,8 +68,8 @@ braucht. 33 Dateien, eine mehr als die 32 Slots: offen, z. B. zwei Dateien in ei
 
 ## Belegung
 
-Gemessen am 2026-10-27 (Quartus-Build mit Blitter und Ecken auf ganzen Pixeln, Timing hält
-bei 74,25 MHz: Setup +0,85 ns, Hold +0,12 ns): 14.819 von 18.480 ALMs (80 %), 254 von 308
+Gemessen am 2026-10-27 (Quartus-Build mit Blitter und der Füllregel des Originals, Timing
+hält bei 74,25 MHz: Setup +0,67 ns, Hold +0,11 ns): 14.868 von 18.480 ALMs (80 %), 254 von 308
 M10K (82 %), 31 von 66 DSP (47 %). Von Build zu Build schwankt die Logik um einige hundert
 ALMs (die Platzierung packt verschieden dicht). Geschätzt ist nur, was noch fehlt.
 
@@ -82,30 +82,30 @@ nachziehen.
 
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
-| Analogue-Rahmen (Bridge, PLLs, Pads) | 485 | 2 | 0 |
+| Analogue-Rahmen (Bridge, PLLs, Pads) | 475 | 2 | 0 |
 | Framebuffer ×2 + Video | 138 | 130 | 0 |
-| VexRiscv + 2× 8 KB Cache | 1.398 | 19 | 4 |
-| FPU (RV32F) | 1.520 | 5 | 4 |
+| VexRiscv + 2× 8 KB Cache | 1.397 | 19 | 4 |
+| FPU (RV32F) | 1.508 | 5 | 4 |
 | CFU (16.16-Multiplikation) | 9 | – | 3 |
 | Boot-RAM 32 KB + Protokoll | – | 36 | – |
-| Geometrie-Einheit | 1.836 | 18 | 3 |
-| Clipper | 2.827 | 6 | 2 |
-| Setup-Einheit | 2.921 | 4 | 4 |
-| Rasterizer | 1.595 | – | 7 |
-| Texturen: Pipeline + Cache | 866 | 30 | 4 |
-| Blitter (HUD) | 400 | 2 | – |
-| SDRAM-Controller + Ports | 338 | 2 | – |
-| Bus, Register, Arbiter | 486 | – | – |
-| **gebaut** | **14.819 (80 %)** | **254 (82 %)** | **31 (47 %)** |
+| Geometrie-Einheit | 1.681 | 18 | 3 |
+| Clipper | 2.814 | 6 | 2 |
+| Setup-Einheit | 2.940 | 4 | 4 |
+| Rasterizer | 1.817 | – | 7 |
+| Texturen: Pipeline + Cache | 882 | 30 | 4 |
+| Blitter (HUD) | 394 | 2 | – |
+| SDRAM-Controller + Ports | 322 | 2 | – |
+| Bus, Register, Arbiter | 491 | – | – |
+| **gebaut** | **14.868 (80 %)** | **254 (82 %)** | **31 (47 %)** |
 | geplant: Glas/Schatten (`MAPn.SMG`, 64 × 256 Byte) | 150–400 | 16 | – |
 | geplant: JTOPL (OPL2) | 800–1.200 | 3–5 | 0–1 |
 | geplant: PCM-Mixer | 300–500 | 2 | 1–2 |
-| **mit Geplantem** | **16.069–16.919 (87–92 %)** | **275–277 (89–90 %)** | **32–34 (48–52 %)** |
+| **mit Geplantem** | **16.118–16.968 (87–92 %)** | **275–277 (89–90 %)** | **32–34 (48–52 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es
 und probiert weitere Fitter-Seeds), nicht als Instabilität auf dem Pocket, solange das Timing
-hält. Die größten Posten sind Setup-Einheit und Clipper (zusammen 5.748 ALMs): je nur ein
+hält. Die größten Posten sind Setup-Einheit und Clipper (zusammen 5.754 ALMs): je nur ein
 Multiplizierer und eine Kehrwerttabelle, aber breite Register (eine Ecke 144 Bit, der Clipper
 nimmt vier auf einmal) und Auswahlschaltungen vor dem Multiplizierer. Dort ist am meisten zu
 holen, falls Audio nicht mehr passt. Einen Tiefenpuffer gibt es nicht, siehe „Entschieden“.
@@ -230,11 +230,22 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   (`0xd5350` Texturen, `0xd8844` eine Farbe) lesen die Ecken als ganze Pixel aus der Tabelle
   bei `0x54e94`. Ecken benachbarter Teile, die in der Welt ein paar Einheiten auseinander
   liegen (die gespeicherten Winkel sind bis 2,5 Einheiten zu kurz), landen so meist auf
-  demselben Pixel: der Asphalt hat keine Haarrisse. Die Setup-Einheit schneidet deshalb die
-  Ecken auf ganze Pixel ab, statt sie auf 1/16 Pixel zu runden; in der ersten Steilkurve von
-  Strecke 1 bleiben danach wenige einzelne Pixel an Fugen. Das Original rastert dabei
-  spaltenweise (für den VGA-Speicher seiner Zeit); unser Framebuffer hält vier Pixel einer
-  Zeile in einem Wort, daher bleibt der Rasterizer zeilenweise.
+  demselben Pixel. Die Setup-Einheit und der Rasterizer schneiden deshalb die Ecken auf
+  ganze Pixel ab, statt sie auf 1/16 Pixel zu runden.
+- **Die Füllregel des Originals** (2026-10-27, aus der EXE): Die Füller laufen spaltenweise
+  von der kleinsten bis zur größten Ecken-x, beide Spalten eingeschlossen (`0xda330`: jede
+  Kante schiebt N + 1 Paare, das Paar am Eckpunkt wird überschrieben), und füllen jede Spalte
+  vom abgeschnittenen oberen bis zum abgeschnittenen unteren Rand, beide gezeichnet
+  (`0xda478`: `sar 16`, dann count + 1 Pixel). Ein Pixel (x, r) wird also gezeichnet, wenn das
+  Polygon die Strecke von (x, r) nach (x, r + 1) berührt, das untere Ende ausgenommen. Das
+  macht jedes Polygon ringsum etwa einen halben Pixel voller als die Regel „Pixelmitte im
+  Dreieck“; Nachbarn überlappen an der Fuge, auch wo eine Ecke auf der Kante des anderen
+  liegt (T-Stoß), und der Asphalt bleibt geschlossen. Mit der Mittelpunktregel und Ecken auf
+  ganzen Pixeln blieben an den vier steilsten Schrägstellen von Strecke 1 61 Lochpixel (die
+  Pocket zeigte sie in der Schrägkurve und unter der Brücke), mit der Regel des Originals 9,
+  und die sind Spalten zwischen Teilen, die sich nicht berühren. Unser Rasterizer bleibt
+  zeilenweise (der Framebuffer hält vier Pixel einer Zeile in einem Wort) und rechnet dieselbe
+  Menge: je Zeile beide Kanten an Ober- und Unterkante, `docs/rasterizer.svg` Teil 1.
 - **Bilder überlappen (Pipeline):** CPU, Grafik und Anzeige arbeiten gleichzeitig an Bild
   N+1, N und N−1, die Zeit pro Bild ist das Maximum statt der Summe. Kosten: ein Bild mehr
   Verzögerung zwischen Eingabe und Anzeige (20 ms bei 50 fps).

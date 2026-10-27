@@ -65,7 +65,7 @@ PLANNED = [
 ]
 TIMING_LIMIT = 0.80         # logic utilisation above which timing closure gets hard
 STAND = "27.10.2026"
-BUILD = "mit Blitter, Ecken auf ganzen Pixeln"
+BUILD = "Füllregel des Originals"
 
 # layout
 WIDTH = 1120

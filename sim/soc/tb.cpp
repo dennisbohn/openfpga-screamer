@@ -175,10 +175,11 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
     if (top.sdram_max_refresh > 580) { printf("FAIL: refresh gap above 7.8 us (580 clocks)\n"); fails++; }
 
     // the last whole frame: the test band, or the trap handler's box (rows 18..24 in
-    // COL_ALERT; text row 22 is empty)
+    // COL_ALERT; text row 22 is empty); the race (a track in slot 3) draws no band
     if (last.size() == size_t(W * H * 3)) {
+        bool race = getenv("SIM_TRACK") && !expect_trap;
         int bad = 0, y0 = expect_trap ? 22 * 8 : 0, x1 = expect_trap ? W : 256;
-        for (int y = y0; y < y0 + 8; y++)
+        for (int y = y0; y < (race ? y0 : y0 + 8); y++)
             for (int x = 0; x < x1; x++) {
                 uint32_t want = pal_formula(expect_trap ? 230 : x);
                 const uint8_t *p = &last[(y * W + x) * 3];
@@ -187,7 +188,8 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
             }
         int n = 8 * x1;
         printf("%s: %s\n", expect_trap ? "trap box" : "test band",
-               bad ? (std::to_string(bad) + " of " + std::to_string(n) + " pixels wrong").c_str()
+               race ? "none in the race, not checked"
+               : bad ? (std::to_string(bad) + " of " + std::to_string(n) + " pixels wrong").c_str()
                    : ("all " + std::to_string(n) + " pixels match").c_str());
         fails += bad != 0;
         std::string name = prefix + ".rgb";
