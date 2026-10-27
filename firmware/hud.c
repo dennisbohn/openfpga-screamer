@@ -42,6 +42,22 @@ static void sprite(struct blit_list *l, int x, int y, int n)
     blit_copy(l, base + s->off, s->w, s->h, s->w, x + s->x, y + s->y, BLIT_COPY, 0);
 }
 
+/* the palette index nearest to colour 0xRRGGBB */
+static int nearest(uint32_t colour)
+{
+    const uint32_t *pal = track_palette();
+    int best = 0;
+    int32_t best_d = 0x7FFFFFFF;
+    for(int i = 0; i < 256; i++) {
+        int32_t dr = (int32_t)(pal[i] >> 16 & 255) - (int32_t)(colour >> 16 & 255);
+        int32_t dg = (int32_t)(pal[i] >> 8 & 255) - (int32_t)(colour >> 8 & 255);
+        int32_t db = (int32_t)(pal[i] & 255) - (int32_t)(colour & 255);
+        int32_t d = dr * dr + dg * dg + db * db;
+        if(d < best_d) { best_d = d; best = i; }
+    }
+    return best;
+}
+
 /* a few numbers as text (no printf in the firmware) */
 static char *put_dec(char *p, uint32_t v, int digits)
 {
@@ -74,7 +90,22 @@ static void needle(struct blit_list *l, int px, int py, int len, float angle, in
     blit_line(l, (int)((float)px - sinf(b)), (int)((float)py + cosf(b)), tx, ty, 0, 0, 320, 200, colour);
 }
 
-void hud_build(struct blit_list *l, int buffer)
+/* the frame rate (not the game's): frames drawn in the last second on a square, green at the
+   full 50, yellow below */
+static void fps_mark(struct blit_list *l, int fps)
+{
+    static int green = -1, yellow;
+    char buf[8];
+    if(green < 0) {
+        green = nearest(0x00FF00);
+        yellow = nearest(0xFFFF00);
+    }
+    blit_fill(l, 4, 191, 5, 5, fps >= 50 ? green : yellow);
+    put_dec(buf, (uint32_t)fps, 1);
+    text(l, 12, 190, buf, 3, 2);
+}
+
+void hud_build(struct blit_list *l, int buffer, int fps)
 {
     int nimg;
     blit_start(l, buffer);
@@ -133,5 +164,6 @@ void hud_build(struct blit_list *l, int buffer)
         centred(l, 0x78, buf, 0, 2);
     } else if(r->game_over)
         centred(l, 0x5A, track_hud_text(22), 0, 2);
+    if(fps > 0) fps_mark(l, fps);
     (void)nimg;
 }

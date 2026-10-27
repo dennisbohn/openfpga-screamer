@@ -399,7 +399,7 @@ static void __attribute__((noreturn)) run_track(void)
         track_draw_cam(0, &track_clip, &cam, objs, nobj, &ts);
         /* the race screen: the blitter draws it once the scene is done */
         BL_CLOCKS = 0;
-        hud_build(&hud, draw_buf);
+        hud_build(&hud, (int)draw_buf, (int)fps);
         hw_blit(&hud);
         while (RS_DRAW & RS_BUSY)
             ;
