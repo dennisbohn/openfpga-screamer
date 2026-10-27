@@ -51,7 +51,7 @@ MEASURED = [
     ("Setup-Einheit", "gfx", [(1, SU), (-1, CL)]),
     ("Rasterizer", "gfx", [(1, RS), (-1, RT)]),
     ("Texturen: Pipeline + Cache", "gfx", [(1, RT)]),
-    ("Blitter (HUD)", "gfx", [(1, SOC + "|blit:bl")]),
+    ("Blitter (Hintergrund, HUD)", "gfx", [(1, SOC + "|blit:bl")]),
     ("SDRAM-Controller + Ports", "mem", [(1, SOC + "|sdram:sdc"), (1, SOC + "|sdram_port:sdp")]),
 ]
 # the SoC's own logic (bus, registers, arbiters): the SoC minus everything measured inside it
@@ -65,7 +65,7 @@ PLANNED = [
 ]
 TIMING_LIMIT = 0.80         # logic utilisation above which timing closure gets hard
 STAND = "27.10.2026"
-BUILD = "Füllregel des Originals"
+BUILD = "Hintergrundbild im Blitter"
 
 # layout
 WIDTH = 1120

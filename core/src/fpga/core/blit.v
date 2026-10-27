@@ -1,10 +1,11 @@
 //
-// Blitter: the race screen's pictures, characters and needles into the framebuffer, bit for
-// bit the C model firmware/blit.c. The CPU writes commands into a buffer of 512 words (128
-// commands) and goes on; the blitter takes one once the 3D units are done (go), so the race
-// screen lies over the scene. One pixel a clock: a picture's or a character's bytes come from
+// Blitter: the backdrop, the race screen's pictures, characters and needles into the
+// framebuffer, bit for bit the C model firmware/blit.c. The CPU writes commands into a buffer
+// of 512 words (128 commands) and goes on; the blitter takes one while the 3D units are idle
+// (go): the backdrop before the scene (the CPU holds the first piece back until it is done),
+// the race screen after it. A picture or a character one pixel a clock: its bytes come from
 // the SDRAM a line of 32 bytes at a time (the shared line port), the pixel goes into the
-// framebuffer with its byte enable.
+// framebuffer with its byte enable; a fill a framebuffer word of four pixels a clock.
 //
 // Registers (soc.v maps them at 0xF000_3180 + 4 * wr_addr):
 //   0       write: the next word of a command (soc.v holds the write back while the buffer is
@@ -12,14 +13,16 @@
 //           0  copy, font: SDRAM byte address of the first pixel; line: [9:0] x, [25:16] y of
 //              its end (signed)
 //           1  [9:0] x, [25:16] y (signed): the first pixel's place on the screen, or the
-//              line's start; [29:28] kind (0 copy, 1 font, 2 line); [30] the buffer drawn into
-//           2  copy, font: [8:0] width, [24:16] height (1..511); line: the clip's [8:0] left,
-//              [24:16] top
-//           3  copy, font: [8:0] bytes from one row to the next; line: the clip's [8:0] right,
+//              line's start; [29:28] kind (0 copy, 1 font, 2 line, 3 fill); [30] the buffer
+//              drawn into; [31] copy: opaque
+//           2  copy, font, fill: [8:0] width, [24:16] height (1..511); line: the clip's [8:0]
+//              left, [24:16] top
+//           3  copy, font: [9:0] bytes from one row to the next; line: the clip's [8:0] right,
 //              [24:16] bottom (both outside it); [31:24] colour
-//           copy: the byte as it is, 0 see-through; font: a shade 1..15 (0 see-through) drawn as
-//           colour * 16 + shade; line: Bresenham from start to end, the pixels in the clip in
-//           the colour. Copies and characters are cut to the screen (320 x 200).
+//           copy: the byte as it is, 0 see-through (drawn too when opaque); font: a shade 1..15
+//           (0 see-through) drawn as colour * 16 + shade; line: Bresenham from start to end,
+//           the pixels in the clip in the colour; fill: the rectangle in the colour. Copies,
+//           characters and fills are cut to the screen (320 x 200).
 //   1       clocks busy since the last clear (write: clear)
 //
 
@@ -66,16 +69,18 @@ always @(posedge clk) begin
 end
 
     localparam  [2:0]   B_IDLE = 3'd0, B_FETCH = 3'd1, B_SETUP = 3'd2, B_PIX = 3'd3, B_MEM = 3'd4,
-                        B_LINE = 3'd5;
+                        B_LINE = 3'd5, B_FILL = 3'd6;
     reg  [2:0]  state = B_IDLE;
     reg  [2:0]  fk;                             // words of the command taken
     reg  [31:0] c0, c1, c2;
     reg  [1:0]  kind;
     reg  [7:0]  colour;
+    reg         opaque;
 
     // copy, font
     reg  [25:0] row_addr;                       // the row's first byte
-    reg  [8:0]  w, h, stride, c, r;
+    reg  [8:0]  w, h, c, r;
+    reg  [9:0]  stride;
     reg  signed [9:0] x0, y0;
     wire signed [10:0] px = $signed({x0[9], x0}) + $signed({2'd0, c});
     wire signed [10:0] py = $signed({y0[9], y0}) + $signed({2'd0, r});
@@ -87,6 +92,23 @@ end
     reg  [2:0]  fill;
     wire [7:0]  byte_at = lb[{a[4:0], 3'd0} +: 8];
     wire        last_c = c == w - 9'd1, last_r = r == h - 9'd1;
+
+    // fill: the rectangle cut to the screen, [fl_x0, fl_x1) x [fl_y, fl_y1), word fl_w of row fl_y
+    wire signed [10:0] fe_x = $signed({x0[9], x0}) + $signed({2'd0, w});
+    wire signed [10:0] fe_y = $signed({y0[9], y0}) + $signed({2'd0, h});
+    wire        fill_none = x0 >= 10'sd320 || fe_x <= 11'sd0 || y0 >= 10'sd200 || fe_y <= 11'sd0 ||
+                            w == 9'd0 || h == 9'd0;
+    reg  [8:0]  fl_x0, fl_x1;
+    reg  [7:0]  fl_y, fl_y1;
+    reg  [6:0]  fl_w;
+    wire [8:0]  fl_last = fl_x1 - 9'd1;
+    reg  [3:0]  fl_be;
+    integer     k;
+always @(*) begin
+    fl_be = 0;
+    for(k = 0; k < 4; k = k + 1)
+        if({fl_w, k[1:0]} >= fl_x0 && {fl_w, k[1:0]} < fl_x1) fl_be[3 - k] = 1;
+end
 
     // line
     reg  signed [10:0] lx, ly, ex, ey, ldx, ldy;
@@ -143,6 +165,7 @@ always @(posedge clk) begin
             colour <= f_q[31:24];
             kind <= c1[29:28];
             fb_buf <= c1[30];
+            opaque <= c1[31];
             x0 <= c1[9:0];
             y0 <= c1[25:16];
             if(c1[29:28] == 2'd2) begin
@@ -158,7 +181,7 @@ always @(posedge clk) begin
                 row_addr <= c0[25:0];
                 w <= c2[8:0];
                 h <= c2[24:16];
-                stride <= f_q[8:0];
+                stride <= f_q[9:0];
             end
             c <= 0;
             r <= 0;
@@ -175,8 +198,28 @@ always @(posedge clk) begin
             err <= (ex >= lx ? {{2{ex[10]}}, ex} - {{2{lx[10]}}, lx} : {{2{lx[10]}}, lx} - {{2{ex[10]}}, ex}) +
                    (ey >= ly ? {{2{ly[10]}}, ly} - {{2{ey[10]}}, ey} : {{2{ey[10]}}, ey} - {{2{ly[10]}}, ly});
             state <= B_LINE;
+        end else if(kind == 2'd3) begin
+            fl_x0 <= x0 < 10'sd0 ? 9'd0 : x0[8:0];
+            fl_x1 <= fe_x > 11'sd320 ? 9'd320 : fe_x[8:0];
+            fl_y <= y0 < 10'sd0 ? 8'd0 : y0[7:0];
+            fl_y1 <= fe_y > 11'sd200 ? 8'd200 : fe_y[7:0];
+            fl_w <= x0 < 10'sd0 ? 7'd0 : x0[8:2];
+            state <= fill_none ? B_IDLE : B_FILL;
         end else
             state <= w == 9'd0 || h == 9'd0 ? B_IDLE : B_PIX;
+    end
+
+    B_FILL: begin                               // a word a clock, row by row
+        fb_wr <= 1;
+        fb_addr <= {fl_y, 6'd0} + {2'd0, fl_y, 4'd0} + {7'd0, fl_w};
+        fb_be <= fl_be;
+        fb_data <= {4{colour}};
+        if(fl_w == fl_last[8:2]) begin
+            fl_w <= fl_x0[8:2];
+            fl_y <= fl_y + 1'b1;
+            if(fl_y + 1'b1 == fl_y1) state <= B_IDLE;
+        end else
+            fl_w <= fl_w + 1'b1;
     end
 
     B_PIX: begin
@@ -190,12 +233,12 @@ always @(posedge clk) begin
             if(on_screen) begin
                 if(kind == 2'd1) begin
                     if(byte_at[3:0] != 4'd0) plot(px, py, {colour[3:0], byte_at[3:0]});
-                end else if(byte_at != 8'd0) plot(px, py, byte_at);
+                end else if(byte_at != 8'd0 || opaque) plot(px, py, byte_at);
             end
             c <= last_c ? 9'd0 : c + 1'b1;
             if(last_c) begin
                 r <= r + 1'b1;
-                row_addr <= row_addr + {17'd0, stride};
+                row_addr <= row_addr + {16'd0, stride};
                 if(last_r) state <= B_IDLE;
             end
         end

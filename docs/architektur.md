@@ -4,9 +4,9 @@ Stand: 2026-10-27. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 au
 8-Bit-Framebuffern im Block-RAM, je mit eigener Palette, getauscht in der Austastlücke; die
 CPU (VexRiscv RV32IMF mit FPU und CFU, `docs/soc.md`); Geometrie-Einheit, Clipper,
 Setup-Einheit und Rasterizer mit vorausladendem Textur-Cache; Strecke 1 mit dem Auto des
-Spielers, fahrbar, mit dem HUD aus dem Blitter. Gebaut, Test auf dem Pocket steht aus: die
-Füllregel des Originals (keine Lücken an Fugen). Belegung siehe „Belegung“; geschätzt ist
-nur noch, was fehlt (Audio, Glas/Schatten).
+Spielers, fahrbar, mit dem HUD aus dem Blitter und der Füllregel des Originals (keine
+Lücken an Fugen). Gebaut, Test auf dem Pocket steht aus: das Hintergrundbild `MAPn.BCK`.
+Belegung siehe „Belegung“; geschätzt ist nur noch, was fehlt (Audio, Glas/Schatten).
 
 ## Hardware des Pocket (Haupt-FPGA)
 
@@ -68,12 +68,12 @@ braucht. 33 Dateien, eine mehr als die 32 Slots: offen, z. B. zwei Dateien in ei
 
 ## Belegung
 
-Gemessen am 2026-10-27 (Quartus-Build mit Blitter und der Füllregel des Originals, Timing
-hält bei 74,25 MHz: Setup +0,67 ns, Hold +0,11 ns): 14.868 von 18.480 ALMs (80 %), 254 von 308
+Gemessen am 2026-10-27 (Quartus-Build mit dem Hintergrundbild im Blitter, Timing hält bei
+74,25 MHz: Setup +0,86 ns, Hold +0,09 ns): 14.980 von 18.480 ALMs (81 %), 254 von 308
 M10K (82 %), 31 von 66 DSP (47 %). Von Build zu Build schwankt die Logik um einige hundert
 ALMs (die Platzierung packt verschieden dicht). Geschätzt ist nur, was noch fehlt.
 
-![Platzbudget im FPGA: Logik heute 80 %, mit Geplantem 87–92 %; Block-RAM heute 82 %, mit Geplantem 89–90 %; DSP heute 47 %, mit Geplantem 48–52 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik heute 81 %, mit Geplantem 88–92 %; Block-RAM heute 82 %, mit Geplantem 89–90 %; DSP heute 47 %, mit Geplantem 48–52 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py`: die gemessenen Zeilen aus dem Fitter-Report
 (`core/src/fpga/output_files/ap_core.fit.rpt`, Tabelle „Resource Utilization by Entity“), die
@@ -82,30 +82,30 @@ nachziehen.
 
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
-| Analogue-Rahmen (Bridge, PLLs, Pads) | 475 | 2 | 0 |
-| Framebuffer ×2 + Video | 138 | 130 | 0 |
-| VexRiscv + 2× 8 KB Cache | 1.397 | 19 | 4 |
-| FPU (RV32F) | 1.508 | 5 | 4 |
+| Analogue-Rahmen (Bridge, PLLs, Pads) | 468 | 2 | 0 |
+| Framebuffer ×2 + Video | 139 | 130 | 0 |
+| VexRiscv + 2× 8 KB Cache | 1.387 | 19 | 4 |
+| FPU (RV32F) | 1.513 | 5 | 4 |
 | CFU (16.16-Multiplikation) | 9 | – | 3 |
 | Boot-RAM 32 KB + Protokoll | – | 36 | – |
-| Geometrie-Einheit | 1.681 | 18 | 3 |
-| Clipper | 2.814 | 6 | 2 |
-| Setup-Einheit | 2.940 | 4 | 4 |
-| Rasterizer | 1.817 | – | 7 |
-| Texturen: Pipeline + Cache | 882 | 30 | 4 |
-| Blitter (HUD) | 394 | 2 | – |
-| SDRAM-Controller + Ports | 322 | 2 | – |
-| Bus, Register, Arbiter | 491 | – | – |
-| **gebaut** | **14.868 (80 %)** | **254 (82 %)** | **31 (47 %)** |
+| Geometrie-Einheit | 1.687 | 18 | 3 |
+| Clipper | 2.811 | 6 | 2 |
+| Setup-Einheit | 2.941 | 4 | 4 |
+| Rasterizer | 1.810 | – | 7 |
+| Texturen: Pipeline + Cache | 889 | 30 | 4 |
+| Blitter (Hintergrund, HUD) | 510 | 2 | – |
+| SDRAM-Controller + Ports | 328 | 2 | – |
+| Bus, Register, Arbiter | 488 | – | – |
+| **gebaut** | **14.980 (81 %)** | **254 (82 %)** | **31 (47 %)** |
 | geplant: Glas/Schatten (`MAPn.SMG`, 64 × 256 Byte) | 150–400 | 16 | – |
 | geplant: JTOPL (OPL2) | 800–1.200 | 3–5 | 0–1 |
 | geplant: PCM-Mixer | 300–500 | 2 | 1–2 |
-| **mit Geplantem** | **16.118–16.968 (87–92 %)** | **275–277 (89–90 %)** | **32–34 (48–52 %)** |
+| **mit Geplantem** | **16.230–17.080 (88–92 %)** | **275–277 (89–90 %)** | **32–34 (48–52 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es
 und probiert weitere Fitter-Seeds), nicht als Instabilität auf dem Pocket, solange das Timing
-hält. Die größten Posten sind Setup-Einheit und Clipper (zusammen 5.754 ALMs): je nur ein
+hält. Die größten Posten sind Setup-Einheit und Clipper (zusammen 5.752 ALMs): je nur ein
 Multiplizierer und eine Kehrwerttabelle, aber breite Register (eine Ecke 144 Bit, der Clipper
 nimmt vier auf einmal) und Auswahlschaltungen vor dem Multiplizierer. Dort ist am meisten zu
 holen, falls Audio nicht mehr passt. Einen Tiefenpuffer gibt es nicht, siehe „Entschieden“.
@@ -232,6 +232,19 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   liegen (die gespeicherten Winkel sind bis 2,5 Einheiten zu kurz), landen so meist auf
   demselben Pixel. Die Setup-Einheit und der Rasterizer schneiden deshalb die Ecken auf
   ganze Pixel ab, statt sie auf 1/16 Pixel zu runden.
+- **Das Hintergrundbild wie im Original** (2026-10-27, aus der EXE): Das Rennen zeichnet
+  vor der Szene `MAPn.BCK` (ein PCX, 512 × 256) mit `0x83a68`: eine reine Kopie, die Spalte
+  `(2047 − Kurs) / 2 mod 512` am linken Rand (zweimal um das Bild je Umdrehung), die oberste
+  Zeile bei Augenhöhe + 22 − 256 + 128 · sin(Nicken), 320 Byte je Zeile bei 512 Byte
+  Zeilenabstand (eine Zeile, die über das Bildende reicht, liest in die nächste hinein);
+  darunter bis zum Viewende die Farbe aus TRACK_DATA (`color`, vervierfacht bei `0x1337d`).
+  Die geneigte Fassung `0x83b44` (vier texturierte Vierecke, um den Rollwinkel gedreht) ruft
+  `STARTL.EXE` nirgends auf: Rollt die Kamera in einer Steilkurve, bleibt der Hintergrund
+  aufrecht, so auch hier. Augenhöhe 130 (`0x4c610(320, 200, 130)`), die Mitte der Projektion
+  in x ist Spalte 159 (`0x83431`), nicht 160. Der Blitter kopiert das Bild (deckend, ein Pixel
+  pro Takt) und füllt den Rest (vier Pixel pro Takt), während die CPU die Szene auswählt;
+  das erste Bauteil für die Geometrie-Einheit wartet, bis er fertig ist. Die CPU füllt den
+  Himmel nicht mehr selbst.
 - **Die Füllregel des Originals** (2026-10-27, aus der EXE): Die Füller laufen spaltenweise
   von der kleinsten bis zur größten Ecken-x, beide Spalten eingeschlossen (`0xda330`: jede
   Kante schiebt N + 1 Paare, das Paar am Eckpunkt wird überschrieben), und füllen jede Spalte

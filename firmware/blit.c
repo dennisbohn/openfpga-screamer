@@ -20,9 +20,20 @@ void blit_copy(struct blit_list *l, const uint8_t *src, int w, int h, int stride
     uint32_t *c = l->c[l->n];
     l->src[l->n++] = src;
     c[0] = 0;
-    c[1] = xy(x, y) | (uint32_t)kind << 28 | (uint32_t)l->buffer << 30;
+    c[1] = xy(x, y) | (uint32_t)(kind & 3) << 28 | (uint32_t)l->buffer << 30 | (kind & BLIT_OPAQUE ? 1u << 31 : 0);
     c[2] = (uint32_t)w | (uint32_t)h << 16;
-    c[3] = ((uint32_t)stride & 0x1FF) | (uint32_t)colour << 24;
+    c[3] = ((uint32_t)stride & 0x3FF) | (uint32_t)colour << 24;
+}
+
+void blit_fill(struct blit_list *l, int x, int y, int w, int h, int colour)
+{
+    if(l->n >= BLIT_MAX || w < 1 || h < 1 || w > 511 || h > 511) return;
+    uint32_t *c = l->c[l->n];
+    l->src[l->n++] = 0;
+    c[0] = 0;
+    c[1] = xy(x, y) | (uint32_t)BLIT_FILL << 28 | (uint32_t)l->buffer << 30;
+    c[2] = (uint32_t)w | (uint32_t)h << 16;
+    c[3] = (uint32_t)colour << 24;
 }
 
 void blit_line(struct blit_list *l, int x0, int y0, int x1, int y1, int cx0, int cy0, int cx1, int cy1, int colour)
@@ -86,7 +97,13 @@ void blit_model(volatile uint8_t *fb, const struct blit_list *l)
             }
             continue;
         }
-        int w = (int)(c[2] & 0x1FF), h = (int)(c[2] >> 16 & 0x1FF), stride = (int)(c[3] & 0x1FF);
+        int w = (int)(c[2] & 0x1FF), h = (int)(c[2] >> 16 & 0x1FF), stride = (int)(c[3] & 0x3FF);
+        int opaque = (int)(c[1] >> 31);
+        if(kind == BLIT_FILL) {
+            for(int py = y0 < 0 ? 0 : y0; py < y0 + h && py < 200; py++)
+                for(int px = x0 < 0 ? 0 : x0; px < x0 + w && px < 320; px++) put(fb, px, py, colour);
+            continue;
+        }
         const uint8_t *row = l->src[i];
         for(int r = 0; r < h; r++, row += stride)
             for(int k = 0; k < w; k++) {
@@ -95,7 +112,7 @@ void blit_model(volatile uint8_t *fb, const struct blit_list *l)
                 int v = row[k];
                 if(kind == BLIT_FONT) {
                     if(v & 15) put(fb, px, py, (colour & 15) << 4 | (v & 15));
-                } else if(v) put(fb, px, py, v);
+                } else if(v || opaque) put(fb, px, py, v);
             }
     }
 }

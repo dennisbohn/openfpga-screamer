@@ -87,6 +87,8 @@ static int player_x = 160 * 16, player_y = 120 * 16;
 static uint8_t col_player = COL_SQUARE;
 static uint32_t draw_buf;               /* the back buffer, for hw_textured() */
 static uint32_t draw_wait;              /* cycles the DRAW writes waited for the rasterizer */
+static int back_wait;                   /* the backdrop is with the blitter: the first piece waits */
+static uint32_t back_clocks, back_cycles;   /* the blitter's clocks for it, the CPU's wait */
 
 struct demo_stats { uint32_t triangles, pixels, cycles; };
 
@@ -152,6 +154,14 @@ static uint32_t hw_quad(const struct su_corner c[4], const struct rs_texture *t)
 static void hw_piece(const struct gu_piece *g)
 {
     uint32_t t0 = rdcycle();
+    if (back_wait) {                    /* the scene goes over the backdrop */
+        while (RS_DRAW & RS_BUSY)
+            ;
+        back_clocks = BL_CLOCKS;
+        back_cycles = rdcycle() - t0;
+        back_wait = 0;
+        t0 = rdcycle();
+    }
     for (int k = 0; k < 9; k++) GU_PUSH = (uint32_t)g->m[k];
     for (int k = 0; k < 3; k++) GU_PUSH = (uint32_t)g->t[k];
     for (int k = 0; k < 3; k++) GU_PUSH = (uint32_t)g->e[k];
@@ -260,13 +270,15 @@ static void draw_status(volatile uint8_t *fb, uint32_t st, uint32_t drawn, const
  */
 static const struct rs_clip track_clip = { 0, 0, FB_W, FB_H };     /* the whole screen, as the game's views */
 static struct blit_list hud;            /* this frame's race screen, for the blitter (and the check) */
+static struct blit_list back;           /* this frame's backdrop, the same */
 
 /* the blitter's commands (blit.v): a copy's first word is its SDRAM byte address */
 static void hw_blit(const struct blit_list *l)
 {
     for (int i = 0; i < l->n; i++) {
         const uint32_t *c = l->c[i];
-        BL_PUSH = (c[1] >> 28 & 3) == BLIT_LINE ? c[0] : (uint32_t)((uintptr_t)l->src[i] - SDRAM_BASE);
+        uint32_t kind = c[1] >> 28 & 3;
+        BL_PUSH = kind == BLIT_COPY || kind == BLIT_FONT ? (uint32_t)((uintptr_t)l->src[i] - SDRAM_BASE) : c[0];
         BL_PUSH = c[1];
         BL_PUSH = c[2];
         BL_PUSH = c[3];
@@ -276,12 +288,12 @@ static void hw_blit(const struct blit_list *l)
 /* Once per run: the frame just drawn against the C models of the setup unit and the
    rasterizer, drawn into the SDRAM; the track area compared pixel by pixel */
 static void track_check(volatile uint8_t *fb, const struct track_cam *cam, const struct track_object *objs,
-                        int nobj, const struct blit_list *bl, uint8_t sky)
+                        int nobj, const struct blit_list *bk, const struct blit_list *bl)
 {
     volatile uint8_t *m = CHECK_BUF;
     struct track_stats ts;
     uint32_t differ = 0, first = 0, t0 = rdcycle();
-    fb_fill(m, track_clip.x0, track_clip.y0, track_clip.x1 - track_clip.x0, track_clip.y1 - track_clip.y0, sky);
+    blit_model(m, bk);
     track_mode = TRACK_MODEL;
     track_draw_cam(m, &track_clip, cam, objs, nobj, &ts);
     blit_model(m, bl);
@@ -311,7 +323,6 @@ static void track_check(volatile uint8_t *fb, const struct track_cam *cam, const
 static void __attribute__((noreturn)) run_track(void)
 {
     const uint32_t *pal = track_palette();
-    uint8_t col_sky = nearest((const volatile uint32_t *)pal, 110, 150, 210);
     uint32_t drawn = 0, keys_before = 0, last_frame = 0, steps = 0;
     uint32_t fps = 0, fps_drawn = 0, fps_frame = 0;
     int car_v = 0;
@@ -353,15 +364,22 @@ static void __attribute__((noreturn)) run_track(void)
         car_camera(&cam);
         int nobj = car_object(&cam, &car_obj);
 
+        /* the backdrop (the game's 0x83a68): the blitter copies it while the CPU culls the
+           scene; the first piece for the geometry unit waits until it is done (hw_piece) */
         volatile uint8_t *fb = FB(!(st & VID_FRONT));
+        draw_buf = !(st & VID_FRONT);
+        blit_start(&back, (int)draw_buf);
+        track_backdrop_blit(&back, &track_clip, &cam);
+        BL_CLOCKS = 0;
+        back_clocks = back_cycles = 0;
+        back_wait = 1;
+        hw_blit(&back);
         for (int i = 0; i < 256; i++) VID_PAL[i] = pal[i];
-        fb_fill(fb, 0, 0, FB_W, FB_H, col_sky);
 
         /* the pieces from the CPU to the geometry unit, its faces to the setup unit, the
            triangles to the rasterizer */
         struct track_stats ts;
         uint32_t t0 = rdcycle();
-        draw_buf = !(st & VID_FRONT);
         RS_PIXELS = 0;
         RS_MISSES = 0;
         RS_CLOCKS = 0;
@@ -386,7 +404,7 @@ static void __attribute__((noreturn)) run_track(void)
         uint32_t r_miss = RS_MISS_CLOCKS, r_edge = RS_EDGE_CLOCKS, r_row = RS_ROW_CLOCKS;
         uint32_t r_drain = RS_DRAIN_CLOCKS, r_starved = RS_STARVED;
         ts.faces = GU_FACES;
-        if (drawn == 2) track_check(fb, &cam, &car_obj, nobj, &hud, col_sky);
+        if (drawn == 2) track_check(fb, &cam, &car_obj, nobj, &back, &hud);
 
         if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
             fps = drawn - fps_drawn;
@@ -439,6 +457,11 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)misses);
             dlog_str(", blit ");
             dlog_dec((int32_t)blit);
+            dlog_str(", backdrop ");
+            dlog_dec((int32_t)back_clocks);
+            dlog_str(" (wait ");
+            dlog_dec((int32_t)back_cycles);
+            dlog_char(')');
             dlog_str(", fps ");
             dlog_dec((int32_t)fps);
             if (drawn == 2) {                   /* the log has 4 KB: once */

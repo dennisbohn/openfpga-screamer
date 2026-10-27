@@ -66,6 +66,11 @@ void track_start(float *x, float *y, float *yaw);
 int track_bonus_time(void);
 int track_camera_hi(void);
 
+/* The backdrop (MAPn.BCK): 512 x 256 palette indices, rows of 512 bytes, the last row twice;
+   the palette index below it (TRACK_DATA's color) */
+const uint8_t *track_backdrop(void);
+int track_ground_colour(void);
+
 /* The race screen section (tools/make_track.py): its start, the image table, the fonts, the
    two pictures' boxes (IMPLET_L the labels, IMPRES_L the outside views' rev counter: first
    image, count), GAME.TXT's line k */
@@ -113,6 +118,10 @@ void track_view(const struct rs_clip *clip, struct su_view *v);
 /* A camera: place, heading as the car's (forward = (sin yaw, -cos yaw)), pitch (+ looks up)
    and roll (+ tips the camera's right-hand side up) */
 struct track_cam { float x, y, h, yaw, pitch, roll; };
+
+/* the blitter's commands for the backdrop behind the view clip, seen from cam (the game's
+   0x83a68; track.c) */
+void track_backdrop_blit(struct blit_list *l, const struct rs_clip *clip, const struct track_cam *cam);
 
 /* An object besides the track's pieces (a car): its blocks in the order they are drawn, each
    with its own place: world = o + m . local (m rows: world x, y, height; columns: the block's

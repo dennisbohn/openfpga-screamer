@@ -7,7 +7,7 @@ Usage: python tools/make_track.py <GFX/MAPnL.DAT> <DATA/MAPn.DAT> <DATA/GEN.DAT>
 Formats from openscreamer docs/NOTES.md ("How the track is built", sections 1-4, 6-9, 11).
 The output, for data slot 3 (core/data.json), little-endian:
 
-  0x00  "SCRK", u32 version 4
+  0x00  "SCRK", u32 version 5
   0x08  u32 offset, size of MAPn.MLB     materials and pixel pages, unchanged
   0x10  u32 offset, size of MAPn.UNR     the meshes, unchanged
   0x18  u32 offset of the palette        256 x 0x00RRGGBB (MAPn.COL is 6-bit VGA)
@@ -51,7 +51,12 @@ The output, for data slot 3 (core/data.json), little-endian:
                                          screen; u32 first box, count of each of the two after
                                          the fonts
   0x70  int32 bonus_time, camera_hi      TRACK_DATA of MAPnA.DTR
-  0x78  8 bytes 0
+  0x78  u32 offset of the backdrop       MAPn.BCK (a PCX) unpacked: 512 x 256 palette
+                                         indices, rows of 512 bytes, and its last row once more
+                                         (the game's copy, 0x83a68, runs on past a row's end
+                                         into the next row)
+  0x7C  u32 ground colour                TRACK_DATA's color: the palette index below the
+                                         backdrop
   0x80  u32 file size, u32 n, n x u32    CRC-32 (zlib) of each 256 KB block from 0x100 on,
                                          so the core can tell where a load went wrong
 
@@ -265,6 +270,24 @@ def race_screen(game, local):
             b"".join(struct.pack("<2I", *pc) for pc in pictures) + texts + blob)
 
 
+def pcx(data):
+    """A PCX picture (8 bits, one plane, run-length coded) as (width, height, indices)"""
+    assert data[0] == 10 and data[2] == 1 and data[3] == 8 and data[65] == 1, "not an 8-bit PCX"
+    x0, y0, x1, y1 = struct.unpack_from("<4H", data, 4)
+    w, h, line = x1 - x0 + 1, y1 - y0 + 1, struct.unpack_from("<H", data, 66)[0]
+    out, p = bytearray(), 128
+    while len(out) < line * h:
+        c = data[p]
+        p += 1
+        if c >= 0xC0:
+            out += bytes([data[p]]) * (c & 0x3F)
+            p += 1
+        else:
+            out.append(c)
+    rows = [out[r * line:r * line + w] for r in range(h)]
+    return w, h, b"".join(rows)
+
+
 def track_data(dtr):
     """TRACK_DATA of MAPnA.DTR: color, camera_hi, bonus_time, carnage"""
     s = dtr.decode("latin-1")
@@ -350,10 +373,13 @@ def main():
     hud = race_screen(datfile.read(os.path.join(here, "GAME.DAT")),
                       datfile.read(os.path.join(here, "..", "DATA", "LOCAL.DAT")))
     colour, camera_hi, bonus_time, carnage = track_data(datfile.extract(d, track + "A.DTR"))
+    bw, bh, back = pcx(datfile.extract(g, track + ".BCK"))
+    assert (bw, bh) == (512, 256), f"backdrop {bw} x {bh}"
+    back += back[-512:]
 
     sections = [mlb, unr, pal, b"".join(struct.pack("<5i", *p) for p in pl),
                 b"".join(struct.pack("<3i", *p) for p in path), ground, mrk[4:4 + 32 * nmark],
-                cars, models, b"".join(dirs), b"".join(walls), hud]
+                cars, models, b"".join(dirs), b"".join(walls), hud, back]
     counts = [len(mlb), len(unr), 0, len(pl), len(path), nground, nmark, ncars, 7, len(dirs), len(walls),
               len(hud)]
     offs, pos = [], 0x100
@@ -364,11 +390,11 @@ def main():
     for o, s in zip(offs, sections):
         blob[o:o + len(s)] = s
     crcs = [zlib.crc32(blob[o:o + BLOCK]) for o in range(0x100, pos, BLOCK)]
-    head = b"SCRK" + struct.pack("<I", 4) + struct.pack("<2I", offs[0], counts[0]) + \
+    head = b"SCRK" + struct.pack("<I", 5) + struct.pack("<2I", offs[0], counts[0]) + \
         struct.pack("<2I", offs[1], counts[1]) + struct.pack("<I", offs[2]) + \
         b"".join(struct.pack("<2I", offs[k], counts[k]) for k in range(3, 11)) + \
         start_pose(path, dirs) + struct.pack("<2I", offs[11], counts[11]) + \
-        struct.pack("<2i", bonus_time, camera_hi) + bytes(8) + \
+        struct.pack("<2i", bonus_time, camera_hi) + struct.pack("<2I", offs[12], colour) + \
         struct.pack("<2I", pos, len(crcs)) + struct.pack(f"<{len(crcs)}I", *crcs)
     assert len(head) == 0x88 + 4 * len(crcs)
     assert len(head) <= 0x100, "file too large for the block CRCs in the header"
@@ -402,7 +428,8 @@ def main():
     print(f"{out}: {len(blob)} bytes: MLB {len(mlb)}, UNR {len(unr)}, {len(pl)} placements "
           f"({nground} drivable), {len(path)} path points, {nmark} markers, {ncars} cars, "
           f"{len(dirs)} road points, {len(walls)} walls, race screen {len(hud)} bytes "
-          f"(bonus {bonus_time} s, camera {camera_hi}); preview {preview}")
+          f"(bonus {bonus_time} s, camera {camera_hi}), backdrop {bw} x {bh} over colour {colour}; "
+          f"preview {preview}")
 
 
 main()

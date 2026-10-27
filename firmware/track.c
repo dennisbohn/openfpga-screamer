@@ -1,7 +1,8 @@
 /*
- * The track (track.h). The file (tools/make_track.py): "SCRK", version 3, then MAPn.MLB and
+ * The track (track.h). The file (tools/make_track.py): "SCRK", version 5, then MAPn.MLB and
  * MAPn.UNR unchanged, the palette, the placements, the camera path, the ground index, the
- * markers, the cars, the car models, road points and walls, the start.
+ * markers, the cars, the car models, road points and walls, the start, the race screen, the
+ * backdrop and its ground colour.
  *
  * The game's structures (openscreamer docs/NOTES.md, "How the track is built"):
  *   UNR    int32 blob size, int32 count, count offsets into the blob; an object's block at
@@ -120,7 +121,7 @@ static const uint8_t *block_of(int k, const uint8_t **obj)
 int track_open(const volatile uint8_t *file)
 {
     const uint8_t *f = (const uint8_t *)file;
-    if(rd32(f) != 0x4B524353 || rd32(f + 4) != 4) return 0;    /* "SCRK", version 4 */
+    if(rd32(f) != 0x4B524353 || rd32(f + 4) != 5) return 0;    /* "SCRK", version 5 */
     file_start = f;
     file_size = (uint32_t)rd32(f + 0x80);
     nblocks = rd32(f + 0x84);
@@ -302,6 +303,42 @@ int track_camera_hi(void)
     return rd32(file_start + 0x74);
 }
 
+const uint8_t *track_backdrop(void)
+{
+    return file_start + rd32(file_start + 0x78);
+}
+
+int track_ground_colour(void)
+{
+    return rd32(file_start + 0x7C) & 255;
+}
+
+/*
+ * The backdrop as the game copies it (0x83a68): the picture's column (2047 - heading) / 2
+ * mod 512 under the view's left edge (heading in the game's units, 2048 a turn, = yaw + a
+ * quarter turn: twice round the picture a turn), its top row at the eye line + 22 - 256 +
+ * 128 sin(pitch), taken from row |top| on (a top below the view's top in every race), cut at
+ * the view's bottom; each row read on past its end as the game does; the rest of the view
+ * in the ground colour. Upright whatever the camera's roll: the game's leaning version
+ * (0x83b44) is never called.
+ */
+void track_backdrop_blit(struct blit_list *l, const struct rs_clip *clip, const struct track_cam *cam)
+{
+    int w = clip->x1 - clip->x0, h = clip->y1 - clip->y0, eye = (int)((float)h * EYE_LINE);
+    int32_t s = (int32_t)(sinf(cam->pitch) * 16384.0f);         /* the game's sine, [0x7228c] */
+    int top = eye + 22 - 256 + ((-54152 * s) >> 7) / -54152;
+    int heading = (int)lrintf((cam->yaw + 1.5707964f) * (1024.0f / 3.14159265f));
+    int col = ((2047 - heading) >> 1) & 511;
+    int rows = 256 + (top < 0 ? top : 0);
+    if(top + 256 > h) rows -= top + 256 - h;
+    if(rows > 0)
+        blit_copy(l, track_backdrop() + (top < 0 ? -top : top) * 512 + col, w, rows, 512, clip->x0, clip->y0,
+                  BLIT_COPY | BLIT_OPAQUE, 0);
+    else
+        rows = 0;
+    if(rows < h) blit_fill(l, clip->x0, clip->y0 + rows, w, h - rows, track_ground_colour());
+}
+
 const uint8_t *track_hud(void)
 {
     return file_start + rd32(file_start + 0x68);
@@ -406,7 +443,8 @@ int track_block_ok(int k)
 
 void track_view(const struct rs_clip *clip, struct su_view *v)
 {
-    v->cx = (clip->x0 + clip->x1) * 8;      /* the centre in 1/16 pixel */
+    v->cx = (clip->x0 + clip->x1) * 8 - 16; /* the centre in 1/16 pixel: column 159 on the screen,
+                                               as the game's projection (0x83431) */
     v->cy = clip->y0 * 16 + (int32_t)((float)((clip->y1 - clip->y0) * 16) * EYE_LINE);
     v->scale = (uint32_t)(FOCAL * 16.0f);
     v->far8 = (int32_t)(far_z * 256.0f);

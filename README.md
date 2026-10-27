@@ -44,7 +44,8 @@ Was der Core aus den Spieldaten braucht, wird auf dem PC umgewandelt und landet 
 Dort liegen `firmware.bin` und `program.bin` aus `tools/fw.sh` (siehe `firmware/README.md`)
 und für die Strecke `track1.bin` (Data-Slot 3): Materialien, Texturen und Bauteile von
 Strecke 1 unverändert aus den Spieldateien, dazu Platzierungen, Palette, Kamerapfad, die
-befahrbaren Teile je Rasterzelle, Marker, Wände, die Autos aus `CARS.DTR` und der Start:
+befahrbaren Teile je Rasterzelle, Marker, Wände, die Autos aus `CARS.DTR`, der Start, die
+Rennanzeige und das Hintergrundbild `MAP1.BCK`:
 
 ```sh
 python tools/make_track.py "C:/GOG Games/Screamer/GFX/MAP1H.DAT" "C:/GOG Games/Screamer/DATA/MAP1.DAT" \
