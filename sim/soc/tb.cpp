@@ -64,8 +64,8 @@ struct Sim {
     }
     void rise_74(int n = 1) { while (n > 0) if (step() == 1) n--; }
 
-    void bridge_write(uint32_t addr, uint32_t data) {
-        rise_74(BRIDGE_GAP - 1);
+    void bridge_write(uint32_t addr, uint32_t data, int gap = BRIDGE_GAP) {
+        rise_74(gap - 1);
         top.bridge_addr = addr; top.bridge_wr_data = data; top.bridge_wr = 1; top.eval();
         rise_74();
         top.bridge_wr = 0; top.eval();
@@ -84,22 +84,24 @@ struct Sim {
     }
     // a file to a bridge address as the APF sends it: big-endian words, the first file byte
     // in bits 31:24
-    void load(uint32_t base, const std::vector<uint8_t> &f) {
+    void load(uint32_t base, const std::vector<uint8_t> &f, int gap = BRIDGE_GAP) {
         for (size_t a = 0; a < f.size(); a += 4)
-            bridge_write(base + a, uint32_t(f[a]) << 24 | f[a + 1] << 16 | f[a + 2] << 8 | f[a + 3]);
+            bridge_write(base + a, uint32_t(f[a]) << 24 | f[a + 1] << 16 | f[a + 2] << 8 | f[a + 3], gap);
     }
 
-    // the APF's side of a data slot read the core asked for: slot 2 is program.bin, any
-    // other slot has no file. The clocks it takes do not count as frames of run().
-    std::vector<uint8_t> prog;
+    // the APF's side of a data slot read the core asked for: slot 2 is program.bin, slot 3
+    // the track when SIM_TRACK names one (sent faster than the APF would, 4 MB take long),
+    // any other slot has no file. The clocks it takes do not count as frames of run().
+    std::vector<uint8_t> prog, track;
     int slot_reads = 0;
     void serve_read() {
         top.ds_done = 0; top.eval();
         rise_74(8);
         uint32_t id = top.ds_id, off = top.ds_offset, addr = top.ds_addr, len = top.ds_length, err = 2;
-        if (id == 2 && off < prog.size()) {
-            size_t end = std::min<size_t>(prog.size(), size_t(off) + len);
-            load(addr, std::vector<uint8_t>(prog.begin() + off, prog.begin() + end));
+        const std::vector<uint8_t> *file = id == 2 ? &prog : id == 3 && !track.empty() ? &track : nullptr;
+        if (file && off < file->size()) {
+            size_t end = std::min<size_t>(file->size(), size_t(off) + len);
+            load(addr, std::vector<uint8_t>(file->begin() + off, file->begin() + end), id == 3 ? 12 : BRIDGE_GAP);
             err = 0;
         }
         printf("data slot read %u: %u bytes from %u to 0x%08x, result %u\n", id, len, off, addr, err);
@@ -224,7 +226,9 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
         if (reported != negative) { printf(negative ? "FAIL: the log reports no failed test\n" : "FAIL: the log reports a failed test\n"); fails++; }
         if (slot_line && text.find(slot_line) == std::string::npos) { printf("FAIL: no \"%s\" in the log\n", slot_line); fails++; }
         if (text.find("windows of 2048 bytes") == std::string::npos) { printf("FAIL: the log does not name the simulation windows\n"); fails++; }
-        if (!negative && text.find("raster check: ok") == std::string::npos) { printf("FAIL: no \"raster check: ok\" in the log\n"); fails++; }
+        // the texture demo checks its triangles, the race (a track in slot 3) its whole picture
+        const char *check = getenv("SIM_TRACK") ? "track check: ok" : "raster check: ok";
+        if (!negative && text.find(check) == std::string::npos) { printf("FAIL: no \"%s\" in the log\n", check); fails++; }
     }
     return fails;
 }
@@ -264,6 +268,17 @@ int main(int argc, char **argv) {
         }
         while (prog.size() % 4) prog.push_back(0);
         printf("%s: %zu bytes\n", path.c_str(), prog.size());
+    }
+    if (const char *tp = getenv("SIM_TRACK")) {         // slot 3, e.g. build/assets/.../track1.bin
+        FILE *f = fopen(tp, "rb");
+        if (f) {
+            uint8_t buf[65536];
+            size_t n;
+            while ((n = fread(buf, 1, sizeof buf, f)) > 0) s.track.insert(s.track.end(), buf, buf + n);
+            fclose(f);
+        }
+        while (s.track.size() % 4) s.track.push_back(0);
+        printf("%s: %zu bytes (slot 3)\n", tp, s.track.size());
     }
 
     Vsoc_system &top = s.top;

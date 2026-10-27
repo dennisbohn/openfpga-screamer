@@ -7,6 +7,10 @@
 # SIM_DEFINES adds Verilator options, e.g. a fault in a memory model for a negative test:
 #   SIM_DEFINES="-DSDRAM_FAULT_DQM_SWAP=1" tools/sim.sh soc ...
 # Each set of options gets its own build directory.
+# SIM_TRACK gives the soc testbench a track as data slot 3, so the firmware drives the race
+# (the 3D units, the blitter) instead of the texture demo; that takes about 200 frames:
+#   SIM_TRACK=build/assets/screamer/Chainy.Screamer/track1.bin tools/sim.sh soc ... 220
+# (blit.v prints its commands with SIM_DEFINES="-DBLIT_TRACE").
 set -e
 root=$(cd "$(dirname "$0")/.." && pwd)
 tb=$1
@@ -27,7 +31,7 @@ else
 fi
 mkdir -p "$root/build/sim"
 
-MSYS_NO_PATHCONV=1 docker run --rm -v "$mount:/work" -w /work --entrypoint sh "$image" -c "
+MSYS_NO_PATHCONV=1 docker run --rm -e SIM_TRACK -v "$mount:/work" -w /work --entrypoint sh "$image" -c "
     verilator --cc --exe --build -O3 --timescale 1ns/1ps -Wall -Wno-UNUSEDSIGNAL -Wno-DECLFILENAME \
         $defines --Mdir build/sim/$obj -f sim/$tb/files.f sim/$tb/tb.cpp \
         > build/sim/$obj.build.log 2>&1 || { cat build/sim/$obj.build.log; exit 1; }

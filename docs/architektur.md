@@ -69,10 +69,11 @@ braucht. 33 Dateien, eine mehr als die 32 Slots: offen, z. B. zwei Dateien in ei
 ## Belegung
 
 Gemessen am 2026-10-27 (Quartus-Build mit Blitter und Ecken auf ganzen Pixeln, Timing hält
-bei 74,25 MHz: Setup +0,40 ns, Hold +0,01 ns): 14.573 von 18.480 ALMs (79 %), 254 von 308
-M10K (82 %), 31 von 66 DSP (47 %). Geschätzt ist nur, was noch fehlt.
+bei 74,25 MHz: Setup +0,85 ns, Hold +0,12 ns): 14.819 von 18.480 ALMs (80 %), 254 von 308
+M10K (82 %), 31 von 66 DSP (47 %). Von Build zu Build schwankt die Logik um einige hundert
+ALMs (die Platzierung packt verschieden dicht). Geschätzt ist nur, was noch fehlt.
 
-![Platzbudget im FPGA: Logik heute 79 %, mit Geplantem 86–90 %; Block-RAM heute 82 %, mit Geplantem 89–90 %; DSP heute 47 %, mit Geplantem 48–52 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik heute 80 %, mit Geplantem 87–92 %; Block-RAM heute 82 %, mit Geplantem 89–90 %; DSP heute 47 %, mit Geplantem 48–52 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py`: die gemessenen Zeilen aus dem Fitter-Report
 (`core/src/fpga/output_files/ap_core.fit.rpt`, Tabelle „Resource Utilization by Entity“), die
@@ -81,30 +82,30 @@ nachziehen.
 
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
-| Analogue-Rahmen (Bridge, PLLs, Pads) | 474 | 2 | 0 |
-| Framebuffer ×2 + Video | 139 | 130 | 0 |
-| VexRiscv + 2× 8 KB Cache | 1.350 | 19 | 4 |
-| FPU (RV32F) | 1.504 | 5 | 4 |
+| Analogue-Rahmen (Bridge, PLLs, Pads) | 485 | 2 | 0 |
+| Framebuffer ×2 + Video | 138 | 130 | 0 |
+| VexRiscv + 2× 8 KB Cache | 1.398 | 19 | 4 |
+| FPU (RV32F) | 1.520 | 5 | 4 |
 | CFU (16.16-Multiplikation) | 9 | – | 3 |
 | Boot-RAM 32 KB + Protokoll | – | 36 | – |
-| Geometrie-Einheit | 1.853 | 18 | 3 |
-| Clipper | 2.812 | 6 | 2 |
-| Setup-Einheit | 2.937 | 4 | 4 |
-| Rasterizer | 1.598 | – | 7 |
-| Texturen: Pipeline + Cache | 690 | 30 | 4 |
-| Blitter (HUD) | 394 | 2 | – |
-| SDRAM-Controller + Ports | 324 | 2 | – |
-| Bus, Register, Arbiter | 489 | – | – |
-| **gebaut** | **14.573 (79 %)** | **254 (82 %)** | **31 (47 %)** |
+| Geometrie-Einheit | 1.836 | 18 | 3 |
+| Clipper | 2.827 | 6 | 2 |
+| Setup-Einheit | 2.921 | 4 | 4 |
+| Rasterizer | 1.595 | – | 7 |
+| Texturen: Pipeline + Cache | 866 | 30 | 4 |
+| Blitter (HUD) | 400 | 2 | – |
+| SDRAM-Controller + Ports | 338 | 2 | – |
+| Bus, Register, Arbiter | 486 | – | – |
+| **gebaut** | **14.819 (80 %)** | **254 (82 %)** | **31 (47 %)** |
 | geplant: Glas/Schatten (`MAPn.SMG`, 64 × 256 Byte) | 150–400 | 16 | – |
 | geplant: JTOPL (OPL2) | 800–1.200 | 3–5 | 0–1 |
 | geplant: PCM-Mixer | 300–500 | 2 | 1–2 |
-| **mit Geplantem** | **15.823–16.673 (86–90 %)** | **275–277 (89–90 %)** | **32–34 (48–52 %)** |
+| **mit Geplantem** | **16.069–16.919 (87–92 %)** | **275–277 (89–90 %)** | **32–34 (48–52 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es
 und probiert weitere Fitter-Seeds), nicht als Instabilität auf dem Pocket, solange das Timing
-hält. Die größten Posten sind Setup-Einheit und Clipper (zusammen 5.749 ALMs): je nur ein
+hält. Die größten Posten sind Setup-Einheit und Clipper (zusammen 5.748 ALMs): je nur ein
 Multiplizierer und eine Kehrwerttabelle, aber breite Register (eine Ecke 144 Bit, der Clipper
 nimmt vier auf einmal) und Auswahlschaltungen vor dem Multiplizierer. Dort ist am meisten zu
 holen, falls Audio nicht mehr passt. Einen Tiefenpuffer gibt es nicht, siehe „Entschieden“.

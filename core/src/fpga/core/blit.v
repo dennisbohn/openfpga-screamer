@@ -94,10 +94,16 @@ end
     reg         sxp, syp;                       // the line goes right, down
     reg  [8:0]  cx0, cy0, cx1, cy1;
     wire signed [12:0] e2 = err <<< 1;
+    // sign-extended into signed wires: compared as a concatenation they would be unsigned
+    wire signed [12:0] sdx = {{2{ldx[10]}}, ldx}, sdy = {{2{ldy[10]}}, ldy};
     wire        in_clip = lx >= $signed({2'd0, cx0}) && lx < $signed({2'd0, cx1}) &&
                           ly >= $signed({2'd0, cy0}) && ly < $signed({2'd0, cy1});
 
     assign busy = state != B_IDLE || f_count != 10'd0 || fb_wr || mem_valid;
+`ifdef BLIT_TRACE
+    reg  [31:0] trace_t = 0;
+always @(posedge clk) trace_t <= busy ? trace_t + 1'b1 : 32'd0;
+`endif
 
     // a pixel into the framebuffer: word y * 80 + x / 4
     task plot(input signed [10:0] x, input signed [10:0] y, input [7:0] v);
@@ -209,16 +215,21 @@ always @(posedge clk) begin
         if(in_clip) plot(lx, ly, colour);
         if(lx == ex && ly == ey) state <= B_IDLE;
         else begin
-            if(e2 >= {{2{ldy[10]}}, ldy}) lx <= sxp ? lx + 11'sd1 : lx - 11'sd1;
-            if(e2 <= {{2{ldx[10]}}, ldx}) ly <= syp ? ly + 11'sd1 : ly - 11'sd1;
-            err <= err + (e2 >= {{2{ldy[10]}}, ldy} ? {{2{ldy[10]}}, ldy} : 13'sd0)
-                       + (e2 <= {{2{ldx[10]}}, ldx} ? {{2{ldx[10]}}, ldx} : 13'sd0);
+            if(e2 >= sdy) lx <= sxp ? lx + 11'sd1 : lx - 11'sd1;
+            if(e2 <= sdx) ly <= syp ? ly + 11'sd1 : ly - 11'sd1;
+            err <= err + (e2 >= sdy ? sdy : 13'sd0) + (e2 <= sdx ? sdx : 13'sd0);
         end
     end
 
     default: state <= B_IDLE;
     endcase
 
+`ifdef BLIT_TRACE
+    if(state == B_FETCH && fk == 3'd4)
+        $display("blit: command %08x %08x %08x %08x", c0, c1, c2, f_q);
+    if(busy && trace_t[16:0] == 0)
+        $display("blit: state %0d, words %0d, go %0d, mem %0d/%0d", state, f_count, go, mem_valid, mem_ready);
+`endif
     if(reset) begin
         state <= B_IDLE;
         f_wp <= 0;
