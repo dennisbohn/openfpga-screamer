@@ -173,8 +173,15 @@ kann (`soc.v` bindet es unverändert ein):
   Ports können im selben Takt annehmen.
 - **Bridge-Schreibpuffer** (4 Einträge): Der Pocket liefert höchstens ein Wort alle 88 Takte;
   ein Überlauf wird als Fehlerbit festgehalten.
+- **Zeilen-Port** für Rasterizer (Texturen), Geometrie-Einheit (Meshes) und Blitter (Bilder),
+  in `soc.v` zwischen ihnen geteilt (Rasterizer vor Geometrie vor Blitter): ein Befehlsregister
+  und bis zu **zwei Zeilen im Controller**. Der Controller beginnt die nächste Zeile, während
+  die Wörter der vorigen noch kommen; dicht folgende Zeilen kommen so im Abstand der 8 READs
+  statt der ganzen Latenz. Die Wörter kommen in der Reihenfolge der Aufträge zurück, eine
+  FIFO mit zwei Einträgen in `soc.v` merkt sich, wem sie gehören (2026-10-28: am Start mit allen
+  Autos wartet der Rasterizer 188.000 statt 299.000 Takte auf Texturen).
 - An jeder Auftragsgrenze wählt der Arbiter: Bridge-Puffer vor dBus-Register vor
-  iBus-Register.
+  Zeilen-Port vor iBus-Register.
 - **Reihenfolge-Regel:** Schreibzugriffe einer Quelle laufen in der Reihenfolge ihrer Annahme.
   Jeder Lesezugriff liefert Daten, die alle vorher angenommenen Schreibzugriffe enthalten; ein
   iBus-Lesen darf auch spätere schon enthalten. (Ein Lesen nach einem Schreiben im selben Port

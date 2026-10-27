@@ -412,6 +412,9 @@ end
     endfunction
 
     reg  signed [9:0] xr, yr;                   // reference pixel
+`ifdef GEOM_STATS
+    integer     st_cl = 0, st_cu = 0, st_tu = 0, st_rs = 0, st_cw = 0, st_tri = 0;
+`endif
 
     // the operands at the multiplier's widths
     wire signed [17:0] bx1 = {dx1[16], dx1}, by1 = {dy1[16], dy1}, bx2 = {dx2[16], dx2}, by2 = {dy2[16], dy2};
@@ -433,6 +436,21 @@ always @(posedge clk) begin
 
     if(!cl_idle || cu_busy || tu_busy) busy_clocks <= busy_clocks + 1'b1;
     if(wr && wr_addr == 4'd11) busy_clocks <= 0;
+`ifdef GEOM_STATS
+    // (the simulation only) where the clocks go, printed when the CPU clears busy_clocks
+    if(wr && wr_addr == 4'd11) begin
+        $display("su: busy %0d, clipper %0d, corners %0d, triangles %0d, a triangle waiting for the rasterizer %0d, a corner waiting for the triangle part %0d, triangles out %0d",
+                 busy_clocks, st_cl, st_cu, st_tu, st_rs, st_cw, st_tri);
+        st_cl <= 0; st_cu <= 0; st_tu <= 0; st_rs <= 0; st_cw <= 0; st_tri <= 0;
+    end else begin
+        if(!cl_idle) st_cl <= st_cl + 1;
+        if(cu_busy) st_cu <= st_cu + 1;
+        if(tu_busy) st_tu <= st_tu + 1;
+        if(go && !rs_accept) st_rs <= st_rs + 1;
+        if(cu_done && !cu_take) st_cw <= st_cw + 1;
+        if(go && rs_accept) st_tri <= st_tri + 1;
+    end
+`endif
 
     // a corner from the corner part
     if(cu_take) begin

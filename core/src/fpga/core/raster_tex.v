@@ -16,8 +16,9 @@
 // address[13:5], tag = address[25:14]). The tags are checked at T, ahead of the queue: a
 // miss writes the new tag at once and asks for the line (up to 16 lines under way, read
 // from the SDRAM one after the other into a line buffer); the pixel goes into the queue
-// marked. The back end takes the pixels in order: a marked one waits until its line is
-// in, writes it into the cache and takes its texel from the line buffer. So a line is
+// marked; two lines may be asked for at once (the line port starts the second while the
+// words of the first come in). The back end takes the pixels in order: a marked one waits
+// until its line is in, writes it into the cache and takes its texel from the line buffer. So a line is
 // replaced only after every pixel before it has used the old one, and the loading runs
 // while the pixels before it are drawn. Invalidated after a reset and on request (512
 // clocks).
@@ -149,15 +150,14 @@ end
 //
     reg  [20:0] s_addr [0:15];
     reg  [15:0] s_ready = 0;
-    reg  [4:0]  s_alloc = 0, s_fetch = 0, s_use = 0;    // a wrap bit over the slot number
+    reg  [4:0]  s_alloc = 0, s_req = 0, s_fetch = 0, s_use = 0;    // a wrap bit over the slot number
     wire [4:0]  s_used = s_alloc - s_use;
     wire        s_free = s_used != 5'd16;
     wire [3:0]  s_ru = s_use[3:0];
-    reg  [2:0]  fill_cnt;
-    reg         m_busy = 0;                     // a line read under way
-    reg         f_last = 0;                     // its last word came in the clock before
+    reg  [2:0]  fill_cnt = 0;
+    reg         f_last = 0;                     // a line's last word came in the clock before
     reg  [3:0]  f_slot;
-    wire        f_we = m_busy && !mem_valid && mem_rsp_valid;
+    wire        f_we = mem_rsp_valid && s_fetch != s_req;      // words of the oldest line asked for
     wire [7:0]  f_lane = 8'd1 << fill_cnt;
 
     genvar      gi;
@@ -287,24 +287,24 @@ always @(posedge clk) begin
     end
     q_ok <= !(t_commit && pq_wp[5:0] == pq_ra);
 
-    // memory: the slots' lines, one after the other; a slot is ready a clock after its last
-    // word, when line_q can show it
+    // memory: the slots' lines asked for in order, up to two under way; a slot is ready a clock
+    // after its last word, when line_q can show it
     f_last <= 0;
     if(f_last) s_ready[f_slot] <= 1;
-    if(!m_busy && s_fetch != s_alloc) begin
+    if(!mem_valid && s_req != s_alloc && s_req - s_fetch < 5'd2) begin
         mem_valid <= 1;
-        mem_addr <= s_addr[s_fetch[3:0]];
-        fill_cnt <= 0;
-        m_busy <= 1;
+        mem_addr <= s_addr[s_req[3:0]];
     end
-    if(mem_valid && mem_ready) mem_valid <= 0;
+    if(mem_valid && mem_ready) begin
+        mem_valid <= 0;
+        s_req <= s_req + 1'b1;
+    end
     if(f_we) begin
         fill_cnt <= fill_cnt + 1'b1;
         if(fill_cnt == 3'd7) begin
             f_last <= 1;
             f_slot <= s_fetch[3:0];
             s_fetch <= s_fetch + 1'b1;
-            m_busy <= 0;
         end
     end
 
@@ -346,9 +346,9 @@ always @(posedge clk) begin
         v1 <= 0; v2 <= 0; v3 <= 0; v4 <= 0; v5 <= 0; v6 <= 0; v7 <= 0; v8 <= 0; v9 <= 0;
         va <= 0; vt <= 0; b2 <= 0;
         pq_wp <= 0; pq_rp <= 0; q_ok <= 0;
-        s_alloc <= 0; s_fetch <= 0; s_use <= 0; s_ready <= 0; lq_ok <= 0;
+        s_alloc <= 0; s_req <= 0; s_fetch <= 0; s_use <= 0; s_ready <= 0; lq_ok <= 0;
         mem_valid <= 0;
-        m_busy <= 0;
+        fill_cnt <= 0;
         f_last <= 0;
     end
 end

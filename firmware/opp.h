@@ -17,8 +17,9 @@ void opp_init(int player_row);
 /* One step of 1/50 s, after the player's (car_step): held until the green light */
 void opp_step(void);
 
-/* The opponents seen from cam through clip as objects for track_draw_cam() (up to max) */
-int opp_objects(const struct rs_clip *clip, const struct track_cam *cam, struct track_object *objs, int max);
+/* The opponents as objects for track_draw_cam() (up to max), their blocks made when they come
+   up in the drawing */
+int opp_objects(struct track_object *objs, int max);
 
 /* How many there are; the player's place in the running order (1 = leading) */
 int opp_count(void);

@@ -88,6 +88,10 @@ static float sin_q[513];                /* sin(2 pi i / 2048) for i = 0..512 */
 static float under_n[3];                /* track_under's face: its normal in world axes (x, y, up) */
 static float far_z = 43808.0f;          /* the far plane of the DETAIL level */
 static float radius[MAX_OBJ];           /* of each mesh around its origin */
+/* the placements in groups of 16 as they lie in the file (cell by cell, so close together),
+   each group's box round their places: a group out of reach is passed over at once */
+#define GROUP       16
+static struct { float x0, y0, x1, y1; } groups[MAX_PIECES / GROUP + 1];
 
 int track_mode;
 void (*track_hw_piece)(const struct gu_piece *p);
@@ -225,6 +229,15 @@ int track_init(void)
         radius[k] = __builtin_sqrtf(r2);
         int32_t cl = rd32(obj + 0x32C);                 /* 0x8a8d7 */
         class_key[k] = cl == 3 ? -6000 : cl == 1 ? -1500 : cl == 2 ? -800 : cl == 4 ? -200 : 0;
+    }
+    for(int i = 0; i < npieces; i++) {
+        float x = (float)pieces[i].x, y = (float)pieces[i].y;
+        int g = i / GROUP;
+        if(i % GROUP == 0) { groups[g].x0 = groups[g].x1 = x; groups[g].y0 = groups[g].y1 = y; }
+        if(x < groups[g].x0) groups[g].x0 = x;
+        if(x > groups[g].x1) groups[g].x1 = x;
+        if(y < groups[g].y0) groups[g].y0 = y;
+        if(y > groups[g].y1) groups[g].y1 = y;
     }
     return npieces;
 }
@@ -472,22 +485,6 @@ static void cam_frame(const struct track_cam *cam, float f[3], float r[3], float
     u[0] = u0[0] * cr - r0[0] * sr; u[1] = u0[1] * cr - r0[1] * sr; u[2] = u0[2] * cr;
 }
 
-int track_in_view(const struct rs_clip *clip, const struct track_cam *cam, float x, float y, float h, float rad)
-{
-    float f[3], r[3], u[3];
-    cam_frame(cam, f, r, u);
-    const float half_w = (float)(clip->x1 - clip->x0) / 2.0f / FOCAL;
-    const float up = (float)(clip->y1 - clip->y0) * EYE_LINE / FOCAL;
-    const float down = (float)(clip->y1 - clip->y0) * (1.0f - EYE_LINE) / FOCAL;
-    float dx = x - cam->x, dy = y - cam->y, dh = h - cam->h;
-    float vf = dx * f[0] + dy * f[1] + dh * f[2], vr = dx * r[0] + dy * r[1] + dh * r[2];
-    float vu = dx * u[0] + dy * u[1] + dh * u[2];
-    if(vf + rad < NEAR || vf - rad > far_z) return 0;
-    if(vr - rad > half_w * (vf + rad) || vr + rad < -half_w * (vf + rad)) return 0;
-    if(vu - rad > up * (vf + rad) || vu + rad < -down * (vf + rad)) return 0;
-    return 1;
-}
-
 void track_detail(int level)
 {
     far_z = far_depth[level < 0 ? 0 : level > 2 ? 2 : level];
@@ -541,12 +538,12 @@ static void block_piece(const float c[3], const float f[3], const float r[3], co
 }
 
 /* The view from the point c along forward f, with right r and up u (unit vectors) */
-static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const float c[3], const float f[3],
-                 const float r[3], const float u[3], const struct track_object *objs, int nobj,
+static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam, const float c[3],
+                 const float f[3], const float r[3], const float u[3], struct track_object *objs, int nobj,
                  struct track_stats *st)
 {
     uint32_t t_start = now();
-    st->pieces = st->faces = st->triangles = st->see_through = st->vertices = 0;
+    st->pieces = st->faces = st->triangles = st->see_through = st->vertices = st->objects = 0;
     const float cx = c[0], cy = c[1], ch = c[2];
     const float fx = f[0], fy = f[1], fh = f[2], rx = r[0], ry = r[1], rh = r[2];
     const float ux = u[0], uy = u[1], uh = u[2];
@@ -563,6 +560,15 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const float c
     /* the game's key (0x8a7b0): -(sqrt(dist^2 >> 2), rounded, >> 2) */
 #define KEY(d2) (-((int32_t)lrintf(sqrtf((d2) * 0.25f)) >> 2))
     for(int i = 0; i < npieces; i++) {
+        if(i % GROUP == 0) {                        /* the whole group out of reach (in the plane) */
+            int g = i / GROUP;
+            float gx = cx < groups[g].x0 ? groups[g].x0 - cx : cx > groups[g].x1 ? cx - groups[g].x1 : 0.0f;
+            float gy = cy < groups[g].y0 ? groups[g].y0 - cy : cy > groups[g].y1 ? cy - groups[g].y1 : 0.0f;
+            if(gx * gx + gy * gy >= REACH2) {
+                i += GROUP - 1;
+                continue;
+            }
+        }
         const struct piece *pc = &pieces[i];
         if(pc->obj < 0 || pc->obj >= unr_count) continue;
         float dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch, rad = radius[pc->obj];
@@ -590,6 +596,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const float c
         vis[nv].k = (KEY(d2) + 800) * 65536 + npieces + k;     /* 0x8a8c3: an object counts nearer */
         vis[nv].i = npieces + k;
         nv++;
+        st->objects++;
     }
     st->nearest = nearest < 4e18f ? (uint32_t)__builtin_sqrtf(nearest) : 0xFFFFFFFFu;
     for(int gap = nv / 2; gap > 0; gap /= 2)    /* Shell sort by key and order: far first */
@@ -608,7 +615,8 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const float c
     uint32_t t_out = 0;
     for(int n = 0; n < nv; n++) {
         if(vis[n].i >= npieces) {                   /* an object: its blocks as they come */
-            const struct track_object *ob = &objs[vis[n].i - npieces];
+            struct track_object *ob = &objs[vis[n].i - npieces];
+            if(ob->make) ob->make(ob->id, cam, ob);
             for(int b = 0; b < ob->n; b++) {
                 struct gu_piece g;
                 block_piece(c, f, r, u, ob->b[b].m, ob->b[b].o, &g);
@@ -660,12 +668,12 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const float c
 }
 
 void track_draw_cam(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam,
-                    const struct track_object *objs, int nobj, struct track_stats *st)
+                    struct track_object *objs, int nobj, struct track_stats *st)
 {
     const float c[3] = { cam->x, cam->y, cam->h };
     float f[3], r[3], u[3];
     cam_frame(cam, f, r, u);
-    draw(fb, clip, c, f, r, u, objs, nobj, st);
+    draw(fb, clip, cam, c, f, r, u, objs, nobj, st);
 }
 
 void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, struct track_stats *st)
@@ -685,5 +693,5 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
     rx /= l; ry /= l;
     const float c[3] = { cx, cy, ch }, f[3] = { fx, fy, fh }, r[3] = { rx, ry, 0.0f };
     const float u[3] = { ry * fh, -rx * fh, rx * fy - ry * fx };     /* up = right x forward */
-    draw(fb, clip, c, f, r, u, 0, 0, st);
+    draw(fb, clip, 0, c, f, r, u, 0, 0, st);
 }

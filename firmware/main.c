@@ -288,7 +288,7 @@ static void hw_blit(const struct blit_list *l)
 
 /* Once per run: the frame just drawn against the C models of the setup unit and the
    rasterizer, drawn into the SDRAM; the track area compared pixel by pixel */
-static void track_check(volatile uint8_t *fb, const struct track_cam *cam, const struct track_object *objs,
+static void track_check(volatile uint8_t *fb, const struct track_cam *cam, struct track_object *objs,
                         int nobj, const struct blit_list *bk, const struct blit_list *bl)
 {
     volatile uint8_t *m = CHECK_BUF;
@@ -336,8 +336,9 @@ static void __attribute__((noreturn)) run_track(void)
     track_hw_piece = hw_piece;
     GU_MLB = (uint32_t)((uintptr_t)track_mlb() - SDRAM_BASE);
     GU_INVAL = 1;
+    uint32_t frame_cycles = 0;                  /* the last frame's, from the swap to the next */
     for (;;) {
-        uint32_t st = wait_swap_done(), keys = IN_KEY;
+        uint32_t st = wait_swap_done(), keys = IN_KEY, t_frame = rdcycle();
         frames_shown = drawn;
         if (drawn == 3) {
             SYS_SIM = SIM_DONE | results;
@@ -366,8 +367,7 @@ static void __attribute__((noreturn)) run_track(void)
         struct track_object objs[1 + OPP_MAX];
         car_camera(&cam);
         int nobj = car_object(&cam, &objs[0]);
-        int nopp_seen = opp_objects(&track_clip, &cam, objs + nobj, OPP_MAX);
-        nobj += nopp_seen;
+        nobj += opp_objects(objs + nobj, OPP_MAX);
 
         /* the backdrop (the game's 0x83a68): the blitter copies it while the CPU culls the
            scene; the first piece for the geometry unit waits until it is done (hw_piece) */
@@ -437,11 +437,10 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec(car_marker());
             dlog_str(", place ");
             dlog_dec(opp_player_rank());
-            dlog_str(" (");
-            dlog_dec(nopp_seen);
             dlog_str(" of ");
-            dlog_dec(opp_count());
-            dlog_str(" seen)");
+            dlog_dec(opp_count() + 1);
+            dlog_str(", cars in view ");
+            dlog_dec((int32_t)ts.objects);
             dlog_str(" slip x100 ");
             dlog_dec((int32_t)(cs->surface * 100.0f));
             dlog_str(", steps ");
@@ -476,6 +475,8 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_char(')');
             dlog_str(", fps ");
             dlog_dec((int32_t)fps);
+            dlog_str(", frame ");
+            dlog_dec((int32_t)frame_cycles);
             if (drawn == 2) {                   /* the log has 4 KB: once */
                 dlog_str(", camera ");
                 dlog_dec(ts.cam[0]);
@@ -508,6 +509,7 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)r_starved);
             dlog_str("\n");
         }
+        frame_cycles = rdcycle() - t_frame;
         VID_SWAP = 1;
         log_head("frames drawn: ", ++drawn);
     }

@@ -10,7 +10,8 @@
 # SIM_TRACK gives the soc testbench a track as data slot 3, so the firmware drives the race
 # (the 3D units, the blitter) instead of the texture demo; that takes about 200 frames:
 #   SIM_TRACK=build/assets/screamer/Chainy.Screamer/track1.bin tools/sim.sh soc ... 220
-# (blit.v prints its commands with SIM_DEFINES="-DBLIT_TRACE").
+# (blit.v prints its commands with SIM_DEFINES="-DBLIT_TRACE"; with "-DGEOM_STATS" geom.v and
+# setup.v print where their clocks went, each frame).
 set -e
 root=$(cd "$(dirname "$0")/.." && pwd)
 tb=$1

@@ -112,6 +112,7 @@ struct track_stats {
     /* CPU cycles (0 on the PC): pieces in view and sorted, each piece's place in view
        space, handing the pieces on (the hook or the C models) */
     uint32_t cyc_cull, cyc_piece, cyc_out;
+    uint32_t objects;                           /* objects in view */
 };
 
 /* Where pieces go: the C models of the geometry unit, the setup unit and the rasterizer
@@ -131,18 +132,24 @@ void track_view(const struct rs_clip *clip, struct su_view *v);
    and roll (+ tips the camera's right-hand side up) */
 struct track_cam { float x, y, h, yaw, pitch, roll; };
 
-/* whether a ball (x, y, h, radius) can be seen from cam through clip (as track_draw_cam culls) */
-int track_in_view(const struct rs_clip *clip, const struct track_cam *cam, float x, float y, float h, float rad);
-
 /* the blitter's commands for the backdrop behind the view clip, seen from cam (the game's
    0x83a68; track.c) */
 void track_backdrop_blit(struct blit_list *l, const struct rs_clip *clip, const struct track_cam *cam);
 
 /* An object besides the track's pieces (a car): its blocks in the order they are drawn, each
    with its own place: world = o + m . local (m rows: world x, y, height; columns: the block's
-   x, y up, z), and its texture phase (geom.h) */
+   x, y up, z), and its texture phase (geom.h). With make, the blocks are made only when the
+   object comes up in the drawing (make(id, cam, object) fills n and b): the CPU makes a near
+   car while the geometry unit works on the scenery further off. */
 struct track_block { const uint8_t *file, *blk; float m[9], o[3]; uint32_t phase; };
-struct track_object { float x, y, h, radius; int n; const struct track_block *b; };
+struct track_cam;
+struct track_object {
+    float x, y, h, radius;
+    int n;
+    const struct track_block *b;
+    int (*make)(int id, const struct track_cam *cam, struct track_object *o);
+    int id;
+};
 
 /* The view from the camera, clipped to clip, with the objects sorted in among the pieces as
    the game does it (0x83164, 0x8a6a8, 0x8a7b0, 0x832c0): the key is -(sqrt(dist^2 >> 2)
@@ -152,7 +159,7 @@ struct track_object { float x, y, h, radius; int n; const struct track_block *b;
    first; on a tie in the order the game puts them in: the pieces as in the file (each cell's
    scenery before its road), the objects after them. */
 void track_draw_cam(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam,
-                    const struct track_object *objs, int nobj, struct track_stats *st);
+                    struct track_object *objs, int nobj, struct track_stats *st);
 
 /* The view from path position pos (path points, 8 fraction bits), clipped to clip */
 void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, struct track_stats *st);

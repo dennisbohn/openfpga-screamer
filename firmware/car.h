@@ -24,8 +24,8 @@ void car_step(uint32_t keys, uint32_t keys_before);
 void car_view(int view);
 void car_camera(struct track_cam *cam);
 
-/* The car as an object for track_draw_cam(), its blocks in the game's order for the camera;
-   0 when the view is from inside it */
+/* The car as an object for track_draw_cam(), its blocks made in the game's order for the
+   camera when it comes up in the drawing; 0 when the view is from inside it */
 int car_object(const struct track_cam *cam, struct track_object *obj);
 
 /* Any car as an object: model AUTOnn (car_model_index of its CARS.DTR row) drawn at place

@@ -285,15 +285,37 @@ end
 
     // the rasterizer, the geometry unit and the blitter share sdram_port's line port, one line
     // at a time; the rasterizer first (its pipeline waits for the line), then the geometry unit
-    wire        lp_valid = rs_mem_valid || gu_mem_valid || bl_mem_valid, lp_ready, lp_rsp_valid;
-    reg  [1:0]  lp_owner = 0;                   // the line in flight: 0 rasterizer, 1 geometry, 2 blitter
+    wire        lp_valid = rs_mem_valid || gu_mem_valid || bl_mem_valid, lp_ready, lp_rsp_valid, lp_rsp_last;
+    // whose the lines in flight are (0 rasterizer, 1 geometry, 2 blitter), up to two, in the
+    // order they were asked for: the words come back in that order
+    reg  [1:0]  lp_own0 = 0, lp_own1 = 0;
+    reg  [1:0]  lp_n = 0;
+    wire [1:0]  lp_owner = lp_own0;
+    wire [1:0]  lp_new = rs_mem_valid ? 2'd0 : gu_mem_valid ? 2'd1 : 2'd2;
+    wire        lp_push = lp_ready && lp_valid, lp_pop = lp_rsp_valid && lp_rsp_last;
     assign rs_mem_ready = lp_ready && rs_mem_valid;
     assign gu_mem_ready = lp_ready && !rs_mem_valid && gu_mem_valid;
     assign bl_mem_ready = lp_ready && !rs_mem_valid && !gu_mem_valid && bl_mem_valid;
     assign rs_mem_rsp_valid = lp_rsp_valid && lp_owner == 2'd0;
     assign gu_mem_rsp_valid = lp_rsp_valid && lp_owner == 2'd1;
     assign bl_mem_rsp_valid = lp_rsp_valid && lp_owner == 2'd2;
-always @(posedge clk) if(lp_ready && lp_valid) lp_owner <= rs_mem_valid ? 2'd0 : gu_mem_valid ? 2'd1 : 2'd2;
+always @(posedge clk) begin
+    if(lp_push && !lp_pop) begin
+        if(lp_n == 2'd0) lp_own0 <= lp_new;
+        else lp_own1 <= lp_new;
+        lp_n <= lp_n + 1'b1;
+    end else if(lp_pop && !lp_push) begin
+        lp_own0 <= lp_own1;
+        lp_n <= lp_n - 1'b1;
+    end else if(lp_pop && lp_push) begin
+        if(lp_n == 2'd1) lp_own0 <= lp_new;
+        else begin
+            lp_own0 <= lp_own1;
+            lp_own1 <= lp_new;
+        end
+    end
+    if(cpu_reset) lp_n <= 0;
+end
 always @(posedge clk)
     if(rs_wr && d_addr[6:2] == 5'd21) rs_starved <= 0;
     else if(!rs_busy && (su_busy || gu_busy)) rs_starved <= rs_starved + 1'b1;
@@ -322,6 +344,7 @@ sdram_port sdp (
     .rs_cmd_ready       ( lp_ready ),
     .rs_cmd_addr        ( rs_mem_valid ? rs_mem_addr : gu_mem_valid ? gu_mem_addr : bl_mem_addr ),
     .rs_rsp_valid       ( lp_rsp_valid ),
+    .rs_rsp_last        ( lp_rsp_last ),
     .rs_rsp_data        ( rs_mem_rsp_data ),
     .br_wr              ( bridge_wr && bridge_sdram ),
     .br_addr            ( bridge_addr[25:2] ),

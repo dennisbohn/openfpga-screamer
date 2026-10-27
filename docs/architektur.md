@@ -5,8 +5,9 @@ Stand: 2026-10-27. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 au
 CPU (VexRiscv RV32IMF mit FPU und CFU, `docs/soc.md`); Geometrie-Einheit, Clipper,
 Setup-Einheit und Rasterizer mit vorausladendem Textur-Cache; Strecke 1 mit dem Auto des
 Spielers, fahrbar, mit dem HUD aus dem Blitter, der Füllregel des Originals (keine Lücken
-an Fugen) und dem Hintergrundbild `MAPn.BCK`. Gebaut, Test auf dem Pocket steht aus: neun
-Gegner (Startaufstellung, ihre Linien, Platzierung), noch ohne Berührung. Belegung siehe
+an Fugen), dem Hintergrundbild `MAPn.BCK` und neun Gegnern (Startaufstellung, ihre Linien,
+Platzierung; noch ohne Berührung). Gebaut, Test auf dem Pocket steht aus: die schnellere
+Grafik-Kette (50 fps auch am Start mit allen zehn Autos). Belegung siehe
 „Belegung“; geschätzt ist nur noch, was fehlt (Audio, Glas/Schatten).
 
 ## Hardware des Pocket (Haupt-FPGA)
@@ -69,12 +70,13 @@ braucht. 33 Dateien, eine mehr als die 32 Slots: offen, z. B. zwei Dateien in ei
 
 ## Belegung
 
-Gemessen am 2026-10-27 (Quartus-Build mit dem Hintergrundbild im Blitter, Timing hält bei
-74,25 MHz: Setup +0,86 ns, Hold +0,09 ns): 14.980 von 18.480 ALMs (81 %), 254 von 308
-M10K (82 %), 31 von 66 DSP (47 %). Von Build zu Build schwankt die Logik um einige hundert
+Gemessen am 2026-10-28 (Quartus-Build mit der schnelleren Grafik-Kette, Timing hält bei
+74,25 MHz: Setup +0,25 ns, Hold +0,05 ns; die knappsten Pfade liegen im SDRAM-Controller vor
+den Adress-Pins): 15.292 von 18.480 ALMs (83 %), 253 von 308 M10K (82 %), 35 von 66 DSP
+(53 %). Von Build zu Build schwankt die Logik um einige hundert
 ALMs (die Platzierung packt verschieden dicht). Geschätzt ist nur, was noch fehlt.
 
-![Platzbudget im FPGA: Logik heute 81 %, mit Geplantem 88–92 %; Block-RAM heute 82 %, mit Geplantem 89–90 %; DSP heute 47 %, mit Geplantem 48–52 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik heute 83 %, mit Geplantem 90–94 %; Block-RAM heute 82 %, mit Geplantem 89–90 %; DSP heute 53 %, mit Geplantem 55–58 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py`: die gemessenen Zeilen aus dem Fitter-Report
 (`core/src/fpga/output_files/ap_core.fit.rpt`, Tabelle „Resource Utilization by Entity“), die
@@ -83,30 +85,30 @@ nachziehen.
 
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
-| Analogue-Rahmen (Bridge, PLLs, Pads) | 468 | 2 | 0 |
-| Framebuffer ×2 + Video | 139 | 130 | 0 |
-| VexRiscv + 2× 8 KB Cache | 1.387 | 19 | 4 |
-| FPU (RV32F) | 1.513 | 5 | 4 |
+| Analogue-Rahmen (Bridge, PLLs, Pads) | 476 | 2 | 0 |
+| Framebuffer ×2 + Video | 143 | 130 | 0 |
+| VexRiscv + 2× 8 KB Cache | 1.393 | 19 | 4 |
+| FPU (RV32F) | 1.522 | 5 | 4 |
 | CFU (16.16-Multiplikation) | 9 | – | 3 |
 | Boot-RAM 32 KB + Protokoll | – | 36 | – |
-| Geometrie-Einheit | 1.687 | 18 | 3 |
-| Clipper | 2.811 | 6 | 2 |
-| Setup-Einheit | 2.941 | 4 | 4 |
-| Rasterizer | 1.810 | – | 7 |
-| Texturen: Pipeline + Cache | 889 | 30 | 4 |
+| Geometrie-Einheit | 1.924 | 17 | 7 |
+| Clipper | 2.818 | 6 | 2 |
+| Setup-Einheit | 2.925 | 4 | 4 |
+| Rasterizer | 1.855 | – | 7 |
+| Texturen: Pipeline + Cache | 882 | 30 | 4 |
 | Blitter (Hintergrund, HUD) | 510 | 2 | – |
-| SDRAM-Controller + Ports | 328 | 2 | – |
-| Bus, Register, Arbiter | 488 | – | – |
-| **gebaut** | **14.980 (81 %)** | **254 (82 %)** | **31 (47 %)** |
+| SDRAM-Controller + Ports | 321 | 2 | – |
+| Bus, Register, Arbiter | 514 | – | – |
+| **gebaut** | **15.292 (83 %)** | **253 (82 %)** | **35 (53 %)** |
 | geplant: Glas/Schatten (`MAPn.SMG`, 64 × 256 Byte) | 150–400 | 16 | – |
 | geplant: JTOPL (OPL2) | 800–1.200 | 3–5 | 0–1 |
 | geplant: PCM-Mixer | 300–500 | 2 | 1–2 |
-| **mit Geplantem** | **16.230–17.080 (88–92 %)** | **275–277 (89–90 %)** | **32–34 (48–52 %)** |
+| **mit Geplantem** | **16.542–17.392 (90–94 %)** | **274–276 (89–90 %)** | **36–38 (55–58 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es
 und probiert weitere Fitter-Seeds), nicht als Instabilität auf dem Pocket, solange das Timing
-hält. Die größten Posten sind Setup-Einheit und Clipper (zusammen 5.752 ALMs): je nur ein
+hält. Die größten Posten sind Setup-Einheit und Clipper (zusammen 5.743 ALMs): je nur ein
 Multiplizierer und eine Kehrwerttabelle, aber breite Register (eine Ecke 144 Bit, der Clipper
 nimmt vier auf einmal) und Auswahlschaltungen vor dem Multiplizierer. Dort ist am meisten zu
 holen, falls Audio nicht mehr passt. Einen Tiefenpuffer gibt es nicht, siehe „Entschieden“.
@@ -233,6 +235,25 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   liegen (die gespeicherten Winkel sind bis 2,5 Einheiten zu kurz), landen so meist auf
   demselben Pixel. Die Setup-Einheit und der Rasterizer schneiden deshalb die Ecken auf
   ganze Pixel ab, statt sie auf 1/16 Pixel zu runden.
+- **Die Grafik-Kette schneller** (2026-10-28, gemessen in der SoC-Simulation mit Strecke und
+  Zählern, `SIM_DEFINES="-DGEOM_STATS"`): Am Start mit allen zehn Autos im Bild (248 Bauteile,
+  2.473 Flächen) brauchte ein Bild rund 1,6 Mio. Takte, mehr als die 1,485 Mio. eines Bildes:
+  25 fps. Die Geometrie-Einheit war 1,15 Mio. Takte beschäftigt, davon 37 % mit Warten auf
+  Lesezugriffe, die auch als Cache-Treffer 5 Takte kosteten, und 23 % mit SDRAM-Fehltreffern;
+  der Rasterizer wartete 289.000 Takte auf Texturzeilen, die CPU 414.000 auf die Geometrie.
+  Jetzt: (1) ein Lesezugriff der Geometrie-Einheit legt die Adresse direkt an die RAMs des
+  Caches, der nächste Schritt nimmt den Wert (2 Takte bei einem Treffer, bei einem Fehltreffer
+  wartet nur dieser Schritt); zwei weitere Multiplizierer rechnen die drei Zeilen einer Ecke
+  zugleich (6 statt 12 Takte). (2) Der Zeilen-Port hat bis zu zwei Zeilen im SDRAM-Controller,
+  der Textur-Lader fragt zwei an (`docs/speicher.md`). (3) Die Firmware baut die Autos erst,
+  wenn sie in der Zeichenfolge dran sind (die nahen zuletzt, während die Geometrie-Einheit an
+  der fernen Kulisse arbeitet), und überspringt beim Culling Gruppen von 16 Bauteilen, deren
+  Umriss außer Reichweite liegt. Ergebnis: 996.000 Takte (67 %), die Geometrie-Einheit 812.000,
+  der Rasterizer wartet 193.000 Takte auf Texturen, die CPU 28.000 auf die Geometrie. Größere
+  Caches brächten wenig: eine Studie mit den Zugriffen des Startbilds (C-Modell) ergab für die
+  Geometrie 8.738 Fehltreffer mit 4 KB, 6.368 mit 16 KB; für Texturen 11.200 mit 16 KB, 10.261
+  mit 32 KB und mit 8 × 4 gekachelten Texturen sogar mehr (13.895): Die meisten sind die ersten
+  Zugriffe auf rund 360 KB Textur- und 280 KB Meshdaten je Bild.
 - **Die Gegner** (2026-10-27, nach OpenScreamer, dessen Adressen aus der EXE stammen; Notes
   Abschnitt 11): `MAPnOPP.SPL` hat zehn Splines, Gegner k fährt Spline k, der zehnte ist die
   Linie des Spielers; die Startknoten sind die Startaufstellung (zwei Spalten, der Spieler

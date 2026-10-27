@@ -234,19 +234,22 @@ void opp_step(void)
     }
 }
 
-int opp_objects(const struct rs_clip *clip, const struct track_cam *cam, struct track_object *objs, int max)
+/* opponent k's blocks (opp_place): heading with the nose's turn, the slope's tilt negated, the
+   body's lean on top; never braking, 0x2000 at 4000 units/s or under */
+static int opp_make(int k, const struct track_cam *cam, struct track_object *obj)
 {
     static struct track_block blocks[OPP_MAX][CAR_BLOCKS];
+    const struct opp *o = &opp[k];
+    struct car_look lk = { o->x, o->y, o->z, o->yaw + o->spin, -o->pitch, -o->roll, o->body, o->body,
+                           o->wheel, 0.0f, (o->livery | 0x4000u | (o->speed <= 4000.0f ? 0x2000u : 0)) >> 2 };
+    return car_draw(o->model, &lk, cam, blocks[k], obj);
+}
+
+int opp_objects(struct track_object *objs, int max)
+{
     int n = 0;
-    for(int k = 0; k < nopp && n < max; k++) {
-        const struct opp *o = &opp[k];
-        if(!track_in_view(clip, cam, o->x, o->y, o->z, 1200.0f)) continue;
-        /* the object (opp_place): heading with the nose's turn, the slope's tilt negated, the
-           body's lean on top; never braking, 0x2000 at 4000 units/s or under */
-        struct car_look lk = { o->x, o->y, o->z, o->yaw + o->spin, -o->pitch, -o->roll, o->body, o->body,
-                               o->wheel, 0.0f, (o->livery | 0x4000u | (o->speed <= 4000.0f ? 0x2000u : 0)) >> 2 };
-        n += car_draw(o->model, &lk, cam, blocks[k], &objs[n]);
-    }
+    for(int k = 0; k < nopp && n < max; k++, n++)
+        objs[n] = (struct track_object){ opp[k].x, opp[k].y, opp[k].z, 1200.0f, 0, 0, opp_make, k };
     return n;
 }
 

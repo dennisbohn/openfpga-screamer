@@ -555,10 +555,11 @@ int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, 
     return 1;
 }
 
-int car_object(const struct track_cam *cam, struct track_object *obj)
+/* the player's car's blocks, when it comes up in the drawing */
+static int car_make(int id, const struct track_cam *cam, struct track_object *obj)
 {
     static struct track_block blocks[MAX_BLOCKS];
-    if(views[view].incar) return 0;
+    (void)id;
     /* the object's angles (player_sync): the car's, negated, and a crash's tumbling on top;
        the texture frame (0x173a9): paint job | 0x4000 not braking | 0x2000 at 4000 units/s or
        under, of which the phase is a quarter (record +0x20 >> 2) */
@@ -567,6 +568,14 @@ int car_object(const struct track_cam *cam, struct track_object *obj)
                            ((uint32_t)pc.spec.livery | (pc.brake == 0.0f ? 0x4000u : 0) |
                             (pc.speed <= 4000.0f ? 0x2000u : 0)) >> 2 };
     return car_draw(pmodel, &lk, cam, blocks, obj);
+}
+
+int car_object(const struct track_cam *cam, struct track_object *obj)
+{
+    (void)cam;
+    if(views[view].incar) return 0;
+    *obj = (struct track_object){ pc.x, pc.y, pc.z + crash.height, 1200.0f, 0, 0, car_make, 0 };
+    return 1;
 }
 
 void car_view(int v)

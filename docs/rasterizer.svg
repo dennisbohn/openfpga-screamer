@@ -504,8 +504,8 @@
   <text x="717.0" y="832" class="l r">Pixel markiert, Zeile angefordert</text>
   <rect x="640" y="850" width="170" height="62" rx="8" class="built"/>
   <text x="725.0" y="874" class="t c">SDRAM</text>
-  <text x="725.0" y="892" class="b c">eine Zeile (32 B) nach der</text>
-  <text x="725.0" y="906" class="b c">anderen, je ~30 Takte</text>
+  <text x="725.0" y="892" class="b c">je Zeile (32 B) ~30 Takte,</text>
+  <text x="725.0" y="906" class="b c">bis zwei überlappend</text>
   <path d="M813,881.0 H837" class="wb" marker-end="url(#arr)"/>
   <rect x="840" y="850" width="170" height="62" rx="8" class="built"/>
   <text x="925.0" y="874" class="t c">Zeilenpuffer</text>

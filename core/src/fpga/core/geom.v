@@ -8,9 +8,12 @@
 // into view space (block RAM, up to 512), leaves out the faces turned away and those of
 // routine 224, and hands each other face to the setup unit as a polygon in fixed point.
 //
-// One multiplier (operands registered, the product three clocks after it was issued) and a
-// read cache of 4 KB (direct-mapped, lines of 32 bytes from the SDRAM). A step of the
-// sequence below either reads a value (two clocks when it hits) or works on what it read.
+// One multiplier, and two more for the vertices' rows (operands registered, the product three
+// clocks after it was issued), and a read cache of 4 KB (direct-mapped, lines of 32 bytes from
+// the SDRAM). A step of the sequence below reads a value or works on what it read, or both: a
+// read puts its address straight into the cache's RAMs, the next clock waits for them, and the
+// step after takes the value when the line is there (a read takes two clocks when it hits);
+// on a miss that step waits while the line comes in.
 //
 // Registers (soc.v maps them at 0xF000_3100 + 4 * wr_addr):
 //   17      SDRAM byte address of the MLB      18  [8] the buffer drawn into
@@ -94,73 +97,16 @@ always @(posedge clk) begin
     ct_q <= ctag[ct_ra];
 end
 
-    localparam  [2:0]   C_IDLE = 3'd0, C_LOOK = 3'd1, C_CHECK = 3'd2, C_MISS = 3'd3, C_FILL = 3'd4,
-                        C_INVAL = 3'd5, C_SETTLE = 3'd6;
+    localparam  [2:0]   C_IDLE = 3'd0, C_LOOK = 3'd1, C_MISS = 3'd3, C_FILL = 3'd4, C_INVAL = 3'd5,
+                        C_SETTLE = 3'd6;
     reg  [2:0]  cstate = C_INVAL;
-    reg  [25:0] rd_addr;
-    reg         rd_go = 0, rd_done = 0;
-    reg  [31:0] rd_word;
+    reg  [25:0] rd_addr;                        // the value the step in pc waits for (rd_check)
+    reg         rd_check = 0;
     reg  [2:0]  fill_cnt;
     reg  [6:0]  inval_cnt = 0;
-
-always @(posedge clk) begin
-    rd_done <= 0;
-    cd_we <= 0;
-    ct_we <= 0;
-    case(cstate)
-    C_IDLE: if(inval_req) begin
-        inval_cnt <= 0;
-        cstate <= C_INVAL;
-    end else if(rd_go) begin
-        cd_ra <= {rd_addr[11:5], rd_addr[4:2]};
-        ct_ra <= rd_addr[11:5];
-        cstate <= C_LOOK;
-    end
-    C_LOOK: cstate <= C_CHECK;                  // tag and word come out
-    C_CHECK: if(ct_q == {1'b1, rd_addr[25:12]}) begin
-        rd_word <= cd_q;
-        rd_done <= 1;
-        cstate <= C_IDLE;
-    end else begin
-        mem_valid <= 1;
-        mem_addr <= rd_addr[25:5];
-        fill_cnt <= 0;
-        cstate <= C_MISS;
-    end
-    C_MISS: if(mem_ready) begin
-        mem_valid <= 0;
-        cstate <= C_FILL;
-    end
-    C_FILL: if(mem_rsp_valid) begin
-        cd_we <= 1;
-        cd_wa <= {rd_addr[11:5], fill_cnt};
-        cd_wd <= mem_rsp_data;
-        fill_cnt <= fill_cnt + 1'b1;
-        if(fill_cnt == 3'd7) begin              // the line is in: looked up again
-            ct_we <= 1;
-            ct_wa <= rd_addr[11:5];
-            ct_wd <= {1'b1, rd_addr[25:12]};
-            cd_ra <= {rd_addr[11:5], rd_addr[4:2]};
-            ct_ra <= rd_addr[11:5];
-            cstate <= C_SETTLE;
-        end
-    end
-    C_SETTLE: cstate <= C_LOOK;                 // the last word and the tag are written now
-    C_INVAL: begin
-        ct_we <= 1;
-        ct_wa <= inval_cnt;
-        ct_wd <= 0;
-        inval_cnt <= inval_cnt + 1'b1;
-        if(inval_cnt == 7'd127) cstate <= C_IDLE;
-    end
-    default: cstate <= C_IDLE;
-    endcase
-    if(reset) begin
-        mem_valid <= 0;
-        cstate <= C_INVAL;
-        inval_cnt <= 0;
-    end
-end
+    wire        rd_hit = ct_q == {1'b1, rd_addr[25:12]};
+    wire        hold = rd_check && !rd_hit;     // its line is not there yet: the step waits
+    wire [31:0] rd_word = cd_q;
 
     // the value read: the word, a halfword of it signed or unsigned
     wire [15:0] rd_half = rd_addr[1] ? rd_word[31:16] : rd_word[15:0];
@@ -180,14 +126,18 @@ always @(posedge clk) begin
 end
 
 //
-// the multiplier
+// the multipliers
 //
-    reg  signed [35:0] mul_a;
-    reg  signed [17:0] mul_b;
-    reg  signed [53:0] mul_p1, mul_p2;
+    reg  signed [35:0] mul_a, mul1_a, mul2_a;
+    reg  signed [17:0] mul_b, mul1_b, mul2_b;
+    reg  signed [53:0] mul_p1, mul_p2, mul1_p1, mul1_p2, mul2_p1, mul2_p2;
 always @(posedge clk) begin
     mul_p1 <= mul_a * mul_b;
     mul_p2 <= mul_p1;
+    mul1_p1 <= mul1_a * mul1_b;                 // the vertices' rows u and f
+    mul1_p2 <= mul1_p1;
+    mul2_p1 <= mul2_a * mul2_b;
+    mul2_p2 <= mul2_p1;
 end
 
     function signed [23:0] sat24(input signed [53:0] v);
@@ -226,21 +176,24 @@ end
     reg  signed [53:0] dot;
 
     localparam  [5:0]   P_IDLE = 6'd0, P_READ = 6'd1, P_DONE = 6'd2, P_TAKE = 6'd48;
+`ifdef GEOM_STATS
+    integer     st_read = 0, st_miss = 0, st_setup = 0, st_pieces = 0, st_verts = 0, st_faces = 0, st_away = 0;
+`endif
 
     assign busy = pc != P_IDLE || poly_valid || f_count != 0;
 
     wire [25:0] mat_now = mlb + {{10{rd_half[15]}}, rd_half};
-    wire        col_x = ms == 4'd0 || ms == 4'd3 || ms == 4'd6, col_y = ms == 4'd1 || ms == 4'd4 || ms == 4'd7;
-    wire signed [35:0] coord = col_x ? {{20{vx[15]}}, vx} : col_y ? {{20{vy[15]}}, vy} : {{20{vz[15]}}, vz};
+    wire signed [35:0] coord = ms == 4'd0 ? {{20{vx[15]}}, vx} : ms == 4'd1 ? {{20{vy[15]}}, vy} : {{20{vz[15]}}, vz};
     wire signed [35:0] bx = $signed({{12{vx[15]}}, vx, 8'd0}) - {{4{e[0][31]}}, e[0]};
     wire signed [35:0] by = $signed({{12{vy[15]}}, vy, 8'd0}) - {{4{e[1][31]}}, e[1]};
     wire signed [35:0] bz = $signed({{12{vz[15]}}, vz, 8'd0}) - {{4{e[2][31]}}, e[2]};
 
-    // a read: the address, and the step that takes the value
+    // a read: the address into the cache's RAMs, and the step that takes the value
     task read(input [25:0] a, input [5:0] next);
         begin
             rd_addr <= a;
-            rd_go <= 1;
+            cd_ra <= {a[11:5], a[4:2]};
+            ct_ra <= a[11:5];
             ret <= next;
             pc <= P_READ;
         end
@@ -248,6 +201,47 @@ end
 
 always @(posedge clk) begin
     v_we <= 0;
+    cd_we <= 0;
+    ct_we <= 0;
+    // the cache: the line the waiting step needs, from the SDRAM; forgetting every line
+    case(cstate)
+    C_IDLE: if(inval_req && pc == P_IDLE && !rd_check) begin
+        inval_cnt <= 0;
+        cstate <= C_INVAL;
+    end else if(hold) begin
+        mem_valid <= 1;
+        mem_addr <= rd_addr[25:5];
+        fill_cnt <= 0;
+        cstate <= C_MISS;
+    end
+    C_MISS: if(mem_ready) begin
+        mem_valid <= 0;
+        cstate <= C_FILL;
+    end
+    C_FILL: if(mem_rsp_valid) begin
+        cd_we <= 1;
+        cd_wa <= {rd_addr[11:5], fill_cnt};
+        cd_wd <= mem_rsp_data;
+        fill_cnt <= fill_cnt + 1'b1;
+        if(fill_cnt == 3'd7) begin
+            ct_we <= 1;
+            ct_wa <= rd_addr[11:5];
+            ct_wd <= {1'b1, rd_addr[25:12]};
+            cstate <= C_SETTLE;
+        end
+    end
+    C_SETTLE: cstate <= C_LOOK;                 // the last word and the tag are written now
+    C_LOOK: cstate <= C_IDLE;                   // read again: the waiting step goes on
+    C_INVAL: begin
+        ct_we <= 1;
+        ct_wa <= inval_cnt;
+        ct_wd <= 0;
+        inval_cnt <= inval_cnt + 1'b1;
+        if(inval_cnt == 7'd127) cstate <= C_IDLE;
+    end
+    default: cstate <= C_IDLE;
+    endcase
+
     if(pc != P_IDLE) busy_clocks <= busy_clocks + 1'b1;
     if(wr && wr_addr == 5'd21) busy_clocks <= 0;
     if(wr && wr_addr == 5'd20) faces <= 0;
@@ -255,6 +249,8 @@ always @(posedge clk) begin
     if(cstate == C_INVAL) inval_req <= 0;
     if(poly_valid && poly_ready) poly_valid <= 0;
 
+    if(!hold) begin
+    rd_check <= 0;
     case(pc)
     P_IDLE: if(f_count >= 12'd18) begin         // a whole piece is in: word 0 is read
         f_ra <= f_rp[10:0];
@@ -281,9 +277,9 @@ always @(posedge clk) begin
         end
     end
 
-    P_READ: begin                               // the cache took the address; then the value
-        if(cstate == C_LOOK) rd_go <= 0;
-        if(rd_done) pc <= ret;
+    P_READ: begin                               // the RAMs read: the next step takes the value
+        rd_check <= 1;
+        pc <= ret;
     end
 
     P_DONE: pc <= P_IDLE;
@@ -305,23 +301,27 @@ always @(posedge clk) begin
     6'd9:  begin vx <= rd_half; read(verts + {14'd0, vi, 2'd0} + {15'd0, vi, 1'b0} + 26'd2, 6'd10); end
     6'd10: begin vy <= rd_half; read(verts + {14'd0, vi, 2'd0} + {15'd0, vi, 1'b0} + 26'd4, 6'd11); end
     6'd11: begin vz <= rd_half; ms <= 0; pc <= 6'd12; end
-    6'd12: begin                                // 9 products: column ms % 3 of row ms / 3
+    6'd12: begin                                // the three rows at once: column ms of each
         ms <= ms + 1'b1;
-        if(ms < 4'd9) begin
+        if(ms < 4'd3) begin
             mul_a <= coord;
             mul_b <= m[ms][17:0];
+            mul1_a <= coord;
+            mul1_b <= m[ms + 4'd3][17:0];
+            mul2_a <= coord;
+            mul2_b <= m[ms + 4'd6][17:0];
         end
-        if(ms >= 4'd3) begin
-            case(ms - 4'd3)
-            4'd0: acc[0] <= mul_p2[35:0];
-            4'd1, 4'd2: acc[0] <= acc[0] + mul_p2[35:0];
-            4'd3: acc[1] <= mul_p2[35:0];
-            4'd4, 4'd5: acc[1] <= acc[1] + mul_p2[35:0];
-            4'd6: acc[2] <= mul_p2[35:0];
-            default: acc[2] <= acc[2] + mul_p2[35:0];
-            endcase
+        if(ms == 4'd3) begin
+            acc[0] <= mul_p2[35:0];
+            acc[1] <= mul1_p2[35:0];
+            acc[2] <= mul2_p2[35:0];
         end
-        if(ms == 4'd11) pc <= 6'd13;
+        if(ms == 4'd4 || ms == 4'd5) begin
+            acc[0] <= acc[0] + mul_p2[35:0];
+            acc[1] <= acc[1] + mul1_p2[35:0];
+            acc[2] <= acc[2] + mul2_p2[35:0];
+        end
+        if(ms == 4'd5) pc <= 6'd13;
     end
     6'd13: begin
         v_we <= 1;
@@ -419,9 +419,10 @@ always @(posedge clk) begin
         end
     end
     6'd38: begin mul_a <= {{20{rd_half[15]}}, rd_half}; mul_b <= {9'd0, tw}; read(uvs + {10'd0, vo} + 26'd2, 6'd39); end
-    6'd39: begin cs <= sat24(mul_p2); mul_a <= {{20{rd_half[15]}}, rd_half}; mul_b <= {9'd0, th}; ms <= 0; pc <= 6'd40; end
-    6'd40: begin
+    6'd39: begin mul_a <= {{20{rd_half[15]}}, rd_half}; mul_b <= {9'd0, th}; ms <= 0; pc <= 6'd40; end
+    6'd40: begin                                // u x width three clocks after 38, then v x height
         ms <= ms + 1'b1;
+        if(ms == 4'd0) cs <= sat24(mul_p2);
         if(ms == 4'd2) begin
             poly_c[144 * j +: 144] <= {sat24(mul_p2), cs, v_q};
             j <= j + 1'b1;
@@ -450,14 +451,34 @@ always @(posedge clk) begin
 
     default: pc <= P_IDLE;
     endcase
+    end
 
+`ifdef GEOM_STATS
+    // (the simulation only) where the clocks go, printed when the CPU clears busy_clocks
+    if(wr && wr_addr == 5'd21) begin
+        $display("gu: busy %0d, reading %0d (missing %0d), waiting for setup %0d, pieces %0d, vertices %0d, faces %0d, turned away %0d, handed on %0d",
+                 busy_clocks, st_read, st_miss, st_setup, st_pieces, st_verts, st_faces, st_away, faces);
+        st_read <= 0; st_miss <= 0; st_setup <= 0; st_pieces <= 0; st_verts <= 0; st_faces <= 0; st_away <= 0;
+    end else begin
+        if(pc == P_READ || hold) st_read <= st_read + 1;
+        if(cstate == C_MISS || cstate == C_FILL) st_miss <= st_miss + 1;
+        if(pc == 6'd35 && j == 3'd0 && poly_valid) st_setup <= st_setup + 1;
+        if(pc == P_TAKE && pk == 5'd18) st_pieces <= st_pieces + 1;
+        if(pc == 6'd13) st_verts <= st_verts + 1;
+        if(pc == 6'd18 && !hold) st_faces <= st_faces + 1;
+        if(pc == 6'd27 && dot[53]) st_away <= st_away + 1;
+    end
+`endif
     if(push) f_wp <= f_wp + 1'b1;
     if(reset) begin
         pc <= P_IDLE;
-        rd_go <= 0;
+        rd_check <= 0;
         poly_valid <= 0;
         f_wp <= 0;
         f_rp <= 0;
+        mem_valid <= 0;
+        cstate <= C_INVAL;
+        inval_cnt <= 0;
     end
 end
 

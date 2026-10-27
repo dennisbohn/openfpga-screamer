@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1090" width="1120" height="1090" role="img" aria-label="Platzbudget im FPGA: Logik heute 81 Prozent, mit Geplantem 88 bis 92 Prozent, über der 80-Prozent-Grenze; Block-RAM heute 82, geplant 89 bis 90 Prozent; DSP heute 47, geplant 48 bis 52 Prozent. Größte Posten: Setup-Einheit, Clipper, Rasterizer.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1090" width="1120" height="1090" role="img" aria-label="Platzbudget im FPGA: Logik heute 83 Prozent, mit Geplantem 90 bis 94 Prozent, über der 80-Prozent-Grenze; Block-RAM heute 82, geplant 89 bis 90 Prozent; DSP heute 53, geplant 55 bis 58 Prozent. Größte Posten: Setup-Einheit, Clipper, Geometrie-Einheit.">
 <title>Platzbudget im FPGA</title>
 <style>
   svg {
@@ -50,7 +50,7 @@
 <line x1="450.0" y1="190" x2="450.0" y2="546" class="grid"/>
 <line x1="290.0" y1="190" x2="290.0" y2="546" class="base"/>
 <text x="40.0" y="40.0" class="h">Platzbudget im FPGA</text>
-<text x="40.0" y="62.0" class="s">Cyclone V 5CEBA4 · gebaut = gemessen im Quartus-Build (Hintergrundbild im Blitter) · geplant = geschätzt · Stand 27.10.2026</text>
+<text x="40.0" y="62.0" class="s">Cyclone V 5CEBA4 · gebaut = gemessen im Quartus-Build (schnellere Grafik-Kette) · geplant = geschätzt · Stand 27.10.2026</text>
 <rect x="40" y="84" width="12" height="12" rx="3" class="f-frame"/>
 <text x="58.0" y="94.5" class="s">Rahmen &amp; Video</text>
 <rect x="172.0" y="84" width="12" height="12" rx="3" class="f-cpu"/>
@@ -75,27 +75,27 @@
 <text x="40.0" y="211.0" class="t">Logik</text>
 <text x="88.0" y="211.0" class="m">18.480 ALMs</text>
 <text x="278.0" y="233.0" class="s" text-anchor="end">heute gebaut</text>
-<rect x="290.0" y="220.0" width="19.0" height="18" class="f-frame"><title>Rahmen &amp; Video, gebaut: 607 (3 %) · heute gebaut</title></rect>
-<rect x="311.0" y="220.0" width="98.7" height="18" class="f-cpu"><title>CPU: VexRiscv, FPU, Boot-RAM, gebaut: 2.909 (16 %) · heute gebaut</title></rect>
-<rect x="411.8" y="220.0" width="366.8" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 10.648 (58 %) · heute gebaut</title></rect>
-<path d="M780.5,220.0 H804.8 A4,4 0 0 1 808.8,224.0 V234.0 A4,4 0 0 1 804.8,238.0 H780.5 Z" class="f-mem"><title>SDRAM, Bus, Register, gebaut: 816 (4 %) · heute gebaut</title></path>
-<text x="816.8" y="233.0" class="v">14.980 · 81 %</text>
+<rect x="290.0" y="220.0" width="19.4" height="18" class="f-frame"><title>Rahmen &amp; Video, gebaut: 619 (3 %) · heute gebaut</title></rect>
+<rect x="311.4" y="220.0" width="99.3" height="18" class="f-cpu"><title>CPU: VexRiscv, FPU, Boot-RAM, gebaut: 2.924 (16 %) · heute gebaut</title></rect>
+<rect x="412.7" y="220.0" width="376.0" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 10.914 (59 %) · heute gebaut</title></rect>
+<path d="M790.7,220.0 H815.6 A4,4 0 0 1 819.6,224.0 V234.0 A4,4 0 0 1 815.6,238.0 H790.7 Z" class="f-mem"><title>SDRAM, Bus, Register, gebaut: 835 (5 %) · heute gebaut</title></path>
+<text x="827.6" y="233.0" class="v">15.292 · 83 %</text>
 <text x="278.0" y="261.0" class="s" text-anchor="end">mit Geplantem, untere Schätzung</text>
-<rect x="290.0" y="248.0" width="19.0" height="18" class="f-frame"><title>Rahmen &amp; Video, gebaut: 607 (3 %) · mit Geplantem, untere Schätzung</title></rect>
-<rect x="311.0" y="248.0" width="98.7" height="18" class="f-cpu"><title>CPU: VexRiscv, FPU, Boot-RAM, gebaut: 2.909 (16 %) · mit Geplantem, untere Schätzung</title></rect>
-<rect x="411.8" y="248.0" width="366.8" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 10.648 (58 %) · mit Geplantem, untere Schätzung</title></rect>
-<rect x="780.5" y="248.0" width="3.2" height="18" class="f-gfx tint"><title>Grafik: Geometrie bis Blitter, geplant: 150 (1 %) · mit Geplantem, untere Schätzung</title></rect>
-<rect x="785.7" y="248.0" width="26.3" height="18" class="f-mem"><title>SDRAM, Bus, Register, gebaut: 816 (4 %) · mit Geplantem, untere Schätzung</title></rect>
-<path d="M814.0,248.0 H848.1 A4,4 0 0 1 852.1,252.0 V262.0 A4,4 0 0 1 848.1,266.0 H814.0 Z" class="f-audio tint"><title>Audio (geplant), geplant: 1.100 (6 %) · mit Geplantem, untere Schätzung</title></path>
-<text x="860.1" y="261.0" class="v">16.230 · 88 %</text>
+<rect x="290.0" y="248.0" width="19.4" height="18" class="f-frame"><title>Rahmen &amp; Video, gebaut: 619 (3 %) · mit Geplantem, untere Schätzung</title></rect>
+<rect x="311.4" y="248.0" width="99.3" height="18" class="f-cpu"><title>CPU: VexRiscv, FPU, Boot-RAM, gebaut: 2.924 (16 %) · mit Geplantem, untere Schätzung</title></rect>
+<rect x="412.7" y="248.0" width="376.0" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 10.914 (59 %) · mit Geplantem, untere Schätzung</title></rect>
+<rect x="790.7" y="248.0" width="3.2" height="18" class="f-gfx tint"><title>Grafik: Geometrie bis Blitter, geplant: 150 (1 %) · mit Geplantem, untere Schätzung</title></rect>
+<rect x="795.9" y="248.0" width="26.9" height="18" class="f-mem"><title>SDRAM, Bus, Register, gebaut: 835 (5 %) · mit Geplantem, untere Schätzung</title></rect>
+<path d="M824.8,248.0 H858.9 A4,4 0 0 1 862.9,252.0 V262.0 A4,4 0 0 1 858.9,266.0 H824.8 Z" class="f-audio tint"><title>Audio (geplant), geplant: 1.100 (6 %) · mit Geplantem, untere Schätzung</title></path>
+<text x="870.9" y="261.0" class="v">16.542 · 90 %</text>
 <text x="278.0" y="289.0" class="s" text-anchor="end">mit Geplantem, obere Schätzung</text>
-<rect x="290.0" y="276.0" width="19.0" height="18" class="f-frame"><title>Rahmen &amp; Video, gebaut: 607 (3 %) · mit Geplantem, obere Schätzung</title></rect>
-<rect x="311.0" y="276.0" width="98.7" height="18" class="f-cpu"><title>CPU: VexRiscv, FPU, Boot-RAM, gebaut: 2.909 (16 %) · mit Geplantem, obere Schätzung</title></rect>
-<rect x="411.8" y="276.0" width="366.8" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 10.648 (58 %) · mit Geplantem, obere Schätzung</title></rect>
-<rect x="780.5" y="276.0" width="11.9" height="18" class="f-gfx tint"><title>Grafik: Geometrie bis Blitter, geplant: 400 (2 %) · mit Geplantem, obere Schätzung</title></rect>
-<rect x="794.4" y="276.0" width="26.3" height="18" class="f-mem"><title>SDRAM, Bus, Register, gebaut: 816 (4 %) · mit Geplantem, obere Schätzung</title></rect>
-<path d="M822.6,276.0 H877.5 A4,4 0 0 1 881.5,280.0 V290.0 A4,4 0 0 1 877.5,294.0 H822.6 Z" class="f-audio tint"><title>Audio (geplant), geplant: 1.700 (9 %) · mit Geplantem, obere Schätzung</title></path>
-<text x="889.5" y="289.0" class="v">17.080 · 92 %</text>
+<rect x="290.0" y="276.0" width="19.4" height="18" class="f-frame"><title>Rahmen &amp; Video, gebaut: 619 (3 %) · mit Geplantem, obere Schätzung</title></rect>
+<rect x="311.4" y="276.0" width="99.3" height="18" class="f-cpu"><title>CPU: VexRiscv, FPU, Boot-RAM, gebaut: 2.924 (16 %) · mit Geplantem, obere Schätzung</title></rect>
+<rect x="412.7" y="276.0" width="376.0" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 10.914 (59 %) · mit Geplantem, obere Schätzung</title></rect>
+<rect x="790.7" y="276.0" width="11.9" height="18" class="f-gfx tint"><title>Grafik: Geometrie bis Blitter, geplant: 400 (2 %) · mit Geplantem, obere Schätzung</title></rect>
+<rect x="804.5" y="276.0" width="26.9" height="18" class="f-mem"><title>SDRAM, Bus, Register, gebaut: 835 (5 %) · mit Geplantem, obere Schätzung</title></rect>
+<path d="M833.4,276.0 H888.3 A4,4 0 0 1 892.3,280.0 V290.0 A4,4 0 0 1 888.3,294.0 H833.4 Z" class="f-audio tint"><title>Audio (geplant), geplant: 1.700 (9 %) · mit Geplantem, obere Schätzung</title></path>
+<text x="900.3" y="289.0" class="v">17.392 · 94 %</text>
 <line x1="802.0" y1="216" x2="802.0" y2="298" class="limit"/>
 <text x="796.0" y="312.0" class="m" text-anchor="end">ab ~80 % wird es schwer, den Takt zu halten</text>
 <text x="40.0" y="339.0" class="t">Block-RAM</text>
@@ -103,41 +103,41 @@
 <text x="278.0" y="361.0" class="s" text-anchor="end">heute gebaut</text>
 <rect x="290.0" y="348.0" width="272.3" height="18" class="f-frame"><title>Rahmen &amp; Video, gebaut: 132 (43 %) · heute gebaut</title></rect>
 <rect x="564.3" y="348.0" width="122.7" height="18" class="f-cpu"><title>CPU: VexRiscv, FPU, Boot-RAM, gebaut: 60 (19 %) · heute gebaut</title></rect>
-<rect x="689.0" y="348.0" width="122.7" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 60 (19 %) · heute gebaut</title></rect>
-<rect x="813.6" y="348.0" width="4.2" height="18" class="f-mem"><title>SDRAM, Bus, Register, gebaut: 2 (1 %) · heute gebaut</title></rect>
-<text x="825.8" y="361.0" class="v">254 · 82 %</text>
+<rect x="689.0" y="348.0" width="120.6" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 59 (19 %) · heute gebaut</title></rect>
+<rect x="811.6" y="348.0" width="4.2" height="18" class="f-mem"><title>SDRAM, Bus, Register, gebaut: 2 (1 %) · heute gebaut</title></rect>
+<text x="823.7" y="361.0" class="v">253 · 82 %</text>
 <text x="278.0" y="389.0" class="s" text-anchor="end">mit Geplantem, untere Schätzung</text>
 <rect x="290.0" y="376.0" width="272.3" height="18" class="f-frame"><title>Rahmen &amp; Video, gebaut: 132 (43 %) · mit Geplantem, untere Schätzung</title></rect>
 <rect x="564.3" y="376.0" width="122.7" height="18" class="f-cpu"><title>CPU: VexRiscv, FPU, Boot-RAM, gebaut: 60 (19 %) · mit Geplantem, untere Schätzung</title></rect>
-<rect x="689.0" y="376.0" width="122.7" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 60 (19 %) · mit Geplantem, untere Schätzung</title></rect>
-<rect x="813.6" y="376.0" width="31.2" height="18" class="f-gfx tint"><title>Grafik: Geometrie bis Blitter, geplant: 16 (5 %) · mit Geplantem, untere Schätzung</title></rect>
-<rect x="846.9" y="376.0" width="2.2" height="18" class="f-mem"><title>SDRAM, Bus, Register, gebaut: 2 (1 %) · mit Geplantem, untere Schätzung</title></rect>
-<path d="M851.0,376.0 H857.4 A4,4 0 0 1 861.4,380.0 V390.0 A4,4 0 0 1 857.4,394.0 H851.0 Z" class="f-audio tint"><title>Audio (geplant), geplant: 5 (2 %) · mit Geplantem, untere Schätzung</title></path>
-<text x="869.4" y="389.0" class="v">275 · 89 %</text>
+<rect x="689.0" y="376.0" width="120.6" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 59 (19 %) · mit Geplantem, untere Schätzung</title></rect>
+<rect x="811.6" y="376.0" width="31.2" height="18" class="f-gfx tint"><title>Grafik: Geometrie bis Blitter, geplant: 16 (5 %) · mit Geplantem, untere Schätzung</title></rect>
+<rect x="844.8" y="376.0" width="2.2" height="18" class="f-mem"><title>SDRAM, Bus, Register, gebaut: 2 (1 %) · mit Geplantem, untere Schätzung</title></rect>
+<path d="M849.0,376.0 H855.4 A4,4 0 0 1 859.4,380.0 V390.0 A4,4 0 0 1 855.4,394.0 H849.0 Z" class="f-audio tint"><title>Audio (geplant), geplant: 5 (2 %) · mit Geplantem, untere Schätzung</title></path>
+<text x="867.4" y="389.0" class="v">274 · 89 %</text>
 <text x="278.0" y="417.0" class="s" text-anchor="end">mit Geplantem, obere Schätzung</text>
 <rect x="290.0" y="404.0" width="272.3" height="18" class="f-frame"><title>Rahmen &amp; Video, gebaut: 132 (43 %) · mit Geplantem, obere Schätzung</title></rect>
 <rect x="564.3" y="404.0" width="122.7" height="18" class="f-cpu"><title>CPU: VexRiscv, FPU, Boot-RAM, gebaut: 60 (19 %) · mit Geplantem, obere Schätzung</title></rect>
-<rect x="689.0" y="404.0" width="122.7" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 60 (19 %) · mit Geplantem, obere Schätzung</title></rect>
-<rect x="813.6" y="404.0" width="31.2" height="18" class="f-gfx tint"><title>Grafik: Geometrie bis Blitter, geplant: 16 (5 %) · mit Geplantem, obere Schätzung</title></rect>
-<rect x="846.9" y="404.0" width="2.2" height="18" class="f-mem"><title>SDRAM, Bus, Register, gebaut: 2 (1 %) · mit Geplantem, obere Schätzung</title></rect>
-<path d="M851.0,404.0 H861.6 A4,4 0 0 1 865.6,408.0 V418.0 A4,4 0 0 1 861.6,422.0 H851.0 Z" class="f-audio tint"><title>Audio (geplant), geplant: 7 (2 %) · mit Geplantem, obere Schätzung</title></path>
-<text x="873.6" y="417.0" class="v">277 · 90 %</text>
+<rect x="689.0" y="404.0" width="120.6" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 59 (19 %) · mit Geplantem, obere Schätzung</title></rect>
+<rect x="811.6" y="404.0" width="31.2" height="18" class="f-gfx tint"><title>Grafik: Geometrie bis Blitter, geplant: 16 (5 %) · mit Geplantem, obere Schätzung</title></rect>
+<rect x="844.8" y="404.0" width="2.2" height="18" class="f-mem"><title>SDRAM, Bus, Register, gebaut: 2 (1 %) · mit Geplantem, obere Schätzung</title></rect>
+<path d="M849.0,404.0 H859.5 A4,4 0 0 1 863.5,408.0 V418.0 A4,4 0 0 1 859.5,422.0 H849.0 Z" class="f-audio tint"><title>Audio (geplant), geplant: 7 (2 %) · mit Geplantem, obere Schätzung</title></path>
+<text x="871.5" y="417.0" class="v">276 · 90 %</text>
 <text x="40.0" y="453.0" class="t">DSP-Blöcke</text>
 <text x="126.0" y="453.0" class="m">66</text>
 <text x="278.0" y="475.0" class="s" text-anchor="end">heute gebaut</text>
 <rect x="290.0" y="462.0" width="104.7" height="18" class="f-cpu"><title>CPU: VexRiscv, FPU, Boot-RAM, gebaut: 11 (17 %) · heute gebaut</title></rect>
-<path d="M396.7,462.0 H586.6 A4,4 0 0 1 590.6,466.0 V476.0 A4,4 0 0 1 586.6,480.0 H396.7 Z" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 20 (30 %) · heute gebaut</title></path>
-<text x="598.6" y="475.0" class="v">31 · 47 %</text>
+<path d="M396.7,462.0 H625.4 A4,4 0 0 1 629.4,466.0 V476.0 A4,4 0 0 1 625.4,480.0 H396.7 Z" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 24 (36 %) · heute gebaut</title></path>
+<text x="637.4" y="475.0" class="v">35 · 53 %</text>
 <text x="278.0" y="503.0" class="s" text-anchor="end">mit Geplantem, untere Schätzung</text>
 <rect x="290.0" y="490.0" width="104.7" height="18" class="f-cpu"><title>CPU: VexRiscv, FPU, Boot-RAM, gebaut: 11 (17 %) · mit Geplantem, untere Schätzung</title></rect>
-<rect x="396.7" y="490.0" width="191.9" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 20 (30 %) · mit Geplantem, untere Schätzung</title></rect>
-<path d="M590.6,490.0 H596.3 A4,4 0 0 1 600.3,494.0 V504.0 A4,4 0 0 1 596.3,508.0 H590.6 Z" class="f-audio tint"><title>Audio (geplant), geplant: 1 (2 %) · mit Geplantem, untere Schätzung</title></path>
-<text x="608.3" y="503.0" class="v">32 · 48 %</text>
+<rect x="396.7" y="490.0" width="230.7" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 24 (36 %) · mit Geplantem, untere Schätzung</title></rect>
+<path d="M629.4,490.0 H635.1 A4,4 0 0 1 639.1,494.0 V504.0 A4,4 0 0 1 635.1,508.0 H629.4 Z" class="f-audio tint"><title>Audio (geplant), geplant: 1 (2 %) · mit Geplantem, untere Schätzung</title></path>
+<text x="647.1" y="503.0" class="v">36 · 55 %</text>
 <text x="278.0" y="531.0" class="s" text-anchor="end">mit Geplantem, obere Schätzung</text>
 <rect x="290.0" y="518.0" width="104.7" height="18" class="f-cpu"><title>CPU: VexRiscv, FPU, Boot-RAM, gebaut: 11 (17 %) · mit Geplantem, obere Schätzung</title></rect>
-<rect x="396.7" y="518.0" width="191.9" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 20 (30 %) · mit Geplantem, obere Schätzung</title></rect>
-<path d="M590.6,518.0 H615.7 A4,4 0 0 1 619.7,522.0 V532.0 A4,4 0 0 1 615.7,536.0 H590.6 Z" class="f-audio tint"><title>Audio (geplant), geplant: 3 (5 %) · mit Geplantem, obere Schätzung</title></path>
-<text x="627.7" y="531.0" class="v">34 · 52 %</text>
+<rect x="396.7" y="518.0" width="230.7" height="18" class="f-gfx"><title>Grafik: Geometrie bis Blitter, gebaut: 24 (36 %) · mit Geplantem, obere Schätzung</title></rect>
+<path d="M629.4,518.0 H654.5 A4,4 0 0 1 658.5,522.0 V532.0 A4,4 0 0 1 654.5,536.0 H629.4 Z" class="f-audio tint"><title>Audio (geplant), geplant: 3 (5 %) · mit Geplantem, obere Schätzung</title></path>
+<text x="666.5" y="531.0" class="v">38 · 58 %</text>
 <text x="40.0" y="580.0" class="t">Logik je Komponente</text>
 <text x="190.6" y="580.0" class="m">ALMs</text>
 <text x="290.0" y="602.0" class="m" text-anchor="middle">0</text>
@@ -146,53 +146,53 @@
 <text x="770.0" y="602.0" class="m" text-anchor="middle">3.000</text>
 <text x="930.0" y="602.0" class="m" text-anchor="middle">4.000</text>
 <text x="278.0" y="631.0" class="s" text-anchor="end">Setup-Einheit</text>
-<path d="M290.0,619.0 H756.6 A4,4 0 0 1 760.6,623.0 V631.0 A4,4 0 0 1 756.6,635.0 H290.0 Z" class="f-gfx"><title>Setup-Einheit: 2.941 ALMs, gemessen</title></path>
-<text x="768.6" y="631.0" class="v">2.941</text>
+<path d="M290.0,619.0 H754.0 A4,4 0 0 1 758.0,623.0 V631.0 A4,4 0 0 1 754.0,635.0 H290.0 Z" class="f-gfx"><title>Setup-Einheit: 2.925 ALMs, gemessen</title></path>
+<text x="766.0" y="631.0" class="v">2.925</text>
 <text x="278.0" y="657.0" class="s" text-anchor="end">Clipper</text>
-<path d="M290.0,645.0 H735.8 A4,4 0 0 1 739.8,649.0 V657.0 A4,4 0 0 1 735.8,661.0 H290.0 Z" class="f-gfx"><title>Clipper: 2.811 ALMs, gemessen</title></path>
-<text x="747.8" y="657.0" class="v">2.811</text>
-<text x="278.0" y="683.0" class="s" text-anchor="end">Rasterizer</text>
-<path d="M290.0,671.0 H575.6 A4,4 0 0 1 579.6,675.0 V683.0 A4,4 0 0 1 575.6,687.0 H290.0 Z" class="f-gfx"><title>Rasterizer: 1.810 ALMs, gemessen</title></path>
-<text x="587.6" y="683.0" class="v">1.810</text>
-<text x="278.0" y="709.0" class="s" text-anchor="end">Geometrie-Einheit</text>
-<path d="M290.0,697.0 H555.9 A4,4 0 0 1 559.9,701.0 V709.0 A4,4 0 0 1 555.9,713.0 H290.0 Z" class="f-gfx"><title>Geometrie-Einheit: 1.687 ALMs, gemessen</title></path>
-<text x="567.9" y="709.0" class="v">1.687</text>
+<path d="M290.0,645.0 H736.9 A4,4 0 0 1 740.9,649.0 V657.0 A4,4 0 0 1 736.9,661.0 H290.0 Z" class="f-gfx"><title>Clipper: 2.818 ALMs, gemessen</title></path>
+<text x="748.9" y="657.0" class="v">2.818</text>
+<text x="278.0" y="683.0" class="s" text-anchor="end">Geometrie-Einheit</text>
+<path d="M290.0,671.0 H593.8 A4,4 0 0 1 597.8,675.0 V683.0 A4,4 0 0 1 593.8,687.0 H290.0 Z" class="f-gfx"><title>Geometrie-Einheit: 1.924 ALMs, gemessen</title></path>
+<text x="605.8" y="683.0" class="v">1.924</text>
+<text x="278.0" y="709.0" class="s" text-anchor="end">Rasterizer</text>
+<path d="M290.0,697.0 H582.8 A4,4 0 0 1 586.8,701.0 V709.0 A4,4 0 0 1 582.8,713.0 H290.0 Z" class="f-gfx"><title>Rasterizer: 1.855 ALMs, gemessen</title></path>
+<text x="594.8" y="709.0" class="v">1.855</text>
 <text x="278.0" y="735.0" class="s" text-anchor="end">FPU (RV32F)</text>
-<path d="M290.0,723.0 H528.1 A4,4 0 0 1 532.1,727.0 V735.0 A4,4 0 0 1 528.1,739.0 H290.0 Z" class="f-cpu"><title>FPU (RV32F): 1.513 ALMs, gemessen</title></path>
-<text x="540.1" y="735.0" class="v">1.513</text>
+<path d="M290.0,723.0 H529.5 A4,4 0 0 1 533.5,727.0 V735.0 A4,4 0 0 1 529.5,739.0 H290.0 Z" class="f-cpu"><title>FPU (RV32F): 1.522 ALMs, gemessen</title></path>
+<text x="541.5" y="735.0" class="v">1.522</text>
 <text x="278.0" y="761.0" class="s" text-anchor="end">VexRiscv + 2× 8 KB Cache</text>
-<path d="M290.0,749.0 H507.9 A4,4 0 0 1 511.9,753.0 V761.0 A4,4 0 0 1 507.9,765.0 H290.0 Z" class="f-cpu"><title>VexRiscv + 2× 8 KB Cache: 1.387 ALMs, gemessen</title></path>
-<text x="519.9" y="761.0" class="v">1.387</text>
+<path d="M290.0,749.0 H508.9 A4,4 0 0 1 512.9,753.0 V761.0 A4,4 0 0 1 508.9,765.0 H290.0 Z" class="f-cpu"><title>VexRiscv + 2× 8 KB Cache: 1.393 ALMs, gemessen</title></path>
+<text x="520.9" y="761.0" class="v">1.393</text>
 <text x="278.0" y="787.0" class="s" text-anchor="end">JTOPL (OPL2)</text>
 <rect x="290.0" y="775.0" width="126.0" height="16" class="f-audio tint"><title>JTOPL (OPL2): mindestens 800 ALMs (Schätzung)</title></rect>
 <path d="M418.0,775.0 H478.0 A4,4 0 0 1 482.0,779.0 V787.0 A4,4 0 0 1 478.0,791.0 H418.0 Z" class="f-audio tint2"><title>JTOPL (OPL2): bis 1.200 ALMs (Schätzung)</title></path>
 <text x="490.0" y="787.0" class="v">800–1.200 · geplant</text>
 <text x="278.0" y="813.0" class="s" text-anchor="end">Texturen: Pipeline + Cache</text>
-<path d="M290.0,801.0 H428.2 A4,4 0 0 1 432.2,805.0 V813.0 A4,4 0 0 1 428.2,817.0 H290.0 Z" class="f-gfx"><title>Texturen: Pipeline + Cache: 889 ALMs, gemessen</title></path>
-<text x="440.2" y="813.0" class="v">889</text>
-<text x="278.0" y="839.0" class="s" text-anchor="end">Blitter (Hintergrund, HUD)</text>
-<path d="M290.0,827.0 H367.6 A4,4 0 0 1 371.6,831.0 V839.0 A4,4 0 0 1 367.6,843.0 H290.0 Z" class="f-gfx"><title>Blitter (Hintergrund, HUD): 510 ALMs, gemessen</title></path>
-<text x="379.6" y="839.0" class="v">510</text>
-<text x="278.0" y="865.0" class="s" text-anchor="end">PCM-Mixer</text>
-<rect x="290.0" y="853.0" width="46.0" height="16" class="f-audio tint"><title>PCM-Mixer: mindestens 300 ALMs (Schätzung)</title></rect>
-<path d="M338.0,853.0 H366.0 A4,4 0 0 1 370.0,857.0 V865.0 A4,4 0 0 1 366.0,869.0 H338.0 Z" class="f-audio tint2"><title>PCM-Mixer: bis 500 ALMs (Schätzung)</title></path>
-<text x="378.0" y="865.0" class="v">300–500 · geplant</text>
-<text x="278.0" y="891.0" class="s" text-anchor="end">Bus, Register, Arbiter</text>
-<path d="M290.0,879.0 H364.1 A4,4 0 0 1 368.1,883.0 V891.0 A4,4 0 0 1 364.1,895.0 H290.0 Z" class="f-mem"><title>Bus, Register, Arbiter: 488 ALMs, gemessen</title></path>
-<text x="376.1" y="891.0" class="v">488</text>
+<path d="M290.0,801.0 H427.1 A4,4 0 0 1 431.1,805.0 V813.0 A4,4 0 0 1 427.1,817.0 H290.0 Z" class="f-gfx"><title>Texturen: Pipeline + Cache: 882 ALMs, gemessen</title></path>
+<text x="439.1" y="813.0" class="v">882</text>
+<text x="278.0" y="839.0" class="s" text-anchor="end">Bus, Register, Arbiter</text>
+<path d="M290.0,827.0 H368.2 A4,4 0 0 1 372.2,831.0 V839.0 A4,4 0 0 1 368.2,843.0 H290.0 Z" class="f-mem"><title>Bus, Register, Arbiter: 514 ALMs, gemessen</title></path>
+<text x="380.2" y="839.0" class="v">514</text>
+<text x="278.0" y="865.0" class="s" text-anchor="end">Blitter (Hintergrund, HUD)</text>
+<path d="M290.0,853.0 H367.6 A4,4 0 0 1 371.6,857.0 V865.0 A4,4 0 0 1 367.6,869.0 H290.0 Z" class="f-gfx"><title>Blitter (Hintergrund, HUD): 510 ALMs, gemessen</title></path>
+<text x="379.6" y="865.0" class="v">510</text>
+<text x="278.0" y="891.0" class="s" text-anchor="end">PCM-Mixer</text>
+<rect x="290.0" y="879.0" width="46.0" height="16" class="f-audio tint"><title>PCM-Mixer: mindestens 300 ALMs (Schätzung)</title></rect>
+<path d="M338.0,879.0 H366.0 A4,4 0 0 1 370.0,883.0 V891.0 A4,4 0 0 1 366.0,895.0 H338.0 Z" class="f-audio tint2"><title>PCM-Mixer: bis 500 ALMs (Schätzung)</title></path>
+<text x="378.0" y="891.0" class="v">300–500 · geplant</text>
 <text x="278.0" y="917.0" class="s" text-anchor="end">Analogue-Rahmen (Bridge, PLLs)</text>
-<path d="M290.0,905.0 H360.9 A4,4 0 0 1 364.9,909.0 V917.0 A4,4 0 0 1 360.9,921.0 H290.0 Z" class="f-frame"><title>Analogue-Rahmen (Bridge, PLLs): 468 ALMs, gemessen</title></path>
-<text x="372.9" y="917.0" class="v">468</text>
+<path d="M290.0,905.0 H362.2 A4,4 0 0 1 366.2,909.0 V917.0 A4,4 0 0 1 362.2,921.0 H290.0 Z" class="f-frame"><title>Analogue-Rahmen (Bridge, PLLs): 476 ALMs, gemessen</title></path>
+<text x="374.2" y="917.0" class="v">476</text>
 <text x="278.0" y="943.0" class="s" text-anchor="end">Glas/Schatten (MAPn.SMG, 64 × 256 Byte)</text>
 <rect x="290.0" y="931.0" width="22.0" height="16" class="f-gfx tint"><title>Glas/Schatten (MAPn.SMG, 64 × 256 Byte): mindestens 150 ALMs (Schätzung)</title></rect>
 <path d="M314.0,931.0 H350.0 A4,4 0 0 1 354.0,935.0 V943.0 A4,4 0 0 1 350.0,947.0 H314.0 Z" class="f-gfx tint2"><title>Glas/Schatten (MAPn.SMG, 64 × 256 Byte): bis 400 ALMs (Schätzung)</title></path>
 <text x="362.0" y="943.0" class="v">150–400 · geplant</text>
 <text x="278.0" y="969.0" class="s" text-anchor="end">SDRAM-Controller + Ports</text>
-<path d="M290.0,957.0 H338.5 A4,4 0 0 1 342.5,961.0 V969.0 A4,4 0 0 1 338.5,973.0 H290.0 Z" class="f-mem"><title>SDRAM-Controller + Ports: 328 ALMs, gemessen</title></path>
-<text x="350.5" y="969.0" class="v">328</text>
+<path d="M290.0,957.0 H337.4 A4,4 0 0 1 341.4,961.0 V969.0 A4,4 0 0 1 337.4,973.0 H290.0 Z" class="f-mem"><title>SDRAM-Controller + Ports: 321 ALMs, gemessen</title></path>
+<text x="349.4" y="969.0" class="v">321</text>
 <text x="278.0" y="995.0" class="s" text-anchor="end">Framebuffer ×2 + Video</text>
-<path d="M290.0,983.0 H308.2 A4,4 0 0 1 312.2,987.0 V995.0 A4,4 0 0 1 308.2,999.0 H290.0 Z" class="f-frame"><title>Framebuffer ×2 + Video: 139 ALMs, gemessen</title></path>
-<text x="320.2" y="995.0" class="v">139</text>
+<path d="M290.0,983.0 H308.9 A4,4 0 0 1 312.9,987.0 V995.0 A4,4 0 0 1 308.9,999.0 H290.0 Z" class="f-frame"><title>Framebuffer ×2 + Video: 143 ALMs, gemessen</title></path>
+<text x="320.9" y="995.0" class="v">143</text>
 <text x="278.0" y="1021.0" class="s" text-anchor="end">CFU (16.16-Multiplikation)</text>
 <rect x="290.0" y="1009.0" width="1.4" height="16" class="f-cpu"><title>CFU (16.16-Multiplikation): 9 ALMs, gemessen</title></rect>
 <text x="299.4" y="1021.0" class="v">9</text>
