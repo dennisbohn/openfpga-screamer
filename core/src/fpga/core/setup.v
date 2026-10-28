@@ -18,10 +18,9 @@
 // the corner part the corner after it, the clipper the next polygon, and the CPU writes the
 // polygon after that.
 // The wide values are kept in block RAM where a clock of read latency fits the schedule: the
-// polygon being written, the corner in the corner part, rc, s rc and t rc of the triangle's
-// corners (the corner part writes them as they come, the triangle part reads one a clock
-// through one shifter), and the triangle's Q, U, V at corner 0, their differences and the
-// changes per pixel. Sums of two products are added up in the multiplier's second stage.
+// corner in the corner part, rc, s rc and t rc of the triangle's corners (the corner part
+// writes them as they come, the triangle part reads one a clock through one shifter), and
+// the triangle's Q, U, V at corner 0, their differences and the changes per pixel. Sums of two products are added up in the multiplier's second stage.
 // The operands come from small selects on the step, without holding; wide registers are
 // written through explicit enables (a register held in most states of a case would become
 // a wide mux of the state). Each output changes in the same clock to the same value as it
@@ -167,16 +166,13 @@ end
 
 //
 // the polygon being written: a corner goes in one clock after its last write; complete,
-// the clipper copies it out. The CPU's corners are kept in one block RAM (a corner is
-// written already in the clock it is handed over: nothing reads it before the next), the
-// geometry unit's polygon in another; per corner a flag says which was written last. The
-// clipper loads corner 0, 1, ... in the clocks after it starts: that corner is read and
-// selected here, in_c has it in all four places (so the clipper's own select falls away).
+// the clipper copies it out (in registers: block RAM would save logic but is the scarcer
+// resource)
 //
+    reg  [575:0] ib;
     reg  [2:0]  ib_n, ib_cnt;
     reg  [9:0]  ib_mode;
     reg  [31:0] ib_tex, ib_size;
-    reg  [3:0]  ib_cpu = 0;                     // corner k last written by the CPU
     reg         ib_full = 0, tw = 0, tw_first;
     reg  [9:0]  cl_mode;                        // the polygon in the clipper
     reg  [31:0] cl_tex, cl_size;
@@ -185,39 +181,6 @@ end
     wire        co_take;                        // the corner part takes a corner
     wire [2:0]  tw_idx = tw_first ? 3'd0 : ib_cnt;
     wire [2:0]  tw_n = tw_first ? (in_mode[12:10] < 3'd3 ? 3'd3 : in_mode[12:10] > 3'd4 ? 3'd4 : in_mode[12:10]) : ib_n;
-    wire [2:0]  cw_idx = wr_addr == 4'd10 ? 3'd0 : ib_cnt;     // tw_idx a clock early
-
-    (* ramstyle = "no_rw_check, M10K" *) reg  [143:0] ibc [0:3];
-    // the geometry unit's polygon: corners 0, 1 in word 0, 2, 3 in word 1, both written in one
-    // clock through the two ports; port A reads the pair of the corner loaded next
-    (* ramstyle = "no_rw_check, M10K" *) reg  [287:0] ibg [0:1];
-    reg  [143:0] ibc_q;
-    reg  [287:0] ibg_q, ibg_qb;
-    reg  [1:0]  ld_i;                           // the corner the clipper loads this clock
-    wire [1:0]  ld_n = ib_full && cl_idle ? 2'd0 : ld_i + 2'd1;
-    wire        gu_take = gu_valid && gu_ready;
-    wire        ibg_a = !gu_take && ld_n[1];   // port A's word
-    wire        ibg_b = 1'b1;                   // port B's
-always @(posedge clk) begin
-    if(trigger && ready && !cw_idx[2]) ibc[cw_idx[1:0]] <= {wr_fix24, in_s, in_f, in_u, in_r};
-    ibc_q <= ibc[ld_n];
-    ld_i <= ld_n;
-end
-always @(posedge clk) begin                     // port A
-    if(gu_take) begin
-        ibg[ibg_a] <= gu_c[287:0];
-        ibg_q <= gu_c[287:0];
-    end else
-        ibg_q <= ibg[ibg_a];
-end
-always @(posedge clk) begin                     // port B (its read is not used)
-    if(gu_take) begin
-        ibg[ibg_b] <= gu_c[575:288];
-        ibg_qb <= gu_c[575:288];
-    end else
-        ibg_qb <= ibg[ibg_b];
-end
-    wire [143:0] ib_k = ib_cpu[ld_i] ? ibc_q : ld_i[0] ? ibg_q[287:144] : ibg_q[143:0];
 
 always @(posedge clk) begin
     if(trigger && ready) begin
@@ -227,7 +190,7 @@ always @(posedge clk) begin
     end
     if(tw) begin
         tw <= 0;
-        if(!tw_idx[2]) ib_cpu[tw_idx[1:0]] <= 1'b1;
+        ib[144 * tw_idx +: 144] <= {in_t, in_s, in_f, in_u, in_r};
         ib_cnt <= tw_idx + 3'd1;
         if(tw_first) begin
             ib_n <= tw_n;
@@ -238,7 +201,7 @@ always @(posedge clk) begin
         if(tw_idx == tw_n - 3'd1) ib_full <= 1;
     end
     if(gu_valid && gu_ready) begin
-        ib_cpu <= 4'd0;
+        ib <= gu_c;
         ib_n <= gu_n;
         ib_mode <= gu_mode;
         ib_tex <= gu_tex;
@@ -262,7 +225,7 @@ clipper cl (
     .reset              ( reset ),
     .start              ( ib_full ),
     .n                  ( ib_n ),
-    .in_c               ( {4{ib_k}} ),
+    .in_c               ( ib ),
     .far8               ( far8 ),
     .idle               ( cl_idle ),
     .taken              ( cl_taken ),
