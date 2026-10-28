@@ -99,33 +99,33 @@ zweimal gehalten und zweimal gemessen, das Ende der Kante kommt jetzt aus dem Pu
 Abstand zur Ebene ist ein Addierer mit gewählten Operanden, ein Schieber statt zweien. Jetzt
 928 statt 2.807 ALMs. Geschätzt ist nur, was noch fehlt.
 
-![Platzbudget im FPGA: Logik heute 70 %, mit Geplantem 74–75 %; Block-RAM heute 82 %, mit Geplantem 87–88 %; DSP heute 53 %, mit Geplantem 55 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik heute 73 %, mit Geplantem 76–77 %; Block-RAM heute 82 %, mit Geplantem 87–88 %; DSP heute 53 %, mit Geplantem 55 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py`: die gemessenen Zeilen aus dem Fitter-Report
 (`core/src/fpga/output_files/ap_core.fit.rpt`, Tabelle „Resource Utilization by Entity“), die
-geplanten aus Schätzungen im Skript. Nach einem Build neu erzeugen und diese Tabelle
-nachziehen.
+geplanten aus Schätzungen im Skript. Nach jedem Build neu erzeugen; das Skript schreibt auch
+diese Tabelle.
 
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
-| Analogue-Rahmen (Bridge, PLLs, Pads) | 434 | 2 | 0 |
-| Framebuffer ×2 + Video | 87 | 130 | 0 |
-| VexRiscv + 2× 8 KB Cache | 1.279 | 19 | 4 |
-| FPU (RV32F) | 1.463 | 5 | 4 |
+| Analogue-Rahmen (Bridge, PLLs) | 479 | 2 | – |
+| Framebuffer ×2 + Video | 89 | 130 | – |
+| VexRiscv + 2× 8 KB Cache | 1.283 | 19 | 4 |
+| FPU (RV32F) | 1.467 | 5 | 4 |
 | CFU (16.16-Multiplikation) | 9 | – | 3 |
 | Boot-RAM 32 KB + Protokoll | – | 36 | – |
-| Geometrie-Einheit | 1.702 | 17 | 7 |
-| Clipper | 928 | 6 | 2 |
-| Setup-Einheit | 3.069 | 4 | 4 |
-| Rasterizer | 1.865 | – | 7 |
-| Texturen: Pipeline + Cache | 852 | 30 | 4 |
-| Blitter (Hintergrund, HUD) | 491 | 2 | – |
-| SDRAM-Controller + Ports | 309 | 2 | – |
-| Bus, Register, Arbiter | 530 | – | – |
-| **gebaut** | **13.018 (70 %)** | **253 (82 %)** | **35 (53 %)** |
-| geplant: Rauch/Schatten (Routine 224, `MAPn.SMG`) | 105–190 | 12–16 | – |
-| geplant: Audio (Mischer mit 32 Stimmen, I2S, CD-Musik) | 520–650 | 3 | 1 |
-| **mit Geplantem** | **13.643–13.858 (74–75 %)** | **268–272 (87–88 %)** | **36 (55 %)** |
+| Geometrie-Einheit | 2.288 | 17 | 7 |
+| Clipper | 952 | 6 | 2 |
+| Setup-Einheit | 3.041 | 4 | 4 |
+| Rasterizer | 1.677 | – | 7 |
+| Texturen: Pipeline + Cache | 862 | 30 | 4 |
+| Blitter (Hintergrund, HUD) | 487 | 2 | – |
+| SDRAM-Controller + Ports | 297 | 2 | – |
+| Bus, Register, Arbiter | 546 | – | – |
+| **gebaut** | **13.477 (73 %)** | **253 (82 %)** | **35 (53 %)** |
+| geplant: Rauch/Schatten (Routine 224, MAPn.SMG) | 105–190 | 12–16 | – |
+| geplant: Audio: Mischer 32 Stimmen, I2S, CD-Musik | 520–650 | 3 | 1 |
+| **mit Geplantem** | **14.102–14.317 (76–77 %)** | **268–272 (87–88 %)** | **36 (55 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es

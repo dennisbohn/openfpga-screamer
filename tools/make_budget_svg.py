@@ -4,8 +4,8 @@ Usage: python tools/make_budget_svg.py [fit.rpt] [out.svg]
 
 The measured numbers come from the fitter report of the last Quartus build
 (core/src/fpga/output_files/ap_core.fit.rpt, table "Fitter Resource Utilization by
-Entity"); PLANNED holds the estimates for what is not built yet. The table in
-docs/architektur.md is the text view of the same numbers.
+Entity"); PLANNED holds the estimates for what is not built yet. It also rewrites the table in
+docs/architektur.md, the text view of the same numbers.
 """
 import re
 import sys
@@ -64,7 +64,7 @@ PLANNED = [
 ]
 TIMING_LIMIT = 0.80         # logic utilisation above which timing closure gets hard
 STAND = "28.10.2026"
-BUILD = "Synthese-Einstellungen, neuer Clipper"
+BUILD = "Strecke aus den Originaldateien"
 
 # layout
 WIDTH = 1120
@@ -289,7 +289,7 @@ def main():
     a, m, d = span(3, CAPACITY["alm"]), span(4, CAPACITY["m10k"]), span(5, CAPACITY["dsp"])
     biggest = [c[0] for c in sorted(comps, key=lambda c: -c[3][1])[:3]]
     aria = (f"Platzbudget im FPGA: Logik heute {a[0]} Prozent, mit Geplantem {a[1]} bis {a[2]} Prozent, "
-            f"über der 80-Prozent-Grenze; Block-RAM heute {m[0]}, geplant {m[1]} bis {m[2]} Prozent; "
+            f"{'über' if a[2] > 80 else 'unter'} der 80-Prozent-Grenze; Block-RAM heute {m[0]}, geplant {m[1]} bis {m[2]} Prozent; "
             f"DSP heute {d[0]}, geplant {d[1]} bis {d[2]} Prozent. Größte Posten: {', '.join(biggest)}.")
 
     light = "\n".join(f"    --{k}: {lc};" for k, _, lc, _ in GROUPS)
@@ -343,6 +343,47 @@ def main():
         cap = CAPACITY[res]
         print(f"  {name}: heute {fmt(now)} ({pct(now, cap)} %), mit Geplantem {fmt(lo)}-{fmt(hi)} "
               f"({pct(lo, cap)}-{pct(hi, cap)} %)")
+    if out == "docs/ressourcen.svg":
+        write_table(comps, "docs/architektur.md")
+
+
+def write_table(comps, md):
+    """The text view of the same numbers in docs/architektur.md: the table under "Belegung" and
+    the picture's alternative text, rewritten in place."""
+    span = lambda v: fmt(v[0]) if v[0] == v[1] else f"{fmt(v[0])}–{fmt(v[1])}"
+    cell = lambda v: "–" if v == (0, 0) else span(v)
+
+    def totals(i, measured_only):
+        lo = sum(c[i][0] for c in comps if c[2] or not measured_only)
+        hi = sum(c[i][1] for c in comps if c[2] or not measured_only)
+        return lo, hi
+
+    def total_cell(i, cap, measured_only):
+        lo, hi = totals(i, measured_only)
+        p = f"{pct(lo, cap)}" if pct(lo, cap) == pct(hi, cap) else f"{pct(lo, cap)}–{pct(hi, cap)}"
+        return f"**{span((lo, hi))} ({p} %)**"
+
+    caps = (CAPACITY["alm"], CAPACITY["m10k"], CAPACITY["dsp"])
+    rows = ["| Komponente | ALMs | M10K | DSP |", "|---|---|---|---|"]
+    rows += [f"| {c[0]} | {cell(c[3])} | {cell(c[4])} | {cell(c[5])} |" for c in comps if c[2]]
+    rows.append("| **gebaut** | " + " | ".join(total_cell(3 + k, caps[k], True) for k in range(3)) + " |")
+    rows += [f"| geplant: {c[0]} | {cell(c[3])} | {cell(c[4])} | {cell(c[5])} |" for c in comps if not c[2]]
+    rows.append("| **mit Geplantem** | " + " | ".join(total_cell(3 + k, caps[k], False) for k in range(3)) + " |")
+    pc = [(pct(totals(i, True)[0], caps[i - 3]), pct(totals(i, False)[0], caps[i - 3]),
+           pct(totals(i, False)[1], caps[i - 3])) for i in (3, 4, 5)]
+    r = lambda p: f"{p[1]} %" if p[1] == p[2] else f"{p[1]}–{p[2]} %"
+    alt = (f"![Platzbudget im FPGA: Logik heute {pc[0][0]} %, mit Geplantem {r(pc[0])}; Block-RAM heute "
+           f"{pc[1][0]} %, mit Geplantem {r(pc[1])}; DSP heute {pc[2][0]} %, mit Geplantem {r(pc[2])}](ressourcen.svg)")
+    lines = open(md, encoding="utf-8").read().split("\n")
+    start = next(i for i, l in enumerate(lines) if l.startswith("| Komponente | ALMs |"))
+    end = start
+    while end < len(lines) and lines[end].startswith("|"):
+        end += 1
+    lines[start:end] = rows
+    lines = [alt if l.startswith("![Platzbudget im FPGA:") else l for l in lines]
+    with open(md, "w", encoding="utf-8", newline="\n") as fh:
+        fh.write("\n".join(lines))
+    print(f"{md}: table and picture text rewritten")
 
 
 if __name__ == "__main__":
