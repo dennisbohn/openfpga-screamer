@@ -89,7 +89,7 @@ module raster_tex (
     reg signed [26:0] u2, u3, u4, u5, u6, u7;
     reg signed [26:0] vv2, vv3, vv4, vv5, vv6, vv7;
     reg  [15:0] m3, m4;
-    reg signed [5:0] e3, e4, e5, e6, e7, e8;
+    reg  [4:0]  z3, z4, z5, z6, z7, z8;         // 31 - bit length of Q: e = 15 - z
     reg  [16:0] r0_4, r0_5, r0_6;
     reg  [32:0] p5;
     reg signed [41:0] c6;
@@ -106,27 +106,51 @@ module raster_tex (
     wire signed [26:0] u_lim = u1s < -36'sd67108864 ? -27'sd67108864 : u1s > 36'sd67108863 ? 27'sd67108863 : u1s[26:0];
     wire signed [26:0] v_lim = v1s < -36'sd67108864 ? -27'sd67108864 : v1s > 36'sd67108863 ? 27'sd67108863 : v1s[26:0];
 
-    // S2 -> S3: bit length of q2, e = length - 16, m = q2 shifted to 16 bits
-    reg  [4:0]  q_len;
-    integer     bi;
-always @(*) begin
-    q_len = 0;
-    for(bi = 0; bi < 31; bi = bi + 1) if(q2[bi]) q_len = bi[4:0] + 5'd1;
-end
-    wire signed [5:0] q_e = $signed({1'b0, q_len}) - 6'sd16;
-    wire [46:0] q_wide = {q2, 16'd0};                           // q2 << 16
-    wire [15:0] q_m = q_wide[{1'b0, q_len} +: 16];             // bits [len-1 .. len-16] of q2
+    // S2 -> S3: m = q2 shifted to 16 bits (its bits [len-1 .. len-16], len its bit length):
+    // q2 shifted left by 16, 8, 4, 2, 1 places where the bits shifted out are all 0, so by
+    // z = 31 - len in all
+    wire        qz16 = ~|q2[30:15];
+    wire [30:0] q_s16 = qz16 ? {q2[14:0], 16'd0} : q2;
+    wire        qz8 = ~|q_s16[30:23];
+    wire [30:0] q_s8 = qz8 ? {q_s16[22:0], 8'd0} : q_s16;
+    wire        qz4 = ~|q_s8[30:27];
+    wire [30:0] q_s4 = qz4 ? {q_s8[26:0], 4'd0} : q_s8;
+    wire        qz2 = ~|q_s4[30:29];
+    wire [30:0] q_s2 = qz2 ? {q_s4[28:0], 2'd0} : q_s4;
+    wire        qz1 = ~q_s2[30];
+    wire [15:0] q_m = qz1 ? q_s2[29:14] : q_s2[30:15];
+    wire [4:0]  q_z = {qz16, qz8, qz4, qz2, qz1};
 
     // S5 -> S6: c = r0 (2^32 - p), 2^32 - p is small
     wire signed [33:0] t5 = $signed({1'b0, 33'h1_0000_0000}) - $signed({1'b0, p5});
     wire signed [23:0] t5s = t5[23:0];
 
-    // S8 -> S9: u = U r >> (24 + e), clamped
-    wire [5:0]  sh8 = 6'd24 + e8[5:0];
-    wire signed [45:0] tu_raw = up8 >>> sh8;
-    wire signed [45:0] tv_raw = vp8 >>> sh8;
-    wire [7:0]  tu_lim = tu_raw < 46'sd0 ? 8'd0 : tu_raw >= $signed({37'd0, tex_w}) ? tex_w[7:0] - 8'd1 : tu_raw[7:0];
-    wire [7:0]  tv_lim = tv_raw < 46'sd0 ? 8'd0 : tv_raw >= $signed({37'd0, tex_h}) ? tex_h[7:0] - 8'd1 : tv_raw[7:0];
+    // S8 -> S9: u = U r >> (24 + e), clamped to [0, w - 1]. A negative U r stays negative;
+    // otherwise only the low 9 bits of u matter (w has 9) and whether a bit above them is
+    // set. The shift is 8 + o, o = 31 - z = ~z: (U r >> 8) >> o in steps of 16, 8, 4, 2, 1,
+    // each keeping the bits the low 9 can still come from and ORing together those above
+    function [9:0] win9(input [36:0] y, input [4:0] o);    // {a bit above, (y >> o)[8:0]}
+        reg [23:0] y4;
+        reg [15:0] y3;
+        reg [11:0] y2;
+        reg [9:0]  y1;
+        reg        a;
+        begin
+            y4 = o[4] ? {3'd0, y[36:16]} : y[23:0];
+            a  = !o[4] && |y[36:24];
+            y3 = o[3] ? y4[23:8] : y4[15:0];
+            a  = a || (!o[3] && |y4[23:16]);
+            y2 = o[2] ? y3[15:4] : y3[11:0];
+            a  = a || (!o[2] && |y3[15:12]);
+            y1 = o[1] ? y2[11:2] : y2[9:0];
+            a  = a || (!o[1] && |y2[11:10]);
+            win9 = {a || (!o[0] && y1[9]), o[0] ? y1[9:1] : y1[8:0]};
+        end
+    endfunction
+    wire [9:0]  tu_win = win9(up8[44:8], ~z8);
+    wire [9:0]  tv_win = win9(vp8[44:8], ~z8);
+    wire [7:0]  tu_lim = up8[45] ? 8'd0 : tu_win[9] || tu_win[8:0] >= tex_w ? tex_w[7:0] - 8'd1 : tu_win[7:0];
+    wire [7:0]  tv_lim = vp8[45] ? 8'd0 : tv_win[9] || tv_win[8:0] >= tex_h ? tex_h[7:0] - 8'd1 : tv_win[7:0];
 
     assign front_busy = v1 || v2 || v3 || v4 || v5 || v6 || v7 || v8 || v9 || va || vt;
 
@@ -172,6 +196,10 @@ end endgenerate
     wire [255:0] line_q = {lbuf[7].q, lbuf[6].q, lbuf[5].q, lbuf[4].q,
                            lbuf[3].q, lbuf[2].q, lbuf[1].q, lbuf[0].q};
     reg         lq_ok = 0;                      // line_q holds the slot s_use
+    // the same words once more, a word a read: a marked pixel's word of slot s_use, read when
+    // it leaves the queue (B1, the slot is complete) for its byte at B2
+    (* ramstyle = "no_rw_check, M10K" *) reg  [31:0] lbw [0:127];
+    reg  [31:0] lbw_q;
 
 //
 // the queue: 64 x {marked, index, offset in the line, framebuffer word and pixel,
@@ -216,14 +244,15 @@ end
 always @(posedge clk) begin
     if(h_go && h_fill) lines[h_index] <= line_q;
     l_q <= lines[h_index];
+    if(f_we) lbw[{s_fetch[3:0], fill_cnt}] <= mem_rsp_data;
+    lbw_q <= lbw[{s_ru, h_off[4:2]}];
 end
 
     // B2: the byte, from the line buffer for a marked pixel, else from the cache
     reg         b2 = 0, b2_fill, b2_cut;
     reg  [4:0]  b2_off;
     reg  [15:0] b2_w;
-    reg  [7:0]  b2_texel;
-    wire [7:0]  texel = b2_fill ? b2_texel : l_q[8 * b2_off +: 8];
+    wire [7:0]  texel = b2_fill ? lbw_q[8 * b2_off[1:0] +: 8] : l_q[8 * b2_off +: 8];
 
     assign busy = inval || front_busy || pq_n != 7'd0 || b2 || out_wr || s_used != 5'd0 || f_last;
 
@@ -241,28 +270,28 @@ always @(posedge clk) begin
         q2 <= q_lim; u2 <= u_lim; vv2 <= v_lim;
         // S3
         v3 <= v2; w3 <= w2;
-        m3 <= q_m; e3 <= q_e; u3 <= u2; vv3 <= vv2;
+        m3 <= q_m; z3 <= q_z; u3 <= u2; vv3 <= vv2;
         // S4: table read
         v4 <= v3; w4 <= w3;
         r0_4 <= rtab[m3[14:5]];
-        m4 <= m3; e4 <= e3; u4 <= u3; vv4 <= vv3;
+        m4 <= m3; z4 <= z3; u4 <= u3; vv4 <= vv3;
         // S5: p = m r0
         v5 <= v4; w5 <= w4;
         p5 <= m4 * r0_4;
-        r0_5 <= r0_4; e5 <= e4; u5 <= u4; vv5 <= vv4;
+        r0_5 <= r0_4; z5 <= z4; u5 <= u4; vv5 <= vv4;
         // S6: c = r0 (2^32 - p)
         v6 <= v5; w6 <= w5;
         c6 <= $signed({1'b0, r0_5}) * t5s;
-        r0_6 <= r0_5; e6 <= e5; u6 <= u5; vv6 <= vv5;
+        r0_6 <= r0_5; z6 <= z5; u6 <= u5; vv6 <= vv5;
         // S7: r = r0 + (c >> 32)
         v7 <= v6; w7 <= w6;
         r7 <= {1'b0, r0_6} + {{8{c6[41]}}, c6[41:32]};     // c >> 32, signed
-        e7 <= e6; u7 <= u6; vv7 <= vv6;
+        z7 <= z6; u7 <= u6; vv7 <= vv6;
         // S8: U r, V r
         v8 <= v7; w8 <= w7;
         up8 <= u7 * $signed({1'b0, r7});
         vp8 <= vv7 * $signed({1'b0, r7});
-        e8 <= e7;
+        z8 <= z7;
         // S9: texel coordinates
         v9 <= v8; w9 <= w8;
         tu9 <= tu_lim; tv9 <= tv_lim;
@@ -317,7 +346,6 @@ always @(posedge clk) begin
         b2_off <= h_off;
         b2_w <= h_w;
         b2_cut <= h_cut;
-        b2_texel <= line_q[8 * h_off +: 8];
         if(h_fill) begin
             s_ready[s_ru] <= 0;
             s_use <= s_use + 1'b1;
