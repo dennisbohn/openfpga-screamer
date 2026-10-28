@@ -9,13 +9,16 @@
 //
 // Loading like the APF: the core held in reset, a bridge word at most every 88 clocks
 // (io_bridge_peripheral.v), firmware.bin to bridge address 0, the debug log slot filled
-// with 0xFF (debug.txt does not exist yet; the core must ignore it), then the wait for the
+// with 0xFF (debug.txt does not exist yet; the core must ignore it), the slot table (per
+// slot of core/data.json its id and file size, deferload slots too), then the wait for the
 // acknowledge core_top gives a slot write once the SDRAM is ready. Then reset is released.
 // program.bin (next to firmware.bin) is deferload: the boot loader asks for it after the
 // SDRAM tests (ds_read, core_bridge_cmd's target command 0x0180) and the testbench answers
 // like the APF: done low, the words over the bridge, done high with the result (2 for a
-// slot without a file, as the track's here). The boot loader checks program.bin and
-// starts it.
+// slot without a file). The boot loader checks program.bin and starts it. SIM_GAME names
+// a folder with the game's original files: the testbench serves them as the slots
+// core/data.json gives their names, and the program builds the track from them and drives
+// the race instead of the texture demo.
 //
 // Run until the firmware reports through SYS_SIM, then capture two more frames and check:
 // SYS_SIM, the model error counts and the longest refresh gap, the debug log's slot size
@@ -36,6 +39,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <map>
 #include <string>
 #include <vector>
 #include "Vsoc_system.h"
@@ -44,6 +48,41 @@ static const int W = 320, H = 200;
 static const uint64_t HALF_74 = 6734, HALF_VID = 40690;    // ps
 static const uint64_t FRAME_PS = 480ull * 512 * 2 * HALF_VID;   // 50 Hz
 static const int BRIDGE_GAP = 88;                           // clocks per bridge word, APF worst case
+
+static bool read_file(const std::string &path, std::vector<uint8_t> &out) {
+    FILE *f = fopen(path.c_str(), "rb");
+    if (!f) return false;
+    uint8_t buf[65536];
+    size_t n;
+    while ((n = fread(buf, 1, sizeof buf, f)) > 0) out.insert(out.end(), buf, buf + n);
+    fclose(f);
+    return true;
+}
+
+// core/data.json's slots in its order (the order of the APF's slot table): id, file name
+struct Slot { uint32_t id; std::string name; };
+static std::vector<Slot> data_slots(const char *path) {
+    std::vector<uint8_t> raw;
+    std::vector<Slot> out;
+    if (!read_file(path, raw)) return out;
+    std::string s(raw.begin(), raw.end());
+    size_t p = s.find("\"data_slots\"");
+    while (p != std::string::npos && (p = s.find('{', p)) != std::string::npos) {
+        size_t e = s.find('}', p);
+        std::string o = s.substr(p, e - p);
+        Slot slot{0, ""};
+        size_t k = o.find("\"id\"");
+        if (k != std::string::npos) slot.id = uint32_t(strtoul(o.c_str() + o.find(':', k) + 1, nullptr, 0));
+        k = o.find("\"filename\"");
+        if (k != std::string::npos) {
+            size_t q = o.find('"', o.find(':', k)) + 1;
+            slot.name = o.substr(q, o.find('"', q) - q);
+        }
+        out.push_back(slot);
+        p = e;
+    }
+    return out;
+}
 
 struct Sim {
     Vsoc_system top;
@@ -89,20 +128,29 @@ struct Sim {
             bridge_write(base + a, uint32_t(f[a]) << 24 | f[a + 1] << 16 | f[a + 2] << 8 | f[a + 3], gap);
     }
 
-    // the APF's side of a data slot read the core asked for: slot 2 is program.bin, slot 3
-    // the track when SIM_TRACK names one (sent faster than the APF would, 4 MB take long),
-    // any other slot has no file. The clocks it takes do not count as frames of run().
-    std::vector<uint8_t> prog, track;
+    // the APF's side of a data slot read the core asked for: the file of slot id, program.bin
+    // (slot 2) or one of the game's files (sent faster than the APF would, 2 MB take long).
+    // Result 2 (error or out of range) for a slot without a file and for a read past the
+    // file's end, the strict reading of the APF's docs; length 0xFFFFFFFF is the rest of the
+    // file, its last word filled up with zeros. The clocks it takes do not count as frames
+    // of run().
+    std::map<uint32_t, std::vector<uint8_t>> files;     // by slot id
+    bool race = false;                                  // every game file is there
     int slot_reads = 0;
     void serve_read() {
         top.ds_done = 0; top.eval();
         rise_74(8);
         uint32_t id = top.ds_id, off = top.ds_offset, addr = top.ds_addr, len = top.ds_length, err = 2;
-        const std::vector<uint8_t> *file = id == 2 ? &prog : id == 3 && !track.empty() ? &track : nullptr;
-        if (file && off < file->size()) {
-            size_t end = std::min<size_t>(file->size(), size_t(off) + len);
-            load(addr, std::vector<uint8_t>(file->begin() + off, file->begin() + end), id == 3 ? 12 : BRIDGE_GAP);
-            err = 0;
+        auto it = files.find(id);
+        if (it != files.end()) {
+            const std::vector<uint8_t> &f = it->second;
+            uint64_t end = len == 0xFFFFFFFFu ? f.size() : uint64_t(off) + len;
+            if (off < f.size() && end <= f.size()) {
+                std::vector<uint8_t> part(f.begin() + off, f.begin() + end);
+                while (part.size() % 4) part.push_back(0);
+                load(addr, part, id == 2 ? BRIDGE_GAP : 12);
+                err = 0;
+            }
         }
         printf("data slot read %u: %u bytes from %u to 0x%08x, result %u\n", id, len, off, addr, err);
         slot_reads++;
@@ -175,9 +223,9 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
     if (top.sdram_max_refresh > 580) { printf("FAIL: refresh gap above 7.8 us (580 clocks)\n"); fails++; }
 
     // the last whole frame: the test band, or the trap handler's box (rows 18..24 in
-    // COL_ALERT; text row 22 is empty); the race (a track in slot 3) draws no band
+    // COL_ALERT; text row 22 is empty); the race (the game's files) draws no band
     if (last.size() == size_t(W * H * 3)) {
-        bool race = getenv("SIM_TRACK") && !expect_trap;
+        bool race = s.race && !expect_trap;
         int bad = 0, y0 = expect_trap ? 22 * 8 : 0, x1 = expect_trap ? W : 256;
         for (int y = y0; y < (race ? y0 : y0 + 8); y++)
             for (int x = 0; x < x1; x++) {
@@ -228,8 +276,8 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
         if (reported != negative) { printf(negative ? "FAIL: the log reports no failed test\n" : "FAIL: the log reports a failed test\n"); fails++; }
         if (slot_line && text.find(slot_line) == std::string::npos) { printf("FAIL: no \"%s\" in the log\n", slot_line); fails++; }
         if (text.find("windows of 2048 bytes") == std::string::npos) { printf("FAIL: the log does not name the simulation windows\n"); fails++; }
-        // the texture demo checks its triangles, the race (a track in slot 3) its whole picture
-        const char *check = getenv("SIM_TRACK") ? "track check: ok" : "raster check: ok";
+        // the texture demo checks its triangles, the race (the game's files) its whole picture
+        const char *check = s.race ? "track check: ok" : "raster check: ok";
         if (!negative && text.find(check) == std::string::npos) { printf("FAIL: no \"%s\" in the log\n", check); fails++; }
     }
     return fails;
@@ -256,31 +304,31 @@ int main(int argc, char **argv) {
 
     // program.bin next to firmware.bin (tools/fw.sh builds both)
     Sim s;
-    std::vector<uint8_t> &prog = s.prog;
     {
         std::string path = argv[1];
         size_t slash = path.find_last_of("/\\");
         path = (slash == std::string::npos ? std::string() : path.substr(0, slash + 1)) + "program.bin";
-        FILE *f = fopen(path.c_str(), "rb");
-        if (f) {
-            uint8_t buf[4096];
-            size_t n;
-            while ((n = fread(buf, 1, sizeof buf, f)) > 0) prog.insert(prog.end(), buf, buf + n);
-            fclose(f);
-        }
+        std::vector<uint8_t> &prog = s.files[2];
+        read_file(path, prog);
         while (prog.size() % 4) prog.push_back(0);
         printf("%s: %zu bytes\n", path.c_str(), prog.size());
     }
-    if (const char *tp = getenv("SIM_TRACK")) {         // slot 3, e.g. build/assets/.../track1.bin
-        FILE *f = fopen(tp, "rb");
-        if (f) {
-            uint8_t buf[65536];
-            size_t n;
-            while ((n = fread(buf, 1, sizeof buf, f)) > 0) s.track.insert(s.track.end(), buf, buf + n);
-            fclose(f);
+    // the game's files from SIM_GAME by the names core/data.json gives the slots above 2
+    std::vector<Slot> slots = data_slots("core/data.json");
+    if (slots.empty()) { fprintf(stderr, "cannot read the slots of core/data.json\n"); return 2; }
+    if (const char *game = getenv("SIM_GAME")) {
+        int found = 0, wanted = 0;
+        for (const Slot &slot : slots) {
+            if (slot.id <= 2) continue;
+            wanted++;
+            std::vector<uint8_t> f;
+            if (read_file(std::string(game) + "/" + slot.name, f) && !f.empty()) {
+                s.files[slot.id] = f;
+                found++;
+                printf("%s/%s: %zu bytes (slot %u)\n", game, slot.name.c_str(), f.size(), slot.id);
+            } else printf("%s/%s: missing (slot %u)\n", game, slot.name.c_str(), slot.id);
         }
-        while (s.track.size() % 4) s.track.push_back(0);
-        printf("%s: %zu bytes (slot 3)\n", tp, s.track.size());
+        s.race = wanted > 0 && found == wanted;
     }
 
     Vsoc_system &top = s.top;
@@ -293,6 +341,15 @@ int main(int argc, char **argv) {
     int fails = 0;
     s.load(0, fw);
     s.load(0x00100000, std::vector<uint8_t>(4096, 0xFF));
+    // the slot table as the APF writes it when it loads the core: per slot of core/data.json
+    // its id and its file's size (none for the debug log: no debug.txt yet)
+    for (size_t k = 0; k < slots.size() && k < 32; k++) {
+        uint32_t id = slots[k].id;
+        auto it = s.files.find(id);
+        uint32_t size = id == 0 ? uint32_t(fw.size()) : it != s.files.end() ? uint32_t(it->second.size()) : 0;
+        s.bridge_write(0xF8002000u + 8 * uint32_t(k), id);
+        s.bridge_write(0xF8002004u + 8 * uint32_t(k), size);
+    }
     {
         // the core ignores the debug log's load (docs/soc.md), so it still holds what it held
         int loaded = 0;

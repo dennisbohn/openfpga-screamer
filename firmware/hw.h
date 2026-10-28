@@ -91,10 +91,13 @@
 #define DS_ID           REG32(0xF0000020u)  /* W: slot id */
 #define DS_OFFSET       REG32(0xF0000024u)  /* W: byte offset in the file */
 #define DS_ADDR         REG32(0xF0000028u)  /* W: bridge address to load to */
-#define DS_LENGTH       REG32(0xF000002Cu)  /* W: bytes, a multiple of 4 */
-#define DS_CTRL         REG32(0xF0000030u)  /* W: DS_START; R: DS_BUSY, [6:4] the APF's result, 0 = ok */
+#define DS_LENGTH       REG32(0xF000002Cu)  /* W: bytes, a multiple of 4, or SLOT_REST */
+#define DS_CTRL         REG32(0xF0000030u)  /* W: DS_START; R: DS_BUSY, DS_SIZING, [6:4] the APF's result, 0 = ok */
+#define DS_SIZE         REG32(0xF0000034u)  /* R: the file size of slot DS_ID from the APF's slot table, 0 if none */
 #define DS_START        (1u << 0)
 #define DS_BUSY         (1u << 0)
+#define DS_SIZING       (1u << 1)           /* DS_SIZE is being looked up (after a write of DS_ID) */
+#define SLOT_REST       0xFFFFFFFFu         /* DS_LENGTH: the rest of the file, the APF sizes it */
 #define PHASE_STEPS(r)  ((int16_t)((r) >> 16))
 
 /* Rasterizer (raster.v): the same pixels as raster.c. Vertices and clip may be written while

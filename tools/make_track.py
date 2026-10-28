@@ -1,11 +1,15 @@
-"""One track for the Pocket (firmware/track.c, car.c), from the game files.
+"""One track for the Pocket (firmware/track.c, car.c), from the game files: the reference.
+
+The core builds this image itself from the original containers on the SD card
+(firmware/track_build.c); this script is kept only as the reference that
+tools/check_track_build.sh compares the firmware's build with, byte for byte.
 
 Usage: python tools/make_track.py <GFX/MAPnL.DAT> <DATA/MAPn.DAT> <DATA/GEN.DAT> <out.bin>
                                   <preview.png>
 (GFX/GAME.DAT and DATA/LOCAL.DAT are taken from beside them.)
 
 Formats from openscreamer docs/NOTES.md ("How the track is built", sections 1-4, 6-9, 11).
-The output, for data slot 3 (core/data.json), little-endian:
+The output, the image firmware/main.c builds at TEX_FILE, little-endian:
 
   0x00  "SCRK", u32 version 6
   0x08  u32 offset, size of MAPn.MLB     materials and pixel pages, unchanged
@@ -68,7 +72,8 @@ The output, for data slot 3 (core/data.json), little-endian:
                                          so the core can tell where a load went wrong
 
 Sections start on 256-byte boundaries. The output is made from game data: it stays in
-build/, never in the repository. The preview draws placements and path from above.
+build/, never in the repository, and is no longer put on the SD card. The preview draws
+placements and path from above.
 """
 import math
 import os

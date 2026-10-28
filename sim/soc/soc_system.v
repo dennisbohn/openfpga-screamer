@@ -24,7 +24,7 @@ module soc_system (
     output  wire            vid_vs,
 
     output  wire    [31:0]  sim_status,
-    output  wire    [31:0]  log_slot_size,      // size word of the debug log's slot table entry
+    output  wire    [31:0]  log_slot_size,      // size word of the debug log's slot table entry (entry 1)
     output  wire            swap_req,           // soc's swap request toggle
     output  wire            front,              // video_out: the buffer in front
     output  wire            sdram_ready,        // what core_top acknowledges data slot writes with
@@ -193,23 +193,17 @@ video_out vo (
     .vid_vs             ( vid_vs )
 );
 
-    // slot table as the APF leaves it after loading: entry 0 = firmware (id 0), entry 1 =
-    // debug log (id 1) with no size, because no debug.txt existed, entry 2 = the firmware
-    // copy in the SDRAM (id 2)
+    // the slot table as core_bridge_cmd keeps it: the APF writes it over the bridge
+    // (0xF8002000, per slot its id, then its file's size; the testbench does that as the
+    // APF does when it loads the core), the soc reads and writes it on its own port
     reg     [31:0]  dt [0:255];
     reg     [31:0]  dt_r;
     integer i;
-    initial begin
-        for(i = 0; i < 256; i = i + 1) dt[i] = 32'd0;
-        dt[0] = 32'd0;
-        dt[1] = 32'd32768;
-        dt[2] = 32'd1;
-        dt[3] = 32'd0;
-        dt[4] = 32'd2;
-        dt[5] = 32'd32768;
-    end
+    initial for(i = 0; i < 256; i = i + 1) dt[i] = 32'd0;
 always @(posedge clk_74a) begin                 // address and output registered, like mf_datatable
     if(dt_wren) dt[dt_addr[7:0]] <= dt_data;
+    else if(bridge_wr && bridge_addr[31:24] == 8'hF8 && bridge_addr[15:12] == 4'h2)
+        dt[bridge_addr[9:2]] <= bridge_wr_data;
     dt_r <= dt[dt_addr[7:0]];
     dt_q <= dt_r;
 end
