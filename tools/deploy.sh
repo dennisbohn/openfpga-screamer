@@ -1,7 +1,7 @@
 #!/bin/sh
 # Package the core and copy it onto the Pocket's SD card (Pocket in USB mode or card reader),
 # together with the player's own original game files the core reads (core/data.json, slots
-# 3-7), unchanged, into Assets/screamer/common/.
+# 3-7), unchanged and in the game's own folders (DATA, GFX), into Assets/screamer/common/.
 # Usage: tools/deploy.sh <SD card root> [game folder], e.g. tools/deploy.sh /i  (Git Bash for
 #        drive I:); the game folder defaults to $GAME_DIR or "C:/GOG Games/Screamer"
 # Only Screamer's own folders and files are written; everything else on the card stays as it is.
@@ -18,9 +18,10 @@ done
 sh "$root/tools/package.sh" > /dev/null
 src="$root/build/sdcard"
 cp -r "$src/." "$card/"
-mkdir -p "$card/Assets/screamer/common"
 for f in $files; do
-    cp "$game/$f" "$card/Assets/screamer/common/"
+    mkdir -p "$card/Assets/screamer/common/${f%/*}"
+    cp "$game/$f" "$card/Assets/screamer/common/$f"
+    rm -f "$card/Assets/screamer/common/${f#*/}"            # deployed flat for a while on 2026-10-28
 done
 rm -f "$card/Assets/screamer/Chainy.Screamer/track1.bin"     # made on the PC until 2026-10, now built by the core
 sync
@@ -29,5 +30,5 @@ cmp -s "$src/Cores/Chainy.Screamer/bitstream.rbf_r" "$card/Cores/Chainy.Screamer
 echo "Deployed to $card:"
 (cd "$src" && find . -type f | sed 's|^\./|  |' | sort)
 for f in $files; do
-    echo "  Assets/screamer/common/${f#*/}  (from $game)"
+    echo "  Assets/screamer/common/$f  (from $game)"
 done

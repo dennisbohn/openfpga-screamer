@@ -39,9 +39,10 @@ mit `tools/deploy.sh /i` (SD-Karte bzw. Pocket im USB-Modus als Laufwerk I:).
 
 ## Spieldaten für die SD-Karte
 
-Der Core braucht nur die originalen Spieldateien, unverändert: `GFX/MAP1H.DAT`,
-`GFX/GAME.DAT`, `DATA/MAP1.DAT`, `DATA/GEN.DAT` und `DATA/LOCAL.DAT` aus dem Spielordner
-(etwa der GOG-Fassung) nach `Assets/screamer/common/` auf der SD-Karte kopieren. Nichts
+Der Core braucht nur die originalen Spieldateien, unverändert: die Ordner `DATA`, `GFX`
+und `TABS` aus dem Spielordner (etwa der GOG-Fassung) so, wie sie sind, nach
+`Assets/screamer/common/` auf der SD-Karte kopieren. Heute liest er daraus
+`GFX/MAP1H.DAT`, `GFX/GAME.DAT`, `DATA/MAP1.DAT`, `DATA/GEN.DAT` und `DATA/LOCAL.DAT`. Nichts
 wird auf dem PC umgewandelt: Die Firmware liest die Container (Data-Slots 3 bis 7),
 entpackt sie und baut daraus beim Start das Abbild der Strecke (Platzierungen, Palette,
 Kamerapfad, die befahrbaren Teile je Rasterzelle, Marker, Wände, die Autos aus `CARS.DTR`,

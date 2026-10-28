@@ -59,8 +59,10 @@ langsam liest. Ein Audiopuffer im Block-RAM fängt dabei jede Wartezeit ab.
 
 ## Spieldaten auf der SD-Karte
 
-Die originalen Dateien, unverändert und flach in `Assets/screamer/common/` (die Namen sind
-über `DATA`, `GFX` und `TABS` hinweg eindeutig). Je Datei ein Data-Slot mit `deferload`:
+Die originalen Dateien, unverändert in ihren Ordnern unter `Assets/screamer/common/`: die
+Ordner `DATA`, `GFX` und `TABS` des Spiels so, wie sie sind (der Pocket nimmt den Ordner im
+Dateinamen eines Slots an, `GFX/MAP1H.DAT`, auf dem Pocket getestet 2026-10-28). Je Datei
+ein Data-Slot mit `deferload`:
 der Core liest das Inhaltsverzeichnis am Dateiende und holt sich die Einträge, die er
 braucht. Gebaut (2026-10-28): die fünf Dateien von Strecke 1 (Slots 3 bis 7: `MAP1H.DAT`,
 `GAME.DAT`, `MAP1.DAT`, `GEN.DAT`, `LOCAL.DAT`); die Firmware entpackt sie (`dat.c`, LZW)
@@ -152,7 +154,7 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
 - **Sprache:** eigener Code in Verilog (wie das Template). Der VexRiscv wird einmalig aus
   einer Scala-Konfiguration als Verilog erzeugt, eigene CPU-Befehle laufen über sein
   CFU-Plugin. Gleiche Leistung wie SpinalHDL, leichter zu lesen.
-- **Spieldaten:** Originaldateien flach in `Assets/screamer/common/` (siehe oben).
+- **Spieldaten:** die Ordner des Spiels unverändert in `Assets/screamer/common/` (siehe oben).
 - **50 Hz, ein Spielschritt pro Bild:** Das Original hat keinen festen Takt, seine Physik
   rechnet mit der gemessenen Bildzeit, begrenzt auf 0,02–0,2 s; schneller als 50 Schritte
   pro Sekunde wird es also nie (OpenScreamer `docs/NOTES.md`, Fahrmodell). Die Bildausgabe
