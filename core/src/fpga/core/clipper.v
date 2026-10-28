@@ -12,6 +12,11 @@
 // one at a time. The buffer is block RAM, read one clock after its address is set. A
 // corner takes three clocks a pass, a new point about 25 more (one multiplier, operands
 // registered, the product three clocks after it was issued).
+// Of an edge only b is kept in a register: corner a is b of the edge before, written on
+// (if inside) as b is replaced, and for a new point the buffer reads it again; the new
+// point is put together in the buffer's write register. The wide registers are written
+// through explicit enables and small selects (the build does not restructure multiplexers,
+// so a register held in most states of a case would become a wide mux of the state).
 //
 // A corner: {t[23:0], s[23:0], f, u, r} = 144 bits.
 //
@@ -46,8 +51,8 @@ module clipper (
             rtab[ti] = tq[16:0];
         end
     end
-    reg  [9:0]  r_addr;
-    reg  [16:0] r_q;
+    reg  [9:0]  r_addr;                         // set at step 3 of a new point only, so r_q
+    reg  [16:0] r_q;                            // holds its entry from step 5 on
 always @(posedge clk) r_q <= rtab[r_addr];
 
     // distance from plane k, >= 0 inside
@@ -89,19 +94,11 @@ always @(posedge clk) r_q <= rtab[r_addr];
         end
     endfunction
 
-    function [5:0] bitlen(input [37:0] v);
+    function [5:0] bitlen(input [35:0] v);
         integer i;
         begin
             bitlen = 0;
-            for(i = 0; i < 38; i = i + 1) if(v[i]) bitlen = i[5:0] + 6'd1;
-        end
-    endfunction
-
-    function [15:0] norm16(input [37:0] v, input [5:0] l);
-        reg [53:0] w;
-        begin
-            w = {v, 16'd0} >> l;
-            norm16 = w[15:0];
+            for(i = 0; i < 36; i = i + 1) if(v[i]) bitlen = i[5:0] + 6'd1;
         end
     endfunction
 
@@ -129,29 +126,47 @@ end
     reg  [2:0]   k;                             // the plane of this pass
     reg  [5:0]   any, all;
     reg  [3:0]   i;                             // edge i: corners i and i + 1
-    reg  [143:0] a, b, first;
-    reg  signed [36:0] da, db;
+    reg  [143:0] b;                             // corner i + 1 (until L_READ: corner i)
+    reg  signed [36:0] da, db;                  // the distances of corners i and i + 1
     reg  [4:0]   xs;                            // step of the new point
 
     assign idle = state == L_IDLE;
     assign out_c = buf_q;
     assign out_first = ridx == 4'd0;
 
-    wire [143:0] in_k = in_c[144 * i +: 144];
-    wire [143:0] b_now = i == np - 4'd1 ? first : buf_q;
+    // corner i of the input (n is 3 or 4, so i < 4 while loading)
+    wire [143:0] in_k = in_c[144 * i[1:0] +: 144];
     wire [5:0]   code = outcode(in_k, far8);
     wire [2:0]   next_k = plane_from(any, k + 3'd1);
 
-    // the new point
-    reg  [36:0]  ea, eb;
-    reg  [37:0]  xd;
+    wire         s_load = state == L_LOAD;
+    wire         s_pstart = state == L_PSTART;
+    wire         s_read = state == L_READ;
+    wire         s_x = state == L_X;
+    wire         across = da[36] != db[36];
+    // the next edge's b: the corner after it, corner 0 for the last edge (the half being
+    // read is not written in a pass, so corner 0 is still there)
+    wire [3:0]   i2 = i + 4'd2;
+    wire [3:0]   ridx_next = i2 == np ? 4'd0 : i2;
+
+    // pdist(buf_q, k) with one adder: x + y or x - y
+    wire [36:0]  q_r = {{5{buf_q[31]}}, buf_q[31:0]};
+    wire [36:0]  q_u = {{5{buf_q[63]}}, buf_q[63:32]};
+    wire [36:0]  q_f = {{5{buf_q[95]}}, buf_q[95:64]};
+    wire [36:0]  q_g = (q_f << 4) - (q_f << 1);
+    wire [36:0]  pd_x = k == 3'd0 ? q_f : k >= 3'd5 ? {{5{far8[31]}}, far8} : q_g;
+    wire [36:0]  pd_y = k == 3'd0 ? 37'd32768 : k <= 3'd2 ? q_r : k <= 3'd4 ? q_u : q_f;
+    wire         pd_neg = k[0] || k == 3'd0 || k >= 3'd5;
+    wire [36:0]  pd = pd_x + (pd_y ^ {37{pd_neg}}) + {36'd0, pd_neg};
+
+    // the new point (corner i in buf_q from step 1 on); the fields being 32 bits, a distance
+    // is at most 14 |f| + |r| <= 15 x 2^31 < 2^35, so xd has 36 bits
+    wire [37:0]  xd_now = da[36] ? {db[36], db} - {da[36], da} : {da[36], da} - {db[36], db};
+    reg  [35:0]  xd;                            // |da| + |db|, the signs differing
     reg  [5:0]   xl;
-    reg  [15:0]  xm;
-    wire [15:0]  xm_now = norm16(xd, xl);
-    reg  [16:0]  xr0, xrc;
-    reg  [33:0]  xp;
+    reg  [33:0]  xp;                            // m (from step 3), then 2^33 - m r0
+    reg  signed [17:0] xrc;                     // rc, negated if da < 0
     reg  [16:0]  t16;
-    reg  [143:0] xn;
     reg  signed [37:0] mul_a;
     reg  signed [17:0] mul_b;
     reg  signed [55:0] mul_p1, mul_p2;
@@ -160,27 +175,66 @@ end
                         X_LF = 3'd6, X_LS = 3'd7;
     reg          lt;                            // the fifth product (t) after X_LS
     reg          lt1, lt2;
-    wire signed [55:0] mul_t16 = mul_p2 >>> xl;
     wire signed [39:0] lerp_d = mul_p2[55:16];  // (b - a) t >> 16
+    // one shifter right by xl (at most 36) for norm16 at step 3 and for t at X_T: t is
+    // |da| rc >> xl, below 2^17 as |da| <= xd < 2^xl and rc < 2^17, so the product has 53
+    // bits, its low 17 bits shifted are all of t and above 65536 is bit 16 with any below
+    wire [52:0]  sh_in = s_x && xs == 5'd3 ? {1'b0, xd, 16'd0} : mul_p2[52:0];
+    wire [52:0]  sh = sh_in >> xl;
+    wire [15:0]  xm_now = sh[15:0];             // norm16(xd, xl)
+    wire [16:0]  t_sh = sh[16:0];
 
-    function signed [37:0] diff32(input [31:0] bv, input [31:0] av);
-        diff32 = {{6{bv[31]}}, bv} - {{6{av[31]}}, av};
-    endfunction
-    function signed [37:0] diff24(input [23:0] bv, input [23:0] av);
-        diff24 = {{14{bv[23]}}, bv} - {{14{av[23]}}, av};
-    endfunction
+    // a value of the new point: the field of a (buf_q) the product is for, plus it
+    reg  [31:0]  xa;
+always @* begin
+    case(mul_t2)
+    X_LR: xa = buf_q[31:0];
+    X_LU: xa = buf_q[63:32];
+    X_LF: xa = buf_q[95:64];
+    X_LS: xa = {8'd0, buf_q[119:96]};
+    default: xa = {8'd0, buf_q[143:120]};
+    endcase
+end
+    wire [31:0]  xv = xa + lerp_d[31:0];
 
+    // the multiplier's work this clock (steps 5, 9, 13, 17..21 of a new point)
+    reg  [2:0]   op;
+    reg          op_lt;
+always @* begin
+    op = 3'd0;
+    op_lt = 1'b0;
+    if(s_x) case(xs)
+    5'd5:  op = X_R1;
+    5'd9:  op = X_R2;
+    5'd13: op = X_T;
+    5'd17: op = X_LR;
+    5'd18: op = X_LU;
+    5'd19: op = X_LF;
+    5'd20: op = X_LS;
+    5'd21: op_lt = 1'b1;
+    default: ;
+    endcase
+end
+
+    // the field of a (buf_q) and b for the lerp at step 17..21 (xs[2:0] 1..5: r, u, f, s, t)
+    reg  [31:0]  fa, fb;
+always @* begin
+    case(xs[2:0])
+    3'd1: begin fa = buf_q[31:0]; fb = b[31:0]; end
+    3'd2: begin fa = buf_q[63:32]; fb = b[63:32]; end
+    3'd3: begin fa = buf_q[95:64]; fb = b[95:64]; end
+    3'd4: begin fa = {{8{buf_q[119]}}, buf_q[119:96]}; fb = {{8{b[119]}}, b[119:96]}; end
+    default: begin fa = {{8{buf_q[143]}}, buf_q[143:120]}; fb = {{8{b[143]}}, b[143:120]}; end
+    endcase
+end
+    wire [32:0]  fd = {fb[31], fb} - {fa[31], fa};
+
+//
+// control
+//
 always @(posedge clk) begin
     taken <= 0;
     we <= 0;
-    mul_p1 <= mul_a * mul_b;
-    mul_p2 <= mul_p1;
-    mul_t1 <= mul_t0;
-    mul_t2 <= mul_t1;
-    lt1 <= lt;
-    lt2 <= lt1;
-    mul_t0 <= 0;
-    lt <= 0;
 
     case(state)
     L_IDLE: if(start) begin
@@ -195,7 +249,6 @@ always @(posedge clk) begin
     L_LOAD: begin                               // corner i into the first half, its outcode
         we <= 1;
         wa <= {1'b0, i};
-        wd <= in_k;
         any <= any | code;
         all <= all & code;
         i <= i + 1'b1;
@@ -221,10 +274,7 @@ always @(posedge clk) begin
         state <= ret;
     end
 
-    L_PSTART: begin                             // corner 0 is the first edge's a
-        a <= buf_q;
-        first <= buf_q;
-        da <= pdist(buf_q, k, far8);
+    L_PSTART: begin                             // corner 0 into b: the first edge's a
         i <= 0;
         m <= 0;
         ridx <= 1;
@@ -232,27 +282,23 @@ always @(posedge clk) begin
         state <= L_WAIT;
     end
 
-    L_READ: begin                               // edge i: its b and the distance of b
-        b <= b_now;
-        db <= pdist(b_now, k, far8);
+    L_READ: begin                               // edge i: a (in b) goes on if inside, b read
+        if(!db[36]) begin
+            we <= 1;
+            wa <= {!cur, m};
+        end
+        m <= m + {3'd0, !db[36]};
         state <= L_EDGE;
     end
 
-    L_EDGE: begin                               // a inside goes on; an edge across adds a point
-        if(!da[36]) begin
-            we <= 1;
-            wa <= {!cur, m};
-            wd <= a;
-        end
-        m <= m + {3'd0, !da[36]};
-        if(da[36] != db[36]) begin
+    L_EDGE: begin                               // an edge across adds a point
+        if(across) begin
             xs <= 0;
+            ridx <= i;                          // a again, for the new point
             state <= L_X;
         end else begin
-            a <= b;
-            da <= db;
             i <= i + 1'b1;
-            ridx <= i + 4'd2;
+            ridx <= ridx_next;
             ret <= L_READ;
             state <= i == np - 4'd1 ? L_PEND : L_WAIT;
         end
@@ -260,48 +306,15 @@ always @(posedge clk) begin
 
     L_X: begin                                  // the point where a-b crosses the plane
         xs <= xs + 1'b1;
-        case(xs)
-        5'd0: begin
-            ea <= da[36] ? -da : da;
-            eb <= db[36] ? -db : db;
-        end
-        5'd1: xd <= {1'b0, ea} + {1'b0, eb};
-        5'd2: xl <= bitlen(xd);
-        5'd3: begin
-            xm <= xm_now;
-            r_addr <= xm_now[14:5];
-        end
-        5'd5: begin
-            xr0 <= r_q;
-            mul_a <= {22'd0, xm};
-            mul_b <= {1'b0, r_q};
-            mul_t0 <= X_R1;
-        end
-        5'd9: begin
-            mul_a <= {4'd0, 34'h2_0000_0000 - xp};
-            mul_b <= {1'b0, xr0};
-            mul_t0 <= X_R2;
-        end
-        5'd13: begin mul_a <= {1'b0, ea}; mul_b <= {1'b0, xrc}; mul_t0 <= X_T; end
-        5'd17: begin mul_a <= diff32(b[31:0], a[31:0]); mul_b <= {1'b0, t16}; mul_t0 <= X_LR; end
-        5'd18: begin mul_a <= diff32(b[63:32], a[63:32]); mul_b <= {1'b0, t16}; mul_t0 <= X_LU; end
-        5'd19: begin mul_a <= diff32(b[95:64], a[95:64]); mul_b <= {1'b0, t16}; mul_t0 <= X_LF; end
-        5'd20: begin mul_a <= diff24(b[119:96], a[119:96]); mul_b <= {1'b0, t16}; mul_t0 <= X_LS; end
-        5'd21: begin mul_a <= diff24(b[143:120], a[143:120]); mul_b <= {1'b0, t16}; lt <= 1; end
-        5'd25: begin                            // the new point in, on to the next edge
+        if(xs == 5'd25) begin                   // the new point in, on to the next edge
             we <= 1;
             wa <= {!cur, m};
-            wd <= xn;
             m <= m + 1'b1;
-            a <= b;
-            da <= db;
             i <= i + 1'b1;
-            ridx <= i + 4'd2;
+            ridx <= ridx_next;
             ret <= L_READ;
             state <= i == np - 4'd1 ? L_PEND : L_WAIT;
         end
-        default: ;
-        endcase
     end
 
     L_PEND: begin                               // the pass is done: its corners are the polygon
@@ -327,22 +340,60 @@ always @(posedge clk) begin
     default: state <= L_IDLE;
     endcase
 
-    case(mul_t2)
-    X_R1: xp <= mul_p2[33:0];
-    X_R2: xrc <= mul_p2[48:32];
-    X_T:  t16 <= mul_t16 > 56'sd65536 ? 17'd65536 : mul_t16[16:0];
-    X_LR: xn[31:0] <= a[31:0] + lerp_d[31:0];
-    X_LU: xn[63:32] <= a[63:32] + lerp_d[31:0];
-    X_LF: xn[95:64] <= a[95:64] + lerp_d[31:0];
-    X_LS: xn[119:96] <= a[119:96] + lerp_d[23:0];
-    default: ;
-    endcase
-    if(lt2) xn[143:120] <= a[143:120] + lerp_d[23:0];
-
     if(reset) begin
         state <= L_IDLE;
         out_valid <= 0;
     end
+end
+
+//
+// corner b and the distances
+//
+always @(posedge clk) begin
+    if(s_pstart || s_read) begin
+        b <= buf_q;
+        db <= pd;
+    end
+    if(s_read) da <= db;
+end
+
+//
+// the new point: t, then the five values; what we writes
+//
+always @(posedge clk) begin
+    if(s_x && xs == 5'd1) xd <= xd_now[35:0];
+    if(s_x && xs == 5'd2) xl <= bitlen(xd);
+    if(s_x && xs == 5'd3) begin
+        xp <= {18'd0, xm_now};
+        r_addr <= xm_now[14:5];
+    end
+
+    // operands: at step 5 m x r0, 9 (2^33 - m r0) x r0, 13 da x (da < 0 ? -rc : rc), that
+    // is |da| rc, 17..21 (b - a) x t; the other clocks' products are not used
+    mul_a <= xs[4] ? {{5{fd[32]}}, fd} : xs[3] && xs[2] ? {da[36], da} : {4'd0, xp};
+    mul_b <= xs[4] ? {1'b0, t16} : xs[3] && xs[2] ? xrc : {1'b0, r_q};
+    mul_t0 <= op;
+    lt <= op_lt;
+    mul_p1 <= mul_a * mul_b;
+    mul_p2 <= mul_p1;
+    mul_t1 <= mul_t0;
+    mul_t2 <= mul_t1;
+    lt1 <= lt;
+    lt2 <= lt1;
+
+    // the input corner, a (in b until L_READ), or the new point, made here field by field
+    if(s_load || s_read) wd <= s_load ? in_k : b;
+    case(mul_t2)
+    X_R1: xp <= 34'h2_0000_0000 - mul_p2[33:0];
+    X_R2: xrc <= da[36] ? -{1'b0, mul_p2[48:32]} : {1'b0, mul_p2[48:32]};
+    X_T:  t16 <= t_sh[16] && t_sh[15:0] != 16'd0 ? 17'd65536 : t_sh;
+    X_LR: wd[31:0] <= xv;
+    X_LU: wd[63:32] <= xv;
+    X_LF: wd[95:64] <= xv;
+    X_LS: wd[119:96] <= xv[23:0];
+    default: ;
+    endcase
+    if(lt2) wd[143:120] <= xv[23:0];
 end
 
 endmodule
