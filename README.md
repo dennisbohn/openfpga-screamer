@@ -39,20 +39,21 @@ mit `tools/deploy.sh /i` (SD-Karte bzw. Pocket im USB-Modus als Laufwerk I:).
 
 ## Spieldaten für die SD-Karte
 
-Was der Core aus den Spieldaten braucht, wird auf dem PC umgewandelt und landet in
-`build/assets/` (nie im Repository), `tools/package.sh` kopiert es nach `Assets/`.
-Dort liegen `firmware.bin` und `program.bin` aus `tools/fw.sh` (siehe `firmware/README.md`)
-und für die Strecke `track1.bin` (Data-Slot 3): Materialien, Texturen und Bauteile von
-Strecke 1 unverändert aus den Spieldateien, dazu Platzierungen, Palette, Kamerapfad, die
-befahrbaren Teile je Rasterzelle, Marker, Wände, die Autos aus `CARS.DTR`, die Rennanzeige,
-das Hintergrundbild `MAP1.BCK` und die Linien und Werte der Gegner (`MAP1OPP.SPL`, Schwierigkeit
-NORMAL aus `MAP1B.DTR`):
+Der Core braucht nur die originalen Spieldateien, unverändert: `GFX/MAP1H.DAT`,
+`GFX/GAME.DAT`, `DATA/MAP1.DAT`, `DATA/GEN.DAT` und `DATA/LOCAL.DAT` aus dem Spielordner
+(etwa der GOG-Fassung) nach `Assets/screamer/common/` auf der SD-Karte kopieren. Nichts
+wird auf dem PC umgewandelt: Die Firmware liest die Container (Data-Slots 3 bis 7),
+entpackt sie und baut daraus beim Start das Abbild der Strecke (Platzierungen, Palette,
+Kamerapfad, die befahrbaren Teile je Rasterzelle, Marker, Wände, die Autos aus `CARS.DTR`,
+die Rennanzeige, das Hintergrundbild `MAP1.BCK`, die Linien und Werte der Gegner aus
+`MAP1OPP.SPL` und `MAP1B.DTR`). `tools/deploy.sh <SD-Karte> [Spielordner]` kopiert die
+eigenen Spieldateien mit (Vorgabe `C:/GOG Games/Screamer`), `tools/package.sh` für eine
+Veröffentlichung nie. `firmware.bin` und `program.bin` kommen aus `tools/fw.sh` (siehe
+`firmware/README.md`).
 
-```sh
-python tools/make_track.py "C:/GOG Games/Screamer/GFX/MAP1H.DAT" "C:/GOG Games/Screamer/DATA/MAP1.DAT" \
-    "C:/GOG Games/Screamer/DATA/GEN.DAT" build/assets/screamer/Chainy.Screamer/track1.bin \
-    build/preview/track1_map.png
-```
+`tools/make_track.py` baut dasselbe Abbild auf dem PC; es dient nur noch als Vergleich für
+`tools/check_track_build.sh <Spielordner>`, das die Firmware-Bausteine nativ übersetzt und
+Byte für Byte vergleicht.
 
 `L` und `H` sind die Sätze der Option DETAIL, nicht die Auflösung: Das Spiel lädt den
 `L`-Satz nur bei LOW, ab MID den `H`-Satz (mehr Kulisse, dieselben Texturen). Der Durchflug

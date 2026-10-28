@@ -20,13 +20,16 @@ etwas daran ändert, ändert beide Seiten und dieses Dokument.
 - **Firmware:** zwei Teile. Data-Slot 0 `firmware.bin` (höchstens 32 KB) an Bridge-Adresse
   `0x00000000` ins Boot-RAM: der Lader (Selbsttests, Speichertest). Data-Slot 2
   `program.bin` an `0x1300_0000` ins SDRAM: das Programm.
-- **Slots im SDRAM erst nach der Phasensuche:** Die Slots 2 (`program.bin`) und 3 (Strecke)
-  haben `deferload`, der Pocket lädt sie nicht von selbst. Die Phasensuche des Speichertests
+- **Slots im SDRAM erst nach der Phasensuche:** Die Slots 2 (`program.bin`) und 3 bis 7 (die
+  Spieldateien) haben `deferload`, der Pocket lädt sie nicht von selbst. Die Phasensuche des Speichertests
   stellt den SDRAM auch in schlechte Phasen, dort kann der Chip Befehle und Adressen falsch
   übernehmen und irgendwo schreiben (gemessen: 15 von 63 MB verändert). Der Lader fordert
   `program.bin` deshalb erst nach den SDRAM-Tests an (`DS_*`, der Ziel-Befehl 0x0180 von
   `core_bridge_cmd`), zuerst die 16 Bytes des Kopfes, in dem die Größe steht, dann die Datei;
-  das Programm holt die Strecke genauso (`firmware/slot.c`). Die Bridge liefert 32-Bit-Wörter
+  das Programm holt die Spieldateien genauso (`firmware/slot.c`). Deren Größe steht in der
+  Slot-Tabelle, die der Pocket für jeden Slot über die Bridge schreibt (`0xF800_2000`, je
+  Slot Nummer und Größe, auch bei `deferload`): `DS_SIZE` liest sie, denn das
+  Inhaltsverzeichnis eines Containers liegt an seinem Ende. Die Bridge liefert 32-Bit-Wörter
   big-endian (das erste Byte der Datei in Bit 31:24), die CPU ist little-endian: `soc.v`
   dreht die Byte-Reihenfolge beim Schreiben um, beide sind ganz normale little-endian-Abbilder.
 - **Start des Programms:** `program.bin` beginnt mit einem Kopf aus vier Wörtern: `"SCRP"`
@@ -43,7 +46,7 @@ etwas daran ändert, ändert beide Seiten und dieses Dokument.
 | Adresse | Größe | Inhalt | Cache |
 |---|---|---|---|
 | `0x0000_0000` | 32 KB | Boot-RAM: der Lader, darüber der Stack des Programms. Reset-Vektor `0x0000_0000`, `mtvec` nach Reset `0x0000_0020` | ja |
-| `0x1000_0000` | 64 MB | SDRAM: die Strecke ab `0x1210_0000` (Slot 3), das Programm ab `0x1300_0000` (Slot 2) | ja |
+| `0x1000_0000` | 64 MB | SDRAM: das Abbild der Strecke ab `0x1210_0000` (von der Firmware gebaut), die Spieldateien ab `0x1280_0000` (Slots 3 bis 7: `MAP1H.DAT` `0x1280_0000`, `GAME.DAT` `0x12C0_0000`, `MAP1.DAT` `0x12D0_0000`, `GEN.DAT` `0x12D4_0000`, `LOCAL.DAT` `0x12D5_0000`), Arbeitsspeicher des Aufbaus ab `0x12D6_0000`, das Programm ab `0x1300_0000` (Slot 2) | ja |
 | `0xF000_0000` | 4 KB | System- und Speicher-Register | nein |
 | `0xF000_1000` | 4 KB | Video-Register und Palette | nein |
 | `0xF000_2000` | 4 KB | Eingabe | nein |
@@ -78,8 +81,9 @@ Alle Register sind 32 Bit, Zugriff als Wort.
 | `0xF000_0020` | `DS_ID` | W | Data-Slot-Lesen beim Pocket anfordern: Slot-Nummer |
 | `0xF000_0024` | `DS_OFFSET` | W | Byte-Versatz in der Datei |
 | `0xF000_0028` | `DS_ADDR` | W | Bridge-Adresse, an die geladen wird (im SDRAM gleich der CPU-Adresse) |
-| `0xF000_002C` | `DS_LENGTH` | W | Bytes, ein Vielfaches von 4 |
-| `0xF000_0030` | `DS_CTRL` | R/W | Schreiben: Bit 0 = anfordern. Lesen: Bit 0 läuft noch, Bit 6..4 Ergebnis des Pocket (0 = gut, 2 z. B. keine Datei im Slot) |
+| `0xF000_002C` | `DS_LENGTH` | W | Bytes, ein Vielfaches von 4, oder `0xFFFF_FFFF` für den Rest der Datei (der Pocket bemisst ihn; so liest die Firmware die letzten 1 bis 3 Bytes) |
+| `0xF000_0030` | `DS_CTRL` | R/W | Schreiben: Bit 0 = anfordern. Lesen: Bit 0 läuft noch, Bit 1 `DS_SIZE` wird noch gesucht, Bit 6..4 Ergebnis des Pocket (0 = gut, 2 z. B. keine Datei im Slot) |
+| `0xF000_0034` | `DS_SIZE` | R | die Dateigröße von Slot `DS_ID` aus der Slot-Tabelle des Pocket, 0 wenn er dort fehlt; nach jedem Schreiben von `DS_ID` neu gesucht |
 | `0xF000_1000` | `VID_STATUS` | R | Bit 0: vorderer Puffer (0/1). Bit 1: Tausch angefordert, noch nicht vollzogen. Bit 31..16: Bildzähler, zählt jedes Videobild (50 Hz) |
 | `0xF000_1004` | `VID_SWAP` | W | beliebiger Wert: Tausch anfordern. Er geschieht in der nächsten Austastlücke; solange er aussteht (Bit 1), werden weitere Anforderungen ignoriert |
 | `0xF000_1400` + 4·i | `VID_PAL[i]` | W | Palette des **hinteren** Puffers, Eintrag i (0..255): `0x00RRGGBB`. Nur solange kein Tausch aussteht (`VID_STATUS` Bit 1 = 0); sonst trifft es den Puffer, der gerade angezeigt wird |

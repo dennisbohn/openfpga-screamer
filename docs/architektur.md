@@ -62,7 +62,13 @@ langsam liest. Ein Audiopuffer im Block-RAM fängt dabei jede Wartezeit ab.
 Die originalen Dateien, unverändert und flach in `Assets/screamer/common/` (die Namen sind
 über `DATA`, `GFX` und `TABS` hinweg eindeutig). Je Datei ein Data-Slot mit `deferload`:
 der Core liest das Inhaltsverzeichnis am Dateiende und holt sich die Einträge, die er
-braucht. 33 Dateien, eine mehr als die 32 Slots: offen, z. B. zwei Dateien in einem Slot.
+braucht. Gebaut (2026-10-28): die fünf Dateien von Strecke 1 (Slots 3 bis 7: `MAP1H.DAT`,
+`GAME.DAT`, `MAP1.DAT`, `GEN.DAT`, `LOCAL.DAT`); die Firmware entpackt sie (`dat.c`, LZW)
+und baut daraus beim Start das Abbild der Strecke, das bis dahin `tools/make_track.py` auf
+dem PC baute, Byte für Byte dasselbe (`track_build.c`; Simulation: 3,2 s, davon 1 s
+Entpacken, der Rest vor allem der Kamerapfad in `double` und die Prüfsummen). Alle Dateien
+wären 33, eine mehr als die 32 Slots; da wir auf HI laufen, fallen die sechs L-Strecken
+weg, und mit der CD-Musik `MUSIC.DAT`, dafür kommen `SCREAM.gog` und `SCREAM.DAT` dazu.
 
 - `DATA/`: alle 16 (`GEN`, `LOCAL`, `MUSIC`, `SOUND`, `MAP1`–`MAP6`, `MAP1I`–`MAP6I`)
 - `GFX/`: `GAME`, `GRAF`, `MENU`, `MAP1L`–`MAP6L`, `MAP1H`–`MAP6H` (L und H sind die Sätze der
