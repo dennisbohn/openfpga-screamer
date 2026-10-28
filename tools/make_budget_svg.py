@@ -64,7 +64,7 @@ PLANNED = [
 ]
 TIMING_LIMIT = 0.80         # logic utilisation above which timing closure gets hard
 STAND = "28.10.2026"
-BUILD = "bewegliche Teile"
+BUILD = "Synthese-Einstellungen, neuer Clipper"
 
 # layout
 WIDTH = 1120

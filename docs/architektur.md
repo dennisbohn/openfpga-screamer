@@ -71,17 +71,27 @@ braucht. 33 Dateien, eine mehr als die 32 Slots: offen, z. B. zwei Dateien in ei
 
 ## Belegung
 
-Gemessen am 2026-10-28 (Quartus-Build mit den beweglichen Teilen, Timing hält bei
-74,25 MHz: Setup +0,65 ns, Hold +0,05 ns): 15.793 von 18.480 ALMs (85 %), 253 von 308 M10K
-(82 %), 35 von 66 DSP (53 %). Von Build zu Build schwankt die Logik um einige hundert ALMs:
-Die Platzierung packt verschieden dicht, und wo das Timing knapp ist, baut der Fitter Logik
-und Register um (Physical Synthesis). So wuchs die Geometrie-Einheit mit den beweglichen
-Teilen von 1.924 auf 2.482 ALMs, obwohl nur vier Schritte und ein Bit dazukamen: Nach der
-Synthese hat sie 3.310 ALUTs und 2.536 Register, nach dem Fitter 4.310 und 2.760 (der
-vorige Build war an ihrem Cache-Pfad um 0,008 ns zu langsam). Geschätzt ist nur, was noch
-fehlt.
+Gemessen am 2026-10-28 (Quartus-Build mit den neuen Synthese-Einstellungen und dem neuen
+Clipper, Timing hält bei 74,25 MHz: Setup +0,96 ns, Hold +0,03 ns; Bauzeit 6 min): 13.018 von
+18.480 ALMs (70 %), 253 von 308 M10K (82 %), 35 von 66 DSP (53 %). Von Build zu Build
+schwankt die Logik um einige hundert ALMs: Die Platzierung packt verschieden dicht, und wo
+das Timing knapp ist, baut der Fitter Logik und Register um (Physical Synthesis).
 
-![Platzbudget im FPGA: Logik heute 85 %, mit Geplantem 89–90 %; Block-RAM heute 82 %, mit Geplantem 87–88 %; DSP heute 53 %, mit Geplantem 55 %](ressourcen.svg)
+**Weniger Logik (2026-10-28), von 15.646 auf 13.018 ALMs, ohne dass sich ein Ergebnis
+ändert:** (1) Die Projektdatei aus der Vorlage von Analogue stellte die Synthese auf Tempo:
+`OPTIMIZATION_TECHNIQUE SPEED` und `MUX_RESTRUCTURE OFF`. Ohne Umbau der Auswahlschaltungen
+wurde aus jedem breiten Register, das in vielen Zuständen eines Ablaufs nur gehalten wird, und
+aus jeder Teilauswahl mit zu breitem Index eine eigene breite Auswahl. Mit `BALANCED` und
+`MUX_RESTRUCTURE ON` sank die Logik auf 14.046 ALMs (76 %), das Timing wurde sogar besser
+(gemessen in zwei vollen Builds mit `AUTO` und `ON`). (2) Der Clipper ist neu geschrieben
+und rechnet Takt für Takt dasselbe (gegen den alten mit 90.000 Zufalls-Vielecken geprüft, in
+der Simulation 0 Pixel Unterschied und dieselben Takte): Die 4-Bit-Kantennummer wählte aus
+dem 576-Bit-Eingang wie ein Schieber über 16 Plätze (allein 1.101 ALUTs), eine Ecke wurde
+zweimal gehalten und zweimal gemessen, das Ende der Kante kommt jetzt aus dem Puffer, der
+Abstand zur Ebene ist ein Addierer mit gewählten Operanden, ein Schieber statt zweien. Jetzt
+928 statt 2.807 ALMs. Geschätzt ist nur, was noch fehlt.
+
+![Platzbudget im FPGA: Logik heute 70 %, mit Geplantem 74–75 %; Block-RAM heute 82 %, mit Geplantem 87–88 %; DSP heute 53 %, mit Geplantem 55 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py`: die gemessenen Zeilen aus dem Fitter-Report
 (`core/src/fpga/output_files/ap_core.fit.rpt`, Tabelle „Resource Utilization by Entity“), die
@@ -90,31 +100,30 @@ nachziehen.
 
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
-| Analogue-Rahmen (Bridge, PLLs, Pads) | 463 | 2 | 0 |
-| Framebuffer ×2 + Video | 144 | 130 | 0 |
-| VexRiscv + 2× 8 KB Cache | 1.369 | 19 | 4 |
-| FPU (RV32F) | 1.508 | 5 | 4 |
+| Analogue-Rahmen (Bridge, PLLs, Pads) | 434 | 2 | 0 |
+| Framebuffer ×2 + Video | 87 | 130 | 0 |
+| VexRiscv + 2× 8 KB Cache | 1.279 | 19 | 4 |
+| FPU (RV32F) | 1.463 | 5 | 4 |
 | CFU (16.16-Multiplikation) | 9 | – | 3 |
 | Boot-RAM 32 KB + Protokoll | – | 36 | – |
-| Geometrie-Einheit | 2.482 | 17 | 7 |
-| Clipper | 2.818 | 6 | 2 |
-| Setup-Einheit | 2.932 | 4 | 4 |
-| Rasterizer | 1.860 | – | 7 |
-| Texturen: Pipeline + Cache | 874 | 30 | 4 |
-| Blitter (Hintergrund, HUD) | 508 | 2 | – |
-| SDRAM-Controller + Ports | 330 | 2 | – |
-| Bus, Register, Arbiter | 496 | – | – |
-| **gebaut** | **15.793 (85 %)** | **253 (82 %)** | **35 (53 %)** |
+| Geometrie-Einheit | 1.702 | 17 | 7 |
+| Clipper | 928 | 6 | 2 |
+| Setup-Einheit | 3.069 | 4 | 4 |
+| Rasterizer | 1.865 | – | 7 |
+| Texturen: Pipeline + Cache | 852 | 30 | 4 |
+| Blitter (Hintergrund, HUD) | 491 | 2 | – |
+| SDRAM-Controller + Ports | 309 | 2 | – |
+| Bus, Register, Arbiter | 530 | – | – |
+| **gebaut** | **13.018 (70 %)** | **253 (82 %)** | **35 (53 %)** |
 | geplant: Rauch/Schatten (Routine 224, `MAPn.SMG`) | 105–190 | 12–16 | – |
 | geplant: Audio (Mischer mit 32 Stimmen, I2S, CD-Musik) | 520–650 | 3 | 1 |
-| **mit Geplantem** | **16.418–16.633 (89–90 %)** | **268–272 (87–88 %)** | **36 (55 %)** |
+| **mit Geplantem** | **13.643–13.858 (74–75 %)** | **268–272 (87–88 %)** | **36 (55 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es
 und probiert weitere Fitter-Seeds), nicht als Instabilität auf dem Pocket, solange das Timing
-hält. Die größten Posten sind Setup-Einheit und Clipper (zusammen 5.750 ALMs; nach der
-Synthese die Setup-Einheit 4.464 ALUTs und 4.106 Register, der Clipper 3.899 ALUTs und 1.263
-Register). Sie rechnen bit-genau wie das C-Modell in Festkomma, deshalb breit: eine Ecke hat
+hält. Der größte Posten ist die Setup-Einheit (3.069 ALMs; bis zum neuen Clipper zusammen
+mit ihm 5.750). Sie rechnet bit-genau wie das C-Modell in Festkomma, deshalb breit: eine Ecke hat
 144 Bit, ein Polygon 576, Zwischenwerte und Produkte bis 65 Bit. Es sind drei Rechenwerke
 hintereinander, damit sie gleichzeitig arbeiten (Clipper, Ecken, Dreiecke), jedes mit einem
 Multiplizierer und einem festen Ablauf: Vor jedem Multiplizierer sitzt eine Auswahl, beim
@@ -123,8 +132,8 @@ Zwischenwerte (rund 1.100 Bit), die wieder ausgewählt werden. Dazu kommen varia
 für das Normieren vor der Kehrwerttabelle und das Skalieren der Ergebnisse (die
 Setup-Einheit hat acht, 32 bis 65 Bit breit, der Clipper drei, je einige hundert ALUTs), und
 Produkte breiter als ein DSP-Block (47 × 18, 38 × 18) addieren ihre Teilprodukte in Logik.
-Dort ist am meisten zu holen, falls Audio nicht mehr passt (Zwischenwerte in Block-RAM statt
-Registern, Schieber nur so breit wie nötig; das C-Modell muss jede Änderung mitmachen).
+Dort ist noch am meisten zu holen (Zwischenwerte in Block-RAM statt Registern, Schieber
+nur so breit wie nötig; das C-Modell muss jede Änderung mitmachen).
 Einen Tiefenpuffer gibt es nicht, siehe „Entschieden“.
 
 VexRiscv und FPU stammen aus einer Synthese der CPU allein für den 5CEBA4F23C8 mit Quartus
