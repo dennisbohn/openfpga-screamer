@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1560 860" width="1560" height="860" role="img" aria-label="Architektur: Die CPU wählt und sortiert die Bauteile der Strecke und schreibt je Bauteil seine Lage in Register der Geometrie-Einheit. Die liest das Mesh aus dem SDRAM, rechnet die Eckpunkte in Kamerasicht um, lässt Rückseiten weg und gibt die Flächen an Clipper und Setup-Einheit, die schneiden, projizieren und die Dreiecke für den Rasterizer vorbereiten. Der Rasterizer liest Texturen über einen Cache aus dem SDRAM, der fehlende Zeilen schon vor einer Warteschlange anfordert, und schreibt in den hinteren der beiden Framebuffer im Block-RAM; video_out zeigt den vorderen mit 50 Hz, getauscht wird in der Austastlücke. Programm und Strecke lädt der Pocket auf Anforderung über die APF-Bridge in den SDRAM.">
   <title>Screamer auf dem Analogue Pocket – Architektur</title>
-  <desc>Gebaut und auf dem Pocket getestet: APF-Bridge mit Data-Slots (Programm und Strecke auf Anforderung), zwei Framebuffer im Block-RAM mit Tausch bei VSync, video_out mit 50 Hz und zwei Paletten, VexRiscv RV32IMF mit FPU und CFU, SDRAM-Controller, Rasterizer mit 16-KB-Textur-Cache, der fehlende Zeilen vorauslädt, Setup-Einheit mit Clipper. Seit Schritt 4 auch die Geometrie-Einheit, dazu ein Blitter, der das Hintergrundbild vor und die Rennanzeige nach der Szene in den Framebuffer kopiert; die CPU fährt neun Gegner mit Berührungen und zerlegt bewegliche Teile der Strecke (der Helm am Start) in ihre Blöcke; mit ihr hält der Streckendurchflug stabil 50 fps, die CPU braucht davon etwa 20 % eines Bildes. Geplant: Audio, Glas und Schatten (MAPn.SMG) im Rasterizer, Sounds im SDRAM, Überlappen von Bild N+1 und N. SRAM und PSRAM sind nicht benutzt.</desc>
+  <desc>Gebaut und auf dem Pocket getestet: APF-Bridge mit Data-Slots (Programm und Strecke auf Anforderung), zwei Framebuffer im Block-RAM mit Tausch bei VSync, video_out mit 50 Hz und zwei Paletten, VexRiscv RV32IMF mit FPU und CFU, SDRAM-Controller, Rasterizer mit 16-KB-Textur-Cache, der fehlende Zeilen vorauslädt, Setup-Einheit mit Clipper. Seit Schritt 4 auch die Geometrie-Einheit, dazu ein Blitter, der das Hintergrundbild vor und die Rennanzeige nach der Szene in den Framebuffer kopiert; die CPU fährt neun Gegner mit Berührungen und zerlegt bewegliche Teile der Strecke (der Helm am Start) in ihre Blöcke; mit ihr hält der Streckendurchflug stabil 50 fps, die CPU braucht davon etwa 20 % eines Bildes. Geplant: Audio, Rauch und Schatten (MAPn.SMG) im Rasterizer, Sounds im SDRAM, Überlappen von Bild N+1 und N. SRAM und PSRAM sind nicht benutzt.</desc>
   <defs>
     <marker id="built" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
       <path d="M0,0 L10,5 L0,10 z" fill="#2e7d32"/>
@@ -36,7 +36,7 @@
 
   <!-- title and legend -->
   <text x="40" y="44" class="h">Screamer auf dem Analogue Pocket – Architektur</text>
-  <text x="40" y="66" class="l">Datenfluss beim Laden und pro Bild · Stand 27.10.2026</text>
+  <text x="40" y="66" class="l">Datenfluss beim Laden und pro Bild · Stand 28.10.2026</text>
 
   <rect x="1190" y="16" width="22" height="13" rx="3" class="built"/>
   <text x="1220" y="27" class="l">gebaut, auf dem Pocket getestet</text>
@@ -110,7 +110,7 @@
   <text x="1110" y="299" class="b c">einfarbig, Texturen</text>
   <text x="1110" y="314" class="b c">(1 Pixel/Takt), Füll-</text>
   <text x="1110" y="329" class="b c">regel des Originals</text>
-  <text x="1110" y="344" class="b c">Glas/Schatten: folgt</text>
+  <text x="1110" y="344" class="b c">Rauch/Schatten: folgt</text>
 
   <rect x="1220" y="260" width="110" height="100" rx="8" class="built"/>
   <text x="1275" y="288" class="t c">video_out</text>
@@ -121,8 +121,8 @@
   <!-- row B: audio, framebuffers -->
   <rect x="480" y="400" width="110" height="70" rx="8" class="plan"/>
   <text x="535" y="424" class="t c">Audio</text>
-  <text x="535" y="442" class="b c">JTOPL (OPL2)</text>
-  <text x="535" y="458" class="b c">PCM-Mixer</text>
+  <text x="535" y="442" class="b c">Mischer, 32</text>
+  <text x="535" y="458" class="b c">Stimmen, CD</text>
 
   <rect x="1205" y="505" width="125" height="70" rx="8" class="built"/>
   <text x="1267" y="529" class="t c">Blitter</text>
@@ -230,6 +230,6 @@
 
   <!-- notes -->
   <text x="40" y="798" class="l">Pro Bild: Die CPU wählt die Bauteile in Reichweite, sortiert sie von hinten nach vorn (Maler-Algorithmus) und schreibt sie in den Puffer der Geometrie-Einheit (113 Bauteile); dahinter arbeiten Geometrie, Setup und Rasterizer gleichzeitig.</text>
-  <text x="40" y="816" class="l">Gezeigt wird nur ein fertiges Bild (Doppelpufferung, Tausch in der Austastlücke, höchstens 50 Bilder pro Sekunde). Geplant: Radar, Glas/Schatten, Audio, Bild N+1 und N überlappen.</text>
+  <text x="40" y="816" class="l">Gezeigt wird nur ein fertiges Bild (Doppelpufferung, Tausch in der Austastlücke, höchstens 50 Bilder pro Sekunde). Geplant: Radar, Rauch/Schatten, Audio, Bild N+1 und N überlappen.</text>
   <text x="40" y="834" class="l">Start mit allen zehn Autos: 50 fps (schwerstes Bild 67 % eines Bildes). Belegung: 15.793 von 18.480 ALMs (85 %), 253 von 308 M10K (82 %), 35 von 66 DSP (53 %); Timing hält bei 74,25 MHz.</text>
 </svg>

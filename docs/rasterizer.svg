@@ -518,5 +518,5 @@
   <text x="40" y="868" class="l">Die Pixel verlassen die Warteschlange in</text>
   <text x="40" y="882" class="l">Reihenfolge: eine alte Zeile wird erst ersetzt,</text>
   <text x="40" y="896" class="l">wenn alle Pixel davor sie gelesen haben.</text>
-  <text x="40" y="940" class="l">Zeichenart 16 und 64 (Texel 0 durchsichtig) beim Schreiben; Zeichenart 224 (Glas, Schatten, Scheinwerfer) folgt: sie liest den Pixel im Bild und schlägt das Ergebnis in der Tabelle MAPn.SMG nach.</text>
+  <text x="40" y="940" class="l">Zeichenart 16 und 64 (Texel 0 durchsichtig) beim Schreiben; Zeichenart 224 (Rauch, Schatten, Scheinwerferkegel) folgt: sie liest den Pixel im Bild und schlägt das Ergebnis in der Tabelle MAPn.SMG nach.</text>
 </svg>

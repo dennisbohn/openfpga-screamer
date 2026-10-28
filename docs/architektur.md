@@ -9,7 +9,7 @@ an Fugen), dem Hintergrundbild `MAPn.BCK`, neun Gegnern (Startaufstellung, ihre 
 Platzierung, Berührungen, Überholen, Crash eines Gegners), der schnelleren Grafik-Kette
 (50 fps auch am Start mit allen zehn Autos) und beweglichen Teilen der Strecke (der drehende
 Football-Helm am Start). Belegung siehe
-„Belegung“; geschätzt ist nur noch, was fehlt (Audio, Glas/Schatten).
+„Belegung“; geschätzt ist nur noch, was fehlt (Audio, Rauch/Schatten).
 
 ## Hardware des Pocket (Haupt-FPGA)
 
@@ -81,7 +81,7 @@ Synthese hat sie 3.310 ALUTs und 2.536 Register, nach dem Fitter 4.310 und 2.760
 vorige Build war an ihrem Cache-Pfad um 0,008 ns zu langsam). Geschätzt ist nur, was noch
 fehlt.
 
-![Platzbudget im FPGA: Logik heute 85 %, mit Geplantem 92–97 %; Block-RAM heute 82 %, mit Geplantem 89–90 %; DSP heute 53 %, mit Geplantem 55–58 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik heute 85 %, mit Geplantem 89–90 %; Block-RAM heute 82 %, mit Geplantem 87–88 %; DSP heute 53 %, mit Geplantem 55 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py`: die gemessenen Zeilen aus dem Fitter-Report
 (`core/src/fpga/output_files/ap_core.fit.rpt`, Tabelle „Resource Utilization by Entity“), die
@@ -105,10 +105,9 @@ nachziehen.
 | SDRAM-Controller + Ports | 330 | 2 | – |
 | Bus, Register, Arbiter | 496 | – | – |
 | **gebaut** | **15.793 (85 %)** | **253 (82 %)** | **35 (53 %)** |
-| geplant: Glas/Schatten (`MAPn.SMG`, 64 × 256 Byte) | 150–400 | 16 | – |
-| geplant: JTOPL (OPL2) | 800–1.200 | 3–5 | 0–1 |
-| geplant: PCM-Mixer | 300–500 | 2 | 1–2 |
-| **mit Geplantem** | **17.043–17.893 (92–97 %)** | **274–276 (89–90 %)** | **36–38 (55–58 %)** |
+| geplant: Rauch/Schatten (Routine 224, `MAPn.SMG`) | 105–190 | 12–16 | – |
+| geplant: Audio (Mischer mit 32 Stimmen, I2S, CD-Musik) | 520–650 | 3 | 1 |
+| **mit Geplantem** | **16.418–16.633 (89–90 %)** | **268–272 (87–88 %)** | **36 (55 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es
@@ -349,7 +348,7 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   mit einem Pixel pro Takt, Übermalen kostet nichts, und es braucht weder PSRAM-Controller
   noch Arbitrierung für den Framebuffer (spart Logik, die knappe Ressource). Jeder Puffer
   hat seine eigene Palette, Palettenwechsel (Überblendungen) passen damit genau zum Bild.
-  Die Zeichenseite liest auch (Rauch, Glas, Schatten und Radar verrechnen den Bildinhalt):
+  Die Zeichenseite liest auch (Rauch und Schatten verrechnen den Bildinhalt, Routine 224):
   vier explizite 8-Bit-Speicherbahnen mit Lese-/Schreibport (`fb_lane.v`), weil Quartus
   18.1 den Speicher mit echten Byte-Enables sonst stillschweigend aus Registern baut;
   `tools/check_budget.py` prüft bei jedem Build die 128 M10K. Getauscht wird am Anfang
@@ -390,7 +389,8 @@ Aus der Gegenprüfung der Framebuffer-Platzierung:
 ## Vorgehen
 
 1. Grundgerüst: Template, zwei Framebuffer mit Palette, Eingabe (erledigt, auf dem Pocket
-   getestet); JTOPL fehlt noch.
+   getestet). Audio folgt ohne JTOPL: Das Spiel spielt in der GOG-Fassung die CD-Spuren
+   (`SCREAM.gog`), nicht die MIDI-Musik (ein Mischer für Effekte, Sprecher und Musik).
 2. VexRiscv mit FPU und SDRAM. Das erste Programm ist ein Speichertest: SDRAM, SRAM und
    PSRAM mit Mustern beschreiben, zurücklesen, Ergebnis auf dem Bildschirm. Damit werden
    die externen Speicher geprüft, bevor etwas auf sie baut (das SRAM erst hier, nicht
