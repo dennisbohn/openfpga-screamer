@@ -64,8 +64,8 @@ PLANNED = [
     ("PCM-Mixer", "audio", (300, 500), (2, 2), (1, 2)),
 ]
 TIMING_LIMIT = 0.80         # logic utilisation above which timing closure gets hard
-STAND = "27.10.2026"
-BUILD = "schnellere Grafik-Kette"
+STAND = "28.10.2026"
+BUILD = "bewegliche Teile"
 
 # layout
 WIDTH = 1120

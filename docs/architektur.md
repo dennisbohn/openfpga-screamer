@@ -1,14 +1,14 @@
 # Architektur
 
-Stand: 2026-10-27. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 aus zwei
+Stand: 2026-10-28. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 aus zwei
 8-Bit-Framebuffern im Block-RAM, je mit eigener Palette, getauscht in der Austastlücke; die
 CPU (VexRiscv RV32IMF mit FPU und CFU, `docs/soc.md`); Geometrie-Einheit, Clipper,
 Setup-Einheit und Rasterizer mit vorausladendem Textur-Cache; Strecke 1 mit dem Auto des
 Spielers, fahrbar, mit dem HUD aus dem Blitter, der Füllregel des Originals (keine Lücken
 an Fugen), dem Hintergrundbild `MAPn.BCK`, neun Gegnern (Startaufstellung, ihre Linien,
-Platzierung) und der schnelleren Grafik-Kette (50 fps auch am Start mit allen zehn Autos).
-Gebaut, Test auf dem Pocket steht aus: Berührungen zwischen den Autos, Überholen, Crash
-eines Gegners. Belegung siehe
+Platzierung, Berührungen, Überholen, Crash eines Gegners) und der schnelleren Grafik-Kette
+(50 fps auch am Start mit allen zehn Autos). Gebaut, Test auf dem Pocket steht aus:
+bewegliche Teile der Strecke (der drehende Football-Helm am Start). Belegung siehe
 „Belegung“; geschätzt ist nur noch, was fehlt (Audio, Glas/Schatten).
 
 ## Hardware des Pocket (Haupt-FPGA)
@@ -71,13 +71,17 @@ braucht. 33 Dateien, eine mehr als die 32 Slots: offen, z. B. zwei Dateien in ei
 
 ## Belegung
 
-Gemessen am 2026-10-28 (Quartus-Build mit der schnelleren Grafik-Kette, Timing hält bei
-74,25 MHz: Setup +0,25 ns, Hold +0,05 ns; die knappsten Pfade liegen im SDRAM-Controller vor
-den Adress-Pins): 15.292 von 18.480 ALMs (83 %), 253 von 308 M10K (82 %), 35 von 66 DSP
-(53 %). Von Build zu Build schwankt die Logik um einige hundert
-ALMs (die Platzierung packt verschieden dicht). Geschätzt ist nur, was noch fehlt.
+Gemessen am 2026-10-28 (Quartus-Build mit den beweglichen Teilen, Timing hält bei
+74,25 MHz: Setup +0,65 ns, Hold +0,05 ns): 15.793 von 18.480 ALMs (85 %), 253 von 308 M10K
+(82 %), 35 von 66 DSP (53 %). Von Build zu Build schwankt die Logik um einige hundert ALMs:
+Die Platzierung packt verschieden dicht, und wo das Timing knapp ist, baut der Fitter Logik
+und Register um (Physical Synthesis). So wuchs die Geometrie-Einheit mit den beweglichen
+Teilen von 1.924 auf 2.482 ALMs, obwohl nur vier Schritte und ein Bit dazukamen: Nach der
+Synthese hat sie 3.310 ALUTs und 2.536 Register, nach dem Fitter 4.310 und 2.760 (der
+vorige Build war an ihrem Cache-Pfad um 0,008 ns zu langsam). Geschätzt ist nur, was noch
+fehlt.
 
-![Platzbudget im FPGA: Logik heute 83 %, mit Geplantem 90–94 %; Block-RAM heute 82 %, mit Geplantem 89–90 %; DSP heute 53 %, mit Geplantem 55–58 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik heute 85 %, mit Geplantem 92–97 %; Block-RAM heute 82 %, mit Geplantem 89–90 %; DSP heute 53 %, mit Geplantem 55–58 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py`: die gemessenen Zeilen aus dem Fitter-Report
 (`core/src/fpga/output_files/ap_core.fit.rpt`, Tabelle „Resource Utilization by Entity“), die
@@ -86,30 +90,30 @@ nachziehen.
 
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
-| Analogue-Rahmen (Bridge, PLLs, Pads) | 476 | 2 | 0 |
-| Framebuffer ×2 + Video | 143 | 130 | 0 |
-| VexRiscv + 2× 8 KB Cache | 1.393 | 19 | 4 |
-| FPU (RV32F) | 1.522 | 5 | 4 |
+| Analogue-Rahmen (Bridge, PLLs, Pads) | 463 | 2 | 0 |
+| Framebuffer ×2 + Video | 144 | 130 | 0 |
+| VexRiscv + 2× 8 KB Cache | 1.369 | 19 | 4 |
+| FPU (RV32F) | 1.508 | 5 | 4 |
 | CFU (16.16-Multiplikation) | 9 | – | 3 |
 | Boot-RAM 32 KB + Protokoll | – | 36 | – |
-| Geometrie-Einheit | 1.924 | 17 | 7 |
+| Geometrie-Einheit | 2.482 | 17 | 7 |
 | Clipper | 2.818 | 6 | 2 |
-| Setup-Einheit | 2.925 | 4 | 4 |
-| Rasterizer | 1.855 | – | 7 |
-| Texturen: Pipeline + Cache | 882 | 30 | 4 |
-| Blitter (Hintergrund, HUD) | 510 | 2 | – |
-| SDRAM-Controller + Ports | 321 | 2 | – |
-| Bus, Register, Arbiter | 514 | – | – |
-| **gebaut** | **15.292 (83 %)** | **253 (82 %)** | **35 (53 %)** |
+| Setup-Einheit | 2.932 | 4 | 4 |
+| Rasterizer | 1.860 | – | 7 |
+| Texturen: Pipeline + Cache | 874 | 30 | 4 |
+| Blitter (Hintergrund, HUD) | 508 | 2 | – |
+| SDRAM-Controller + Ports | 330 | 2 | – |
+| Bus, Register, Arbiter | 496 | – | – |
+| **gebaut** | **15.793 (85 %)** | **253 (82 %)** | **35 (53 %)** |
 | geplant: Glas/Schatten (`MAPn.SMG`, 64 × 256 Byte) | 150–400 | 16 | – |
 | geplant: JTOPL (OPL2) | 800–1.200 | 3–5 | 0–1 |
 | geplant: PCM-Mixer | 300–500 | 2 | 1–2 |
-| **mit Geplantem** | **16.542–17.392 (90–94 %)** | **274–276 (89–90 %)** | **36–38 (55–58 %)** |
+| **mit Geplantem** | **17.043–17.893 (92–97 %)** | **274–276 (89–90 %)** | **36–38 (55–58 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es
 und probiert weitere Fitter-Seeds), nicht als Instabilität auf dem Pocket, solange das Timing
-hält. Die größten Posten sind Setup-Einheit und Clipper (zusammen 5.743 ALMs): je nur ein
+hält. Die größten Posten sind Setup-Einheit und Clipper (zusammen 5.750 ALMs): je nur ein
 Multiplizierer und eine Kehrwerttabelle, aber breite Register (eine Ecke 144 Bit, der Clipper
 nimmt vier auf einmal) und Auswahlschaltungen vor dem Multiplizierer. Dort ist am meisten zu
 holen, falls Audio nicht mehr passt. Einen Tiefenpuffer gibt es nicht, siehe „Entschieden“.
@@ -285,6 +289,19 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Fahrbahn gedrängt wird, steht sofort (`0x1cb9c`); verliert er in einem Schritt mehr als 5000
   Einheiten/s, crasht er (`0x1d824`): je nach Stelle überschlägt er sich wie der Spieler oder
   dreht sich zweimal auf der Fahrbahn. Der Versatz aus Stößen klingt nach 3 s ab.
+- **Bewegliche Teile der Strecke** (2026-10-28, aus der EXE: `0x8ad14`, `0x8acf0`, `0x8ac58`;
+  das Format nach OpenScreamers Notes S2-5b, das für beide Spiele gilt): Ein Mesh kann
+  mehrere Blöcke haben, und ein Block mit Positionssatz (+0x0C) wird von dort verschoben oder,
+  wenn das Mesh Bilder hat (+0x10), je Bild gedreht: 12 Wörter je Bild sind seine ganze Matrix
+  (die gespeicherte Ecke als Zeile mal Matrix, 16383 = 1, dann der Versatz), das Bild ist
+  Bilder × Uhr >> 16, eine Umdrehung der Animationsuhr in 3,33 s. Auf Strecke 1 hat nur der
+  `H`-Satz so ein Mesh, `V220` am Start: den Sockel mit der Videowand (Block 0, ein festes
+  Bild) und den Helm darauf (Block 1, 80 Bilder). Die Firmware zerlegt ein solches Teil in
+  einen Auftrag je Block, den fernsten Mittelpunkt zuerst (`0x8ac58`). Die Bilder machen aus
+  z oben y oben, eine Spiegelung; das Spiel nimmt für solche Blöcke die andere Seite als
+  Rückseite (`0x8acf0`: `jge` statt `jl`), die Geometrie-Einheit ebenso (Bit 3 im Wort 18
+  eines Auftrags, `docs/soc.md`). Das Objekt, das am Start rechts oben schwebte, war der
+  Sockel ohne die Matrix seines Bildes, gekippt und zu hoch; den Helm gab es gar nicht.
 - **Das Hintergrundbild wie im Original** (2026-10-27, aus der EXE): Das Rennen zeichnet
   vor der Szene `MAPn.BCK` (ein PCX, 512 × 256) mit `0x83a68`: eine reine Kopie, die Spalte
   `(2047 − Kurs) / 2 mod 512` am linken Rand (zweimal um das Bild je Umdrehung), die oberste

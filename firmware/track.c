@@ -28,6 +28,7 @@
 #define BLOCK       0x40000     /* bytes per CRC block (tools/make_track.py) */
 #define MAX_PIECES  2048        /* placements; track 1 has 809 (L set), 1164 (H set) */
 #define MAX_OBJ     512         /* meshes; up to 360 on a track */
+#define MAX_BLOCKS  8           /* blocks of a mesh drawn (track 1: two, the football helmet's) */
 
 /* How far the game draws (openscreamer docs/NOTES.md, DETAIL): a piece only while its
    position is within 52000 units of the camera (0x83164: dist^2 >> 2 < 676000000), and
@@ -71,6 +72,8 @@ static const struct track_wall *walls;
 static int nwalls;
 static float anim;                      /* the animation clock, 0..1 */
 static uint32_t piece_phase;            /* the pieces' texture phase: the clock (record +0x20 is -1) */
+static uint32_t clock16;                /* the animation clock, 16 bits (0x21538) */
+static uint8_t multi[MAX_OBJ];          /* the mesh has several blocks or moving parts */
 static int16_t class_key[MAX_OBJ];      /* the key's change for each mesh's class (+0x32c) */
 
 /* What track_under() reads, made once from the drivable meshes: each mesh's faces of its
@@ -219,14 +222,36 @@ int track_init(void)
     }
 
     for(int k = 0; k < unr_count; k++) {
-        const uint8_t *obj, *blk = block_of(k, &obj), *v = obj + rd32(blk + 0x1C);
-        int n = rd32(blk + 0x10);
-        float r2 = 0.0f;
-        for(int i = 0; i < n && i < GU_MAX_VERT; i++, v += 6) {
-            float x = rd16(v), y = rd16(v + 2), z = rd16(v + 4), d = x * x + y * y + z * z;
-            if(d > r2) r2 = d;
+        const uint8_t *obj, *blk = block_of(k, &obj);
+        int nb = rd32(obj + 0x14), frames = rd32(obj + 0x10);
+        multi[k] = nb > 1 || frames > 0;
+        /* the reach round the origin: each block's vertices, and how far its place or frames
+           move it (mesh_reach) */
+        radius[k] = 0.0f;
+        for(int b = 0; b < (multi[k] ? nb : 1) && b < MAX_BLOCKS; b++) {
+            blk = obj + rd32(obj + 0x18 + 4 * b);
+            const uint8_t *v = obj + rd32(blk + 0x1C);
+            int n = rd32(blk + 0x10);
+            int32_t so = rd32(blk + 0x0C);
+            float r2 = 0.0f, t2 = 0.0f;
+            for(int i = 0; i < n && i < GU_MAX_VERT; i++, v += 6) {
+                float x = rd16(v), y = rd16(v + 2), z = rd16(v + 4), d = x * x + y * y + z * z;
+                if(d > r2) r2 = d;
+            }
+            if(multi[k] && so > 0)
+                for(int fr = 0; fr < (frames > 0 ? frames : 1); fr++) {
+                    float tx, ty, tz;
+                    if(frames > 0) {
+                        const uint8_t *q = obj + so + 0x1C + 0x30 * fr;
+                        tx = rd16(q + 18); ty = rd16(q + 20); tz = rd16(q + 22);
+                    } else {
+                        tx = (float)rd32(obj + so + 0x10); ty = (float)rd32(obj + so + 0x14); tz = (float)rd32(obj + so + 0x18);
+                    }
+                    if(tx * tx + ty * ty + tz * tz > t2) t2 = tx * tx + ty * ty + tz * tz;
+                }
+            float rb = __builtin_sqrtf(r2) + __builtin_sqrtf(t2);
+            if(rb > radius[k]) radius[k] = rb;
         }
-        radius[k] = __builtin_sqrtf(r2);
         int32_t cl = rd32(obj + 0x32C);                 /* 0x8a8d7 */
         class_key[k] = cl == 3 ? -6000 : cl == 1 ? -1500 : cl == 2 ? -800 : cl == 4 ? -200 : 0;
     }
@@ -304,7 +329,8 @@ void track_clock(uint32_t steps)
 {
     anim += (float)steps * 0.02f * 0.3f;
     while(anim >= 1.0f) anim -= 1.0f;
-    piece_phase = (uint32_t)(anim * 65535.0f) & 0x3FFF;
+    clock16 = (uint32_t)(anim * 65535.0f);
+    piece_phase = clock16 & 0x3FFF;
 }
 
 int track_bonus_time(void)
@@ -535,6 +561,60 @@ static void block_piece(const float c[3], const float f[3], const float r[3], co
     g->row = ex >= 0.0f ? (ez >= 0.0f ? (ex < ez ? 0 : 1) : (ex > -ez ? 2 : 3))
                         : (ez < 0.0f ? (-ex < -ez ? 4 : 5) : (-ex > ez ? 6 : 7));
     for(int j = 0; j < 3; j++) g->e[j] = (int32_t)(e[j] * 256.0f);
+    g->mirror = 0;
+}
+
+/* A placement whose mesh has several blocks or moving parts (track 1's football helmet V220:
+   its base and the helmet turning on it): block by block, each turned by its frame (0x8ad14:
+   a frame's 12 words are the block's whole matrix, the vertex as stored a row multiplied into
+   it, 16383 = 1, then its place; frame = frames x clock >> 16, a turn of the clock in 3.33 s;
+   the frames turn z up into y up, a mirror) or else moved by its place (the position record),
+   the furthest block's middle first (0x8ac58). Returns the pieces in gs (MAX_BLOCKS). */
+static int multi_pieces(const float c[3], const float f[3], const float r[3], const float u[3],
+                        const struct piece *pc, struct gu_piece *gs)
+{
+    const uint8_t *obj = unr_blob + unr_off[pc->obj];
+    int nb = rd32(obj + 0x14), frames = rd32(obj + 0x10), n = 0, ord[MAX_BLOCKS];
+    float key[MAX_BLOCKS];
+    struct gu_piece tmp[MAX_BLOCKS];
+    float ca = sin2048((uint32_t)pc->t + 512), sa = sin2048((uint32_t)pc->t);
+    const float R[9] = { ca, 0.0f, -sa, sa, 0.0f, ca, 0.0f, 1.0f, 0.0f };   /* world from the piece's frame */
+    int fr = frames > 0 ? (int)(((uint32_t)frames * clock16) >> 16) : -1;
+    for(int b = 0; b < nb && b < MAX_BLOCKS; b++) {
+        const uint8_t *blk = obj + rd32(obj + 0x18 + 4 * b);
+        int32_t so = rd32(blk + 0x0C);
+        float F[9] = { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f }, t[3] = { 0.0f, 0.0f, 0.0f };
+        int moving = so > 0 && fr >= 0;
+        if(moving) {                                /* rows x, up, z: the words down the columns */
+            const uint8_t *q = obj + so + 0x1C + 0x30 * fr;
+            for(int i = 0; i < 3; i++)
+                for(int j = 0; j < 3; j++) F[3 * i + j] = (float)rd16(q + 2 * (3 * j + i)) / 16383.0f;
+            for(int i = 0; i < 3; i++) t[i] = (float)rd16(q + 18 + 2 * i);
+        } else if(so > 0)
+            for(int i = 0; i < 3; i++) t[i] = (float)rd32(obj + so + 0x10 + 4 * i);
+        float m[9], o[3];
+        for(int i = 0; i < 3; i++) {
+            for(int j = 0; j < 3; j++) m[3 * i + j] = R[3 * i] * F[j] + R[3 * i + 1] * F[3 + j] + R[3 * i + 2] * F[6 + j];
+            o[i] = (i == 0 ? (float)pc->x : i == 1 ? (float)pc->y : (float)pc->h) +
+                   R[3 * i] * t[0] + R[3 * i + 1] * t[1] + R[3 * i + 2] * t[2];
+        }
+        struct gu_piece *g = &tmp[b];
+        block_piece(c, f, r, u, m, o, g);
+        g->obj = obj;
+        g->blk = blk;
+        g->phase = piece_phase;
+        g->mirror = moving;
+        float w[3];
+        for(int i = 0; i < 3; i++)
+            w[i] = o[i] + m[3 * i] * rd16(blk + 4) + m[3 * i + 1] * rd16(blk + 6) + m[3 * i + 2] * rd16(blk + 8) - c[i];
+        key[b] = -(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
+        int i = b;
+        while(i > 0 && key[ord[i - 1]] > key[b]) { ord[i] = ord[i - 1]; i--; }
+        ord[i] = b;
+        n++;
+    }
+    for(int b = 0; b < n; b++) gs[b] = tmp[ord[b]];
+    return n;
 }
 
 /* The view from the point c along forward f, with right r and up u (unit vectors) */
@@ -632,8 +712,21 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
             continue;
         }
         const struct piece *pc = &pieces[vis[n].i];
+        if(multi[pc->obj]) {
+            struct gu_piece gs[MAX_BLOCKS];
+            int nb = multi_pieces(c, f, r, u, pc, gs);
+            for(int b = 0; b < nb; b++) {
+                st->pieces++;
+                uint32_t t0 = now();
+                if(track_mode == TRACK_HW) track_hw_piece(&gs[b]);
+                else gu_draw(fb, clip, &view, mlb, &gs[b], &gst);
+                t_out += now() - t0;
+            }
+            continue;
+        }
         struct gu_piece g;
         g.phase = piece_phase;
+        g.mirror = 0;
         g.blk = block_of(pc->obj, &g.obj);
         float ca = sin2048((uint32_t)pc->t + 512), sa = sin2048((uint32_t)pc->t);
         float dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch;

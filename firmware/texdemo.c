@@ -199,6 +199,7 @@ static uint32_t draw_mesh(volatile uint8_t *fb, const struct rs_clip *clip, floa
         g.e[c] = (int32_t)((cam - p) * 65536.0f);
     }
     g.row = 0;
+    g.mirror = 0;
     g.phase = 0;
     g.obj = mesh_obj;
     g.blk = mesh_blk;

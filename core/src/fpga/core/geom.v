@@ -24,9 +24,11 @@
 //           it is full). A piece is 18 words: local to view (rows r, u, f of columns x, y, z,
 //           16 fraction bits, within +-2^17), its origin in view space and the eye in its
 //           frame (8 fraction bits each), the SDRAM byte addresses of the mesh's object and
-//           its block, and a word with [2:0] the face row for the eye's side and [29:16] the
-//           texture phase: of a texture with n frames (texture record +0) frame n x phase >> 14
-//           is drawn (the game's 0xd5980; the frames' data offsets from record +8 on).
+//           its block, and a word with [2:0] the face row for the eye's side, [3] a moving
+//           part's block (the faces turned away are the others: its frames mirror it, the
+//           game's 0x8acf0) and [29:16] the texture phase: of a texture with n frames (texture
+//           record +0) frame n x phase >> 14 is drawn (the game's 0xd5980; the frames' data
+//           offsets from record +8 on).
 //
 
 module geom (
@@ -160,6 +162,7 @@ end
     reg  signed [31:0] e [0:2];
     reg  [25:0] obj, blk, verts, uvs, ep, face, mat, texdata, texrec;
     reg  [2:0]  row;
+    reg         mirror;
     reg  [13:0] phase;
     reg  [29:0] fmul;                           // frames x phase
     reg  signed [31:0] nvert, ro;
@@ -272,6 +275,7 @@ always @(posedge clk) begin
         if(pk == 5'd17) blk <= f_q[25:0];
         if(pk == 5'd18) begin
             row <= f_q[2:0];
+            mirror <= f_q[3];
             phase <= f_q[29:16];
             pc <= 6'd3;
         end
@@ -341,15 +345,19 @@ always @(posedge clk) begin
             face <= blk + {10'd0, rd_half};
             ep <= ep + 26'd2;
             nf <= nf + 1'b1;
-            read(blk + {10'd0, rd_half} + 26'h6, 6'd18);
+            pc <= 6'd14;
         end
     end
+    // (a read whose address comes from the value just read waits a clock: the RAM's output
+    // through an adder into its own address register would not make the clock)
+    6'd14: read(face + 26'h6, 6'd18);
     6'd18: begin
         nc <= rd_half[2:0];
         if(rd_s16 < 3 || rd_s16 > 4) pc <= 6'd16;
         else read(face + 26'h8, 6'd19);
     end
-    6'd19: begin c0off <= rd_half; read(verts + {10'd0, rd_half}, 6'd20); end
+    6'd19: begin c0off <= rd_half; pc <= 6'd15; end
+    6'd15: read(verts + {10'd0, c0off}, 6'd20);
     6'd20: begin vx <= rd_half; read(verts + {10'd0, c0off} + 26'd2, 6'd21); end
     6'd21: begin vy <= rd_half; read(verts + {10'd0, c0off} + 26'd4, 6'd22); end
     6'd22: begin vz <= rd_half; read(face + 26'h14, 6'd23); end
@@ -368,11 +376,12 @@ always @(posedge clk) begin
         default: ;
         endcase
     end
-    6'd27: if(dot[53]) pc <= 6'd16;             // turned away
+    6'd27: if(dot[53] ^ mirror) pc <= 6'd16;    // turned away
            else read(face + 26'h4, 6'd28);
 
     // the material
-    6'd28: begin mat <= mat_now; read(mat_now, 6'd29); end
+    6'd28: begin mat <= mat_now; pc <= 6'd47; end
+    6'd47: read(mat, 6'd29);
     6'd29: begin
         if(rd_word == 32'd224) pc <= 6'd16;     // see-through through MAPn.SMG: not yet
         else if(rd_word == 32'd128) begin
@@ -389,7 +398,8 @@ always @(posedge clk) begin
     end
     6'd30: begin tw <= size9(rd_word); read(mat + 26'hC, 6'd31); end
     6'd31: begin th <= size9(rd_word); read(mat + 26'h4, 6'd32); end
-    6'd32: begin texrec <= mlb + rd_word[25:0]; read(mlb + rd_word[25:0], 6'd45); end
+    6'd32: begin texrec <= mlb + rd_word[25:0]; pc <= 6'd49; end
+    6'd49: read(texrec, 6'd45);
     6'd45: begin                                // the frame: frames (if > 0, low half) x phase >> 14
         fmul <= rd_word[31] ? 30'd0 : {14'd0, rd_word[15:0]} * {16'd0, phase};
         pc <= 6'd46;

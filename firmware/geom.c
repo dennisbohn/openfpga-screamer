@@ -46,7 +46,7 @@ uint32_t gu_draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         const uint8_t *c0 = verts + ru16(fc + 8);
         int64_t bx = ((int64_t)rd16(c0) << 8) - p->e[0], by = ((int64_t)rd16(c0 + 2) << 8) - p->e[1];
         int64_t bz = ((int64_t)rd16(c0 + 4) << 8) - p->e[2];
-        if(bx * rd16(fc + 0x14) + by * rd16(fc + 0x18) + bz * rd16(fc + 0x1C) < 0) continue;
+        if((bx * rd16(fc + 0x14) + by * rd16(fc + 0x18) + bz * rd16(fc + 0x1C) < 0) != (p->mirror != 0)) continue;
 
         /* the material */
         const uint8_t *mat = mlb + rd16(fc + 4);
