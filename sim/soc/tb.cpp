@@ -289,6 +289,9 @@ int main(int argc, char **argv) {
     uint32_t expect = argc > 4 ? uint32_t(strtoul(argv[4], nullptr, 16)) : 0x80001FFFu;
     bool expect_trap = (expect & 0xC0000000u) == 0xC0000000u;
     bool negative = !expect_trap && expect != 0x80001FFFu;
+    // SIM_QUICK (tools/simcheck.sh): one run, without the two resets, about half the time
+    const char *q = getenv("SIM_QUICK");
+    bool quick = q && *q && *q != '0';
 
     std::vector<uint8_t> fw;
     {
@@ -330,6 +333,15 @@ int main(int argc, char **argv) {
         }
         s.race = wanted > 0 && found == wanted;
     }
+    // SIM_IMAGE (tools/simcheck.sh): the finished track image as data slot 30, which
+    // core/data.json does not have; the firmware takes it instead of building the image
+    if (const char *img = getenv("SIM_IMAGE")) {
+        std::vector<uint8_t> f;
+        if (*img && read_file(img, f) && !f.empty()) {
+            s.files[30] = f;
+            printf("%s: %zu bytes (slot 30, the track image)\n", img, f.size());
+        }
+    }
 
     Vsoc_system &top = s.top;
     top.clk_74a = 0; top.clk_vid = 0; top.reset_n = 0; top.bridge_wr = 0; top.bridge_rd = 0; top.cont1_key = 0;
@@ -349,6 +361,10 @@ int main(int argc, char **argv) {
         uint32_t size = id == 0 ? uint32_t(fw.size()) : it != s.files.end() ? uint32_t(it->second.size()) : 0;
         s.bridge_write(0xF8002000u + 8 * uint32_t(k), id);
         s.bridge_write(0xF8002004u + 8 * uint32_t(k), size);
+    }
+    if (s.files.count(30) && slots.size() < 32) {
+        s.bridge_write(0xF8002000u + 8 * uint32_t(slots.size()), 30);
+        s.bridge_write(0xF8002004u + 8 * uint32_t(slots.size()), uint32_t(s.files[30].size()));
     }
     {
         // the core ignores the debug log's load (docs/soc.md), so it still holds what it held
@@ -375,7 +391,7 @@ int main(int argc, char **argv) {
         fails++;
     }
 
-    if (!expect_trap && !negative) {
+    if (!expect_trap && !negative && !quick) {
         // a reset as when the firmware is reloaded from the menu (Reset Enter, the slot
         // load, Reset Exit), while buffer 1 is in front
         printf("==== reset while buffer 1 is in front, firmware loaded again ====\n");
@@ -407,6 +423,8 @@ int main(int argc, char **argv) {
     if (fails) { printf("FAIL\n"); return 1; }
     printf(expect_trap ? "PASS: the trap was taken and reported on screen and in the log, slot size set\n"
            : negative ? "PASS: the memory test reports the built-in fault: exactly the expected tests fail\n"
+           : quick ? "PASS (quick, no resets): firmware and memory test pass, test band matches, log readable "
+                     "over the bridge, the SDRAM model without errors\n"
                       : "PASS: firmware and memory test pass, test band matches, log readable over the bridge, "
                         "the SDRAM model without errors; the same after two resets, which swapped nothing by themselves\n");
     return 0;

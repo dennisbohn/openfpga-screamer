@@ -68,9 +68,6 @@ echo "fitter seed $seed"
 
 python -I "$root/tools/reverse_rbf.py" "$fpga/output_files/ap_core.rbf" "$root/core/output/bitstream.rbf_r"
 
-# Short summary: resource usage and the worst slack of each check across all clocks.
-grep -E "Logic utilization|Total RAM Blocks|Total DSP Blocks|Total PLLs" \
-    "$fpga/output_files/ap_core.fit.summary"
 python -I "$root/tools/check_budget.py" "$fpga/output_files/ap_core.fit.rpt" || {
     echo "Block RAM or memory IO registers are not as they should be (see tools/check_budget.py)"; exit 1; }
 # the SDRAM IO transfers in every corner (tools/sta_sdram.tcl)
@@ -83,5 +80,10 @@ if ! MSYS_NO_PATHCONV=1 docker run --rm -v "$mount:/build" -w /build "$image" \
     exit 1
 fi
 rm -f "$fpga/sta_sdram.tcl"
-grep -E "Info: (SDRAM IO|  )" "$root/build/sta_sdram.log" | sed 's/^Info: //'
-worst
+# one line: the worst of each SDRAM IO check over the four corners
+awk '/^Info:   [a-z]+ [a-z]+ +-?[0-9.]+ ns/ { k = $2 " " $3; if (!(k in m) || $4 < m[k]) m[k] = $4; n[k] = 1; o[++c] = k }
+     END { printf "SDRAM IO"; for (i = 1; i <= c; i++) if (n[o[i]]) { printf "%s %s %+.3f", (i > 1 ? "," : ""), o[i], m[o[i]]; n[o[i]] = 0 }
+           print " (worst of the corners)" }' "$root/build/sta_sdram.log"
+# the summary: build time, resources, the worst slack of each check, the logic of each unit,
+# each against the build before (tools/buildsum.py)
+python -I "$root/tools/buildsum.py" || worst

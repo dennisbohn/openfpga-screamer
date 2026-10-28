@@ -19,8 +19,10 @@ Grundlage für Spiellogik und Dateiformate ist [OpenScreamer](https://github.com
 ## Bauen
 
 Quartus läuft in Docker (Image `raetro/quartus:pocket`, Quartus Prime Lite 18.1.1, dieselbe
-Version wie im Template). Ein Build dauert etwa eine Minute, das Skript gibt am Ende Belegung
-und Timing aus, das volle Log liegt in `build/quartus.log`:
+Version wie im Template). Ein Build dauert etwa 6 Minuten; am Ende stehen drei Zeilen
+(`tools/buildsum.py`): Bauzeit und Belegung, die knappste Reserve jeder Timing-Prüfung und die
+Logik jeder Einheit, jeweils mit der Änderung zum vorigen Build. Das volle Log liegt in
+`build/quartus.log`:
 
 ```sh
 tools/build.sh
@@ -111,6 +113,19 @@ Fehlern bauen (`SIM_DEFINES`, siehe `tools/sim.sh`).
   Quartus-Image).
 - `tools/sta_sdram.tcl` prüft nach jedem Build die vier SDRAM-IO-Übergänge (von
   `tools/build.sh` aufgerufen), `tools/check_budget.py` Belegung und IO-Register.
+- `tools/simcheck.sh [--full] [--save] [name]` lässt die SoC-Simulation mit den Spieldateien
+  aus `build/gamedata/` laufen und fasst sie in wenigen Zeilen zusammen (`tools/simsum.py`):
+  Ergebnis, Pixelvergleich mit den C-Modellen, die Zählerstände des ersten Rennbilds mit der
+  Änderung zum gespeicherten Vergleichsstand (`--save`). Ohne `--full` der Schnelllauf: ohne
+  die zwei Resets und mit dem fertigen Streckenabbild als Slot der Testbench, den das
+  Programm nur in der Simulation findet; `--full` wie auf dem Pocket.
+- `tools/pocketlog.py [debug.txt]` liest das Protokoll des Pocket (Vorgabe: die SD-Karte als
+  I:) als kurze Tabelle: Laden, Prüfungen, Fehler, je Probe Tempo, Flächen, fps und Bildzeit.
+- `tools/dis.sh [-h] [-f] <von> <bis>` disassembliert ein Stück von `STARTL.EXE` (`-h`:
+  `STARTH.EXE`) an den Adressen von OpenScreamers Notes; das entpackte Programm legt
+  `tools/unle.py` (aus OpenScreamer) beim ersten Aufruf in `build/exe/` ab.
+- `tools/check_track_build.sh <Spielordner>` vergleicht das Streckenabbild der Firmware
+  (nativ übersetzt) Byte für Byte mit dem von `tools/make_track.py`.
 
 ## Lizenz
 

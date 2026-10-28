@@ -40,6 +40,7 @@ static uint8_t col_bg = COL_BG, col_text = COL_TEXT, col_dim = COL_DIM, col_aler
    above the track image, in struct track_files' order; the build's scratch after them, up
    to the program */
 #define GAME_SLOT   3
+#define IMAGE_SLOT  30          /* the simulation only: the finished track image (load_image) */
 static const struct game_file { const char *name; uint32_t addr, max; } game_files[5] = {
     { "MAP1H.DAT", SDRAM_BASE + 0x2800000, 0x400000 },
     { "GAME.DAT",  SDRAM_BASE + 0x2C00000, 0x100000 },
@@ -583,6 +584,24 @@ static int load_game_files(void)
     return 1;
 }
 
+/* The simulation's short cut (tools/simcheck.sh, SIM_IMAGE): the testbench offers the finished
+   image as data slot IMAGE_SLOT, which core/data.json does not have, so on the Pocket its size
+   is 0 and the image is built. The image build itself is checked by tools/check_track_build.sh. */
+static int load_image(void)
+{
+    int err;
+    uint32_t t0 = rdcycle(), size = load_file(IMAGE_SLOT, (uint32_t)(uintptr_t)TEX_FILE,
+                                              game_files[0].addr - (uint32_t)(uintptr_t)TEX_FILE, &err);
+    dcache_invalidate();
+    if (!size || !track_open(TEX_FILE)) return 0;
+    dlog_str("track image: ");
+    dlog_dec((int32_t)size);
+    dlog_str(" bytes from the testbench (data slot 30) in ");
+    dlog_dec((int32_t)((rdcycle() - t0) / (CPU_HZ / 1000)));
+    dlog_str(" ms\n");
+    return 1;
+}
+
 /* Track 1's image from them at TEX_FILE, its header opened; 1 if that worked */
 static int build_track(void)
 {
@@ -622,7 +641,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     /* the game's files (data slots 3-7, deferload) and the track image built from them at
        TEX_FILE; it is only used once all its blocks are as written */
     int placements = 0;
-    if (load_game_files() && build_track()) {
+    if (load_image() || (load_game_files() && build_track())) {
         dlog_str("track image: CRC of the 256 KB blocks:");
         int bad = 0;
         for (int k = 0; k < track_blocks(); k++) {

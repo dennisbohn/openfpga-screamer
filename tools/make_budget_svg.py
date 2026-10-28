@@ -345,4 +345,5 @@ def main():
               f"({pct(lo, cap)}-{pct(hi, cap)} %)")
 
 
-main()
+if __name__ == "__main__":
+    main()
