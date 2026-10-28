@@ -113,10 +113,20 @@ nachziehen.
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es
 und probiert weitere Fitter-Seeds), nicht als Instabilität auf dem Pocket, solange das Timing
-hält. Die größten Posten sind Setup-Einheit und Clipper (zusammen 5.750 ALMs): je nur ein
-Multiplizierer und eine Kehrwerttabelle, aber breite Register (eine Ecke 144 Bit, der Clipper
-nimmt vier auf einmal) und Auswahlschaltungen vor dem Multiplizierer. Dort ist am meisten zu
-holen, falls Audio nicht mehr passt. Einen Tiefenpuffer gibt es nicht, siehe „Entschieden“.
+hält. Die größten Posten sind Setup-Einheit und Clipper (zusammen 5.750 ALMs; nach der
+Synthese die Setup-Einheit 4.464 ALUTs und 4.106 Register, der Clipper 3.899 ALUTs und 1.263
+Register). Sie rechnen bit-genau wie das C-Modell in Festkomma, deshalb breit: eine Ecke hat
+144 Bit, ein Polygon 576, Zwischenwerte und Produkte bis 65 Bit. Es sind drei Rechenwerke
+hintereinander, damit sie gleichzeitig arbeiten (Clipper, Ecken, Dreiecke), jedes mit einem
+Multiplizierer und einem festen Ablauf: Vor jedem Multiplizierer sitzt eine Auswahl, beim
+Dreiecksteil 47 Bit breit aus 28 Rechenschritten, dahinter Register-Felder für die
+Zwischenwerte (rund 1.100 Bit), die wieder ausgewählt werden. Dazu kommen variable Schieber
+für das Normieren vor der Kehrwerttabelle und das Skalieren der Ergebnisse (die
+Setup-Einheit hat acht, 32 bis 65 Bit breit, der Clipper drei, je einige hundert ALUTs), und
+Produkte breiter als ein DSP-Block (47 × 18, 38 × 18) addieren ihre Teilprodukte in Logik.
+Dort ist am meisten zu holen, falls Audio nicht mehr passt (Zwischenwerte in Block-RAM statt
+Registern, Schieber nur so breit wie nötig; das C-Modell muss jede Änderung mitmachen).
+Einen Tiefenpuffer gibt es nicht, siehe „Entschieden“.
 
 VexRiscv und FPU stammen aus einer Synthese der CPU allein für den 5CEBA4F23C8 mit Quartus
 18.1.1 (Recherche 2026-10-25): RV32IM mit 2 × 8 KB Cache 1.268–1.278 ALMs, 19 M10K, 4 DSP,
