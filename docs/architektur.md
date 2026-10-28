@@ -421,6 +421,11 @@ für Schatten und Rauch und Spiegelungen auf den Autos, aber nur 4 Autos im Renn
   alles); ein leererer Chip hält das Timing leichter.
 - **Mehr Hardware an der Engstelle:** eine zweite Geometrie-Einheit, oder das Auswählen und
   Sortieren der Bauteile in Hardware (die CPU ist am Start der größte Posten).
+- **Weniger Warten auf Texturen:** die Zeilen des nächsten Dreiecks schon anfordern, während
+  das aktuelle gezeichnet wird (der Rasterizer wartet am Start rund 200.000 Takte je Bild,
+  fast nur auf erste Zugriffe). Nicht über den SRAM: 55 ns asynchron sind rund 5 Takte je
+  Zugriff (der Rasterizer braucht ein Texel pro Takt), und 256 KB fassen weder die 2,3–2,9 MB
+  Texturen einer Strecke noch die rund 360 KB, die ein Bild berührt.
 - **Nebeltabelle von Screamer 2:** je Fläche die eine benutzte Zeile (256 Byte) aus dem
   SDRAM holen statt der ganzen Tabelle im Block-RAM (sie bräuchte rund 52 M10K).
 - **Block-RAM frei machen:** Boot-RAM von 32 auf 24 KB (8 M10K, ohne den Lader zu ändern;
