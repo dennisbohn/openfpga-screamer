@@ -63,8 +63,8 @@ PLANNED = [
     ("Audio: Mischer 32 Stimmen, I2S, CD-Musik", "audio", (520, 650), (3, 3), (1, 1)),
 ]
 TIMING_LIMIT = 0.80         # logic utilisation above which timing closure gets hard
-STAND = "28.10.2026"
-BUILD = "Strecke aus den Originaldateien"
+STAND = "29.10.2026"
+BUILD = "Setup, Geometrie und Rasterizer verkleinert"
 
 # layout
 WIDTH = 1120
