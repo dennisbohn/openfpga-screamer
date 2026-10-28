@@ -6,9 +6,9 @@ CPU (VexRiscv RV32IMF mit FPU und CFU, `docs/soc.md`); Geometrie-Einheit, Clippe
 Setup-Einheit und Rasterizer mit vorausladendem Textur-Cache; Strecke 1 mit dem Auto des
 Spielers, fahrbar, mit dem HUD aus dem Blitter, der Füllregel des Originals (keine Lücken
 an Fugen), dem Hintergrundbild `MAPn.BCK`, neun Gegnern (Startaufstellung, ihre Linien,
-Platzierung, Berührungen, Überholen, Crash eines Gegners) und der schnelleren Grafik-Kette
-(50 fps auch am Start mit allen zehn Autos). Gebaut, Test auf dem Pocket steht aus:
-bewegliche Teile der Strecke (der drehende Football-Helm am Start). Belegung siehe
+Platzierung, Berührungen, Überholen, Crash eines Gegners), der schnelleren Grafik-Kette
+(50 fps auch am Start mit allen zehn Autos) und beweglichen Teilen der Strecke (der drehende
+Football-Helm am Start). Belegung siehe
 „Belegung“; geschätzt ist nur noch, was fehlt (Audio, Glas/Schatten).
 
 ## Hardware des Pocket (Haupt-FPGA)
