@@ -35,15 +35,59 @@
                 "address": "0x13000000"
             },
             {
-                "name": "Track",
+                "name": "MAP1H.DAT",
                 "id": 3,
                 "required": false,
                 "deferload": true,
-                "parameters": "0x02",
-                "filename": "track1.bin",
-                "extensions": ["bin"],
-                "size_maximum": 8388608,
-                "address": "0x12100000"
+                "parameters": "0x08",
+                "filename": "MAP1H.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 4194304,
+                "address": "0x12800000"
+            },
+            {
+                "name": "GAME.DAT",
+                "id": 4,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "GAME.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 1048576,
+                "address": "0x12C00000"
+            },
+            {
+                "name": "MAP1.DAT",
+                "id": 5,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "MAP1.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 262144,
+                "address": "0x12D00000"
+            },
+            {
+                "name": "GEN.DAT",
+                "id": 6,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "GEN.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 65536,
+                "address": "0x12D40000"
+            },
+            {
+                "name": "LOCAL.DAT",
+                "id": 7,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "LOCAL.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 65536,
+                "address": "0x12D50000"
             }
         ]
     }

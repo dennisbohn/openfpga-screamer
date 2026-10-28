@@ -1,10 +1,10 @@
 /*
- * One track from the game files (tools/make_track.py, data slot 3), seen from a camera.
- * The CPU picks the pieces within reach and sorts them far to near (the game's painter's
- * algorithm); each piece then goes with its place in view space to the geometry unit
- * (geom.h), which reads the mesh, leaves out the faces turned away and hands the others to
- * the setup unit. Besides the drawing: what lies under a point (the drivable pieces), and
- * the game's records the car needs (markers, cars, the start).
+ * One track from the game files (the image track_build.c builds, tools/make_track.py the
+ * reference), seen from a camera. The CPU picks the pieces within reach and sorts them far
+ * to near (the game's painter's algorithm); each piece then goes with its place in view
+ * space to the geometry unit (geom.h), which reads the mesh, leaves out the faces turned
+ * away and hands the others to the setup unit. Besides the drawing: what lies under a point
+ * (the drivable pieces), and the game's records the car needs (markers, cars, the start).
  */
 #pragma once
 #include <stdint.h>

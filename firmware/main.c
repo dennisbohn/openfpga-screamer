@@ -1,11 +1,12 @@
 /*
  * The program (program.bin, data slot 2) in the SDRAM, started by the boot loader with its
- * results (docs/soc.md). With a track in data slot 3 (tools/make_track.py) the player's car
- * on it (car.c): A accelerates, B brakes, left and right steer, L and R change
- * gear on a manual car, Select changes the view; the CPU picks and sorts the pieces
- * (track.c), the geometry unit, setup unit and rasterizer draw them. Without one, the
- * texture scene with test patterns, checked once a run
- * against the rasterizer's C model (raster.c), and a triangle moved with the d-pad.
+ * results (docs/soc.md). With the game's original files in data slots 3-7 it builds track 1
+ * from them (track_build.c) and puts the player's car on it (car.c): A accelerates, B
+ * brakes, left and right steer, L and R change gear on a manual car, Select changes the
+ * view; the CPU picks and sorts the pieces (track.c), the geometry unit, setup unit and
+ * rasterizer draw them. Without the files, the texture scene with test patterns, checked
+ * once a run against the rasterizer's C model (raster.c), and a triangle moved with the
+ * d-pad.
  * Every frame into the back buffer: palette, test band, background, the scene, the counts
  * and FPS; then a swap. After the third completed swap the results go to SYS_SIM once
  * (0x80001FFF when everything passed).
@@ -19,6 +20,7 @@
 #include "screen.h"
 #include "slot.h"
 #include "track.h"
+#include "track_build.h"
 #include "car.h"
 #include "hud.h"
 #include "opp.h"
@@ -29,10 +31,23 @@ uint32_t frames_shown;             /* read by the trap handler */
 #define STACK_LOW   0x6000u     /* the stack may grow down to here (link.ld keeps the boot loader below) */
 
 static uint32_t results;        /* SYS_SIM bits 20..0, from the boot loader */
-static int textures;            /* textures in the SDRAM (data slot 3, or test patterns) */
+static int textures;            /* textures in the SDRAM (the track's, or test patterns) */
 static uint8_t col_bg = COL_BG, col_text = COL_TEXT, col_dim = COL_DIM, col_alert = COL_ALERT;
 
-#define TEX_FILE    ((const volatile uint8_t *)(SDRAM_BASE + 0x2100000))  /* data slot 3 (core/data.json) */
+#define TEX_FILE    ((const volatile uint8_t *)(SDRAM_BASE + 0x2100000))  /* the track image, up to 7 MB */
+
+/* The game's containers (data slots 3-7, core/data.json with the same addresses and limits)
+   above the track image, in struct track_files' order; the build's scratch after them, up
+   to the program */
+#define GAME_SLOT   3
+static const struct game_file { const char *name; uint32_t addr, max; } game_files[5] = {
+    { "MAP1H.DAT", SDRAM_BASE + 0x2800000, 0x400000 },
+    { "GAME.DAT",  SDRAM_BASE + 0x2C00000, 0x100000 },
+    { "MAP1.DAT",  SDRAM_BASE + 0x2D00000, 0x40000 },
+    { "GEN.DAT",   SDRAM_BASE + 0x2D40000, 0x10000 },
+    { "LOCAL.DAT", SDRAM_BASE + 0x2D50000, 0x10000 },
+};
+#define BUILD_SCRATCH   (SDRAM_BASE + 0x2D60000)
 
 /* Mark the free stack in the boot RAM up to 256 bytes below the stack pointer, find how
    deep it was used later */
@@ -515,6 +530,86 @@ static void __attribute__((noreturn)) run_track(void)
     }
 }
 
+/* Data slot id's file whole to addr (at most max bytes): its size from the slot table, 0
+   if it has none, is too big or a read failed (*err the APF's result). The reads stay
+   inside the file: its whole words, then the 1-3 bytes after them as the rest of the file. */
+static uint32_t load_file(uint32_t id, uint32_t addr, uint32_t max, int *err)
+{
+    uint32_t size = slot_size(id), body = size & ~3u;
+    *err = 0;
+    if (size == 0 || size > max) return 0;
+    if (body && (*err = slot_read(id, 0, addr, body)) != 0) return 0;
+    if (size > body && (*err = slot_read(id, body, addr + body, SLOT_REST)) != 0) return 0;
+    return size;
+}
+
+static struct track_files game;
+
+/* The five containers into the SDRAM; 1 if all are there */
+static int load_game_files(void)
+{
+    const uint8_t *at[5];
+    uint32_t size[5], t0 = rdcycle();
+    for (int k = 0; k < 5; k++) {
+        const struct game_file *g = &game_files[k];
+        uint32_t id = GAME_SLOT + (uint32_t)k;
+        int err;
+        size[k] = load_file(id, g->addr, g->max, &err);
+        at[k] = (const uint8_t *)(uintptr_t)g->addr;
+        if (size[k]) continue;
+        dlog_str(g->name);
+        dlog_str(": not loaded (data slot ");
+        dlog_dec((int32_t)id);
+        dlog_str(", size ");
+        dlog_dec((int32_t)slot_size(id));
+        dlog_str(", result ");
+        dlog_dec(err);
+        dlog_str(")\n");
+        return 0;
+    }
+    uint32_t ms = (rdcycle() - t0) / (CPU_HZ / 1000);
+    game = (struct track_files){ at[0], at[1], at[2], at[3], at[4], size[0], size[1], size[2], size[3], size[4] };
+    dlog_str("game files:");
+    for (int k = 0; k < 5; k++) {
+        dlog_char(' ');
+        dlog_str(game_files[k].name);
+        dlog_char(' ');
+        dlog_dec((int32_t)size[k]);
+    }
+    dlog_str(" bytes loaded in ");
+    dlog_dec((int32_t)ms);
+    dlog_str(" ms\n");
+    return 1;
+}
+
+/* Track 1's image from them at TEX_FILE, its header opened; 1 if that worked */
+static int build_track(void)
+{
+    struct track_build_info info;
+    uint8_t *out = (uint8_t *)(uintptr_t)TEX_FILE;
+    uint32_t size = track_build(&game, 1, out, game_files[0].addr - (uint32_t)(uintptr_t)out,
+                                (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH, &info);
+    while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* all of it in the SDRAM for the 3D units */
+        ;
+    dcache_invalidate();                        /* the block check reads the SDRAM */
+    if (!size || !track_open(TEX_FILE)) {
+        dlog_str("track image: not built, stopped at ");
+        dlog_str(size ? "its header" : info.fail);
+        dlog_char('\n');
+        return 0;
+    }
+    dlog_str("track image: ");
+    dlog_dec((int32_t)size);
+    dlog_str(" bytes built in ");
+    dlog_dec((int32_t)(info.cycles / (CPU_HZ / 1000)));
+    dlog_str(" ms, ");
+    dlog_dec((int32_t)info.cycles);
+    dlog_str(" cycles (unpacking ");
+    dlog_dec((int32_t)info.unpack_cycles);
+    dlog_str(")\n");
+    return 1;
+}
+
 void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
 {
     results = boot_results;
@@ -523,22 +618,11 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     log_head("frames drawn: ", 0);
     dlog_str("program.bin: running in the SDRAM\n");
 
-    /* the track (data slot 3, deferload): its header has the file's size; the file is only
-       read once all its blocks are as written */
-    uint32_t t_load = rdcycle();
-    int placements = 0, e = slot_read(3, 0, (uint32_t)(uintptr_t)TEX_FILE, 0x100);
-    if (!e && track_open(TEX_FILE)) e = slot_read(3, 0, (uint32_t)(uintptr_t)TEX_FILE, (track_size() + 3) & ~3u);
-    t_load = (rdcycle() - t_load) / (CPU_HZ / 1000);
-    if (e) {
-        dlog_str("track1.bin: not loaded (data slot 3, result ");
-        dlog_dec(e);
-        dlog_str(")\n");
-    } else if (track_open(TEX_FILE)) {
-        dlog_str("track1.bin: ");
-        dlog_dec((int32_t)track_size());
-        dlog_str(" bytes loaded in ");
-        dlog_dec((int32_t)t_load);
-        dlog_str(" ms, CRC of the 256 KB blocks:");
+    /* the game's files (data slots 3-7, deferload) and the track image built from them at
+       TEX_FILE; it is only used once all its blocks are as written */
+    int placements = 0;
+    if (load_game_files() && build_track()) {
+        dlog_str("track image: CRC of the 256 KB blocks:");
         int bad = 0;
         for (int k = 0; k < track_blocks(); k++) {
             int ok = track_block_ok(k);
@@ -558,7 +642,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         dlog_dec(placements);
         dlog_str(" placements, ");
         dlog_dec((int32_t)track_path_length());
-        dlog_str(" path points (data slot 3)\n");
+        dlog_str(" path points\n");
         RS_CTRL = 1;
         run_track();
     }

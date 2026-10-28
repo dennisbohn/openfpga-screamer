@@ -14,3 +14,11 @@ int slot_read(uint32_t id, uint32_t offset, uint32_t addr, uint32_t len)
     dcache_invalidate();
     return (int)((DS_CTRL >> 4) & 7);
 }
+
+uint32_t slot_size(uint32_t id)
+{
+    DS_ID = id;                     /* starts the look-up in the slot table, a few hundred clocks */
+    while (DS_CTRL & DS_SIZING)
+        ;
+    return DS_SIZE;
+}

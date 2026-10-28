@@ -718,6 +718,15 @@ end
     wire        swap_pending = swap_req_toggle != ack_s[1];
     reg         ds_started = 0;                 // the data slot read's command has begun
     reg  [2:0]  ds_result = 0;                  // the last one's result, 0 = ok
+    // the data slot table's look-ups (below)
+    reg  [2:0]  dt_state = 0;                   // 0 idle, 1-3 an id word, 4-5 a size word
+    reg  [4:0]  dt_slot;
+    reg  [1:0]  dt_wait;
+    reg         dt_log;                         // looking for the debug log's slot, else ds_id
+    reg         dt_lookup = 0;                  // DS_ID written: a look-up for ds_id waits
+    reg  [31:0] ds_size = 0;
+    wire        ds_id_wr = d_write && d_region == R_REG && d_addr[15:0] == 16'h0020;
+    wire        ds_sizing = dt_lookup || dt_state != 3'd0;
     reg  [31:0] reg_q;
     wire        writes_idle = sdram_cpu_writes_idle;
 
@@ -736,7 +745,8 @@ always @(posedge clk) begin
         16'h0010: reg_q <= {8'd0, br_words};
         16'h0014: reg_q <= sdram_refreshes;
         16'h0018: reg_q <= {phase_count, 14'd0, sdram_ready, phase_busy || phase_step};
-        16'h0030: reg_q <= {25'd0, ds_result, 3'd0, ds_read};
+        16'h0030: reg_q <= {25'd0, ds_result, 2'd0, ds_sizing, ds_read};
+        16'h0034: reg_q <= ds_size;
         16'h1000: reg_q <= {frame_count, 14'd0, swap_pending, ack_s[1]};
         16'h2000: reg_q <= key_r;
         16'h2004: reg_q <= joy_r;
@@ -861,41 +871,61 @@ always @(posedge clk) begin
 end
 
 //
-// after reset: give the debug log's data slot its full size in the slot table, so the
-// APF saves all of it on exit (it only sets a size when it loaded an existing file)
+// the APF's data slot table (core_bridge_cmd: per slot its id, then its file's size; the
+// APF fills it in when it loads the core, deferload slots too). After reset: give the
+// debug log's slot its full size, so the APF saves all of it on exit (it only sets a size
+// when it loaded an existing file). Then after each write of DS_ID: that slot's size for
+// DS_SIZE, 0 if the table has no such slot (DS_CTRL bit 1 until it is there).
 //
-    reg  [2:0]  dt_state = 0;
-    reg  [4:0]  dt_slot;
-    reg  [1:0]  dt_wait;
-
 always @(posedge clk) begin
     dt_wren <= 0;
     if(cpu_reset) begin
         dt_state <= 1;
         dt_slot <= 0;
-    end else case(dt_state)
-    1: begin                                    // address the slot's id word
-        dt_addr <= {4'd0, dt_slot, 1'b0};
-        dt_wait <= 2;
-        dt_state <= 2;
-    end
-    2: begin                                    // wait for the read data
-        dt_wait <= dt_wait - 1'b1;
-        if(dt_wait == 0) dt_state <= 3;
-    end
-    3: begin
-        if(dt_q[15:0] == LOG_SLOT_ID) begin
-            dt_addr <= {4'd0, dt_slot, 1'b1};   // its size word
-            dt_data <= LOG_SIZE;
-            dt_wren <= 1;
-            dt_state <= 0;
-        end else begin
-            dt_slot <= dt_slot + 1'b1;
-            dt_state <= dt_slot == 5'd31 ? 3'd0 : 3'd1;
+        dt_log <= 1;
+        dt_lookup <= 0;
+    end else begin
+        case(dt_state)
+        0: if(dt_lookup) begin                  // a look-up for ds_id
+            dt_lookup <= 0;
+            dt_log <= 0;
+            dt_slot <= 0;
+            dt_state <= 1;
         end
+        1: begin                                // address the slot's id word
+            dt_addr <= {4'd0, dt_slot, 1'b0};
+            dt_wait <= 2;
+            dt_state <= 2;
+        end
+        2: begin                                // wait for the read data
+            dt_wait <= dt_wait - 1'b1;
+            if(dt_wait == 0) dt_state <= 3;
+        end
+        3: begin
+            if(dt_q[15:0] == (dt_log ? LOG_SLOT_ID : ds_id)) begin
+                dt_addr <= {4'd0, dt_slot, 1'b1};   // its size word
+                dt_data <= LOG_SIZE;
+                dt_wren <= dt_log;
+                dt_wait <= 2;
+                dt_state <= dt_log ? 3'd0 : 3'd4;
+            end else begin
+                dt_slot <= dt_slot + 1'b1;
+                if(dt_slot == 5'd31 && !dt_log) ds_size <= 0;
+                dt_state <= dt_slot == 5'd31 ? 3'd0 : 3'd1;
+            end
+        end
+        4: begin                                // wait for the size
+            dt_wait <= dt_wait - 1'b1;
+            if(dt_wait == 0) dt_state <= 5;
+        end
+        5: begin
+            ds_size <= dt_q;
+            dt_state <= 0;
+        end
+        default: dt_state <= 0;
+        endcase
+        if(ds_id_wr) dt_lookup <= 1;            // after the case: a write wins over the start
     end
-    default: ;
-    endcase
 end
 
 endmodule
