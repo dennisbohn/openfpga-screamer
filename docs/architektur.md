@@ -407,6 +407,28 @@ Aus der Gegenprüfung der Framebuffer-Platzierung:
 - **Zahlenformate:** Rasterizer und Geometrie in Festkomma (Bildschirmkoordinaten mit
   mindestens 4 Nachkomma-Bits), die Physik auf der CPU in `float` wie im Original.
 
+## Reserven für später (etwa Screamer 2)
+
+Gesammelt 2026-10-28, nichts davon gebaut. Screamer 2 zeichnet weiter (Tiefe 50.000, Strecke
+4 60.000, gegen 43.808), hat Nebel und Abdunkeln je Fläche über eine 64-KB-Tabelle, Routine 208
+für Schatten und Rauch und Spiegelungen auf den Autos, aber nur 4 Autos im Rennen
+(OpenScreamer `docs/NOTES2.md`).
+
+- **Bilder überlappen:** CPU an Bild N+1, Grafik an N; die Zeit je Bild ist das Maximum statt
+  der Summe (am Start heute zusammen 82 %). Wenig Logik, ein doppelter Puffer für die
+  Bauteile. Der größte Hebel.
+- **Höherer Takt:** Der SDRAM kann mit CL2 bis 83 MHz (heute 74,25 MHz, bis 12 % mehr für
+  alles); ein leererer Chip hält das Timing leichter.
+- **Mehr Hardware an der Engstelle:** eine zweite Geometrie-Einheit, oder das Auswählen und
+  Sortieren der Bauteile in Hardware (die CPU ist am Start der größte Posten).
+- **Nebeltabelle von Screamer 2:** je Fläche die eine benutzte Zeile (256 Byte) aus dem
+  SDRAM holen statt der ganzen Tabelle im Block-RAM (sie bräuchte rund 52 M10K).
+- **Block-RAM frei machen:** Boot-RAM von 32 auf 24 KB (8 M10K, ohne den Lader zu ändern;
+  16 KB mit einem schlankeren Lader), eine gemeinsame Kehrwerttabelle für Setup-Einheit und
+  Clipper (2 M10K), den angezeigten Framebuffer in den unbenutzten PSRAM (64 M10K; gezeichnet
+  wird weiter im Block-RAM, nur das fertige Bild wird kopiert, ein Umbau mit Timing-Risiko).
+  Textur-Cache und CPU-Caches nicht verkleinern (die Cache-Studie, die CPU ist der Engpass).
+
 ## Vorgehen
 
 1. Grundgerüst: Template, zwei Framebuffer mit Palette, Eingabe (erledigt, auf dem Pocket
