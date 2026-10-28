@@ -24,11 +24,12 @@
 //           it is full). A piece is 18 words: local to view (rows r, u, f of columns x, y, z,
 //           16 fraction bits, within +-2^17), its origin in view space and the eye in its
 //           frame (8 fraction bits each), the SDRAM byte addresses of the mesh's object and
-//           its block, and a word with [2:0] the face row for the eye's side, [3] a moving
-//           part's block (the faces turned away are the others: its frames mirror it, the
-//           game's 0x8acf0) and [29:16] the texture phase: of a texture with n frames (texture
-//           record +0) frame n x phase >> 14 is drawn (the game's 0xd5980; the frames' data
-//           offsets from record +8 on).
+//           its block, and a word with [4] and [2:0] the face row for the eye's side (0..15,
+//           read at block +0x28 + 4 x row; [4] is 8, the eye below the block's x-z plane, the
+//           game's 0x8a598), [3] a moving part's block (the faces turned away are the others:
+//           its frames mirror it, the game's 0x8acf0) and [29:16] the texture phase: of a
+//           texture with n frames (texture record +0) frame n x phase >> 14 is drawn (the
+//           game's 0xd5980; the frames' data offsets from record +8 on).
 //
 
 module geom (
@@ -161,7 +162,7 @@ end
     reg  signed [31:0] t [0:2];
     reg  signed [31:0] e [0:2];
     reg  [25:0] obj, blk, verts, uvs, ep, face, mat, texdata, texrec;
-    reg  [2:0]  row;
+    reg  [3:0]  row;
     reg         mirror;
     reg  [13:0] phase;
     reg  [29:0] fmul;                           // frames x phase
@@ -274,7 +275,7 @@ always @(posedge clk) begin
         if(pk == 5'd16) obj <= f_q[25:0];
         if(pk == 5'd17) blk <= f_q[25:0];
         if(pk == 5'd18) begin
-            row <= f_q[2:0];
+            row <= {f_q[4], f_q[2:0]};
             mirror <= f_q[3];
             phase <= f_q[29:16];
             pc <= 6'd3;
@@ -292,7 +293,7 @@ always @(posedge clk) begin
     6'd3: read(blk + 26'h10, 6'd4);
     6'd4: begin nvert <= rd_word; read(blk + 26'h1C, 6'd5); end
     6'd5: begin verts <= obj + rd_word[25:0]; read(blk + 26'h24, 6'd6); end
-    6'd6: begin uvs <= obj + rd_word[25:0]; read(blk + 26'h28 + {21'd0, row, 2'd0}, 6'd7); end
+    6'd6: begin uvs <= obj + rd_word[25:0]; read(blk + 26'h28 + {20'd0, row, 2'd0}, 6'd7); end
     6'd7: begin
         ro <= rd_word;
         vi <= 0;

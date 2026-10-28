@@ -6,10 +6,10 @@
  *
  * The game's structures (openscreamer docs/NOTES.md, "How the track is built"):
  *   UNR    int32 blob size, int32 count, count offsets into the blob; an object's block at
- *          object + [object + 0x18]; block +0x10 vertex count, +0x1C vertex array and
- *          +0x24 texture coordinates (both from the object, 6 bytes a vertex: int16 x, y up,
- *          z and int16 u, v, 0), +0x28..+0x44 eight face rows (from the block, uint16 face
- *          offsets, 0xFFFF ends a row)
+ *          object + [object + 0x18]; block +0x04 its middle (int16 x, y, z), +0x10 vertex
+ *          count, +0x1C vertex array and +0x24 texture coordinates (both from the object, 6
+ *          bytes a vertex: int16 x, y up, z and int16 u, v, 0), +0x28..+0x64 sixteen face
+ *          rows (from the block, uint16 face offsets, 0xFFFF ends a row), +0x68 its name
  *   face   +0x02 colour (routine 128), +0x04 material (byte offset into MLB), +0x06 corners
  *          (3 or 4), +0x08 corner vertex byte offsets, +0x14/+0x18/+0x1C normal (16384 = 1),
  *          pointing away from the side it is seen from: seen when (corner - eye) . N >= 0
@@ -17,9 +17,11 @@
  *          through through MAPn.SMG), +4 texture record, +8/+12 size in texels; texture
  *          record +8 the pixels of frame 0, rows of 256 bytes; texel = raw u, v * size / 256
  *   piece  world = (X + x cos a - z sin a, Y + x sin a + z cos a, height + y), a = T * 2 pi / 2048
- * A block's eight rows are its faces back to front, one row per 45-degree sector of the
- * eye's direction around the vertical axis, starting at local +z and turning towards +x
- * (found from the data: each row leaves out the faces seen only from elsewhere).
+ * A block's sixteen rows are its faces in drawing order, back to front, each sorted for one
+ * direction of the eye in the block's frame (face_eye, the game's 0x8a598): rows 0..7 for an
+ * eye above the block's x-z plane, 8..15 below it, and in each half one row per 45-degree
+ * sector around the block's y axis, starting at +z and turning towards +x. A row holds all
+ * the faces, or nearly (the data); the normal test leaves out those turned away.
  */
 #include "track.h"
 #include "crc32.h"
@@ -545,9 +547,27 @@ struct vis { int32_t k; int i; };              /* key << 16 | i; i: a piece, or 
 #define MAX_OBJS    16
 static struct vis vis[MAX_PIECES + MAX_OBJS];
 
+/* The eye of a block as the game takes it for its faces (0x834d6..0x83547): the eye in the
+   block's frame (x, y, z) plus the block's middle, times 1.2 (imul 0x13333, sar 16; unscaled
+   if that overflows 32 bits on any axis). It picks the face row (0x8a598): 8 more when it is
+   below the block's x-z plane, then the 45-degree sector round its y axis, on a diagonal the
+   row next to the x axis; and it is the eye of the normal test (0x835a0 pops it into the
+   test's operands). Sets g->row and g->e (8 fraction bits). */
+static void face_eye(const uint8_t *blk, float x, float y, float z, struct gu_piece *g)
+{
+    float p[3] = { x + (float)rd16(blk + 4), y + (float)rd16(blk + 6), z + (float)rd16(blk + 8) };
+    int big = 0;
+    for(int i = 0; i < 3; i++) big |= p[i] * 78643.0f >= 2147483648.0f || p[i] * 78643.0f < -2147483648.0f;
+    for(int i = 0; i < 3; i++) g->e[i] = (int32_t)((big ? p[i] : p[i] * (78643.0f / 65536.0f)) * 256.0f);
+    int row = p[1] < 0.0f ? 8 : 0;
+    if(p[0] >= 0.0f) row += p[2] >= 0.0f ? (p[2] > p[0] ? 0 : 1) : (-p[2] <= p[0] ? 2 : 3);
+    else             row += p[2] < 0.0f ? (-p[2] > -p[0] ? 4 : 5) : (p[2] <= -p[0] ? 6 : 7);
+    g->row = row;
+}
+
 /* A block placed at o with m (world from local) as a piece for the geometry unit */
 static void block_piece(const float c[3], const float f[3], const float r[3], const float u[3],
-                        const float m[9], const float o[3], struct gu_piece *g)
+                        const float m[9], const float o[3], const uint8_t *blk, struct gu_piece *g)
 {
     const float *basis[3] = { r, u, f };
     for(int k = 0; k < 3; k++) {
@@ -557,10 +577,8 @@ static void block_piece(const float c[3], const float f[3], const float r[3], co
     }
     float e[3];
     for(int j = 0; j < 3; j++) e[j] = m[j] * (c[0] - o[0]) + m[3 + j] * (c[1] - o[1]) + m[6 + j] * (c[2] - o[2]);
-    float ex = e[0], ez = e[2];
-    g->row = ex >= 0.0f ? (ez >= 0.0f ? (ex < ez ? 0 : 1) : (ex > -ez ? 2 : 3))
-                        : (ez < 0.0f ? (-ex < -ez ? 4 : 5) : (-ex > ez ? 6 : 7));
-    for(int j = 0; j < 3; j++) g->e[j] = (int32_t)(e[j] * 256.0f);
+    face_eye(blk, e[0], e[1], e[2], g);
+    g->blk = blk;
     g->mirror = 0;
 }
 
@@ -599,9 +617,8 @@ static int multi_pieces(const float c[3], const float f[3], const float r[3], co
                    R[3 * i] * t[0] + R[3 * i + 1] * t[1] + R[3 * i + 2] * t[2];
         }
         struct gu_piece *g = &tmp[b];
-        block_piece(c, f, r, u, m, o, g);
+        block_piece(c, f, r, u, m, o, blk, g);
         g->obj = obj;
-        g->blk = blk;
         g->phase = piece_phase;
         g->mirror = moving;
         float w[3];
@@ -699,9 +716,8 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
             if(ob->make) ob->make(ob->id, cam, ob);
             for(int b = 0; b < ob->n; b++) {
                 struct gu_piece g;
-                block_piece(c, f, r, u, ob->b[b].m, ob->b[b].o, &g);
+                block_piece(c, f, r, u, ob->b[b].m, ob->b[b].o, ob->b[b].blk, &g);
                 g.obj = ob->b[b].file;
-                g.blk = ob->b[b].blk;
                 g.phase = ob->b[b].phase;
                 st->pieces++;
                 uint32_t t0 = now();
@@ -740,12 +756,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         for(int k = 0; k < 3; k++) g.t[k] = (int32_t)(o[k] * 256.0f);
 
         /* the eye in the piece's frame picks the row and tells the faces turned away */
-        float ex = -dx * ca - dy * sa, ez = dx * sa - dy * ca, ey = -dh;
-        g.row = ex >= 0.0f ? (ez >= 0.0f ? (ex < ez ? 0 : 1) : (ex > -ez ? 2 : 3))
-                           : (ez < 0.0f ? (-ex < -ez ? 4 : 5) : (-ex > ez ? 6 : 7));
-        g.e[0] = (int32_t)(ex * 256.0f);
-        g.e[1] = (int32_t)(ey * 256.0f);
-        g.e[2] = (int32_t)(ez * 256.0f);
+        face_eye(g.blk, -dx * ca - dy * sa, -dh, dx * sa - dy * ca, &g);
         st->pieces++;
         uint32_t t0 = now();
         if(track_mode == TRACK_HW) track_hw_piece(&g);

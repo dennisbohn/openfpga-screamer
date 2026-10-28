@@ -24,7 +24,7 @@ struct gu_piece {
     int32_t m[9];                       /* local to view: rows r, u, f of columns x, y, z; 16 fraction bits */
     int32_t t[3];                       /* the piece's origin in view space, 8 fraction bits */
     int32_t e[3];                       /* the eye in the piece's frame, 8 fraction bits */
-    int row;                            /* the face row for the side the eye is on, 0..7 */
+    int row;                            /* the face row for the side the eye is on, 0..15 (track.c) */
     int mirror;                         /* a moving part's block: its frames turn the model's z up
                                            into y up, a mirror, so the faces turned away are the
                                            others (the game's 0x8acf0: jge for jl) */

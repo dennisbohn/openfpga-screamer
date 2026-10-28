@@ -168,7 +168,8 @@ static void hw_piece(const struct gu_piece *g)
     for (int k = 0; k < 3; k++) GU_PUSH = (uint32_t)g->e[k];
     GU_PUSH = (uint32_t)((uintptr_t)g->obj - SDRAM_BASE);
     GU_PUSH = (uint32_t)((uintptr_t)g->blk - SDRAM_BASE);
-    GU_PUSH = (uint32_t)g->row | (uint32_t)(g->mirror != 0) << 3 | (g->phase & 0x3FFF) << 16;
+    GU_PUSH = ((uint32_t)g->row & 7) | (uint32_t)(g->mirror != 0) << 3 | ((uint32_t)g->row & 8) << 1 |
+              (g->phase & 0x3FFF) << 16;
     draw_wait += rdcycle() - t0;
 }
 

@@ -160,11 +160,15 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
 - **Sichtbarkeit wie im Original, ohne Tiefenpuffer** (Maler-Algorithmus): Die CPU
   sortiert ganze Objekte nach dem Abstand ihres Mittelpunkts von der Kamera und gibt sie
   von hinten nach vorn aus (im Original `0x83164`: `dist² >> 2`). Innerhalb eines Objekts
-  liegt die Reihenfolge in den Daten: Jeder Mesh-Block hat acht vorberechnete
-  Flächenlisten, eine je Oktant der Blickrichtung, ohne die von dort unsichtbaren Flächen
-  (Header +0x28..+0x44, OpenScreamer `docs/NOTES.md`). Die Geometrie-Einheit wählt die
-  Liste über die drei Vorzeichen der Blickrichtung im Objektraum; sie sortiert nicht und
-  braucht keinen Rückseitentest. Die Streckendaten verlassen sich auf diese Reihenfolge
+  liegt die Reihenfolge in den Daten: Jeder Mesh-Block hat sechzehn vorberechnete
+  Flächenlisten (Header +0x28..+0x64), jede von hinten nach vorn sortiert für eine
+  Blickrichtung: je ein 45-Grad-Sektor um die y-Achse des Blocks, für ein Auge über
+  (Listen 0..7) und unter seiner x-z-Ebene (8..15). Die CPU wählt die Liste wie das Spiel
+  (`0x8a598`; bis 2026-10-28 nur die oberen acht, daher der falsch verdeckte
+  Gesichtsschutz des Helms am Start), die Geometrie-Einheit sortiert nicht und lässt
+  Rückseiten über die Normale weg. Auge ist dabei wie im Spiel das Auge im Rahmen des Blocks
+  plus dessen Mitte, mal 1,2 (`0x83511`, unskaliert bei einem 32-Bit-Überlauf): Dieser
+  Punkt wählt die Liste und ist das Auge des Rückseitentests (`0x835a0`). Die Streckendaten verlassen sich auf diese Reihenfolge
   (Grasflächen unter der Straße, zwei Objekte an einer Stelle), OpenScreamer brauchte
   dafür mit seinem Tiefenpuffer Sonderregeln. Nötig bleibt das Clipping an der vorderen
   Ebene. Es spart rund 125 M10K (320×200×16 Bit passen nur in die 8-Kbit-Modi); dafür
