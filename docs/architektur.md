@@ -151,7 +151,10 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   kommen trotzdem aus beiden Sätzen: `MAPnL` bei DETAIL LOW, `MAPnH` ab MID (STARTL.EXE wie
   STARTH.EXE, OpenScreamer `docs/NOTES.md` Abschnitt 27). Wie weit gezeichnet wird, legt DETAIL
   fest wie im Original: Teile bis 52000 Einheiten, Flächen geschnitten in der Tiefe 27808
-  (LOW, MID) oder 43808 (HI). Cockpit, Renninfos und andere statische Bilder sind Sprites aus dem L-Satz von
+  (LOW, MID) oder 43808 (HI). Die SVGA-Fassung zeichnet genauso weit (2026-10-28 in
+  `STARTH.EXE` nachgelesen: dieselbe Tabelle bei `ds:0x21d8`, derselbe Vergleich mit
+  52000²/4 bei `0x8340b`); sie verdoppelt nur die Pixel (Brennweite 128, das Ergebnis × 2,
+  Mitte Spalte 319), Blickwinkel und Sichtweite bleiben. Cockpit, Renninfos und andere statische Bilder sind Sprites aus dem L-Satz von
   `GAME.DAT` und kommen 1:1 pixelgenau in den Framebuffer: erst von der CPU gezeichnet,
   später über einen Sprite-Modus des Rasterizers (Rechteck unverzerrt kopieren, eine Farbe
   durchsichtig).
