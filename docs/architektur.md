@@ -9,7 +9,8 @@ an Fugen), dem Hintergrundbild `MAPn.BCK`, neun Gegnern (Startaufstellung, ihre 
 Platzierung, Berührungen, Überholen, Crash eines Gegners), der schnelleren Grafik-Kette
 (50 fps auch am Start mit allen zehn Autos) und beweglichen Teilen der Strecke (der drehende
 Football-Helm am Start); die Strecke wird aus den originalen Spieldateien gebaut. Gebaut, Test
-auf dem Pocket steht aus: Routine 224 (Rauch, Schatten unter allen Autos) und das Radar.
+auf dem Pocket steht aus: Routine 224 (Rauch, Schatten unter allen Autos), das Radar, die
+Cockpit-Ansicht und die Startrichtung des Originals.
 Belegung siehe „Belegung“; geschätzt ist nur noch, was fehlt (Audio).
 
 ## Hardware des Pocket (Haupt-FPGA)
@@ -333,6 +334,17 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Fahrbahn gedrängt wird, steht sofort (`0x1cb9c`); verliert er in einem Schritt mehr als 5000
   Einheiten/s, crasht er (`0x1d824`): je nach Stelle überschlägt er sich wie der Spieler oder
   dreht sich zweimal auf der Fahrbahn. Der Versatz aus Stößen klingt nach 3 s ab.
+- **Die vier Ansichten des Spielers** (2026-10-29, aus der EXE, Tabelle `0x1da0`): Stoßstange,
+  Cockpit, nahe und ferne Verfolgerkamera (Select wechselt in dieser Reihenfolge, das Rennen
+  beginnt nah, Option `0x1d2a4`). Das Cockpit ist die Stoßstangen-Kamera über einer 3D-Ansicht
+  von 132 Zeilen (`0x4c610(320, 132, 85)`, `0x19cbe`) mit dem Armaturenbrett des Autos
+  darunter: `COCKnnAL.PKC` (B für die zweite Lackierung, `0x13725`) aus `GAME.DAT`, beim Laden
+  in Blitter-Kästen zerlegt, die Zahlen aus dem Abschnitt `COCKnnL` von `CARS.DTR` (`0x1545c`:
+  Nadellänge, Drehpunkte, Lampen), Tacho- und Drehzahlnadel als je drei Linien in Farbe 255,
+  geglättet wie das Original (`0x2367c`, `0x2390c`), die Gang-Lampe als Sprite; Drehzahlbild,
+  Tempo- und Gangziffern entfallen dort. Die Startrichtung ist die des nächsten Straßenpunkts im
+  Kartenraster (`0x120c0`, Aufruf `0x13ea1`), nicht die Richtung der Spline-Griffe (bis dahin
+  1,6° daneben).
 - **Routine 224, Rauch, Schatten, Radar** (2026-10-29, aus der EXE): Der Füller des Spiels
   (`0xcd9d0`) macht aus jedem Pixel `SMG[Texel × 256 + Pixel]`, ohne Licht oder Tiefe; das ist
   die einzige SMG-Abfrage im Programm. Benutzt wird sie vom Rauch (nur der Spieler, `0x19818`,
