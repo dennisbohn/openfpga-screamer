@@ -350,7 +350,9 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   (`0xcd9d0`) macht aus jedem Pixel `SMG[Texel × 256 + Pixel]`, ohne Licht oder Tiefe; das ist
   die einzige SMG-Abfrage im Programm. Benutzt wird sie vom Rauch (nur der Spieler, `0x19818`,
   `0x19970`: acht Plätze, alle 0,05 s an den Hinterrädern, fährt mit dem Auto, rund 0,67 s,
-  zum Bildschirm gedreht), vom Schatten (Spieler `0x18cbc`: 20 Einheiten von der Kamera weg,
+  zum Bildschirm gedreht; jede Wolke seitlich um (x & 7) · (T & 63) und nach hinten
+  um (z & 7) · (T & 63) versetzt, x und z die ganzzahlige Lage des Autos, die das Spiel bei jedem Schritt zur 0 hin abschneidet,
+  T sein 100-Hz-Zähler), vom Schatten (Spieler `0x18cbc`: 20 Einheiten von der Kamera weg,
   Boden − 2; Gegner `0x1c83c`, `0x1cd34`; Klasse 4 sortiert 200 weiter hinten), auf Strecke 4
   von Scheinwerferkegeln und Laternenschein, auf den Strecken 3 und 6 von einem Hubschrauber;
   von keinem Glas. Der Rasterizer liest dafür das Pixel aus dem Framebuffer und schlägt es in
