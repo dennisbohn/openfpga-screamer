@@ -10,7 +10,7 @@ and tools/dis.sh write it (0x100000 + ds offset) can be read live, while the gam
 stands paused (P).
 
 Usage: python -I tools/dosram.py <what> [...]
-    race <conf>         starts DOSBox itself and the race (Enter through the menus), then the
+    race [conf]         starts DOSBox itself and the race (Enter through the menus), then the
                         screenshot on the grid and pause
     cam                 the camera record (ds:0x10a1c)
     shot [s] [delay]    waits (up to s seconds) until the paused game runs again, then Ctrl+F5
@@ -180,7 +180,18 @@ def race(conf):
     """DOSBox started on its own straight into STARTL.EXE (conf: an [autoexec] that runs it),
     Enter until the race stands on the grid (the player's car at its start place), then the
     screenshot at once with the animation clock; the race then paused (P)"""
-    d = "C:/GOG Games/Screamer"
+    d = os.environ.get("GAME_DIR", "C:/GOG Games/Screamer")
+    if conf is None:
+        conf = os.path.join(root, "build", "dosrace.conf")
+        open(conf, "w").write('[autoexec]
+@ECHO OFF
+mount C "%s"
+imgmount d "%s/scream.dat" -t iso -fs iso
+'
+                              'c:
+STARTL.EXE
+exit
+' % (d, d))
     subprocess.Popen([d + "/DOSBOX/DOSBox.exe", "-conf", d + "/dosboxScreamer.conf", "-conf", conf,
                       "-noconsole"], cwd=d + "/DOSBOX")
     end = time.time() + 120
@@ -217,7 +228,7 @@ def race(conf):
 def main():
     a = sys.argv[1:] or ["cam"]
     if a[0] == "race":
-        return race(a[1])
+        return race(a[1] if len(a) > 1 else None)
     g = Game(Proc(dosbox_pid()))
     print("code at linear 0x%x, data at 0x%x" % (g.obj[1][1], g.obj[3][1]))
     if a[0] == "cam":
