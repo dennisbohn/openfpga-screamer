@@ -47,6 +47,8 @@ static int nopp, player_rank;
 static const struct track_spline_node *spl[OPP_MAX];
 static int spl_n[OPP_MAX];
 static const struct track_opp_row *rows;
+static int engine[OPP_MAX];             /* the engines' voices (sound.h) and their distance from */
+static float engine_last[OPP_MAX];      /* the ear a step before */
 
 static float wrap_pi(float a)
 {
@@ -330,6 +332,38 @@ void opp_init(int player_row)
         o->prev_yaw = o->yaw;
     }
     player_rank = nopp + 1;                             /* 0x12c24: the player starts last */
+    for(int k = 0; k < OPP_MAX; k++) engine[k] = snd_stop(engine[k]);
+}
+
+/* 0x1dffc: the engines, heard from the camera (car_step set the ear). Only cars within 35000
+   and only the three nearest, a nearer car taking a farther one's voice; ((35000 - d) / 35000)^2
+   x 23552, panned; pitch speed x 2.4 + 13568 + the Doppler shift. On the grid they rev
+   (0x20e63): the speed for the note is sin(car number x 0.5 x the clock) x 15000 until the
+   green light (below the lowest pitch held there, snd_pitch). Silent once the race is over. */
+static void engines(const struct car_race *rc)
+{
+    int near[3] = { -1, -1, -1 }, over = rc->finished || rc->game_over;
+    float d[OPP_MAX];
+    for(int k = 0; k < nopp; k++) {
+        d[k] = snd_dist(opp[k].x, opp[k].y);
+        if(over || d[k] >= 35000.0f) continue;
+        for(int j = 0; j < 3; j++)
+            if(near[j] < 0 || d[k] < d[near[j]]) {
+                for(int m = 2; m > j; m--) near[m] = near[m - 1];
+                near[j] = k;
+                break;
+            }
+    }
+    for(int k = 0; k < nopp; k++) {
+        if(k != near[0] && k != near[1] && k != near[2]) {
+            engine[k] = snd_stop(engine[k]);
+            engine_last[k] = d[k];
+            continue;
+        }
+        float v = rc->on ? opp[k].speed : sinf((float)k * 0.5f * rc->clock) * 15000.0f;
+        engine[k] = snd_at(engine[k], SND_OPP_ENGINE, opp[k].x, opp[k].y, 35000.0f, 23552.0f, v * 2.4f + 13568.0f,
+                           &engine_last[k]);
+    }
 }
 
 void opp_step(void)
@@ -424,6 +458,7 @@ void opp_step(void)
                 break;
             }
     }
+    engines(rc);
 }
 
 /* opponent k's blocks (opp_place): heading with the nose's turn, the slope's tilt negated, the

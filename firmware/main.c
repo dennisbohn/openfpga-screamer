@@ -919,8 +919,8 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         dlog_dec((int32_t)track_path_length());
         dlog_str(" path points\n");
         effects(image);
+        sounds();                   /* before the scenery, which adds the track's own sounds */
         scenery(image);
-        sounds();
         RS_CTRL = 1;
         run_track();
     }

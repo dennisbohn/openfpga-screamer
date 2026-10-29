@@ -594,9 +594,9 @@ void car_step(uint32_t keys, uint32_t keys_before)
        gear (0x18879) and starts the skid's sample too (0x1883d) */
     uint32_t t0 = rdcycle();
     int skid = (pc.skid_lock && !crash.on && !race.time_out) || fabsf(pc.drift) > 0.23f;
-    int spin = pc.launch && pc.gear != 0;
+    int wheelspin = pc.launch && pc.gear != 0;
     if(skid) smoke_spawn();
-    if(spin) smoke_spawn();
+    if(wheelspin) smoke_spawn();
     efx_cyc_objects += rdcycle() - t0;
     walls_step();
     markers_step();
@@ -610,7 +610,10 @@ void car_step(uint32_t keys, uint32_t keys_before)
         shadow_roll = -pc.roll + crash.roll;
     }
     efx_cyc_objects += rdcycle() - t0;
-    sound_step(skid || spin);
+    sound_step(skid || wheelspin);
+    struct track_cam ear;                               /* the sounds with a place are heard from */
+    car_camera(&ear);                                   /* the camera (0x1dffc, 0x21b80) */
+    snd_ear(&ear);
 
     /* wheels_step: the wheels turn with the speed; the front ones steer by the share of the
        lock, the sign as OpenScreamer has it since its fix (the model's +x is the car's left) */

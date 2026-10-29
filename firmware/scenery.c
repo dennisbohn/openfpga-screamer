@@ -33,7 +33,9 @@ struct prop {
 struct moving {
     const uint8_t *spl, *mesh;          /* its spline (count, start, nodes of 56 bytes), its .3DX */
     int node, half, key;
+    int sound, voice;                   /* its effect (sound.h) or -1, the handle of its voice */
     float u, speed, x, y, h, yaw;
+    float last;                         /* its distance from the ear a step before */
     struct track_block b;
 };
 static struct prop props[PROPS_MAX];
@@ -53,9 +55,9 @@ static uint32_t entry(const uint8_t *file, uint32_t size, const char *name, uint
     return dat_find(file, size, name, &e) ? dat_extract(file, size, &e, out, max) : 0;
 }
 
-/* Up to max rows of section sec (OSTACLES, ANIMATIONS) of a DTR text, their first three cells
-   as written ("sawtruck", "f16000", "d0": a type letter, then the value); how many */
-static int rows(const uint8_t *t, uint32_t n, const char *sec, char cell[][3][16], int max)
+/* Up to max rows of section sec (OSTACLES, ANIMATIONS) of a DTR text, their first four cells
+   as written ("sawtruck", "f16000", "d0": a type letter, then the value; "" if missing); how many */
+static int rows(const uint8_t *t, uint32_t n, const char *sec, char cell[][4][16], int max)
 {
     uint32_t len = (uint32_t)strlen(sec), p = 0;
     while(p + len <= n && memcmp(t + p, sec, len)) p++;
@@ -67,7 +69,7 @@ static int rows(const uint8_t *t, uint32_t n, const char *sec, char cell[][3][16
         while(p < n && (t[p] == ' ' || t[p] == '\t')) p++;
         if(p >= n || t[p] == '*' || t[p] == '\r' || t[p] == '\n') continue;
         if(t[p] == 'E') break;                  /* END_LIST */
-        for(int c = 0; c < 3; c++) {
+        for(int c = 0; c < 4; c++) {
             int k = 0;
             while(p < n && k < 15 && t[p] > ' ') cell[r][c][k++] = (char)t[p++];
             cell[r][c][k] = 0;
@@ -178,7 +180,7 @@ static void moving_place(struct moving *m, float *len)
 void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uint32_t gfx_size, int n,
                   uint8_t *mem, uint32_t cap, int *nprop, int *nmove)
 {
-    static char cell[KINDS > MOVING_MAX ? KINDS : MOVING_MAX][3][16];
+    static char cell[KINDS > MOVING_MAX ? KINDS : MOVING_MAX][4][16];
     nprops = nmoving = 0;
     *nprop = *nmove = 0;
     if(!dat || !gfx || cap < 2 * SCRATCH || !track_path_length()) return;
@@ -194,8 +196,10 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
     int nk = rows(scratch, dtr, "OSTACLES", cell, KINDS);
     for(int k = 0; k < nk; k++) kind_mesh[k] = mesh(gfx, gfx_size, cell[k][0]);
 
-    /* the moving scenery: its spline file kept in mem, each row's mesh */
+    /* the moving scenery: its spline file kept in mem, each row's mesh; the fourth column names
+       its sound, a row of the track's own SOUND_FX (after SFXSBASE.DTR's: snd_init first) */
     int na = rows(scratch, dtr, "ANIMATIONS", cell, MOVING_MAX);
+    int sounds = snd_add_list(scratch, dtr);
     memcpy(name + 4, "ANM.SPL", 8);
     uint8_t *anm = at;
     uint32_t anm_len = entry(dat, dat_size, name, anm, (uint32_t)(end - at));
@@ -220,6 +224,8 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
         m->node = rd32(m->spl + 4) >= 0 && rd32(m->spl + 4) < rd32(m->spl) ? rd32(m->spl + 4) : 0;
         m->key = track_class_key(ms);
         m->speed = number(cell[k][1]);
+        m->sound = sounds >= 0 && cell[k][3][0] ? sounds + (int)number(cell[k][3]) : -1;
+        m->voice = -1;
         moving_place(m, 0);
         car_flat_block(m->mesh, m->x, m->y, m->h, m->yaw, 0.0f, 0.0f, &m->b);
     }
@@ -341,10 +347,21 @@ static void moving_step(void)
     }
 }
 
+/* 0x21b80: the moving scenery's sounds, heard from the camera (car_step set the ear): within
+   40000 at ((40000 - d) / 40000)^2, panned, pitch 65536 + the Doppler shift */
+static void moving_sound(void)
+{
+    for(int k = 0; k < nmoving; k++) {
+        struct moving *m = &moving[k];
+        if(m->sound >= 0) m->voice = snd_at(m->voice, m->sound, m->x, m->y, 40000.0f, 32767.0f, 65536.0f, &m->last);
+    }
+}
+
 void scenery_step(void)
 {
     props_step();
     moving_step();
+    moving_sound();
 }
 
 int scenery_objects(const struct track_cam *cam, struct track_object *objs, int max)

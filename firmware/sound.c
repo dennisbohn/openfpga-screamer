@@ -1,14 +1,18 @@
 #include "sound.h"
+#include <math.h>
 #include "hw.h"
 #include "dat.h"
+#include "track.h"
 
 #define SND_MAX     16
-#define MASTER      0x6000              /* the effects' master volume (0x1bc2f), of 0x7fff */
+#define MASTER      0x4000              /* the effects' master volume, of 0x7fff (sound.h) */
 
 /* a row: SDRAM byte address and length, where it ends or loops (from the start), back by how
    much and how often (AU_LOOP), its volume */
 static struct snd { uint32_t addr, len, end, back, times, vol; } fx[SND_MAX];
 static int nfx;
+static const uint8_t *dat;              /* SOUND.DAT */
+static uint32_t dat_size;
 
 /* per voice: which start of it a handle names, its effect, loudness and pan */
 static uint32_t serial[AU_VOICES];
@@ -52,7 +56,7 @@ static int32_t field(const char *t, uint32_t n)
 /* row k: its sample NAME.RAW in SOUND.DAT and the loop as the game's driver plays it: with
    loops and a loop length, from the start to the loop's end, then the loop; else to the end
    (a loop length of 0 loops the whole sample) */
-static void row(const uint8_t *sound, uint32_t sound_size, const char *name, uint32_t n, const int32_t f[6])
+static void row(const char *name, uint32_t n, const int32_t f[6])
 {
     char file[24];
     struct dat_entry e;
@@ -64,14 +68,14 @@ static void row(const uint8_t *sound, uint32_t sound_size, const char *name, uin
     const char *ext = ".RAW";
     for (int i = 0; i < 5; i++)
         file[n + (uint32_t)i] = ext[i];
-    if (!dat_find(sound, sound_size, file, &e) || e.method != 0 || e.size == 0 || e.offset > sound_size ||
-        e.size > sound_size - e.offset)
+    if (!dat_find(dat, dat_size, file, &e) || e.method != 0 || e.size == 0 || e.offset > dat_size ||
+        e.size > dat_size - e.offset)
         return;
     int32_t loop = f[1], ls = f[2], ll = f[3];
     uint32_t end = loop != 0 && ll > 0 ? (uint32_t)(ls + ll) : e.size, start = ll > 0 ? (uint32_t)ls : 0;
     if (end > e.size) end = e.size;
     if (start >= end) start = 0;
-    s->addr = (uint32_t)(uintptr_t)(sound + e.offset) - SDRAM_BASE;
+    s->addr = (uint32_t)(uintptr_t)(dat + e.offset) - SDRAM_BASE;
     s->len = e.size;
     s->end = end;
     s->back = end - start;
@@ -79,15 +83,10 @@ static void row(const uint8_t *sound, uint32_t sound_size, const char *name, uin
     s->vol = (uint32_t)f[0] & 0x7FFF;
 }
 
-int snd_init(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint32_t gen_size)
+/* the rows of the first SOUND_FX section of a DTR text after the ones there are: how many have
+   their sample */
+static int list(const char *p, const char *end)
 {
-    static uint8_t text[1024];
-    struct dat_entry e;
-    AU_STOP = 0xFFFFFFFFu;
-    nfx = 0;
-    if (!dat_find(gen, gen_size, "SFXSBASE.DTR", &e) || e.size >= sizeof text) return 0;
-    uint32_t size = dat_extract(gen, gen_size, &e, text, sizeof text);
-    const char *p = (const char *)text, *end = p + size;
     int in = 0, ok = 0;
     while (p < end && nfx < SND_MAX) {
         const char *line_end = p, *t;
@@ -106,13 +105,33 @@ int snd_init(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint
             while (k < 6 && (m = token(&p, line_end, &u)) != 0)
                 f[k++] = field(u, m);
             if (k == 6) {
-                row(sound, sound_size, name, n - 1, f);
+                row(name, n - 1, f);
                 ok += fx[nfx - 1].len != 0;
             }
         }
         p = line_end + 1;
     }
     return ok;
+}
+
+int snd_init(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint32_t gen_size)
+{
+    static uint8_t text[1024];
+    struct dat_entry e;
+    AU_STOP = 0xFFFFFFFFu;
+    nfx = 0;
+    dat = sound;
+    dat_size = sound_size;
+    if (!dat_find(gen, gen_size, "SFXSBASE.DTR", &e) || e.size >= sizeof text) return 0;
+    uint32_t size = dat_extract(gen, gen_size, &e, text, sizeof text);
+    return list((const char *)text, (const char *)text + size);
+}
+
+int snd_add_list(const uint8_t *text, uint32_t size)
+{
+    int first = nfx;
+    if (!dat || !list((const char *)text, (const char *)text + size)) return -1;
+    return first;
 }
 
 /* the voice of handle h while it plays that start, else -1 */
@@ -124,7 +143,7 @@ static int voice_of(int h)
 }
 
 /* AU_VOL from the row's volume, the voice's own and its pan, times the master volume: a
-   centred byte times up to 191 */
+   centred byte times up to 127 */
 static uint32_t vol_reg(const struct snd *s, int32_t vol, int32_t pan)
 {
     uint32_t t = ((s->vol * (uint32_t)vol) >> 15) * MASTER >> 15;
@@ -200,4 +219,49 @@ int snd_play_once(int id, int h)
 {
     int v = voice_of(h);
     return v >= 0 && voice_fx[v] == id ? h : snd_play(id);
+}
+
+/* the ear (snd_ear): where the sounds with a place are heard from, the camera's level right
+   (track_cam_axes), and whether it has just jumped */
+static float ear_x, ear_y, ear_rx, ear_ry;
+static int ear_ok, ear_cut;
+
+void snd_ear(const struct track_cam *cam)
+{
+    float dx = cam->x - ear_x, dy = cam->y - ear_y;
+    ear_cut = !ear_ok || dx * dx + dy * dy > 1000.0f * 1000.0f;
+    ear_ok = 1;
+    ear_x = cam->x;
+    ear_y = cam->y;
+    ear_rx = -cosf(cam->yaw);
+    ear_ry = -sinf(cam->yaw);
+}
+
+float snd_dist(float x, float y)
+{
+    float dx = x - ear_x, dy = y - ear_y;
+    return sqrtf(dx * dx + dy * dy);
+}
+
+/* the pan (0x21cfb, 0x1dffc): the line to the source in the ear's frame, 0x8000 +- 32767 x
+   sqrt(|sideways| / distance); the Doppler shift is the game's per frame of a 30 fps PC, here
+   per step of 1/50 s, so x 50 / 30 */
+int snd_at(int h, int id, float x, float y, float range, float loud, float pitch, float *last)
+{
+    float dx = x - ear_x, dy = y - ear_y, d = sqrtf(dx * dx + dy * dy);
+    if (d >= range) {
+        *last = d;
+        return snd_stop(h);
+    }
+    if (!snd_playing(h)) {
+        h = snd_play(id);
+        *last = d;
+    }
+    if (ear_cut) *last = d;
+    float q = (range - d) / range, side = d >= 1.0f ? (dx * ear_rx + dy * ear_ry) / d : 0.0f;
+    float s = 32767.0f * sqrtf(fabsf(side));
+    snd_volume(h, (int32_t)(q * q * loud), 0x8000 + (int32_t)(side < 0.0f ? -s : s));
+    snd_pitch(h, (int32_t)(pitch + 9.0f * (*last - d) * (50.0f / 30.0f)));
+    *last = d;
+    return h;
 }
