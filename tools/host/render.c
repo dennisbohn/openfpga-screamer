@@ -22,14 +22,14 @@
 #include "car.h"
 #include "opp.h"
 #include "efx.h"
-#include "props.h"
+#include "scenery.h"
 #include "blit.h"
 
 #define TEX_FILE    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000))      /* as main.c */
 #define GFX_FILE    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2800000))
 #define EFX_SIZE    0x10000
 #define EFX_MEM     ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE))
-#define PROPS_MEM   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE - 0x20000))
+#define SCENERY_MEM   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE - 0x20000))
 #define DATA_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2D00000))
 #define MAX_OBJECTS 64
 
@@ -65,13 +65,16 @@ int main(int argc, char **argv)
     uint32_t gfx_size = load(argv[2], GFX_FILE, 0x400000);
     efx_init(GFX_FILE, gfx_size, 1, track_mlb(), track_palette(), EFX_MEM, EFX_SIZE);
     uint32_t data_size = load(argv[3], DATA_FILE, 0x40000);
-    printf("props: %d\n", props_init(DATA_FILE, data_size, GFX_FILE, gfx_size, 1, PROPS_MEM, 0x10000));
+    int props, moving;
+    scenery_init(DATA_FILE, data_size, GFX_FILE, gfx_size, 1, SCENERY_MEM, 0x10000, &props, &moving);
+    printf("scenery: %d props, %d moving\n", props, moving);
     car_init(0);
     opp_init(0);
     car_view(view);
     for (int k = 0; k < steps; k++) {
         car_step(0, 0);
         opp_step();
+        scenery_step();
     }
     track_clock((uint32_t)steps);
 
@@ -83,7 +86,7 @@ int main(int argc, char **argv)
     int nobj = car_object(&cam, &objs[0]);
     nobj += opp_objects(objs + nobj, MAX_OBJECTS - nobj);
     nobj += car_effects(&cam, objs + nobj, MAX_OBJECTS - nobj);
-    nobj += props_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
+    nobj += scenery_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
     const struct rs_clip clip = { 0, 0, FB_W, car_cockpit() ? car_view_lines() : FB_H };
     volatile uint8_t *fb = FB(0);
     static struct blit_list back;

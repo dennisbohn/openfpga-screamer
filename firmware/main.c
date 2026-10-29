@@ -25,7 +25,7 @@
 #include "hud.h"
 #include "opp.h"
 #include "efx.h"
-#include "props.h"
+#include "scenery.h"
 #include "geom.h"
 
 uint32_t frames_shown;             /* read by the trap handler */
@@ -63,11 +63,11 @@ static struct track_files game;         /* where they are, as loaded */
    the build's scratch, which is free by then */
 #define DASH_SIZE   0x10000
 #define DASH_MEM    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE - DASH_SIZE))
-/* the props by the road (props.h): their meshes, 64 KB under the dashboard */
-#define PROPS_SIZE  0x10000
-#define PROPS_MEM   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE - DASH_SIZE - PROPS_SIZE))
+/* the props and moving scenery (scenery.h): their meshes, 64 KB under the dashboard */
+#define SCENERY_SIZE 0x10000
+#define SCENERY_MEM ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE - DASH_SIZE - SCENERY_SIZE))
 #define MAX_OBJECTS 64          /* the player's car, the opponents and their shadows, the player's
-                                   shadow and smoke, the props in reach (track.c draws up to 64) */
+                                   shadow and smoke, the props and vehicles in reach (track.c draws up to 64) */
 
 /* Mark the free stack in the boot RAM up to 256 bytes below the stack pointer, find how
    deep it was used later */
@@ -474,6 +474,7 @@ static void __attribute__((noreturn)) run_track(void)
         for (uint32_t k = 0; k < n; k++) {
             car_step(keys, keys_before);
             opp_step();
+            scenery_step();
             keys_before = keys;
             if (sim_race && !car_race()->on && k == n - 1) n++;    /* the simulation's countdown at once */
         }
@@ -488,7 +489,7 @@ static void __attribute__((noreturn)) run_track(void)
         int nobj = car_object(&cam, &objs[0]);
         nobj += opp_objects(objs + nobj, MAX_OBJECTS - nobj);
         nobj += car_effects(&cam, objs + nobj, MAX_OBJECTS - nobj);
-        nobj += props_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
+        nobj += scenery_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
         /* the 3D view: the whole screen, or in the cockpit its first 132 lines, the eye line
            85 down (track_view), the dashboard over the rest (without one the whole screen) */
         int cockpit = dash_ok && car_cockpit();
@@ -807,9 +808,9 @@ static void effects(int image)
     dlog_str(" ms\n");
 }
 
-/* The props by the road (props.h) from the DATA and GFX containers; after the testbench's image
-   (load_image) the DATA container is loaded for them */
-static void props(int image)
+/* The props and moving scenery (scenery.h) from the DATA and GFX containers; after the
+   testbench's image (load_image) the DATA container is loaded for them */
+static void scenery(int image)
 {
     uint32_t t0 = rdcycle();
     if (image) {
@@ -818,10 +819,14 @@ static void props(int image)
         game.data_size = load_file(GAME_SLOT + 2, game_files[2].addr, game_files[2].max, &err);
         dcache_invalidate();
     }
-    int n = props_init(game.data, game.data_size, game.gfx, game.gfx_size, 1, PROPS_MEM, PROPS_SIZE);
-    dlog_str("props: ");
-    dlog_dec(n);
-    dlog_str(" by the road, in ");
+    int props, moving;
+    scenery_init(game.data, game.data_size, game.gfx, game.gfx_size, 1, SCENERY_MEM, SCENERY_SIZE, &props,
+                 &moving);
+    dlog_str("scenery: ");
+    dlog_dec(props);
+    dlog_str(" props, ");
+    dlog_dec(moving);
+    dlog_str(" moving, in ");
     dlog_dec((int32_t)((rdcycle() - t0) / (CPU_HZ / 1000)));
     dlog_str(" ms\n");
 }
@@ -885,7 +890,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         dlog_dec((int32_t)track_path_length());
         dlog_str(" path points\n");
         effects(image);
-        props(image);
+        scenery(image);
         RS_CTRL = 1;
         run_track();
     }
