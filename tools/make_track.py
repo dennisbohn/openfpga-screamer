@@ -41,7 +41,7 @@ The output, the image firmware/main.c builds at TEX_FILE, little-endian:
                                          y1, x2, y2
   0x5C  int32 x, y, float heading        where the player starts: its place on the grid, the
                                          start node of MAPnOPP.SPL's tenth spline (its own point),
-                                         facing along that spline
+                                         facing as the MMP road point nearest to it (0x120c0)
   0x68  u32 offset, size of the race screen: u32 images, u32 fonts; per image u32 offset
                                          (from the section), u16 width, height, int16 x, y;
                                          per font u32 height, first character, count, widest,
@@ -306,13 +306,37 @@ def opponents(spl, dtr):
     return out, len(sp), len(rows)
 
 
-def grid_pose(spl):
-    """The player's place on the grid: the start node of the tenth spline, its own point,
-    facing along the curve there (piece 0 at u = 0 runs from the node's in handle to its out)"""
+def grid_pose(spl, mmp):
+    """The player's place on the grid as STARTL.EXE sets it (0x13e07): the start node of the
+    tenth spline, its own point (+0x04, +0x08); the heading is not the spline's but that of the
+    road point (MMP array 2) nearest to that point (0x13ea1 calls 0x120c0 with mode 0): the
+    3 x 3 cells round it, rows then columns, each cell's points in order, the first with the
+    smallest squared distance (int32 sums, as the game's imul); an angle of 2 pi or more less
+    2 pi (0x12351; the + pi before it is an option the core does not have, 0x11d270 & 8)"""
     start, nodes = splines(spl)[9]
     n = nodes[start]
-    yaw = math.atan2(n["out"][0] - n["in"][0], -(n["out"][1] - n["in"][1]))
-    return struct.pack("<2if", n["x"], n["y"], yaw)
+    x, y = n["x"], n["y"]
+    i32 = lambda o: struct.unpack_from("<i", mmp, o)[0]
+    kx, ky = (x + 0x100000) >> 13, (y + 0x100000) >> 13
+    best, yaw = 0x7FFFFFF8, None
+    for gy in range(max(ky - 1, 0), min(ky + 2, 256)):
+        row = i32(4 * gy)
+        if row == -1:
+            continue
+        for gx in range(max(kx - 1, 0), min(kx + 2, 256)):
+            c = i32(row + 4 * gx)
+            if c == -1:
+                continue
+            for k in range(i32(c + 0x1C)):
+                a, px, py = struct.unpack_from("<f2i", mmp, i32(c + 0x08) + 12 * k)
+                d = ((px - x) ** 2 + (py - y) ** 2 + 2 ** 31) % 2 ** 32 - 2 ** 31
+                if d < best:
+                    best, yaw = d, a
+    assert yaw is not None, "no road point by the grid"
+    two_pi = struct.unpack("<f", struct.pack("<f", 2 * math.pi))[0]
+    if yaw >= two_pi:
+        yaw -= two_pi
+    return struct.pack("<2if", x, y, yaw)
 
 
 def pcx(data):
@@ -429,7 +453,7 @@ def main():
     head = b"SCRK" + struct.pack("<I", 6) + struct.pack("<2I", offs[0], counts[0]) + \
         struct.pack("<2I", offs[1], counts[1]) + struct.pack("<I", offs[2]) + \
         b"".join(struct.pack("<2I", offs[k], counts[k]) for k in range(3, 11)) + \
-        grid_pose(spl) + struct.pack("<2I", offs[11], counts[11]) + \
+        grid_pose(spl, mmp) + struct.pack("<2I", offs[11], counts[11]) + \
         struct.pack("<2i", bonus_time, camera_hi) + struct.pack("<2I", offs[12], colour) + \
         struct.pack("<2I", offs[13], len(opp)) + \
         struct.pack("<2I", pos, len(crcs)) + struct.pack(f"<{len(crcs)}I", *crcs)

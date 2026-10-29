@@ -6,6 +6,7 @@
  * breaks (str.splitlines()) of that range.
  */
 #include "tb_spl.h"
+#include "tb_mmp.h"
 #include <math.h>
 #include <string.h>
 
@@ -118,17 +119,18 @@ uint32_t tb_path(const uint8_t *spl, uint32_t size, uint8_t *out, uint32_t cap)
     return w;
 }
 
-uint32_t tb_grid_pose(const uint8_t *spl, uint32_t size, uint8_t *out, uint32_t cap)
+uint32_t tb_grid_pose(const uint8_t *spl, uint32_t size, const uint8_t *mmp, uint32_t mmp_size,
+                      uint8_t *out, uint32_t cap)
 {
     uint32_t at = 0;
+    float yaw;
     if (cap < 12 || spl_scan(spl, size, 9, &at) < 10) return 0;
     int32_t k = node_index((int32_t)rd32(spl + at + 4), (int32_t)rd32(spl + at));
     if (k < 0) return 0;
     const uint8_t *nd = spl + at + 8 + NODE * (uint32_t)k;
-    /* exact differences: a zero is +0 as Python's int 0 is */
-    double yaw = atan2(rdd(nd + 32) - rdd(nd + 20), rdd(nd + 24) - rdd(nd + 36));
+    if (!tb_mmp_road_angle(mmp, mmp_size, (int32_t)rd32(nd + 4), (int32_t)rd32(nd + 8), &yaw) ||
+        !put_f32(out + 8, (double)yaw)) return 0;
     memcpy(out, nd + 4, 8);
-    put_f32(out + 8, yaw);
     return 12;
 }
 

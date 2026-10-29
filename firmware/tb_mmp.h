@@ -34,3 +34,9 @@ uint32_t tb_mmp_ground(const uint8_t *mmp, uint32_t size, uint8_t *out, uint32_t
    y1, x2, y2); the cells row by row */
 uint32_t tb_mmp_dirs(const uint8_t *mmp, uint32_t size, uint8_t *out, uint32_t cap, uint32_t *count);
 uint32_t tb_mmp_walls(const uint8_t *mmp, uint32_t size, uint8_t *out, uint32_t cap, uint32_t *count);
+
+/* The angle of the road point nearest to (x, y) as STARTL.EXE's 0x120c0 (mode 0) finds it
+   for the start heading: the 3 x 3 cells round the point, rows then columns, each cell's
+   array 2 in order, the first with the smallest squared distance (int32, wrapping, as the
+   game's imul); 2 pi or more less 2 pi. 1 and *angle, or 0 if malformed or none is there. */
+int tb_mmp_road_angle(const uint8_t *mmp, uint32_t size, int32_t x, int32_t y, float *angle);

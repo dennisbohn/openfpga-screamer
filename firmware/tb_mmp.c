@@ -41,6 +41,31 @@ static int fits(uint32_t size, uint32_t off, uint32_t n, uint32_t len)
    arrays 2 and 3 (offset, entries) */
 struct cell { uint32_t rec, n0, n1, dirs, ndirs, walls, nwalls; };
 
+/* the header of the cell at a into c, checked against the file: 1, or 0 if malformed */
+static int read_cell(const uint8_t *p, uint32_t size, uint32_t a, struct cell *c)
+{
+    int bad = 0;
+    int32_t dirs = rd32(p, size, a + 0x08, &bad);
+    int32_t walls = rd32(p, size, a + 0x0C, &bad);
+    int32_t n0 = rd32(p, size, a + 0x14, &bad);
+    int32_t n1 = rd32(p, size, a + 0x18, &bad);
+    int32_t ndirs = rd32(p, size, a + 0x1C, &bad);
+    int32_t nwalls = rd32(p, size, a + 0x20, &bad);
+    if(bad || n0 < 0 || n1 < 0 || ndirs < 0 || nwalls < 0) return 0;
+    /* an empty array's offset is never read (0 in the game's files) */
+    if((n0 || n1) && !fits(size, a + 0x28, (uint32_t)n0 + (uint32_t)n1, REC)) return 0;
+    if(ndirs && (dirs < 0 || !fits(size, (uint32_t)dirs, (uint32_t)ndirs, DIR_LEN))) return 0;
+    if(nwalls && (walls < 0 || !fits(size, (uint32_t)walls, (uint32_t)nwalls, WALL_LEN))) return 0;
+    c->rec = a + 0x28;
+    c->n0 = (uint32_t)n0;
+    c->n1 = (uint32_t)n1;
+    c->dirs = ndirs ? (uint32_t)dirs : 0;
+    c->ndirs = (uint32_t)ndirs;
+    c->walls = nwalls ? (uint32_t)walls : 0;
+    c->nwalls = (uint32_t)nwalls;
+    return 1;
+}
+
 /* the walk over the grid as make_track.py's cells(): k the next grid cell (gy * 256 + gx) */
 struct walk { const uint8_t *p; uint32_t size, k; int32_t row; int bad; };
 
@@ -57,31 +82,52 @@ static int next_cell(struct walk *w, struct cell *c)
         w->k++;
         if(w->bad || at < -1) goto bad;
         if(at == -1) continue;
-        uint32_t a = (uint32_t)at;
-        int32_t dirs = rd32(w->p, w->size, a + 0x08, &w->bad);
-        int32_t walls = rd32(w->p, w->size, a + 0x0C, &w->bad);
-        int32_t n0 = rd32(w->p, w->size, a + 0x14, &w->bad);
-        int32_t n1 = rd32(w->p, w->size, a + 0x18, &w->bad);
-        int32_t ndirs = rd32(w->p, w->size, a + 0x1C, &w->bad);
-        int32_t nwalls = rd32(w->p, w->size, a + 0x20, &w->bad);
-        if(w->bad || n0 < 0 || n1 < 0 || ndirs < 0 || nwalls < 0) goto bad;
-        /* an empty array's offset is never read (0 in the game's files) */
-        if((n0 || n1) && !fits(w->size, a + 0x28, (uint32_t)n0 + (uint32_t)n1, REC)) goto bad;
-        if(ndirs && (dirs < 0 || !fits(w->size, (uint32_t)dirs, (uint32_t)ndirs, DIR_LEN))) goto bad;
-        if(nwalls && (walls < 0 || !fits(w->size, (uint32_t)walls, (uint32_t)nwalls, WALL_LEN))) goto bad;
-        c->rec = a + 0x28;
-        c->n0 = (uint32_t)n0;
-        c->n1 = (uint32_t)n1;
-        c->dirs = ndirs ? (uint32_t)dirs : 0;
-        c->ndirs = (uint32_t)ndirs;
-        c->walls = nwalls ? (uint32_t)walls : 0;
-        c->nwalls = (uint32_t)nwalls;
+        if(!read_cell(w->p, w->size, (uint32_t)at, c)) goto bad;
         return 1;
     }
     return 0;
 bad:
     w->bad = 1;
     return 0;
+}
+
+/* the grid cell column or row of a coordinate, (v + 2^20) >> 13 as Python shifts */
+static int32_t grid_of(int32_t v) { return (int32_t)(((int64_t)v + 0x100000) >> 13); }
+
+int tb_mmp_road_angle(const uint8_t *mmp, uint32_t size, int32_t x, int32_t y, float *angle)
+{
+    int bad = 0, found = 0;
+    int32_t best = 0x7FFFFFF8, kx = grid_of(x), ky = grid_of(y);
+    float a = 0.0f;
+    for(int32_t gy = ky - 1; gy <= ky + 1; gy++) {
+        if(gy < 0 || gy >= GRID) continue;
+        int32_t row = rd32(mmp, size, 4 * (uint32_t)gy, &bad);
+        if(bad || row < -1) return 0;
+        if(row == -1) continue;
+        for(int32_t gx = kx - 1; gx <= kx + 1; gx++) {
+            if(gx < 0 || gx >= GRID) continue;
+            int32_t at = rd32(mmp, size, (uint32_t)row + 4 * (uint32_t)gx, &bad);
+            struct cell c;
+            if(bad || at < -1) return 0;
+            if(at == -1) continue;
+            if(!read_cell(mmp, size, (uint32_t)at, &c)) return 0;
+            for(uint32_t k = 0; k < c.ndirs; k++) {
+                const uint8_t *e = mmp + c.dirs + DIR_LEN * k;
+                /* the game's imul and add: int32, wrapping */
+                uint32_t dx = get32(e + 4) - (uint32_t)x, dy = get32(e + 8) - (uint32_t)y;
+                int32_t d = (int32_t)(dx * dx + dy * dy);
+                if(d < best) {
+                    best = d;
+                    memcpy(&a, e, 4);
+                    found = 1;
+                }
+            }
+        }
+    }
+    if(!found) return 0;
+    if(a >= 6.28318548f) a -= 6.28318548f;      /* 2 pi in float32, the game's 0x100410 */
+    *angle = a;
+    return 1;
 }
 
 /* the cell's j-th record in the game's draw-list order: run 1 first, then run 0 */

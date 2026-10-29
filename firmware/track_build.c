@@ -191,7 +191,7 @@ uint32_t track_build(const struct track_files *f, int n, uint8_t *out, uint32_t 
     if(!(dtr = unpack(&b, f->data, f->data_size, name(&b, DIFFICULTY ".DTR", buf), &dtr_n))) return 0;
     len = tb_opponents(spl, spl_n, dtr, dtr_n, at(&b), room(&b));
     if(!section(&b, len, len, "opponents")) return 0;
-    if(tb_grid_pose(spl, spl_n, out + 0x5C, 12) != 12) return (uint32_t)fail(&b, "grid pose");
+    if(tb_grid_pose(spl, spl_n, mmp, mmp_n, out + 0x5C, 12) != 12) return (uint32_t)fail(&b, "grid pose");
     if(tb_track_data(dtr, dtr_n, td, sizeof td) != sizeof td) return (uint32_t)fail(&b, "TRACK_DATA");
 
     /* the header: offsets and counts as make_track.py packs them, then the block CRCs */

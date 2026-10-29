@@ -474,8 +474,9 @@ void car_init(int which)
     needle = 0.0f;
     pc.waiting = 1;
 
-    /* player_reset: on the road point by the third path point, facing along the path, at
-       the path's height until the wheels find the ground; no skidding until a marker */
+    /* player_reset: on the grid, facing as the nearest road point (0x13e07, the image's
+       start pose), at the third path point's height until the wheels find the ground; no
+       skidding until a marker */
     float px, py, ph;
     track_start(&pc.x, &pc.y, &pc.yaw);
     track_path_point(2, &px, &py, &ph);

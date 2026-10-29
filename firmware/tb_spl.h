@@ -3,7 +3,8 @@
  * raw container entries as tools/make_track.py makes them (byte for byte): the camera path
  * (header 0x24), the markers (0x34), the cars (0x3C), the grid pose (0x5C), TRACK_DATA (0x70,
  * 0x7C) and the opponents (0x80). The inputs: MAPnOPP.SPL, MAPn.MRK, MAPnB.DTR (the
- * difficulty's file) and GEN.DAT's CARS.DTR, unpacked, at any alignment.
+ * difficulty's file) and GEN.DAT's CARS.DTR (and for the grid pose MAPn.MMP), unpacked, at
+ * any alignment.
  *
  * Each function writes its part little-endian to out (cap bytes) and returns the bytes
  * written; 0 if the input is malformed (where make_track.py fails), the part would be
@@ -25,9 +26,11 @@
    tracks). Soft-float double: about 4800 instructions a point, 24 M for track 1. */
 uint32_t tb_path(const uint8_t *spl, uint32_t size, uint8_t *out, uint32_t cap);
 
-/* The grid pose, 12 bytes: int32 x, y of the tenth spline's start node, float heading
-   atan2(out x - in x, in y - out y) of its handles */
-uint32_t tb_grid_pose(const uint8_t *spl, uint32_t size, uint8_t *out, uint32_t cap);
+/* The grid pose, 12 bytes, as STARTL.EXE sets it (0x13e07): int32 x, y of the tenth
+   spline's start node, float heading of the MMP road point nearest to it
+   (tb_mmp_road_angle(), the game's 0x120c0) */
+uint32_t tb_grid_pose(const uint8_t *spl, uint32_t size, const uint8_t *mmp, uint32_t mmp_size,
+                      uint8_t *out, uint32_t cap);
 
 /* MAPn.MRK's 32-byte records unchanged (the count is bytes / 32); 0 as well if the file
    holds fewer than its first word says */
