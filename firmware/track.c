@@ -34,13 +34,23 @@
 
 /* How far the game draws (openscreamer docs/NOTES.md, DETAIL): a piece only while its
    position is within 52000 units of the camera (0x83164: dist^2 >> 2 < 676000000), and
-   every face cut at a depth set by the DETAIL option (the table at 0x21d4) */
+   every face cut at a depth set by the DETAIL option (the table at 0x21d4: -27808, -27808,
+   -43808, the view's z from the camera, 0x8baa4) */
 #define REACH2      2704000000.0f
 static const float far_depth[3] = { 27808.0f, 27808.0f, 43808.0f };     /* LOW, MID, HI */
-/* the original's lens (openscreamer docs/NOTES.md, section 10): screen = centre + 128 x /
-   depth, the eye line 65 % down the view; the near plane at depth 128 */
+/* The original's lens: screen = centre + 128 x / (128 + z), z the depth from the camera. The
+   corners' divide (0x83420) reads TABS\PERSP01.TAB (loaded by 0x4cd4c, its address patched in
+   by 0x8ba28): entry z = -65536 x 128 / (128 + z); a cut at the near plane z = 0 (0xd7470)
+   projects with 128 / 128 (0xd7493, ds:0x829ac = -128), one at the far plane with
+   128 / (far - 128) (0xd7837, ds:0x829b0 = far - 128, 0x8bad6). So the eye is EYE_BACK
+   behind the camera along the view: the near plane through the camera (depth 128 from the
+   eye), the scale 128 at the eye. The camera itself stays the origin of the view's z, the
+   reach, the drawing order (the places less the camera, 0x8ab8e) and the faces' eye (0x834d6:
+   the camera in the block's frame, from those places). The eye line 65 % down the view
+   (openscreamer docs/NOTES.md, section 10: 0x4c610(320, h, h * 0.65)) */
 #define NEAR        128.0f
 #define FOCAL       128.0f
+#define EYE_BACK    128.0f
 #define EYE_LINE    0.65f
 #define CAM_UP      700.0f      /* camera over the player's line */
 #define LOOK        12          /* path points ahead for the direction of view */
@@ -550,7 +560,7 @@ void track_view(const struct rs_clip *clip, struct su_view *v)
                                                as the game's projection (0x83431) */
     v->cy = clip->y0 * 16 + (int32_t)((float)((clip->y1 - clip->y0) * 16) * EYE_LINE);
     v->scale = (uint32_t)(FOCAL * 16.0f);
-    v->far8 = (int32_t)(far_z * 256.0f);
+    v->far8 = (int32_t)((far_z + EYE_BACK) * 256.0f);  /* depths from the eye */
 }
 
 struct vis { int32_t k; int i; };              /* key << 16 | i; i: a piece, or npieces + an object */
@@ -575,7 +585,8 @@ static void face_eye(const uint8_t *blk, float x, float y, float z, struct gu_pi
     g->row = row;
 }
 
-/* A block placed at o with m (world from local) as a piece for the geometry unit */
+/* A block placed at o with m (world from local) as a piece for the geometry unit: its place in
+   the view from the eye (EYE_BACK further along forward), its faces' eye the camera c */
 static void block_piece(const float c[3], const float f[3], const float r[3], const float u[3],
                         const float m[9], const float o[3], const uint8_t *blk, struct gu_piece *g)
 {
@@ -583,7 +594,8 @@ static void block_piece(const float c[3], const float f[3], const float r[3], co
     for(int k = 0; k < 3; k++) {
         for(int j = 0; j < 3; j++)
             g->m[3 * k + j] = (int32_t)((basis[k][0] * m[j] + basis[k][1] * m[3 + j] + basis[k][2] * m[6 + j]) * 65536.0f);
-        g->t[k] = (int32_t)((basis[k][0] * (o[0] - c[0]) + basis[k][1] * (o[1] - c[1]) + basis[k][2] * (o[2] - c[2])) * 256.0f);
+        g->t[k] = (int32_t)((basis[k][0] * (o[0] - c[0]) + basis[k][1] * (o[1] - c[1]) + basis[k][2] * (o[2] - c[2])
+                             + (k == 2 ? EYE_BACK : 0.0f)) * 256.0f);
     }
     float e[3];
     for(int j = 0; j < 3; j++) e[j] = m[j] * (c[0] - o[0]) + m[3 + j] * (c[1] - o[1]) + m[6 + j] * (c[2] - o[2]);
@@ -658,7 +670,8 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
     st->cam[1] = (int32_t)cy;
     st->cam[2] = (int32_t)ch;
 
-    /* the pieces in reach and in view, far to near */
+    /* the pieces in reach and in view, far to near: vf the depth from the eye */
+    const float far_eye = far_z + EYE_BACK;
     const float half_w = (float)(clip->x1 - clip->x0) / 2.0f / FOCAL;
     const float up = (float)(clip->y1 - clip->y0) * EYE_LINE / FOCAL;          /* above the eye line */
     const float down = (float)(clip->y1 - clip->y0) * (1.0f - EYE_LINE) / FOCAL;
@@ -682,9 +695,9 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         float d2 = dx * dx + dy * dy + dh * dh;
         if(d2 < nearest) nearest = d2;
         if(d2 >= REACH2) continue;
-        float vf = dx * fx + dy * fy + dh * fh, vr = dx * rx + dy * ry + dh * rh;
+        float vf = dx * fx + dy * fy + dh * fh + EYE_BACK, vr = dx * rx + dy * ry + dh * rh;
         float vu = dx * ux + dy * uy + dh * uh;
-        if(vf + rad < NEAR || vf - rad > far_z) continue;
+        if(vf + rad < NEAR || vf - rad > far_eye) continue;
         if(vr - rad > half_w * (vf + rad) || vr + rad < -half_w * (vf + rad)) continue;
         if(vu - rad > up * (vf + rad) || vu + rad < -down * (vf + rad)) continue;
         vis[nv].k = (KEY(d2) + class_key[pc->obj]) * 65536 + i;
@@ -694,9 +707,9 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
     for(int k = 0; k < nobj && k < MAX_OBJS; k++) {
         const struct track_object *ob = &objs[k];
         float dx = ob->x - cx, dy = ob->y - cy, dh = ob->h - ch, rad = ob->radius;
-        float vf = dx * fx + dy * fy + dh * fh, vr = dx * rx + dy * ry + dh * rh;
+        float vf = dx * fx + dy * fy + dh * fh + EYE_BACK, vr = dx * rx + dy * ry + dh * rh;
         float vu = dx * ux + dy * uy + dh * uh;
-        if(vf + rad < NEAR || vf - rad > far_z) continue;
+        if(vf + rad < NEAR || vf - rad > far_eye) continue;
         if(vr - rad > half_w * (vf + rad) || vr + rad < -half_w * (vf + rad)) continue;
         if(vu - rad > up * (vf + rad) || vu + rad < -down * (vf + rad)) continue;
         float d2 = dx * dx + dy * dy + dh * dh;
@@ -762,7 +775,8 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         const float m[9] = { rx * ca + ry * sa, rh, ry * ca - rx * sa,
                              ux * ca + uy * sa, uh, uy * ca - ux * sa,
                              fx * ca + fy * sa, fh, fy * ca - fx * sa };
-        const float o[3] = { dx * rx + dy * ry + dh * rh, dx * ux + dy * uy + dh * uh, dx * fx + dy * fy + dh * fh };
+        const float o[3] = { dx * rx + dy * ry + dh * rh, dx * ux + dy * uy + dh * uh,
+                             dx * fx + dy * fy + dh * fh + EYE_BACK };
         for(int k = 0; k < 9; k++) g.m[k] = (int32_t)(m[k] * 65536.0f);
         for(int k = 0; k < 3; k++) g.t[k] = (int32_t)(o[k] * 256.0f);
 
