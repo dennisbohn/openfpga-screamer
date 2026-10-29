@@ -24,6 +24,8 @@
 #include "car.h"
 #include "hud.h"
 #include "opp.h"
+#include "efx.h"
+#include "geom.h"
 
 uint32_t frames_shown;             /* read by the trap handler */
 
@@ -49,6 +51,12 @@ static const struct game_file { const char *name; uint32_t addr, max; } game_fil
     { "LOCAL.DAT", SDRAM_BASE + 0x2D50000, 0x10000 },
 };
 #define BUILD_SCRATCH   (SDRAM_BASE + 0x2D60000)
+/* the effects through MAPn.SMG (efx.h): 64 KB right under the track image, so that the radar's
+   material at its end lies within a face's reach (32 KB) of the image's MLB */
+#define EFX_SIZE    0x10000
+#define EFX_MEM     ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE))
+#define MAX_OBJECTS 32          /* the player's car, the opponents and their shadows, the player's
+                                   shadow and smoke (track.c draws up to 32) */
 
 /* Mark the free stack in the boot RAM up to 256 bytes below the stack pointer, find how
    deep it was used later */
@@ -314,6 +322,11 @@ static void track_check(volatile uint8_t *fb, const struct track_cam *cam, struc
     blit_model(m, bk);
     track_mode = TRACK_MODEL;
     track_draw_cam(m, &track_clip, cam, objs, nobj, &ts);
+    struct su_view v;
+    struct gu_piece radar;
+    struct gu_stats gst = { 0, 0, 0, 0 };
+    track_view(&track_clip, &v);
+    if (efx_radar_piece(&v, &radar)) gu_draw(m, &track_clip, &v, track_mlb(), &radar, &gst);
     blit_model(m, bl);
     track_mode = TRACK_HW;
     for (int y = track_clip.y0; y < track_clip.y1; y++)
@@ -370,6 +383,7 @@ static void __attribute__((noreturn)) run_track(void)
         last_frame = VID_FRAME(st);
         if (n > 4) n = 4;
         if ((keys & ~keys_before) & KEY_SELECT) car_view(++car_v);
+        efx_cyc_objects = efx_cyc_radar = 0;
         uint32_t t_phys = rdcycle();
         for (uint32_t k = 0; k < n; k++) {
             car_step(keys, keys_before);
@@ -381,10 +395,11 @@ static void __attribute__((noreturn)) run_track(void)
         track_clock(n);
         const struct car_state *cs = car_state();
         struct track_cam cam;
-        struct track_object objs[1 + OPP_MAX];
+        static struct track_object objs[MAX_OBJECTS];
         car_camera(&cam);
         int nobj = car_object(&cam, &objs[0]);
-        nobj += opp_objects(objs + nobj, OPP_MAX);
+        nobj += opp_objects(objs + nobj, MAX_OBJECTS - nobj);
+        nobj += car_effects(&cam, objs + nobj, MAX_OBJECTS - nobj);
 
         /* the backdrop (the game's 0x83a68): the blitter copies it while the CPU culls the
            scene; the first piece for the geometry unit waits until it is done (hw_piece) */
@@ -414,7 +429,10 @@ static void __attribute__((noreturn)) run_track(void)
         RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
         su_view_regs(&view);
         track_draw_cam(0, &track_clip, &cam, objs, nobj, &ts);
-        /* the race screen: the blitter draws it once the scene is done */
+        /* the radar's darkened window over the scene (efx.h), then the race screen: the
+           blitter draws it once the scene is done */
+        struct gu_piece radar;
+        if (efx_radar_piece(&view, &radar)) hw_piece(&radar);
         BL_CLOCKS = 0;
         hud_build(&hud, (int)draw_buf, (int)fps);
         hw_blit(&hud);
@@ -426,6 +444,7 @@ static void __attribute__((noreturn)) run_track(void)
         uint32_t r_miss = RS_MISS_CLOCKS, r_edge = RS_EDGE_CLOCKS, r_row = RS_ROW_CLOCKS;
         uint32_t r_drain = RS_DRAIN_CLOCKS, r_starved = RS_STARVED;
         ts.faces = GU_FACES;
+        uint32_t efx_objects = efx_cyc_objects, efx_radar = efx_cyc_radar;    /* (the check adds) */
         if (drawn == 2) track_check(fb, &cam, objs, nobj, &back, &hud);
 
         if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
@@ -504,6 +523,17 @@ static void __attribute__((noreturn)) run_track(void)
                 dlog_str(", nearest ");
                 dlog_dec((int32_t)ts.nearest);
             }
+            float shx, shy, shh;
+            if (car_shadow_at(&shx, &shy, &shh)) {
+                dlog_str(", shadow ");
+                dlog_dec((int32_t)shx);
+                dlog_char(' ');
+                dlog_dec((int32_t)shy);
+                dlog_char(' ');
+                dlog_dec((int32_t)shh);
+            }
+            dlog_str(", puffs ");
+            dlog_dec(car_puffs());
             dlog_str("\n  cycles: cull ");
             dlog_dec((int32_t)ts.cyc_cull);
             dlog_str(", pieces ");
@@ -514,6 +544,13 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)draw_wait);
             dlog_str("), after ");
             dlog_dec((int32_t)(cycles - ts.cyc_cull - ts.cyc_piece - ts.cyc_out));
+            dlog_str(", effects ");                     /* shadows and smoke, radar (efx.h) */
+            dlog_dec((int32_t)efx_objects);
+            dlog_str(" + ");
+            dlog_dec((int32_t)efx_radar);
+            dlog_str(" (");
+            dlog_dec((int32_t)efx_radar_lines);
+            dlog_str(" lines)");
             dlog_str("\n  raster: miss ");
             dlog_dec((int32_t)r_miss);
             dlog_str(", edges ");
@@ -630,6 +667,30 @@ static int build_track(void)
     return 1;
 }
 
+/* The effects through MAPn.SMG (efx.h) from the GFX container; after the testbench's image
+   (load_image) that container alone is loaded for them */
+static void effects(int image)
+{
+    uint32_t t0 = rdcycle();
+    if (image) {
+        int err;
+        game.gfx = (const uint8_t *)(uintptr_t)game_files[0].addr;
+        game.gfx_size = load_file(GAME_SLOT, game_files[0].addr, game_files[0].max, &err);
+        dcache_invalidate();
+    }
+    int ok = game.gfx_size &&
+             efx_init(game.gfx, game.gfx_size, 1, track_mlb(), track_palette(), EFX_MEM, EFX_SIZE);
+    dlog_str("effects: MAP1.SMG ");
+    dlog_str(efx_table() ? "ok" : "missing");
+    dlog_str(", SHADOW.3DX ");
+    dlog_str(efx_shadow() ? "ok" : "missing");
+    dlog_str(", SMOKE.3DX ");
+    dlog_str(efx_smoke() ? "ok" : "missing");
+    dlog_str(ok ? ", in " : " - not all there, in ");
+    dlog_dec((int32_t)((rdcycle() - t0) / (CPU_HZ / 1000)));
+    dlog_str(" ms\n");
+}
+
 void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
 {
     results = boot_results;
@@ -640,8 +701,8 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
 
     /* the game's files (data slots 3-7, deferload) and the track image built from them at
        TEX_FILE; it is only used once all its blocks are as written */
-    int placements = 0;
-    if (load_image() || (load_game_files() && build_track())) {
+    int placements = 0, image = 0;
+    if ((image = load_image()) || (load_game_files() && build_track())) {
         dlog_str("track image: CRC of the 256 KB blocks:");
         int bad = 0;
         for (int k = 0; k < track_blocks(); k++) {
@@ -663,6 +724,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         dlog_str(" placements, ");
         dlog_dec((int32_t)track_path_length());
         dlog_str(" path points\n");
+        effects(image);
         RS_CTRL = 1;
         run_track();
     }

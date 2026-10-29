@@ -38,6 +38,19 @@ int car_model_index(const struct car_spec *sp);
 int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, struct track_block *out,
              struct track_object *obj);
 
+/* The first block of a flat mesh (a shadow) placed as a car's body is: at x, y, z, heading yaw,
+   tilted by pitch and roll (struct car_look's) */
+void car_flat_block(const uint8_t *file, float x, float y, float z, float yaw, float pitch, float roll,
+                    struct track_block *out);
+
+/* The player's shadow (SHADOW.3DX, efx.h) and tyre smoke (SMOKE.3DX, up to 8 puffs) as objects
+   for track_draw_cam() (up to max), their blocks made when they come up in the drawing; the
+   camera cam nudges the shadow. None of them without the meshes. */
+int car_effects(const struct track_cam *cam, struct track_object *objs, int max);
+/* how many puffs there are now, the shadow's place (0 if none: the bumper cam) */
+int car_puffs(void);
+int car_shadow_at(float *x, float *y, float *h);
+
 /* The race (0x18a04, 0x1820c, 0x19490, 0x20d45; OpenScreamer's markers_step): the clock
    since the start, whose start lights go green at 6 s; the countdown from 15 s, which at the
    line and at each checkpoint becomes what is left / 5 + TRACK_DATA's bonus; the total and

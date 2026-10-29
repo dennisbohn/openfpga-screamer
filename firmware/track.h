@@ -136,11 +136,12 @@ struct track_cam { float x, y, h, yaw, pitch, roll; };
    0x83a68; track.c) */
 void track_backdrop_blit(struct blit_list *l, const struct rs_clip *clip, const struct track_cam *cam);
 
-/* An object besides the track's pieces (a car): its blocks in the order they are drawn, each
-   with its own place: world = o + m . local (m rows: world x, y, height; columns: the block's
-   x, y up, z), and its texture phase (geom.h). With make, the blocks are made only when the
-   object comes up in the drawing (make(id, cam, object) fills n and b): the CPU makes a near
-   car while the geometry unit works on the scenery further off. */
+/* An object besides the track's pieces (a car, a shadow, a puff of smoke): its blocks in the
+   order they are drawn, each with its own place: world = o + m . local (m rows: world x, y,
+   height; columns: the block's x, y up, z), and its texture phase (geom.h). With make, the
+   blocks are made only when the object comes up in the drawing (make(id, cam, object) fills
+   n and b): the CPU makes a near car while the geometry unit works on the scenery further
+   off. key: what its mesh's class adds to its key (track_class_key; a shadow -200). */
 struct track_block { const uint8_t *file, *blk; float m[9], o[3]; uint32_t phase; };
 struct track_cam;
 struct track_object {
@@ -149,15 +150,25 @@ struct track_object {
     const struct track_block *b;
     int (*make)(int id, const struct track_cam *cam, struct track_object *o);
     int id;
+    int key;
 };
+
+/* The change of the drawing key for a mesh (an object of the UNR or a .3DX file) by its class,
+   the header's last word at +0x32c (0x8a8d7): 3 -6000, 1 -1500, 2 -800, 4 -200, else 0 */
+int track_class_key(const uint8_t *obj);
+
+/* The camera's frame as the drawing takes it: forward, right, up (unit vectors in world x, y,
+   height); a block placed with the columns right, up, forward faces the screen */
+void track_cam_axes(const struct track_cam *cam, float f[3], float r[3], float u[3]);
 
 /* The view from the camera, clipped to clip, with the objects sorted in among the pieces as
    the game does it (0x83164, 0x8a6a8, 0x8a7b0, 0x832c0): the key is -(sqrt(dist^2 >> 2)
    rounded, >> 2), about the distance / 8; an object (a car) counts 800 nearer, 6400 units,
    so the road it stands on never covers it; a mesh's class (its header's last word, +0x32c)
-   puts it further off: 3 (track 1's lawn under the road) 6000, 1 1500, 2 800, 4 200. Far
-   first; on a tie in the order the game puts them in: the pieces as in the file (each cell's
-   scenery before its road), the objects after them. */
+   puts it further off: 3 (track 1's lawn under the road) 6000, 1 1500, 2 800, 4 200 (a
+   shadow: before its car), for an object as well (track_object.key). Far first; on a tie in
+   the order the game puts them in: the pieces as in the file (each cell's scenery before its
+   road), the objects after them. Up to 32 objects. */
 void track_draw_cam(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam,
                     struct track_object *objs, int nobj, struct track_stats *st);
 

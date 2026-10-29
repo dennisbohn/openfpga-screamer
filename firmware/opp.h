@@ -18,9 +18,12 @@ void opp_init(int player_row);
 /* One step of 1/50 s, after the player's (car_step): held until the green light */
 void opp_step(void);
 
-/* The opponents as objects for track_draw_cam() (up to max), their blocks made when they come
-   up in the drawing */
+/* The opponents as objects for track_draw_cam() (up to max), each with its shadow after it
+   (SHADOW.3DX, efx.h, if loaded), their blocks made when they come up in the drawing */
 int opp_objects(struct track_object *objs, int max);
+
+/* Where opponent k is (0 .. opp_count() - 1): 1 and its place on the ground */
+int opp_where(int k, float *x, float *y);
 
 /* How many there are; the player's place in the running order (1 = leading) */
 int opp_count(void);

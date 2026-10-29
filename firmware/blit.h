@@ -12,7 +12,9 @@
 #define BLIT_LINE   2               /* Bresenham, the pixels in the clip */
 #define BLIT_FILL   3               /* a rectangle of one colour */
 #define BLIT_OPAQUE 16              /* with BLIT_COPY: 0 drawn as well */
-#define BLIT_MAX    128             /* the blitter's buffer holds 128 commands */
+#define BLIT_MAX    384             /* commands in a list (the race screen with the radar's
+                                       walls); the blitter's buffer holds 128, BL_PUSH waits
+                                       while it is full */
 
 struct blit_list {
     int n, buffer;                  /* commands; the framebuffer drawn into */

@@ -5,7 +5,8 @@
  * 0x1df24 the turn and lean in bends, 0x1d6ac drifting back to the line, 0x1db84 the markers,
  * 0x20418 the running order, 0x142e8 the cars; contact between cars: 0x12378 / 0x17818 the
  * player and an opponent, 0x126e4 / 0x1cffc / 0x1d1f0 two opponents, 0x1e404 overtaking; an
- * opponent's crash (0x1cffc, 0x1d824) and the road under it (0x1cb9c).
+ * opponent's crash (0x1cffc, 0x1d824) and the road under it (0x1cb9c); its shadow (0x1c83c,
+ * 0x1cd34).
  *
  * The curve (0x1d54c + 0x1e7a4) is a uniform quadratic B-spline over the nodes' handles, two
  * pieces a node: piece 0 node.in, node.out, next.in; piece 1 node.out, next.in, next.out;
@@ -15,6 +16,8 @@
 #include "opp.h"
 #include <math.h>
 #include "car.h"
+#include "efx.h"
+#include "hw.h"
 
 #define PI          3.14159265f
 
@@ -30,6 +33,7 @@ struct opp {
     float nose, tail, radius;   /* its two circles: ahead of and behind its origin, their radius */
     float spin, body, prev_yaw; /* its nose turned into a bend, its body leant (0x1df24) */
     float x, y, z, yaw, pitch, roll;
+    float sh_pitch, sh_roll;    /* its shadow's tilt: the car object's, kept while it crashes */
     float wheel;                /* the wheels' turn */
     int mark_at, mk_count, laps;
     uint8_t mk_seen[64];
@@ -142,6 +146,11 @@ static void place(struct opp *o, int k)
             o->turn = 0.0f;
             o->crash = 0;
         }
+    }
+    /* its shadow's tilt (0x1cb14): the car object's unless it crashes (+0x2f8) */
+    if(!o->crash) {
+        o->sh_pitch = -o->pitch;
+        o->sh_roll = -o->roll;
     }
 }
 
@@ -426,10 +435,33 @@ static int opp_make(int k, const struct track_cam *cam, struct track_object *obj
 
 int opp_objects(struct track_object *objs, int max)
 {
+    static struct track_block shadows[OPP_MAX];
+    uint32_t t0 = rdcycle();
     int n = 0;
-    for(int k = 0; k < nopp && n < max; k++, n++)
-        objs[n] = (struct track_object){ opp[k].x, opp[k].y, opp[k].z, 1200.0f, 0, 0, opp_make, k };
+    const uint8_t *sh = efx_shadow();
+    for(int k = 0; k < nopp && n < max; k++) {
+        const struct opp *o = &opp[k];
+        objs[n++] = (struct track_object){ o->x, o->y, o->z, 1200.0f, 0, 0, opp_make, k, 0 };
+        if(!sh || n >= max) continue;
+        /* its shadow (0x1c83c), made at once, all in a row (the code stays in the cache): its
+           whole-number place without the player's nudge, 2 under the ground under it (0x1cd34:
+           +0x238, which it stands on unless thrown up), heading the car object's, tilted as its
+           car unless that crashes */
+        float x = (float)(int32_t)o->x, y = (float)(int32_t)o->y, h = (float)((int32_t)o->z - 2);
+        car_flat_block(sh, x, y, h, o->yaw + o->spin + (o->crash ? o->turn : 0.0f), o->sh_pitch, o->sh_roll,
+                       &shadows[k]);
+        objs[n++] = (struct track_object){ x, y, h, 900.0f, 1, &shadows[k], 0, k, track_class_key(sh) };
+    }
+    efx_cyc_objects += rdcycle() - t0;
     return n;
+}
+
+int opp_where(int k, float *x, float *y)
+{
+    if(k < 0 || k >= nopp) return 0;
+    *x = opp[k].x;
+    *y = opp[k].y;
+    return 1;
 }
 
 int opp_count(void)

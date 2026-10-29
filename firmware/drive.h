@@ -55,6 +55,8 @@ struct car_state {
     float slide;            /* +0x4fc  sideways speed while skidding */
     float drift;            /* +0x128  angle between the body and its heading */
     int   spin;             /* +0x170  1 = lost it */
+    int   skid_lock;        /* this step took 0x17d04's branch for locked wheels, which turns
+                               on the skid sound and the smoke (0x17e29) */
 
     float yaw_rate;         /* +0x548  knocked sideways by a wall */
     float shove, shove_x, shove_y;      /* +0x54c, +0x550, +0x558 */

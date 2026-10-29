@@ -5,7 +5,7 @@
  *   0x16f24  integrate: move the car, apply wall shove, wrap the angles
  *   0x15a70  -> 0x18da0 ENGINE + GEARBOX, 0x16094 THROTTLE, 0x16140 BRAKE, 0x1628c STEERING
  *   0x15b9c  -> 0x17d04 SKID / SPIN, 0x188a8 spin recovery (and suspension, sound, crash,
- *               smoke, not here)
+ *               not here; the smoke's flag is, car.c makes the smoke)
  *   0x15aa8  -> lap markers, body-corner collision, wheel contact, 0x16c90 WALL HIT, ride
  *               height (car.c, apart from the wall hit below)
  *
@@ -228,6 +228,7 @@ static void skid(struct car_state *c)
 {
     const float dt = DRIVE_DT;
 
+    c->skid_lock = 0;
     if(!c->spin) {
         if(c->lock == 0.0f) {
             /* cornering force: speed squared times how fast the heading turns, and more for
@@ -256,6 +257,7 @@ static void skid(struct car_state *c)
             }
         } else {
             /* wheels locked: slide straight on until the speed comes down */
+            c->skid_lock = 1;
             c->lock *= damp(98);
             if(c->lock * c->speed < 2000.0f) c->lock = 0.0f;
             approach(&c->slip, 0.0f, 7);

@@ -1,11 +1,12 @@
 /*
  * The player's car (car.h), after OpenScreamer's port/src/main.c (GPL-3.0), checked against
- * STARTL.EXE where it says so. Not yet here: the start lights, laps and clocks, the
- * suspension (the body's lean), the shadow, smoke, the camera's fly-across between views.
+ * STARTL.EXE where it says so; the shadow and the smoke from STARTL.EXE itself. Not yet here:
+ * the suspension (the body's lean), the camera's fly-across between views.
  */
 #include "car.h"
 #include <math.h>
 #include "hw.h"
+#include "efx.h"
 
 #define PI          3.14159265f
 /* the bumper cam's height over the car: camera_hi in TRACK_DATA of MAPnA.DTR */
@@ -55,6 +56,16 @@ static float spin, steer;               /* the wheels' turn and the front ones' 
    turned by the heading alone, which the chase camera follows */
 static struct { float h[4], hc[4], cam_pitch, cam_roll; int ready; } ct;
 static struct { float yaw, roll, pitch, height; int init; } chase;
+
+/* the shadow's tilt: the car object's, but kept while it crashes (state 1, 0x1604c) */
+static float shadow_pitch, shadow_roll;
+
+/* the tyre smoke (0x19818 starts puffs, 0x19970 moves them): 8 slots (+0x308, 0x28 bytes
+   each; only the player has them, 0x142e8 gives the opponents none), each an offset from the
+   car in the model's frame, its place now and the phase of its 2/3 s */
+#define PUFFS       8
+static struct puff { int on; int32_t lx, lz, phase; float x, y, h; } puff[PUFFS];
+static float puff_clock;                /* +0x304 */
 
 static float wrap_pi(float a)
 {
@@ -225,8 +236,76 @@ static void walls_step(void)
     }
 }
 
+/* the game's tick counter T (obj1:0x7fd, counted up by its 100 Hz timer's callback 0x1020d),
+   from the cycle counter: it runs on whatever the frame rate */
+static uint32_t ticks(void)
+{
+    static uint32_t last, rest, t;
+    uint32_t now = rdcycle();
+    rest += now - last;
+    last = now;
+    t += rest / (CPU_HZ / 100);
+    rest %= CPU_HZ / 100;
+    return t;
+}
+
+/* 0x19818, called on every step that smokes: the clock (+0x304) gains the step's time while
+   it is under 0.05 s (ds:0x8cb); else it starts again and each rear wheel (records 1 and 3,
+   rear left and rear right) takes the first free slot: its place on the model pushed sideways
+   by (x & 7) (T & 63) and back by (z & 7) (T & 63), x and z the car's whole-number place
+   (ds:0xfdc8, 0xfdd0); the right one's push turned round when T has bit 1 (0x198bf: T and
+   the wheel's index 2). At 50 steps a second a pair every 4 steps. */
+static void smoke_spawn(void)
+{
+    if(puff_clock < 0.05f) {
+        puff_clock += DRIVE_DT;
+        return;
+    }
+    puff_clock = 0.0f;
+    uint32_t t = ticks();
+    int32_t tt = (int32_t)(t & 63), wx = (int32_t)model.half_track, wz = (int32_t)model.axle_rear;
+    int k = 0;
+    for(int w = 0; w < 4; w += 2) {
+        while(k < PUFFS && puff[k].on) k++;
+        if(k == PUFFS) return;
+        struct puff *p = &puff[k];
+        p->on = 1;
+        p->phase = 0;
+        p->lx = (w ? -wx : wx) + ((int32_t)pc.x & 7) * tt * ((t & (uint32_t)w) ? -1 : 1);
+        p->lz = wz + ((int32_t)pc.y & 7) * tt;
+    }
+}
+
+/* 0x19970, every step after the skid: each puff where the car is now, its offset turned by
+   heading + slip (0x2216c) with no height, then about the world's x axis by the car's pitch
+   (0x221dc), in whole units from the car's whole-number place: it goes with the car. Its phase
+   gains 1.5 x 65535 a second (ds:0x8d3, 0x118e8: 1966 a step) and it ends at 0x10000
+   (0x11930), after 34 steps. */
+static void smoke_step(void)
+{
+    int any = 0;
+    for(int k = 0; k < PUFFS; k++) any |= puff[k].on;
+    if(!any) return;
+    float a = pc.yaw + pc.drift, ca = cosf(a), sa = sinf(a), cp = cosf(pc.pitch), sp = sinf(pc.pitch);
+    int32_t cx = (int32_t)pc.x, cy = (int32_t)pc.y, ch = (int32_t)pc.z;
+    for(int k = 0; k < PUFFS; k++) {
+        struct puff *p = &puff[k];
+        if(!p->on) continue;
+        float lx = (float)p->lx, lz = (float)p->lz;
+        int32_t dx = (int32_t)(lx * ca - lz * sa), dy = (int32_t)(lx * sa + lz * ca);
+        int32_t dh = (int32_t)((float)dy * sp);
+        dy = (int32_t)((float)dy * cp);
+        p->x = (float)(cx + dx);
+        p->y = (float)(cy + dy);
+        p->h = (float)(ch + dh);
+        p->phase = (int32_t)((float)p->phase + DRIVE_DT * 1.5f * 65535.0f);
+        if(p->phase >= 0x10000) p->on = 0;
+    }
+}
+
 /* a crash's step: gravity 6000, the turning dies away (damp[97]); each landing throws it up
-   again at 0.4 times the fall, level, with a new small turn; the fourth ends it */
+   again at 0.4 times the fall, level, with a new small turn, and smokes (0x18727); the fourth
+   ends it */
 static void crash_step(void)
 {
     if(!crash.on) return;
@@ -237,6 +316,7 @@ static void crash_step(void)
     crash.roll_rate *= drive_damp(97);
     crash.roll += crash.roll_rate * DRIVE_DT;
     if(crash.height > 0.0f) return;
+    smoke_spawn();
     crash.bounces++;
     crash.height = 0.0f;
     crash.vy = -crash.vy * 0.4f;
@@ -407,6 +487,10 @@ void car_init(int which)
     contact();
     chase.init = 0;
     chase_step();
+    shadow_pitch = -pc.pitch;
+    shadow_roll = -pc.roll;
+    for(int j = 0; j < PUFFS; j++) puff[j].on = 0;
+    puff_clock = 0.0f;
 }
 
 void car_step(uint32_t keys, uint32_t keys_before)
@@ -429,12 +513,29 @@ void car_step(uint32_t keys, uint32_t keys_before)
     }
     if(race.finished || race.game_over) { in.throttle = 0.0f; in.brake = 0.4f; }
     if(crash.on) in.throttle = in.steer = 0.0f;          /* no drive in the air */
+    int crashed = crash.on;
     crash_step();
     drive_step(&pc, &in);
+    /* 0x17d04's smoke: its branch for locked wheels, taken only out of a crash and while the
+       engine pulls (flag 0x40 at 0x18e19, time over), or the body more than 0.23 rad off its
+       heading (ds:0x810, 0x180be); and state 5, the wheels spinning off the line, smokes in a
+       gear (0x18879) */
+    uint32_t t0 = rdcycle();
+    if((pc.skid_lock && !crash.on && !race.time_out) || fabsf(pc.drift) > 0.23f) smoke_spawn();
+    if(pc.launch && pc.gear != 0) smoke_spawn();
+    efx_cyc_objects += rdcycle() - t0;
     walls_step();
     markers_step();
     contact();
     chase_step();
+    t0 = rdcycle();
+    smoke_step();
+    /* the shadow's tilt (0x1604c): the car object's, but not while it crashes */
+    if(!crashed || !crash.on) {
+        shadow_pitch = -pc.pitch + crash.pitch;
+        shadow_roll = -pc.roll + crash.roll;
+    }
+    efx_cyc_objects += rdcycle() - t0;
 
     /* wheels_step: the wheels turn with the speed; the front ones steer by the share of the
        lock, the sign as OpenScreamer has it since its fix (the model's +x is the car's left) */
@@ -529,6 +630,24 @@ static void block_point(const struct cblock *q, const struct pose *ps, const flo
     w[2] = ps->z + y4;
 }
 
+/* the block's place in the world: its origin and the images of its three axes */
+static void place_block(const struct cblock *q, const struct pose *ps, struct track_block *t)
+{
+    static const float zero[3] = { 0.0f, 0.0f, 0.0f }, ex[3] = { 1.0f, 0.0f, 0.0f };
+    static const float ey[3] = { 0.0f, 1.0f, 0.0f }, ez[3] = { 0.0f, 0.0f, 1.0f };
+    float o[3], px[3], py[3], pz[3];
+    block_point(q, ps, zero, o);
+    block_point(q, ps, ex, px);
+    block_point(q, ps, ey, py);
+    block_point(q, ps, ez, pz);
+    for(int j = 0; j < 3; j++) {
+        t->o[j] = o[j];
+        t->m[3 * j] = px[j] - o[j];
+        t->m[3 * j + 1] = py[j] - o[j];
+        t->m[3 * j + 2] = pz[j] - o[j];
+    }
+}
+
 int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, struct track_block *out,
              struct track_object *obj)
 {
@@ -542,21 +661,10 @@ int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, 
     int ord[MAX_BLOCKS];
     float key[MAX_BLOCKS];
     for(int b = 0; b < m->ncb; b++) {
-        static const float zero[3] = { 0.0f, 0.0f, 0.0f }, ex[3] = { 1.0f, 0.0f, 0.0f };
-        static const float ey[3] = { 0.0f, 1.0f, 0.0f }, ez[3] = { 0.0f, 0.0f, 1.0f };
         const struct cblock *q = &m->cb[b];
         struct track_block *t = &tb[b];
-        float o[3], px[3], py[3], pz[3], mid[3], mw[3];
-        block_point(q, &ps, zero, o);
-        block_point(q, &ps, ex, px);
-        block_point(q, &ps, ey, py);
-        block_point(q, &ps, ez, pz);
-        for(int j = 0; j < 3; j++) {
-            t->o[j] = o[j];
-            t->m[3 * j] = px[j] - o[j];
-            t->m[3 * j + 1] = py[j] - o[j];
-            t->m[3 * j + 2] = pz[j] - o[j];
-        }
+        float mid[3], mw[3];
+        place_block(q, &ps, t);
         t->file = m->mesh;
         t->blk = q->blk;
         t->phase = lk->phase;
@@ -599,8 +707,111 @@ int car_object(const struct track_cam *cam, struct track_object *obj)
 {
     (void)cam;
     if(views[view].incar) return 0;
-    *obj = (struct track_object){ pc.x, pc.y, pc.z + crash.height, 1200.0f, 0, 0, car_make, 0 };
+    *obj = (struct track_object){ pc.x, pc.y, pc.z + crash.height, 1200.0f, 0, 0, car_make, 0, 0 };
     return 1;
+}
+
+/* sine and cosine; a tilt (under 0.5 rad, nearly always) by their series, to float's precision,
+   without the library's calls */
+static void sin_cos(float a, float *s, float *c)
+{
+    if(fabsf(a) >= 0.5f) {
+        *s = sinf(a);
+        *c = cosf(a);
+        return;
+    }
+    float a2 = a * a;
+    *s = a * (1.0f - a2 * (1.0f / 6.0f - a2 * (1.0f / 120.0f - a2 * (1.0f / 5040.0f))));
+    *c = 1.0f - a2 * (0.5f - a2 * (1.0f / 24.0f - a2 * (1.0f / 720.0f - a2 * (1.0f / 40320.0f))));
+}
+
+void car_flat_block(const uint8_t *file, float x, float y, float z, float yaw, float pitch, float roll,
+                    struct track_block *out)
+{
+    const struct cblock q = { 0 };
+    struct pose ps = { { 1.0f, 0.0f, 1.0f, 0.0f }, { 0 }, { 1.0f, 0.0f, 1.0f, 0.0f }, 0, x, y, z };
+    sin_cos(pitch, &ps.car[1], &ps.car[0]);
+    sin_cos(roll, &ps.car[3], &ps.car[2]);
+    ps.car[4] = cosf(yaw);
+    ps.car[5] = sinf(yaw);
+    place_block(&q, &ps, out);
+    out->file = file;
+    out->blk = file + *(const int32_t *)(file + 0x18);
+    out->phase = 0;
+}
+
+static struct { float x, y, h; int on; } shadow;
+
+/* The player's shadow and puffs, their blocks made at once, all in a row (the code stays in the
+   cache). The shadow (0x15c0c): heading the car object's, the tilt kept in a crash. A puff
+   faces the screen (flag 0x8000 of its object, 0x118a4: the engine puts the camera's angles in
+   for its own, 0x8abc7 -> 0x4bca0): its block's axes are the camera's right, up and forward;
+   the texture's frame 6 x (phase >> 2) >> 14 (0xcd906). */
+int car_effects(const struct track_cam *cam, struct track_object *objs, int max)
+{
+    static struct track_block shadow_block, puff_block[PUFFS];
+    uint32_t t0 = rdcycle();
+    int n = 0;
+    const uint8_t *sh = efx_shadow(), *sm = efx_smoke();
+    shadow.on = 0;
+    if(sh && !views[view].incar && n < max) {
+        /* 0x18cbc: the car's whole-number x and z moved 20 units (ds:0x854) away from the
+           camera along the ground; 0x16043: 2 under the ground below the wheels, without the
+           grass's jolts (+0x4ec, 0x1675f: their sum / 4) */
+        int32_t cx = (int32_t)pc.x, cy = (int32_t)pc.y, ex = (int32_t)cam->x - cx, ey = (int32_t)cam->y - cy;
+        float d = sqrtf((float)(ex * ex + ey * ey));
+        int32_t ground = ((int32_t)ct.h[0] + (int32_t)ct.h[1] + (int32_t)ct.h[2] + (int32_t)ct.h[3]) / 4;
+        if(d > 0.0f) {
+            shadow.x = (float)(int32_t)((float)cx - (float)ex / d * 20.0f);
+            shadow.y = (float)(int32_t)((float)cy - (float)ey / d * 20.0f);
+            shadow.h = (float)(ground - 2);
+            shadow.on = 1;
+            car_flat_block(sh, shadow.x, shadow.y, shadow.h, pc.yaw + pc.drift, shadow_pitch, shadow_roll,
+                           &shadow_block);
+            objs[n++] = (struct track_object){ shadow.x, shadow.y, shadow.h, 900.0f, 1, &shadow_block, 0, 0,
+                                               track_class_key(sh) };
+        }
+    }
+    float f[3], r[3], u[3];
+    int axes = 0;
+    for(int k = 0; k < PUFFS && sm && n < max; k++) {
+        if(!puff[k].on) continue;
+        if(!axes) {
+            track_cam_axes(cam, f, r, u);
+            axes = 1;
+        }
+        struct track_block *t = &puff_block[k];
+        for(int j = 0; j < 3; j++) {
+            t->m[3 * j] = r[j];
+            t->m[3 * j + 1] = u[j];
+            t->m[3 * j + 2] = f[j];
+        }
+        t->o[0] = puff[k].x;
+        t->o[1] = puff[k].y;
+        t->o[2] = puff[k].h;
+        t->file = sm;
+        t->blk = sm + *(const int32_t *)(sm + 0x18);
+        t->phase = (uint32_t)puff[k].phase >> 2;
+        objs[n++] = (struct track_object){ puff[k].x, puff[k].y, puff[k].h, 420.0f, 1, t, 0, k,
+                                           track_class_key(sm) };
+    }
+    efx_cyc_objects += rdcycle() - t0;
+    return n;
+}
+
+int car_puffs(void)
+{
+    int n = 0;
+    for(int k = 0; k < PUFFS; k++) n += puff[k].on;
+    return n;
+}
+
+int car_shadow_at(float *x, float *y, float *h)
+{
+    *x = shadow.x;
+    *y = shadow.y;
+    *h = shadow.h;
+    return shadow.on;
 }
 
 void car_view(int v)

@@ -254,8 +254,7 @@ int track_init(void)
             float rb = __builtin_sqrtf(r2) + __builtin_sqrtf(t2);
             if(rb > radius[k]) radius[k] = rb;
         }
-        int32_t cl = rd32(obj + 0x32C);                 /* 0x8a8d7 */
-        class_key[k] = cl == 3 ? -6000 : cl == 1 ? -1500 : cl == 2 ? -800 : cl == 4 ? -200 : 0;
+        class_key[k] = (int16_t)track_class_key(obj);
     }
     for(int i = 0; i < npieces; i++) {
         float x = (float)pieces[i].x, y = (float)pieces[i].y;
@@ -267,6 +266,12 @@ int track_init(void)
         if(y > groups[g].y1) groups[g].y1 = y;
     }
     return npieces;
+}
+
+int track_class_key(const uint8_t *obj)
+{
+    int32_t cl = rd32(obj + 0x32C);                     /* 0x8a8d7 */
+    return cl == 3 ? -6000 : cl == 1 ? -1500 : cl == 2 ? -800 : cl == 4 ? -200 : 0;
 }
 
 const uint32_t *track_palette(void)
@@ -513,6 +518,11 @@ static void cam_frame(const struct track_cam *cam, float f[3], float r[3], float
     u[0] = u0[0] * cr - r0[0] * sr; u[1] = u0[1] * cr - r0[1] * sr; u[2] = u0[2] * cr;
 }
 
+void track_cam_axes(const struct track_cam *cam, float f[3], float r[3], float u[3])
+{
+    cam_frame(cam, f, r, u);
+}
+
 void track_detail(int level)
 {
     far_z = far_depth[level < 0 ? 0 : level > 2 ? 2 : level];
@@ -544,7 +554,7 @@ void track_view(const struct rs_clip *clip, struct su_view *v)
 }
 
 struct vis { int32_t k; int i; };              /* key << 16 | i; i: a piece, or npieces + an object */
-#define MAX_OBJS    16
+#define MAX_OBJS    32
 static struct vis vis[MAX_PIECES + MAX_OBJS];
 
 /* The eye of a block as the game takes it for its faces (0x834d6..0x83547): the eye in the
@@ -690,7 +700,8 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         if(vr - rad > half_w * (vf + rad) || vr + rad < -half_w * (vf + rad)) continue;
         if(vu - rad > up * (vf + rad) || vu + rad < -down * (vf + rad)) continue;
         float d2 = dx * dx + dy * dy + dh * dh;
-        vis[nv].k = (KEY(d2) + 800) * 65536 + npieces + k;     /* 0x8a8c3: an object counts nearer */
+        /* 0x8a8c3: an object counts nearer; 0x8a8d7: its mesh's class */
+        vis[nv].k = (KEY(d2) + 800 + ob->key) * 65536 + npieces + k;
         vis[nv].i = npieces + k;
         nv++;
         st->objects++;
