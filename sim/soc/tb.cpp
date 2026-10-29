@@ -33,6 +33,9 @@
 // expected value is a negative test (a fault built into a memory model, SIM_DEFINES in
 // tools/sim.sh): SYS_SIM must show exactly those tests failed, the log must report a
 // failure, and the resets are left out.
+//
+// SIM_WAV=<file> writes the I2S output of the whole run (decoded from LRCK, the bit clock and the
+// data, 48 kHz stereo) to that WAV file (tools/simcheck.sh: build/sim/audio.wav).
 
 #include <algorithm>
 #include <cstdio>
@@ -84,6 +87,51 @@ static std::vector<Slot> data_slots(const char *path) {
     return out;
 }
 
+// The I2S output as a WAV file: a bit on each rising edge of the bit clock, a half's 16 bits
+// after its first (the one LRCK changed before), the left half while LRCK is low
+struct Wav {
+    FILE *f = nullptr;
+    uint32_t frames = 0, word = 0;
+    int sclk = 0, lrck = -1, k = 0;
+    int16_t left = 0;
+    bool have_left = false;
+    void open(const char *path) {
+        f = fopen(path, "wb");
+        if (f) { uint8_t hdr[44] = { 0 }; fwrite(hdr, 1, 44, f); }
+    }
+    void clock(int s, int lr, int dac) {
+        if (s && !sclk) {
+            if (lr != lrck) k = 0; else k++;
+            lrck = lr;
+            if (k >= 1 && k <= 16) word = word << 1 | uint32_t(dac);
+            if (k == 16) {
+                if (!lr) { left = int16_t(word); have_left = true; }
+                else if (have_left) {
+                    int16_t fr[2] = { left, int16_t(word) };
+                    fwrite(fr, 2, 2, f);
+                    frames++;
+                }
+            }
+        }
+        sclk = s;
+    }
+    ~Wav() {
+        if (!f) return;
+        uint32_t bytes = frames * 4, v;
+        uint16_t w;
+        fseek(f, 0, SEEK_SET);
+        fwrite("RIFF", 1, 4, f); v = 36 + bytes; fwrite(&v, 4, 1, f);
+        fwrite("WAVEfmt ", 1, 8, f); v = 16; fwrite(&v, 4, 1, f);
+        w = 1; fwrite(&w, 2, 1, f); w = 2; fwrite(&w, 2, 1, f);
+        v = 48000; fwrite(&v, 4, 1, f); v = 48000 * 4; fwrite(&v, 4, 1, f);
+        w = 4; fwrite(&w, 2, 1, f); w = 16; fwrite(&w, 2, 1, f);
+        fwrite("data", 1, 4, f); fwrite(&bytes, 4, 1, f);
+        fclose(f);
+        printf("audio: %u frames (%.2f s) of the I2S output in the WAV file\n", frames, frames / 48000.0);
+    }
+};
+static Wav wav;
+
 struct Sim {
     Vsoc_system top;
     uint64_t now = 0, next_74 = HALF_74, next_vid = HALF_VID;
@@ -93,6 +141,7 @@ struct Sim {
         if (next_74 <= next_vid) {
             now = next_74; next_74 += HALF_74;
             top.clk_74a = !top.clk_74a; top.eval();
+            if (wav.f && top.clk_74a) wav.clock(top.audio_sclk, top.audio_lrck, top.audio_dac);
             if (top.clk_74a) return 1;
         } else {
             now = next_vid; next_vid += HALF_VID;
@@ -350,6 +399,7 @@ int main(int argc, char **argv) {
     // buttons at its start: Select there asks for the full memory test); none without it
     if (const char *k = getenv("SIM_KEYS")) s.keys = uint32_t(strtoul(k, nullptr, 16));
     if (s.keys) printf("buttons held: 0x%04x, from the program's first game file read\n", s.keys);
+    if (const char *w = getenv("SIM_WAV")) if (*w) wav.open(w);
 
     Vsoc_system &top = s.top;
     top.clk_74a = 0; top.clk_vid = 0; top.reset_n = 0; top.bridge_wr = 0; top.bridge_rd = 0; top.cont1_key = 0;

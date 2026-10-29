@@ -160,6 +160,21 @@
                                                18 words: m[9], t[3], e[3], object, block (SDRAM byte
                                                addresses), face row (struct gu_piece) */
 
+/* the sound mixer (core/src/fpga/core/audio.v, C model mixer.h): 32 voices of 8-bit unsigned
+   samples in the SDRAM, 48 kHz stereo; a voice's registers take effect in the next pass */
+#define AU_VOICES       32
+#define AU_RATE         48000               /* output frames a second */
+#define AU_ADDR(v)      REG32(0xF0004000u + 32u * (v))  /* W: SDRAM byte address of the first byte */
+#define AU_END(v)       REG32(0xF0004004u + 32u * (v))  /* W: SDRAM byte address where it (or its loop) ends */
+#define AU_LOOP(v)      REG32(0xF0004008u + 32u * (v))  /* W: [19:0] back by these bytes at the end,
+                                                           [31:24] so often (0 never, 255 for ever) */
+#define AU_STEP(v)      REG32(0xF000400Cu + 32u * (v))  /* W: step per output frame, samples 2.16 (< 4) */
+#define AU_VOL(v)       REG32(0xF0004010u + 32u * (v))  /* W: [7:0] left, [15:8] right */
+#define AU_PLAY         REG32(0xF0004400u)  /* W: bit v (re)starts voice v; R: bit v plays */
+#define AU_STOP         REG32(0xF0004404u)  /* W: bit v stops voice v */
+#define AU_STATUS       REG32(0xF0004408u)  /* R: AU_LATE; W: clears */
+#define AU_LATE         (1u << 0)           /* a pass was not done by the next frame */
+
 /* Cache maintenance: invalidate the whole data cache (it is write-through, so nothing is
    lost), and make the instruction cache fetch code written with stores (fence.i, then
    three instructions that may still come from the old line). */

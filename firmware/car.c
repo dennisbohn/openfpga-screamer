@@ -7,6 +7,7 @@
 #include <math.h>
 #include "hw.h"
 #include "efx.h"
+#include "sound.h"
 
 #define PI          3.14159265f
 /* the bumper cam's height over the car: camera_hi in TRACK_DATA of MAPnA.DTR */
@@ -35,6 +36,9 @@ static uint8_t mark_seen[64];
 static int mark_count;
 static float needle, needle_speed;
 static float progress;                  /* how far round the race (marker_progress) */
+
+/* the player's sounds (sound.h): the engine from the race's set-up (0x128dc), the skid, the wall */
+static int snd_engine = -1, snd_skid = -1, snd_wall = -1, snd_over;
 
 /* a crash (0x16c90 decides, 0x18518 runs it): thrown up and tumbling, four landings */
 static struct { int on, bounces, view; float height, vy, pitch, roll, pitch_rate, roll_rate; } crash;
@@ -228,7 +232,9 @@ static void walls_step(void)
     int open = nm == 0 || mk[mark_at].kind == 0;
     int crashing = pc.speed * (off / (PI / 2.0f)) > pc.k_wall && open;
     drive_hit_wall(&pc, mx, my, (float)(out[2] - out[0]), wall_angle);
+    if(!crashing) snd_wall = snd_play_once(SND_WALL, snd_wall);    /* unless it still sounds (0x16f0b) */
     if(crashing) {
+        snd_play(SND_DENT);                             /* 0x18540 */
         /* the crash's start (0x18518 state 2): speed x 0.6, heading the road's, thrown up at
            3000 units/s, turning 12 rad/s in pitch and in roll, the crash view */
         crash.on = 1;
@@ -496,6 +502,11 @@ void car_init(int which)
     spin = steer = 0.0f;
     wall_hits = crashes = 0;
     crash.on = 0;
+    snd_engine = snd_stop(snd_engine);
+    snd_skid = snd_stop(snd_skid);
+    snd_wall = -1;
+    snd_over = 0;
+    snd_engine = snd_play(SND_ENGINE);
     race = (struct car_race){ 0 };
     race.timer = 15.0f;
     race.total_laps = 3;                                /* the option's default (0x1d2ac) */
@@ -528,6 +539,29 @@ void car_init(int which)
     whole.fy = pc.y;
 }
 
+/* the engine's note every step (0x19408): pitch rpm x 14 + 32768, automoto, autogall in a tunnel
+   (the last marker's kind 1); the skid's sample while the skid flag of 0x17d04 is up (0x180d0,
+   the same flag as the smoke's); both stop when the race is over */
+static void sound_step(int skid)
+{
+    if(race.finished || race.game_over) {
+        if(!snd_over) {
+            snd_over = 1;
+            snd_engine = snd_stop(snd_engine);
+            snd_skid = snd_stop(snd_skid);
+        }
+        return;
+    }
+    int nm;
+    const struct track_marker *mk = track_markers(&nm);
+    snd_swap(snd_engine, nm && mk[mark_at].kind == 1 ? SND_ENGINE_TUNNEL : SND_ENGINE);
+    snd_pitch(snd_engine, (int32_t)(pc.rpm * 14.0f + 32768.0f));
+    if(skid) {
+        if(!snd_playing(snd_skid)) snd_skid = snd_play(SND_SKID);
+    } else
+        snd_skid = snd_stop(snd_skid);
+}
+
 void car_step(uint32_t keys, uint32_t keys_before)
 {
     uint32_t pressed = keys & ~keys_before;
@@ -558,7 +592,8 @@ void car_step(uint32_t keys, uint32_t keys_before)
        heading (ds:0x810, 0x180be); and state 5, the wheels spinning off the line, smokes in a
        gear (0x18879) */
     uint32_t t0 = rdcycle();
-    if((pc.skid_lock && !crash.on && !race.time_out) || fabsf(pc.drift) > 0.23f) smoke_spawn();
+    int skid = (pc.skid_lock && !crash.on && !race.time_out) || fabsf(pc.drift) > 0.23f;
+    if(skid) smoke_spawn();
     if(pc.launch && pc.gear != 0) smoke_spawn();
     efx_cyc_objects += rdcycle() - t0;
     walls_step();
@@ -573,6 +608,7 @@ void car_step(uint32_t keys, uint32_t keys_before)
         shadow_roll = -pc.roll + crash.roll;
     }
     efx_cyc_objects += rdcycle() - t0;
+    sound_step(skid);
 
     /* wheels_step: the wheels turn with the speed; the front ones steer by the share of the
        lock, the sign as OpenScreamer has it since its fix (the model's +x is the car's left) */

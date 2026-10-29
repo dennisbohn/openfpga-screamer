@@ -22,6 +22,7 @@
 # to <prefix>.rgb (python -I tools/rgb2png.py <prefix>.rgb <png>), e.g. the tyre smoke off the
 # line, from the far chase, the gas held from the green light, half a second on:
 #   SIM_KEYS=60 SIM_RACE_FRAMES=25 tools/simcheck.sh smoke
+# SIM_WAV=<file> writes the sound (the I2S output, 48 kHz stereo) of the whole run to a WAV file.
 # (blit.v prints its commands with SIM_DEFINES="-DBLIT_TRACE"; with "-DGEOM_STATS" geom.v and
 # setup.v print where their clocks went, each frame).
 set -e
@@ -44,7 +45,7 @@ else
 fi
 mkdir -p "$root/build/sim"
 
-MSYS_NO_PATHCONV=1 docker run --rm -e SIM_GAME -e SIM_QUICK -e SIM_IMAGE -e SIM_KEYS -e SIM_RACE_FRAMES -v "$mount:/work" -w /work --entrypoint sh "$image" -c "
+MSYS_NO_PATHCONV=1 docker run --rm -e SIM_GAME -e SIM_QUICK -e SIM_IMAGE -e SIM_KEYS -e SIM_RACE_FRAMES -e SIM_WAV -v "$mount:/work" -w /work --entrypoint sh "$image" -c "
     verilator --cc --exe --build -O3 --timescale 1ns/1ps -Wall -Wno-UNUSEDSIGNAL -Wno-DECLFILENAME \
         $defines --Mdir build/sim/$obj -f sim/$tb/files.f sim/$tb/tb.cpp \
         > build/sim/$obj.build.log 2>&1 || { cat build/sim/$obj.build.log; exit 1; }

@@ -18,6 +18,7 @@
 #include "car.h"
 #include "efx.h"
 #include "hw.h"
+#include "sound.h"
 
 #define PI          3.14159265f
 
@@ -166,11 +167,17 @@ static void circles(const struct opp *o, float cx[2], float cy[2])
    overlap: o is moved out of the way, unless that puts it off the track: then the player is.
    O in front (the player ran into it): shoved on at half the player's speed, knocked round by
    speed / 10000 rad (at most a quarter turn), the player shoved back (car_rammed). O behind
-   (it ran into the player): 70 % of its speed. */
+   (it ran into the player): 70 % of its speed. The crash sample opens it, started afresh on
+   every frame of contact in the game, here at most 30 times a second. */
 static void player_hits(struct opp *o, float nx, float ny, float pen)
 {
+    static float snd_at = -1.0f;
     const struct car_state *c = car_state();
-    float px = nx * pen, py = ny * pen;
+    float px = nx * pen, py = ny * pen, now = car_race()->clock;
+    if(now < snd_at || now - snd_at >= 1.0f / 30.0f) {
+        snd_play(SND_CRASH);
+        snd_at = now;
+    }
     if(!track_under(o->x - px, o->y - py, 0, 0)) {
         car_shift(px, py);
         return;

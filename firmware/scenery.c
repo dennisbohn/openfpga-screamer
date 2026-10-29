@@ -10,6 +10,7 @@
 #include "dat.h"
 #include "drive.h"
 #include "hw.h"
+#include "sound.h"
 
 #define PROPS_MAX   64          /* track 1 has 45 */
 #define KINDS       8           /* rows of OSTACLES (track 1 has 3) */
@@ -250,7 +251,8 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
     *nmove = nmoving;
 }
 
-/* the player against a prop, and a prop in the air (0x124c0, 0x205b4) */
+/* the player against a prop, knocked flying with the hit's sample, and a prop in the air
+   (0x124c0, 0x205b4) */
 static void props_step(void)
 {
     const struct car_state *c = car_state();
@@ -268,6 +270,7 @@ static void props_step(void)
                 p->vz = c->speed * 0.02f;
                 p->v = c->speed * 1.4f;
                 p->flying = 1;
+                snd_play(SND_HIT);
             }
         if(!p->flying) continue;
         float ox = p->x, oy = p->y, ground;

@@ -1,6 +1,6 @@
 /*
  * The program (program.bin, data slot 2) in the SDRAM, started by the boot loader with its
- * results (docs/soc.md). With the game's original files in data slots 3-7 it builds track 1
+ * results (docs/soc.md). With the game's original files in data slots 3-8 it builds track 1
  * from them (track_build.c) and puts the player's car on it (car.c): B accelerates, Y
  * brakes, left and right steer, L and R change gear on a manual car, X changes the view; the CPU picks and sorts the pieces (track.c), the geometry unit, setup unit and
  * rasterizer draw them. Without the files, the texture scene with test patterns, checked
@@ -27,6 +27,7 @@
 #include "efx.h"
 #include "scenery.h"
 #include "geom.h"
+#include "sound.h"
 
 uint32_t frames_shown;             /* read by the trap handler */
 
@@ -66,6 +67,11 @@ static struct track_files game;         /* where they are, as loaded */
 /* the props and moving scenery (scenery.h): their meshes, 64 KB under the dashboard */
 #define SCENERY_SIZE 0x10000
 #define SCENERY_MEM ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE - DASH_SIZE - SCENERY_SIZE))
+/* the sound effects' container SOUND.DAT (data slot 8, core/data.json with the same address and
+   limit), 2 MB under the props below the track image; the mixer plays its samples from there */
+#define SOUND_SLOT  8
+#define SOUND_MEM   (SDRAM_BASE + 0x1C00000)
+#define SOUND_MAX   0x200000
 #define MAX_OBJECTS 64          /* the player's car, the opponents and their shadows, the player's
                                    shadow and smoke, the props and vehicles in reach (track.c draws up to 64) */
 
@@ -651,6 +657,8 @@ static void __attribute__((noreturn)) run_track(void)
             }
             dlog_str(", puffs ");
             dlog_dec(car_puffs());
+            dlog_str(", late ");                        /* a mixer pass late since the start */
+            dlog_dec((int32_t)(AU_STATUS & AU_LATE));
             dlog_str("\n  cycles: cull ");
             dlog_dec((int32_t)ts.cyc_cull);
             dlog_str(", pieces ");
@@ -831,6 +839,27 @@ static void scenery(int image)
     dlog_str(" ms\n");
 }
 
+/* The sound effects (sound.h): SOUND.DAT whole into the SDRAM, their list from GEN.DAT (after
+   the testbench's image loaded for them) */
+static void sounds(void)
+{
+    uint32_t t0 = rdcycle();
+    int err;
+    if (!game.gen_size) {
+        game.gen = (const uint8_t *)(uintptr_t)game_files[3].addr;
+        game.gen_size = load_file(GAME_SLOT + 3, game_files[3].addr, game_files[3].max, &err);
+    }
+    uint32_t size = load_file(SOUND_SLOT, SOUND_MEM, SOUND_MAX, &err);
+    dcache_invalidate();
+    int n = size && game.gen_size ? snd_init((const uint8_t *)(uintptr_t)SOUND_MEM, size, game.gen, game.gen_size) : 0;
+    AU_STATUS = 0;
+    dlog_str("sound: ");
+    dlog_dec(n);
+    dlog_str(" effects, ");
+    dlog_dec((int32_t)((rdcycle() - t0) / (CPU_HZ / 1000)));
+    dlog_str(" ms\n");
+}
+
 /* The player's dashboard for the cockpit (hud.h) from the GFX container GAME.DAT and GEN.DAT;
    after the testbench's image (load_image) these two are loaded for it. 1 if it is there. */
 static int dashboard_init(void)
@@ -891,6 +920,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         dlog_str(" path points\n");
         effects(image);
         scenery(image);
+        sounds();
         RS_CTRL = 1;
         run_track();
     }

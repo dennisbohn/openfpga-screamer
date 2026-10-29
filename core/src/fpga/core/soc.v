@@ -1,7 +1,7 @@
 //
 // The CPU system (docs/soc.md): VexRiscv, 32 KB boot RAM, registers, the framebuffer
 // drawing port, the 4 KB debug log, a CFU, and since step 2 the SDRAM, SRAM and PSRAM
-// cram0 controllers (docs/speicher.md)
+// cram0 controllers (docs/speicher.md); the 3D units, the blitter and the sound mixer
 //
 // One clock for everything (clk_74a). The CPU is held in reset while reset_n is low; the
 // APF loads the firmware data slot into the boot RAM before it releases reset. The
@@ -93,6 +93,12 @@ module soc (
     output  reg     [31:0]  ds_length,
     input   wire            ds_done,
     input   wire    [2:0]   ds_err,
+
+    // I2S to the APF (audio.v); the bit clock is no pin, only the simulation reads it
+    output  wire            audio_mclk,
+    output  wire            audio_sclk,
+    output  wire            audio_lrck,
+    output  wire            audio_dac,
 
     output  reg     [31:0]  sim_status = 0          // SYS_SIM, for the testbench
 );
@@ -282,23 +288,28 @@ end
     wire [25:5] gu_mem_addr;
     wire        bl_mem_valid, bl_mem_ready, bl_mem_rsp_valid;     // picture lines (blit.v)
     wire [25:5] bl_mem_addr;
+    wire        au_mem_valid, au_mem_ready, au_mem_rsp_valid;     // sample lines (audio.v)
+    wire [25:5] au_mem_addr;
 
-    // the rasterizer, the geometry unit and the blitter share sdram_port's line port, one line
-    // at a time; the rasterizer first (its pipeline waits for the line), then the geometry unit
-    wire        lp_valid = rs_mem_valid || gu_mem_valid || bl_mem_valid, lp_ready, lp_rsp_valid, lp_rsp_last;
-    // whose the lines in flight are (0 rasterizer, 1 geometry, 2 blitter), up to two, in the
-    // order they were asked for: the words come back in that order
+    // the mixer, the rasterizer, the geometry unit and the blitter share sdram_port's line
+    // port, one line at a time; the mixer first (a line now and then, due by the next output
+    // frame), then the rasterizer (its pipeline waits for the line), then the geometry unit
+    wire        lp_valid = au_mem_valid || rs_mem_valid || gu_mem_valid || bl_mem_valid, lp_ready, lp_rsp_valid, lp_rsp_last;
+    // whose the lines in flight are (0 rasterizer, 1 geometry, 2 blitter, 3 mixer), up to two,
+    // in the order they were asked for: the words come back in that order
     reg  [1:0]  lp_own0 = 0, lp_own1 = 0;
     reg  [1:0]  lp_n = 0;
     wire [1:0]  lp_owner = lp_own0;
-    wire [1:0]  lp_new = rs_mem_valid ? 2'd0 : gu_mem_valid ? 2'd1 : 2'd2;
+    wire [1:0]  lp_new = au_mem_valid ? 2'd3 : rs_mem_valid ? 2'd0 : gu_mem_valid ? 2'd1 : 2'd2;
     wire        lp_push = lp_ready && lp_valid, lp_pop = lp_rsp_valid && lp_rsp_last;
-    assign rs_mem_ready = lp_ready && rs_mem_valid;
-    assign gu_mem_ready = lp_ready && !rs_mem_valid && gu_mem_valid;
-    assign bl_mem_ready = lp_ready && !rs_mem_valid && !gu_mem_valid && bl_mem_valid;
+    assign au_mem_ready = lp_ready && au_mem_valid;
+    assign rs_mem_ready = lp_ready && !au_mem_valid && rs_mem_valid;
+    assign gu_mem_ready = lp_ready && !au_mem_valid && !rs_mem_valid && gu_mem_valid;
+    assign bl_mem_ready = lp_ready && !au_mem_valid && !rs_mem_valid && !gu_mem_valid && bl_mem_valid;
     assign rs_mem_rsp_valid = lp_rsp_valid && lp_owner == 2'd0;
     assign gu_mem_rsp_valid = lp_rsp_valid && lp_owner == 2'd1;
     assign bl_mem_rsp_valid = lp_rsp_valid && lp_owner == 2'd2;
+    assign au_mem_rsp_valid = lp_rsp_valid && lp_owner == 2'd3;
 always @(posedge clk) begin
     if(lp_push && !lp_pop) begin
         if(lp_n == 2'd0) lp_own0 <= lp_new;
@@ -342,7 +353,7 @@ sdram_port sdp (
     .db_rsp_last        ( sdp_db_rsp_last ),
     .rs_cmd_valid       ( lp_valid ),
     .rs_cmd_ready       ( lp_ready ),
-    .rs_cmd_addr        ( rs_mem_valid ? rs_mem_addr : gu_mem_valid ? gu_mem_addr : bl_mem_addr ),
+    .rs_cmd_addr        ( au_mem_valid ? au_mem_addr : rs_mem_valid ? rs_mem_addr : gu_mem_valid ? gu_mem_addr : bl_mem_addr ),
     .rs_rsp_valid       ( lp_rsp_valid ),
     .rs_rsp_last        ( lp_rsp_last ),
     .rs_rsp_data        ( rs_mem_rsp_data ),
@@ -474,7 +485,7 @@ end
         else if(a[31:12] == 20'hF0008)                      region = R_LOG;
         else if(a[31:17] == 15'h7880 && a[15:2] < 14'd16000) region = R_FB;
         else if(a[31:12] == 20'hF0000 || a[31:12] == 20'hF0001 || a[31:12] == 20'hF0002 ||
-                a[31:12] == 20'hF0003)                      region = R_REG;
+                a[31:12] == 20'hF0003 || a[31:12] == 20'hF0004) region = R_REG;
         else                                                region = R_NONE;
     endfunction
 
@@ -567,6 +578,32 @@ blit bl (
     .mem_addr           ( bl_mem_addr ),
     .mem_rsp_valid      ( bl_mem_rsp_valid ),
     .mem_rsp_data       ( rs_mem_rsp_data )
+);
+
+// the sound mixer (audio.v): registers at 0xF000_4000, sample lines over the line port, the
+// I2S output; the CPU's writes never wait
+    wire        au_wr = d_write && d_region == R_REG && d_addr[15:11] == 5'b01000;     // 0x4000-0x47FC
+    wire [31:0] au_playing;
+    wire        au_late;
+
+audio au (
+    .clk                ( clk ),
+    .reset              ( cpu_reset ),
+    .wr                 ( au_wr ),
+    .wr_addr            ( d_addr[10:2] ),
+    .wr_data            ( d_data ),
+    .playing            ( au_playing ),
+    .late               ( au_late ),
+    .busy               ( ),
+    .mem_valid          ( au_mem_valid ),
+    .mem_ready          ( au_mem_ready ),
+    .mem_addr           ( au_mem_addr ),
+    .mem_rsp_valid      ( au_mem_rsp_valid ),
+    .mem_rsp_data       ( rs_mem_rsp_data ),
+    .i2s_mclk           ( audio_mclk ),
+    .i2s_sclk           ( audio_sclk ),
+    .i2s_lrck           ( audio_lrck ),
+    .i2s_dac            ( audio_dac )
 );
 
 geom gu (
@@ -765,6 +802,8 @@ always @(posedge clk) begin
         16'h3150: reg_q <= gu_faces;
         16'h3154: reg_q <= gu_busy_clocks;
         16'h3184: reg_q <= bl_busy_clocks;
+        16'h4400: reg_q <= au_playing;
+        16'h4408: reg_q <= {31'd0, au_late};
         default:  reg_q <= 32'd0;
     endcase
 end

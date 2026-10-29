@@ -619,6 +619,10 @@ soc soc (
     .ds_length          ( target_dataslot_length ),
     .ds_done            ( target_dataslot_done ),
     .ds_err             ( target_dataslot_err ),
+    .audio_mclk         ( audio_mclk ),
+    .audio_sclk         ( ),
+    .audio_lrck         ( audio_lrck ),
+    .audio_dac          ( audio_dac ),
     .sim_status         ( soc_sim_status )
 );
 
@@ -661,51 +665,9 @@ video_out vo (
 
 
 //
-// audio i2s silence generator
-// see other examples for actual audio generation
+// audio: the sound mixer in the CPU system (soc.v, audio.v) drives the I2S pins itself, in
+// the template's timing on clk_74a: MCLK 12.288 MHz, the bit clock MCLK / 4, LRCK 48 kHz
 //
-
-assign audio_mclk = audgen_mclk;
-assign audio_dac = audgen_dac;
-assign audio_lrck = audgen_lrck;
-
-// generate MCLK = 12.288mhz with fractional accumulator
-    reg         [21:0]  audgen_accum;
-    reg                 audgen_mclk;
-    parameter   [20:0]  CYCLE_48KHZ = 21'd122880 * 2;
-always @(posedge clk_74a) begin
-    audgen_accum <= audgen_accum + CYCLE_48KHZ;
-    if(audgen_accum >= 21'd742500) begin
-        audgen_mclk <= ~audgen_mclk;
-        audgen_accum <= audgen_accum - 21'd742500 + CYCLE_48KHZ;
-    end
-end
-
-// generate SCLK = 3.072mhz by dividing MCLK by 4
-    reg [1:0]   aud_mclk_divider;
-    wire        audgen_sclk = aud_mclk_divider[1] /* synthesis keep*/;
-    reg         audgen_lrck_1;
-always @(posedge audgen_mclk) begin
-    aud_mclk_divider <= aud_mclk_divider + 1'b1;
-end
-
-// shift out audio data as I2S 
-// 32 total bits per channel, but only 16 active bits at the start and then 16 dummy bits
-//
-    reg     [4:0]   audgen_lrck_cnt;    
-    reg             audgen_lrck;
-    reg             audgen_dac;
-always @(negedge audgen_sclk) begin
-    audgen_dac <= 1'b0;
-    // 48khz * 64
-    audgen_lrck_cnt <= audgen_lrck_cnt + 1'b1;
-    if(audgen_lrck_cnt == 31) begin
-        // switch channels
-        audgen_lrck <= ~audgen_lrck;
-        
-    end 
-end
-
 
 ///////////////////////////////////////////////
 

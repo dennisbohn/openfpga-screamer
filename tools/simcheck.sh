@@ -6,7 +6,8 @@
 #   does not build it: a few minutes. --full: as on the Pocket, the firmware builds the image,
 #   then the two resets; before a release or when the image build or resets changed.
 #   --save: this run becomes the baseline the summary compares with. The log goes to
-#   build/sim/<name>.log (name default "check").
+#   build/sim/<name>.log (name default "check"), the sound of the run to build/sim/audio.wav
+#   (SIM_WAV names another file).
 # Needs build/firmware/ (tools/fw.sh) and the game's files in build/gamedata/ (SIM_GAME), in
 # their folders as on the SD card: build/gamedata/GFX/MAP1H.DAT, build/gamedata/DATA/MAP1.DAT, ...
 set -e
@@ -32,7 +33,8 @@ if [ -n "$quick" ]; then
 fi
 start=$(date +%s)
 rc=0
-SIM_QUICK=$quick SIM_IMAGE=$image SIM_GAME=${SIM_GAME:-build/gamedata} sh tools/sim.sh soc \
+SIM_QUICK=$quick SIM_IMAGE=$image SIM_GAME=${SIM_GAME:-build/gamedata} SIM_WAV=${SIM_WAV:-build/sim/audio.wav} \
+    sh tools/sim.sh soc \
     build/firmware/firmware.bin "build/sim/$name" 400 > "build/sim/$name.log" 2>&1 || rc=$?
 echo "simulation ${quick:+(quick) }exit $rc after $(( $(date +%s) - start )) s, log build/sim/$name.log"
 python -I tools/simsum.py "build/sim/$name.log" $save

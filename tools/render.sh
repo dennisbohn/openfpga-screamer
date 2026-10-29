@@ -34,5 +34,5 @@ if command -v cygpath >/dev/null 2>&1; then mount=$(cygpath -wa "$root/build"); 
 out=$(basename "$1")
 MSYS_NO_PATHCONV=1 docker run --rm ${CAM:+-e CAM} -v "$mount:/b" --entrypoint sh verilator/verilator:v5.050 -c "
     cd /b/host/src && gcc -O2 -w ${DUMP:+-DTRACK_DUMP} -o ../render render.c track.c geom.c setup.c raster.c car.c drive.c opp.c \
-        efx.c scenery.c blit.c dlog.c crc32.c dat.c console.c -lm && cd /b/host && ./render track1.bin MAP1H.DAT MAP1.DAT $out ${2:-2} ${3:-2}"
+        efx.c scenery.c sound.c blit.c dlog.c crc32.c dat.c console.c -lm && cd /b/host && ./render track1.bin MAP1H.DAT MAP1.DAT $out ${2:-2} ${3:-2}"
 mv "$root/build/host/$out" "$1"

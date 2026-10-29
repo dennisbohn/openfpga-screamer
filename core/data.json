@@ -88,6 +88,17 @@
                 "extensions": ["dat"],
                 "size_maximum": 65536,
                 "address": "0x12D50000"
+            },
+            {
+                "name": "SOUND.DAT",
+                "id": 8,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "DATA/SOUND.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 2097152,
+                "address": "0x11C00000"
             }
         ]
     }

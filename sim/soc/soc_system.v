@@ -1,5 +1,6 @@
 //
-// Simulation top: soc + framebuffer + video_out wired as in core_top, a model of the
+// Simulation top: soc + framebuffer + video_out wired as in core_top (and the I2S output with
+// the bit clock, which is no pin there), a model of the
 // SDRAM, the SDRAM clock's phase stepper with a PLL that is always
 // done, and a model of the core side of the APF data slot table (the table
 // core_bridge_cmd keeps)
@@ -22,6 +23,10 @@ module soc_system (
     output  wire            vid_de,
     output  wire            vid_hs,
     output  wire            vid_vs,
+
+    output  wire            audio_sclk,
+    output  wire            audio_lrck,
+    output  wire            audio_dac,
 
     output  wire    [31:0]  sim_status,
     output  wire    [31:0]  log_slot_size,      // size word of the debug log's slot table entry (entry 1)
@@ -122,6 +127,10 @@ soc soc (
     .ds_length          ( ds_length ),
     .ds_done            ( ds_done ),
     .ds_err             ( ds_err ),
+    .audio_mclk         ( ),
+    .audio_sclk         ( audio_sclk ),
+    .audio_lrck         ( audio_lrck ),
+    .audio_dac          ( audio_dac ),
     .sim_status         ( sim_status )
 );
 

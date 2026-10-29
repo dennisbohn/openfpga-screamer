@@ -1,7 +1,7 @@
 #!/bin/sh
 # Package the core and copy it onto the Pocket's SD card (Pocket in USB mode or card reader),
 # together with the player's own original game files the core reads (core/data.json, slots
-# 3-7), unchanged and in the game's own folders (DATA, GFX), into Assets/screamer/common/.
+# 3-8), unchanged and in the game's own folders (DATA, GFX), into Assets/screamer/common/.
 # Usage: tools/deploy.sh <SD card root> [game folder], e.g. tools/deploy.sh /i  (Git Bash for
 #        drive I:); the game folder defaults to $GAME_DIR or "C:/GOG Games/Screamer"
 # Only Screamer's own folders and files are written; everything else on the card stays as it is.
@@ -10,7 +10,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 card=${1:?usage: tools/deploy.sh <SD card root> [game folder]}
 game=${2:-${GAME_DIR:-C:/GOG Games/Screamer}}
 [ -d "$card/Cores" ] && [ -d "$card/Platforms" ] || { echo "$card does not look like a Pocket SD card"; exit 1; }
-files="GFX/MAP1H.DAT GFX/GAME.DAT DATA/MAP1.DAT DATA/GEN.DAT DATA/LOCAL.DAT"
+files="GFX/MAP1H.DAT GFX/GAME.DAT DATA/MAP1.DAT DATA/GEN.DAT DATA/LOCAL.DAT DATA/SOUND.DAT"
 for f in $files; do
     [ -f "$game/$f" ] || { echo "$game/$f is missing: name the game's folder (argument or GAME_DIR)"; exit 1; }
 done
