@@ -110,7 +110,7 @@
   <text x="1110" y="299" class="b c">einfarbig, Texturen</text>
   <text x="1110" y="314" class="b c">(1 Pixel/Takt), Füll-</text>
   <text x="1110" y="329" class="b c">regel des Originals</text>
-  <text x="1110" y="344" class="b c">Rauch/Schatten: folgt</text>
+  <text x="1110" y="344" class="b c">Rauch, Schatten, Radar</text>
 
   <rect x="1220" y="260" width="110" height="100" rx="8" class="built"/>
   <text x="1275" y="288" class="t c">video_out</text>
@@ -230,6 +230,6 @@
 
   <!-- notes -->
   <text x="40" y="798" class="l">Pro Bild: Die CPU wählt die Bauteile in Reichweite, sortiert sie von hinten nach vorn (Maler-Algorithmus) und schreibt sie in den Puffer der Geometrie-Einheit (113 Bauteile); dahinter arbeiten Geometrie, Setup und Rasterizer gleichzeitig.</text>
-  <text x="40" y="816" class="l">Gezeigt wird nur ein fertiges Bild (Doppelpufferung, Tausch in der Austastlücke, höchstens 50 Bilder pro Sekunde). Geplant: Radar, Rauch/Schatten, Audio, Bild N+1 und N überlappen.</text>
-  <text x="40" y="834" class="l">Start mit allen zehn Autos: 50 fps (schwerstes Bild 67 % eines Bildes). Belegung: 9.674 von 18.480 ALMs (52 %), 264 von 308 M10K (86 %), 30 von 66 DSP (45 %); Timing hält bei 74,25 MHz.</text>
+  <text x="40" y="816" class="l">Gezeigt wird nur ein fertiges Bild (Doppelpufferung, Tausch in der Austastlücke, höchstens 50 Bilder pro Sekunde). Geplant: Audio, Bild N+1 und N überlappen.</text>
+  <text x="40" y="834" class="l">Start mit allen zehn Autos: 50 fps (schwerstes Bild 67 % eines Bildes). Belegung: 9.683 von 18.480 ALMs (52 %), 280 von 308 M10K (91 %), 30 von 66 DSP (45 %); Timing hält bei 74,25 MHz.</text>
 </svg>

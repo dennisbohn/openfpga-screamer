@@ -1,6 +1,6 @@
 # Architektur
 
-Stand: 2026-10-28. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 aus zwei
+Stand: 2026-10-29. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 aus zwei
 8-Bit-Framebuffern im Block-RAM, je mit eigener Palette, getauscht in der Austastlücke; die
 CPU (VexRiscv RV32IMF mit FPU und CFU, `docs/soc.md`); Geometrie-Einheit, Clipper,
 Setup-Einheit und Rasterizer mit vorausladendem Textur-Cache; Strecke 1 mit dem Auto des
@@ -8,8 +8,9 @@ Spielers, fahrbar, mit dem HUD aus dem Blitter, der Füllregel des Originals (ke
 an Fugen), dem Hintergrundbild `MAPn.BCK`, neun Gegnern (Startaufstellung, ihre Linien,
 Platzierung, Berührungen, Überholen, Crash eines Gegners), der schnelleren Grafik-Kette
 (50 fps auch am Start mit allen zehn Autos) und beweglichen Teilen der Strecke (der drehende
-Football-Helm am Start). Belegung siehe
-„Belegung“; geschätzt ist nur noch, was fehlt (Audio, Rauch/Schatten).
+Football-Helm am Start); die Strecke wird aus den originalen Spieldateien gebaut. Gebaut, Test
+auf dem Pocket steht aus: Routine 224 (Rauch, Schatten unter allen Autos) und das Radar.
+Belegung siehe „Belegung“; geschätzt ist nur noch, was fehlt (Audio).
 
 ## Hardware des Pocket (Haupt-FPGA)
 
@@ -79,9 +80,9 @@ weg, und mit der CD-Musik `MUSIC.DAT`, dafür kommen `SCREAM.gog` und `SCREAM.DA
 
 ## Belegung
 
-Gemessen am 2026-10-29 (Quartus-Build mit verkleinerter Setup-Einheit, Geometrie-Einheit und
-Rasterizer, Timing hält bei 74,25 MHz: Setup +0,94 ns, Hold +0,08 ns; Bauzeit knapp 5 min):
-9.674 von 18.480 ALMs (52 %), 264 von 308 M10K (86 %), 30 von 66 DSP (45 %). Von Build zu Build
+Gemessen am 2026-10-29 (Quartus-Build mit Routine 224, Timing hält bei 74,25 MHz: Setup
++0,94 ns, Hold +0,09 ns; Bauzeit knapp 5 min): 9.683 von 18.480 ALMs (52 %), 280 von 308 M10K
+(91 %, davon 16 die Tabelle der Routine 224), 30 von 66 DSP (45 %). Von Build zu Build
 schwankt die Logik um einige hundert ALMs: Die Platzierung packt verschieden dicht, und wo
 das Timing knapp ist, baut der Fitter Logik und Register um (Physical Synthesis).
 
@@ -108,7 +109,7 @@ Block-RAM spart er 190 ALMs, kostet aber 19 M10K, die knappere Ressource). Setup
 3.041 → 1.512, Geometrie-Einheit 2.288 → 648, Rasterizer mit Texturen 2.539 → 1.895 ALMs; dafür
 11 M10K mehr und 5 DSP weniger. Geschätzt ist nur, was noch fehlt.
 
-![Platzbudget im FPGA: Logik heute 52 %, mit Geplantem 56–57 %; Block-RAM heute 86 %, mit Geplantem 91–92 %; DSP heute 45 %, mit Geplantem 47 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik heute 52 %, mit Geplantem 55–56 %; Block-RAM heute 91 %, mit Geplantem 92 %; DSP heute 45 %, mit Geplantem 47 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py`: die gemessenen Zeilen aus dem Fitter-Report
 (`core/src/fpga/output_files/ap_core.fit.rpt`, Tabelle „Resource Utilization by Entity“), die
@@ -117,24 +118,23 @@ diese Tabelle.
 
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
-| Analogue-Rahmen (Bridge, PLLs) | 486 | 2 | – |
-| Framebuffer ×2 + Video | 88 | 130 | – |
-| VexRiscv + 2× 8 KB Cache | 1.278 | 19 | 4 |
-| FPU (RV32F) | 1.464 | 5 | 4 |
+| Analogue-Rahmen (Bridge, PLLs) | 502 | 2 | – |
+| Framebuffer ×2 + Video | 122 | 130 | – |
+| VexRiscv + 2× 8 KB Cache | 1.275 | 19 | 4 |
+| FPU (RV32F) | 1.441 | 5 | 4 |
 | CFU (16.16-Multiplikation) | 9 | – | 3 |
 | Boot-RAM 32 KB + Protokoll | – | 36 | – |
-| Geometrie-Einheit | 648 | 22 | 4 |
-| Clipper | 952 | 6 | 2 |
-| Setup-Einheit | 1.512 | 7 | 4 |
-| Rasterizer | 1.242 | 2 | 5 |
-| Texturen: Pipeline + Cache | 653 | 31 | 4 |
-| Blitter (Hintergrund, HUD) | 494 | 2 | – |
-| SDRAM-Controller + Ports | 303 | 2 | – |
-| Bus, Register, Arbiter | 545 | – | – |
-| **gebaut** | **9.674 (52 %)** | **264 (86 %)** | **30 (45 %)** |
-| geplant: Rauch/Schatten (Routine 224, MAPn.SMG) | 105–190 | 12–16 | – |
+| Geometrie-Einheit | 812 | 22 | 4 |
+| Clipper | 953 | 6 | 2 |
+| Setup-Einheit | 1.488 | 7 | 4 |
+| Rasterizer | 1.234 | 2 | 5 |
+| Texturen: Pipeline + Cache | 534 | 47 | 4 |
+| Blitter (Hintergrund, HUD) | 487 | 2 | – |
+| SDRAM-Controller + Ports | 306 | 2 | – |
+| Bus, Register, Arbiter | 520 | – | – |
+| **gebaut** | **9.683 (52 %)** | **280 (91 %)** | **30 (45 %)** |
 | geplant: Audio: Mischer 32 Stimmen, I2S, CD-Musik | 520–650 | 3 | 1 |
-| **mit Geplantem** | **10.299–10.514 (56–57 %)** | **279–283 (91–92 %)** | **31 (47 %)** |
+| **mit Geplantem** | **10.203–10.333 (55–56 %)** | **283 (92 %)** | **31 (47 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es
@@ -330,6 +330,22 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Fahrbahn gedrängt wird, steht sofort (`0x1cb9c`); verliert er in einem Schritt mehr als 5000
   Einheiten/s, crasht er (`0x1d824`): je nach Stelle überschlägt er sich wie der Spieler oder
   dreht sich zweimal auf der Fahrbahn. Der Versatz aus Stößen klingt nach 3 s ab.
+- **Routine 224, Rauch, Schatten, Radar** (2026-10-29, aus der EXE): Der Füller des Spiels
+  (`0xcd9d0`) macht aus jedem Pixel `SMG[Texel × 256 + Pixel]`, ohne Licht oder Tiefe; das ist
+  die einzige SMG-Abfrage im Programm. Benutzt wird sie vom Rauch (nur der Spieler, `0x19818`,
+  `0x19970`: acht Plätze, alle 0,05 s an den Hinterrädern, fährt mit dem Auto, rund 0,67 s,
+  zum Bildschirm gedreht), vom Schatten (Spieler `0x18cbc`: 20 Einheiten von der Kamera weg,
+  Boden − 2; Gegner `0x1c83c`, `0x1cd34`; Klasse 4 sortiert 200 weiter hinten), auf Strecke 4
+  von Scheinwerferkegeln und Laternenschein, auf den Strecken 3 und 6 von einem Hubschrauber;
+  von keinem Glas. Der Rasterizer liest dafür das Pixel aus dem Framebuffer und schlägt es in
+  einer 16-KB-Tabelle nach (16 M10K, `RS_SMG`); Texel 0 lässt das Pixel stehen (Zeile 0 tauscht
+  nur Farben gleichen Werts, das spart beim Rauch 23–75 % der Pixel). Im Mischmodus gilt die
+  Punktregel des Originals, sonst würden die gemeinsamen Kanten der Dreiecke eines Vielecks
+  zweimal gemischt. Das Radar (`0x23a68`) ist ein 72 × 72-Fenster bei (4, 124), abgedunkelt
+  über Zeile 63 der Tabelle (× 0,75, nächste Palettenfarbe, `0x25870`) als ein gemischtes
+  Viereck nach der Szene, darauf die Wände (MMP-Feld 3) als Blitter-Linien in Farbe 255, mit
+  der Nase nach oben um (40, 160) gedreht, Gegner als Sprite 5, der Spieler als Sprite 4 bei
+  (38, 158), ein Pixel 32768 / 24 Einheiten (Voreinstellung des Spiels, `0x1bc3e`).
 - **Bewegliche Teile der Strecke** (2026-10-28, aus der EXE: `0x8ad14`, `0x8acf0`, `0x8ac58`;
   das Format nach OpenScreamers Notes S2-5b, das für beide Spiele gilt): Ein Mesh kann
   mehrere Blöcke haben, und ein Block mit Positionssatz (+0x0C) wird von dort verschoben oder,

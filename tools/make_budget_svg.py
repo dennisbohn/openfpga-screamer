@@ -59,12 +59,11 @@ SOC_REST = ("Bus, Register, Arbiter", "mem")
 
 # name, group, ALMs (lo, hi), M10K (lo, hi), DSP (lo, hi)
 PLANNED = [
-    ("Rauch/Schatten (Routine 224, MAPn.SMG)", "gfx", (105, 190), (12, 16), (0, 0)),
     ("Audio: Mischer 32 Stimmen, I2S, CD-Musik", "audio", (520, 650), (3, 3), (1, 1)),
 ]
 TIMING_LIMIT = 0.80         # logic utilisation above which timing closure gets hard
 STAND = "29.10.2026"
-BUILD = "Setup, Geometrie und Rasterizer verkleinert"
+BUILD = "Rauch, Schatten, Radar"
 
 # layout
 WIDTH = 1120
