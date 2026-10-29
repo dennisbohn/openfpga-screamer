@@ -24,6 +24,9 @@
  * the faces, or nearly (the data); the normal test leaves out those turned away.
  */
 #include "track.h"
+#ifdef TRACK_DUMP
+#include <stdio.h>
+#endif
 #include "crc32.h"
 #include <math.h>
 
@@ -731,6 +734,15 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         }
     uint32_t t_pieces = now();
     st->cyc_cull = t_pieces - t_start;
+#ifdef TRACK_DUMP                               /* the PC renderer (tools/render.sh): the list drawn */
+    for(int k = 0; k < nv; k++)
+        if(vis[k].i < npieces)
+            printf("drawn piece obj %d at %d %d %d\n", (int)pieces[vis[k].i].obj, (int)pieces[vis[k].i].x,
+                   (int)pieces[vis[k].i].h, (int)pieces[vis[k].i].y);
+        else
+            printf("drawn object at %.0f %.0f %.0f\n", objs[vis[k].i - npieces].x, objs[vis[k].i - npieces].h,
+                   objs[vis[k].i - npieces].y);
+#endif
 
     struct su_view view;
     struct gu_stats gst = { 0, 0, 0, 0 };

@@ -97,6 +97,10 @@ int main(int argc, char **argv)
         fwrite(rgb, 1, 3, f);
     }
     fclose(f);
+    for (int k = 0; k < opp_count(); k++) {
+        float x, y;
+        if (opp_where(k, &x, &y)) printf("opponent %d at %.1f %.1f\n", k, x, y);
+    }
     printf("camera %.0f %.0f %.0f yaw %.4f pitch %.4f; %d pieces, %d faces, %d objects\n",
            cam.x, cam.y, cam.h, cam.yaw, cam.pitch, ts.pieces, ts.faces, nobj);
     return 0;
