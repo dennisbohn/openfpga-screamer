@@ -25,6 +25,7 @@ ausgebaut (nur der Speichertest brauchte sie).
 ![Architektur: Die CPU wählt und sortiert die Bauteile und schreibt sie in den Puffer der Geometrie-Einheit; Geometrie-Einheit, Clipper, Setup-Einheit und Rasterizer zeichnen das Bild in den hinteren Framebuffer im Block-RAM, während video_out den vorderen zeigt](architektur.svg)
 
 Wie der Rasterizer ein Dreieck in Pixel zerlegt und wie der Texturpfad als Fließband geplant ist: [rasterizer.svg](rasterizer.svg).
+Wo die Zeit eines Bildes bleibt, CPU-Abschnitte und Auslastung der Einheiten über 20 ms (aus dem Protokoll gezeichnet von `tools/make_timeline_svg.py`, auch aus der `debug.txt` des Pocket): [bildablauf.svg](bildablauf.svg).
 
 Grün: gebaut und auf dem Pocket getestet. Grau gestrichelt: geplant. Die CPU wählt die
 Bauteile in Reichweite, sortiert sie von hinten nach vorn und schreibt sie in den Puffer der

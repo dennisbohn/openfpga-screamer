@@ -122,6 +122,50 @@ static uint32_t draw_wait;              /* cycles the DRAW writes waited for the
 static int back_wait;                   /* the backdrop is with the blitter: the first piece waits */
 static uint32_t back_clocks, back_cycles;   /* the blitter's clocks for it, the CPU's wait */
 
+/* The frame's timeline (tools/make_timeline_svg.py draws it): at each mark the cycles since
+   the frame began, the busy clocks of the geometry unit, setup unit, rasterizer and blitter
+   and the CPU's cycles writing to them, each as its counter holds it (cleared during the
+   frame; a mark follows every clear). Two buffers: the last whole frame is logged. */
+enum { TL_START, TL_PHYS, TL_PREP, TL_CULL, TL_PIECES, TL_SCENE, TL_CLEAR, TL_HUD, TL_WAIT, TL_END };
+#define TL_MAX 48
+static struct tl_mark { uint32_t t, gu, su, rs, bl, wait, tag; } tl[2][TL_MAX];
+static uint32_t tl_n[2], tl_cur, tl_t0, tl_pieces, tl_scene;
+
+static void tl_mark(uint32_t tag)
+{
+    uint32_t n = tl_n[tl_cur];
+    if (n < TL_MAX) {
+        tl[tl_cur][n] = (struct tl_mark){ rdcycle() - tl_t0, GU_CLOCKS, SU_CLOCKS, RS_CLOCKS, BL_CLOCKS,
+                                          draw_wait, tag };
+        tl_n[tl_cur] = n + 1;
+    }
+}
+
+static void tl_begin(uint32_t t_frame)
+{
+    tl_cur ^= 1;
+    tl_t0 = t_frame;
+    tl_pieces = 0;
+    tl[tl_cur][0] = (struct tl_mark){ 0, 0, 0, 0, 0, 0, TL_START };    /* the units idle: the last frame waited */
+    tl_n[tl_cur] = 1;
+}
+
+static void tl_log(void)
+{
+    const uint32_t c = tl_cur ^ 1;
+    dlog_str("  timeline (t gu su rs bl wait tag):");
+    for (uint32_t i = 0; i < tl_n[c]; i++) {
+        const struct tl_mark *m = &tl[c][i];
+        const uint32_t v[7] = { m->t, m->gu, m->su, m->rs, m->bl, m->wait, m->tag };
+        dlog_str(i % 6 ? " |" : "\n   ");
+        for (int k = 0; k < 7; k++) {
+            dlog_char(' ');
+            dlog_dec((int32_t)v[k]);
+        }
+    }
+    dlog_char('\n');
+}
+
 struct demo_stats { uint32_t triangles, pixels, cycles; };
 
 #define CHECK_BUF   ((volatile uint8_t *)(SDRAM_BASE + 0x100000))  /* the C model's picture */
@@ -185,6 +229,12 @@ static uint32_t hw_quad(const struct su_corner c[4], const struct rs_texture *t)
    waits only while the buffer is full */
 static void hw_piece(const struct gu_piece *g)
 {
+    if (tl_scene) {
+        if (tl_pieces++ == 0)
+            tl_mark(TL_CULL);
+        else if (tl_pieces % 8 == 1)
+            tl_mark(TL_PIECES);
+    }
     uint32_t t0 = rdcycle();
     if (back_wait) {                    /* the scene goes over the backdrop */
         while (RS_DRAW & RS_BUSY)
@@ -388,6 +438,7 @@ static void __attribute__((noreturn)) run_track(void)
     uint32_t check_at = 2 + sim_race;           /* the frame checked against the C models */
     for (;;) {
         uint32_t st = wait_swap_done(), keys = IN_KEY, t_frame = rdcycle();
+        tl_begin(t_frame);
         frames_shown = drawn;
         if (drawn == check_at + 1) {
             SYS_SIM = SIM_DONE | results;
@@ -423,6 +474,7 @@ static void __attribute__((noreturn)) run_track(void)
             if (sim_race && !car_race()->on && k == n - 1) n++;    /* the simulation's countdown at once */
         }
         t_phys = rdcycle() - t_phys;
+        tl_mark(TL_PHYS);
         steps += n;
         track_clock(n);
         const struct car_state *cs = car_state();
@@ -463,10 +515,14 @@ static void __attribute__((noreturn)) run_track(void)
         GU_FACES = 0;
         GU_MODE = draw_buf << 8;
         draw_wait = 0;
+        tl_mark(TL_PREP);
         RS_CLIP0 = RS_XY(clip.x0, clip.y0);
         RS_CLIP1 = RS_XY(clip.x1, clip.y1);
         su_view_regs(&view);
+        tl_scene = 1;
         track_draw_cam(0, &clip, &cam, objs, nobj, &ts);
+        tl_scene = 0;
+        tl_mark(TL_SCENE);
         /* the radar's darkened window over the scene (efx.h), then the race screen: the
            blitter draws it once the scene is done. In the cockpit the dashboard comes before
            the window, which darkens it too: the blitter draws it once the scene is done, the
@@ -475,6 +531,7 @@ static void __attribute__((noreturn)) run_track(void)
         struct gu_piece radar;
         int has_radar = efx_radar_piece(&view, &radar);
         BL_CLOCKS = 0;
+        tl_mark(TL_CLEAR);
         if (cockpit) {
             hud_dash(&dashboard, (int)draw_buf);
             hw_blit(&dashboard);
@@ -488,8 +545,10 @@ static void __attribute__((noreturn)) run_track(void)
             hud_build(&hud, (int)draw_buf, (int)fps, 0);
         }
         hw_blit(&hud);
+        tl_mark(TL_HUD);
         while (RS_DRAW & RS_BUSY)
             ;
+        tl_mark(TL_WAIT);
         uint32_t blit = BL_CLOCKS;
         uint32_t cycles = rdcycle() - t0, raster = RS_CLOCKS, pixels = RS_PIXELS, misses = RS_MISSES;
         uint32_t setup = SU_CLOCKS, geom = GU_CLOCKS;
@@ -614,8 +673,10 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_str(", starved ");
             dlog_dec((int32_t)r_starved);
             dlog_str("\n");
+            tl_log();
         }
         frame_cycles = rdcycle() - t_frame;
+        tl_mark(TL_END);
         VID_SWAP = 1;
         log_head("frames drawn: ", ++drawn);
     }
