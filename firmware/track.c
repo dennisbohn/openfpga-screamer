@@ -585,7 +585,7 @@ void track_view(const struct rs_clip *clip, struct su_view *v)
 }
 
 struct vis { int32_t k; int i; };              /* key << 16 | i; i: a piece, or npieces + an object */
-#define MAX_OBJS    32
+#define MAX_OBJS    64
 static struct vis vis[MAX_PIECES + MAX_OBJS];
 
 /* The eye of a block as the game takes it for its faces (0x834d6..0x83547): the eye in the

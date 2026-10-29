@@ -4,7 +4,7 @@
 # Usage: tools/render.sh <out.rgb> [view [steps]]     view 2 near chase (default), 3 far chase
 # The firmware's sources are copied to build/host/ with hw.h's RISC-V instructions made plain C;
 # built and run with the simulation's Docker image (gcc). The track image is build/check/track1.bin
-# (tools/simcheck.sh makes it), the GFX container from $GAME_DIR (default "C:/GOG Games/Screamer").
+# (tools/simcheck.sh makes it), the GFX and DATA containers from $GAME_DIR (default "C:/GOG Games/Screamer").
 set -e
 root=$(cd "$(dirname "$0")/.." && pwd)
 game=${GAME_DIR:-C:/GOG Games/Screamer}
@@ -29,9 +29,10 @@ open(p, "w").write(t)
 EOF
 cp "$root/build/check/track1.bin" "$root/build/host/track1.bin"
 cp "$game/GFX/MAP1H.DAT" "$root/build/host/MAP1H.DAT"
+cp "$game/DATA/MAP1.DAT" "$root/build/host/MAP1.DAT"
 if command -v cygpath >/dev/null 2>&1; then mount=$(cygpath -wa "$root/build"); else mount=$root/build; fi
 out=$(basename "$1")
 MSYS_NO_PATHCONV=1 docker run --rm ${CAM:+-e CAM} -v "$mount:/b" --entrypoint sh verilator/verilator:v5.050 -c "
     cd /b/host/src && gcc -O2 -w ${DUMP:+-DTRACK_DUMP} -o ../render render.c track.c geom.c setup.c raster.c car.c drive.c opp.c \
-        efx.c blit.c dlog.c crc32.c dat.c console.c -lm && cd /b/host && ./render track1.bin MAP1H.DAT $out ${2:-2} ${3:-2}"
+        efx.c props.c blit.c dlog.c crc32.c dat.c console.c -lm && cd /b/host && ./render track1.bin MAP1H.DAT MAP1.DAT $out ${2:-2} ${3:-2}"
 mv "$root/build/host/$out" "$1"

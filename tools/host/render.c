@@ -8,7 +8,7 @@
  * at SDRAM_UBASE, the same memory), the registers and frame buffers at 0xF0000000, so its
  * pointers and SDRAM byte addresses work unchanged.
  *
- * Usage: render <track image> <MAPnH.DAT> <out.rgb> [view [steps]]
+ * Usage: render <track image> <MAPnH.DAT> <MAPn.DAT> <out.rgb> [view [steps]]
  *   view: 0 bumper, 1 cockpit, 2 near chase (default), 3 far chase; steps: physics steps on
  *   the grid before the picture (default 2)
  */
@@ -22,13 +22,16 @@
 #include "car.h"
 #include "opp.h"
 #include "efx.h"
+#include "props.h"
 #include "blit.h"
 
 #define TEX_FILE    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000))      /* as main.c */
 #define GFX_FILE    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2800000))
 #define EFX_SIZE    0x10000
 #define EFX_MEM     ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE))
-#define MAX_OBJECTS 32
+#define PROPS_MEM   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE - 0x20000))
+#define DATA_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2D00000))
+#define MAX_OBJECTS 64
 
 static void map(void)
 {
@@ -53,14 +56,16 @@ static uint32_t load(const char *path, uint8_t *at, uint32_t max)
 
 int main(int argc, char **argv)
 {
-    if (argc < 4) { fprintf(stderr, "usage: render <track image> <MAPnH.DAT> <out.rgb> [view [steps]]\n"); return 2; }
-    int view = argc > 4 ? atoi(argv[4]) : CAR_VIEW_START, steps = argc > 5 ? atoi(argv[5]) : 2;
+    if (argc < 5) { fprintf(stderr, "usage: render <track image> <MAPnH.DAT> <MAPn.DAT> <out.rgb> [view [steps]]\n"); return 2; }
+    int view = argc > 5 ? atoi(argv[5]) : CAR_VIEW_START, steps = argc > 6 ? atoi(argv[6]) : 2;
     map();
     MEM_STATUS = MEM_LOCKED | MEM_READY | MEM_WRITES_IDLE;     /* waited for by efx_init */
     load(argv[1], TEX_FILE, 0x700000);
     if (!track_open(TEX_FILE) || !track_init()) { fprintf(stderr, "track image not usable\n"); return 1; }
     uint32_t gfx_size = load(argv[2], GFX_FILE, 0x400000);
     efx_init(GFX_FILE, gfx_size, 1, track_mlb(), track_palette(), EFX_MEM, EFX_SIZE);
+    uint32_t data_size = load(argv[3], DATA_FILE, 0x40000);
+    printf("props: %d\n", props_init(DATA_FILE, data_size, GFX_FILE, gfx_size, 1, PROPS_MEM, 0x10000));
     car_init(0);
     opp_init(0);
     car_view(view);
@@ -78,6 +83,7 @@ int main(int argc, char **argv)
     int nobj = car_object(&cam, &objs[0]);
     nobj += opp_objects(objs + nobj, MAX_OBJECTS - nobj);
     nobj += car_effects(&cam, objs + nobj, MAX_OBJECTS - nobj);
+    nobj += props_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
     const struct rs_clip clip = { 0, 0, FB_W, car_cockpit() ? car_view_lines() : FB_H };
     volatile uint8_t *fb = FB(0);
     static struct blit_list back;
@@ -89,8 +95,8 @@ int main(int argc, char **argv)
     track_draw_cam(fb, &clip, &cam, objs, nobj, &ts);
 
     const uint32_t *pal = track_palette();
-    FILE *f = fopen(argv[3], "wb");
-    if (!f) { perror(argv[3]); return 1; }
+    FILE *f = fopen(argv[4], "wb");
+    if (!f) { perror(argv[4]); return 1; }
     for (int i = 0; i < FB_W * FB_H; i++) {
         uint32_t c = pal[fb[i]];
         uint8_t rgb[3] = { (uint8_t)(c >> 16), (uint8_t)(c >> 8), (uint8_t)c };
