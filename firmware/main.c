@@ -395,6 +395,18 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)stack_used());
             dlog_str(" bytes\nSYS_SIM=");
             dlog_hex(SIM_DONE | results);
+            /* the checked frame's camera and car, to set against the original's
+               (tools/dosram.py cam): places in units, angles in 1/10000 rad */
+            struct track_cam c;
+            const struct car_state *s = car_state();
+            car_camera(&c);
+            const float v[10] = { c.x, c.y, c.h, c.yaw * 1e4f, c.pitch * 1e4f, c.roll * 1e4f,
+                                  s->x, s->y, s->z, s->yaw * 1e4f };
+            dlog_str("\ncamera x y h yaw pitch roll, car x y z yaw:");
+            for (int i = 0; i < 10; i++) {
+                dlog_char(' ');
+                dlog_dec((int32_t)v[i]);
+            }
             dlog_char('\n');
         }
         /* the physics at 50 steps a second: one per video frame since the last picture */

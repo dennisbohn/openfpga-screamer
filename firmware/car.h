@@ -14,7 +14,9 @@
    (its table at 0x1da0, rows 0, 1, 2, 6): bumper cam, cockpit, near chase, far chase; a race
    starts in the near chase (the option at 0x1d2a4, 2 from 0x1bc50) */
 #define CAR_VIEWS       4
+#ifndef CAR_VIEW_START
 #define CAR_VIEW_START  2
+#endif
 
 /* Set the car up from the track file: CARS.DTR row which, at the start */
 void car_init(int which);
