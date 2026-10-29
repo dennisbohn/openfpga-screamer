@@ -176,10 +176,13 @@ def show(b, addr, mark=None):
                                           struct.unpack_from("<i", b, i)[0], fs))
 
 
-def race(conf):
+def race(conf, view=None):
     """DOSBox started on its own straight into STARTL.EXE (conf: an [autoexec] that runs it),
     Enter until the race stands on the grid (the player's car at its start place), then the
-    screenshot at once with the animation clock; the race then paused (P)"""
+    screenshot at once with the animation clock; the race then paused (P). view: a view key's
+    scancode (F1..F4 = 0x3b..0x3e, the game's four driving views), pressed on the grid first;
+    the picture is taken once its camera's fly-across has died away"""
+    pressed = view is None
     d = os.environ.get("GAME_DIR", "C:/GOG Games/Screamer")
     if conf is None:
         conf = os.path.join(root, "build", "dosrace.conf")
@@ -201,6 +204,11 @@ def race(conf):
             # running (the clock moves), and the camera's swing onto the car over (it stands)
             if (x, z) == (2600, -18500) and g.flat(0x121538, 4) != c0 and g.flat(0x110a1c, 0x3c) == cam0:
                 front(g.p.pid)
+                if not pressed:
+                    key(view, 0); time.sleep(0.1); key(view, 1)
+                    pressed = True
+                    time.sleep(0.5)
+                    continue
                 for sc, up in ((0x1D, 0), (0x3F, 0), (0x3F, 1), (0x1D, 1)):
                     key(sc, up)
                     time.sleep(0.05)
@@ -221,7 +229,8 @@ def race(conf):
 def main():
     a = sys.argv[1:] or ["cam"]
     if a[0] == "race":
-        return race(a[1] if len(a) > 1 else None)
+        view = os.environ.get("VIEW_KEY")
+        return race(a[1] if len(a) > 1 else None, int(view, 0) if view else None)
     g = Game(Proc(dosbox_pid()))
     print("code at linear 0x%x, data at 0x%x" % (g.obj[1][1], g.obj[3][1]))
     if a[0] == "cam":
