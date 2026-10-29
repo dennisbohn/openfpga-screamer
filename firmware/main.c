@@ -1,9 +1,8 @@
 /*
  * The program (program.bin, data slot 2) in the SDRAM, started by the boot loader with its
  * results (docs/soc.md). With the game's original files in data slots 3-7 it builds track 1
- * from them (track_build.c) and puts the player's car on it (car.c): A accelerates, B
- * brakes, left and right steer, L and R change gear on a manual car, Select changes the
- * view; the CPU picks and sorts the pieces (track.c), the geometry unit, setup unit and
+ * from them (track_build.c) and puts the player's car on it (car.c): B accelerates, Y
+ * brakes, left and right steer, L and R change gear on a manual car, X changes the view; the CPU picks and sorts the pieces (track.c), the geometry unit, setup unit and
  * rasterizer draw them. Without the files, the texture scene with test patterns, checked
  * once a run against the rasterizer's C model (raster.c), and a triangle moved with the
  * d-pad.
@@ -393,7 +392,7 @@ static void __attribute__((noreturn)) run_track(void)
         uint32_t n = drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
         last_frame = VID_FRAME(st);
         if (n > 4) n = 4;
-        if ((keys & ~keys_before) & KEY_SELECT) car_view(++car_v);
+        if ((keys & ~keys_before) & KEY_X) car_view(++car_v);
         efx_cyc_objects = efx_cyc_radar = 0;
         uint32_t t_phys = rdcycle();
         for (uint32_t k = 0; k < n; k++) {

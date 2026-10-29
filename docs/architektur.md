@@ -247,8 +247,9 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   die Geometrie-Einheit, in der Reihenfolge des Spiels (Reifen, Naben, dann die Karosserie);
   nur die Naben drehen sich, die vorderen Blöcke lenken. Die Geometrie-Einheit wählt dazu das
   Bild einer Textur nach einer Phase je Teil (Lackierung, Bremslicht, Radbild; die
-  Streckentexturen nach der Animationsuhr). Gas und Bremse liegen auf A und B, nicht auf dem
-  Steuerkreuz, damit ein Lenken in die Diagonale nicht bremst.
+  Streckentexturen nach der Animationsuhr). Gas liegt auf B (unten), die Bremse auf Y (links),
+  wie in den klassischen Rennspielen (Super Mario Kart, Gran Turismo), die Kamera auf X (oben);
+  nicht auf dem Steuerkreuz, damit ein Lenken in die Diagonale nicht bremst.
 - **Reihenfolge der Objekte wie im Original** (2026-10-27, aus `STARTL.EXE` gelesen: `0x83164`
   baut die Liste aus den Rasterzellen, je Zelle Lauf 1 vor Lauf 0, mit `dist² >> 2`;
   `0x8a6a8` hängt die bewegten Objekte an; `0x8a7b0` macht daraus den Schlüssel
@@ -335,7 +336,7 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Einheiten/s, crasht er (`0x1d824`): je nach Stelle überschlägt er sich wie der Spieler oder
   dreht sich zweimal auf der Fahrbahn. Der Versatz aus Stößen klingt nach 3 s ab.
 - **Die vier Ansichten des Spielers** (2026-10-29, aus der EXE, Tabelle `0x1da0`): Stoßstange,
-  Cockpit, nahe und ferne Verfolgerkamera (Select wechselt in dieser Reihenfolge, das Rennen
+  Cockpit, nahe und ferne Verfolgerkamera (X wechselt in dieser Reihenfolge, das Rennen
   beginnt nah, Option `0x1d2a4`). Das Cockpit ist die Stoßstangen-Kamera über einer 3D-Ansicht
   von 132 Zeilen (`0x4c610(320, 132, 85)`, `0x19cbe`) mit dem Armaturenbrett des Autos
   darunter: `COCKnnAL.PKC` (B für die zweite Lackierung, `0x13725`) aus `GAME.DAT`, beim Laden

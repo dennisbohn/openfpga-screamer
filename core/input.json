@@ -5,8 +5,9 @@
             {
                 "type": "default",
                 "mappings": [
-                    { "id": 0, "name": "A", "key": "pad_btn_a" },
-                    { "id": 1, "name": "B", "key": "pad_btn_b" }
+                    { "id": 0, "name": "Accelerate", "key": "pad_btn_b" },
+                    { "id": 1, "name": "Brake", "key": "pad_btn_y" },
+                    { "id": 2, "name": "Camera", "key": "pad_btn_x" }
                 ]
             }
         ]

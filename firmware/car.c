@@ -501,10 +501,11 @@ void car_step(uint32_t keys, uint32_t keys_before)
 {
     uint32_t pressed = keys & ~keys_before;
     struct drive_input in;
-    /* gas and brake on the buttons only: on the d-pad a thumb steering into a diagonal
-       would brake or lift off by accident */
-    in.throttle = (keys & KEY_A) ? 1.0f : 0.0f;
-    in.brake = (keys & KEY_B) ? 1.0f : 0.0f;
+    /* gas and brake on the buttons only (on the d-pad a thumb steering into a diagonal
+       would brake or lift off by accident), as the classic racing games lay them out: gas
+       on the bottom button (B), the brake on the left one (Y) */
+    in.throttle = (keys & KEY_B) ? 1.0f : 0.0f;
+    in.brake = (keys & KEY_Y) ? 1.0f : 0.0f;
     in.steer = ((keys & KEY_LEFT) ? 1.0f : 0.0f) - ((keys & KEY_RIGHT) ? 1.0f : 0.0f);
     in.shift = (pressed & KEY_R) ? 1 : (pressed & KEY_L) ? -1 : 0;
     /* the start lights: green at 6 s; until then the pedal only revs the engine */
