@@ -47,7 +47,7 @@
 </style>
 <rect width="1120" height="708" fill="var(--surface)"/>
 <text x="40.0" y="36.0" class="h">Ablauf eines Bildes</text>
-<text x="40.0" y="60.0" class="s">Simulation, Rennbild 1, Takte der CPU bei 74,25 MHz (20 ms = 1.485.000 Takte für 50 Bilder pro Sekunde) · Stand 29.10.2026</text>
+<text x="40.0" y="60.0" class="s">Simulation, Rennbild 1, Takte der CPU bei 74,25 MHz (20 ms = 1.485.000 Takte für 50 Bilder pro Sekunde) · Stand 30.10.2026</text>
 <rect x="40.0" y="78.0" width="12.0" height="12.0" class="f-phys"><title>Physik (Fahrzeug, Gegner)</title></rect>
 <text x="58.0" y="88.0" class="s">Physik (Fahrzeug, Gegner)</text>
 <rect x="255.0" y="78.0" width="12.0" height="12.0" class="f-prep"><title>Vorbereitung (Kamera, Objekte, Hintergrund)</title></rect>

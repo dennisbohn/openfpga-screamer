@@ -17,7 +17,7 @@ from html import escape
 
 CPU_HZ = 74_250_000
 BUDGET = CPU_HZ // 50                   # cycles per picture at 50 fps
-STAND = "29.10.2026"
+STAND = "30.10.2026"
 
 T_START, T_PHYS, T_PREP, T_CULL, T_PIECES, T_SCENE, T_CLEAR, T_HUD, T_WAIT, T_END = range(10)
 

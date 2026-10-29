@@ -62,7 +62,7 @@ SOC_REST = ("Bus, Register, Arbiter", "mem")
 PLANNED = [
 ]
 TIMING_LIMIT = 0.80         # logic utilisation above which timing closure gets hard
-STAND = "29.10.2026"
+STAND = "30.10.2026"
 BUILD = "Audio: Mischer"
 
 # layout

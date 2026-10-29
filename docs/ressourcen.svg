@@ -50,7 +50,7 @@
 <line x1="450.0" y1="190" x2="450.0" y2="546" class="grid"/>
 <line x1="290.0" y1="190" x2="290.0" y2="546" class="base"/>
 <text x="40.0" y="40.0" class="h">Platzbudget im FPGA</text>
-<text x="40.0" y="62.0" class="s">Cyclone V 5CEBA4 · gebaut = gemessen im Quartus-Build (Audio: Mischer) · geplant = geschätzt · Stand 29.10.2026</text>
+<text x="40.0" y="62.0" class="s">Cyclone V 5CEBA4 · gebaut = gemessen im Quartus-Build (Audio: Mischer) · geplant = geschätzt · Stand 30.10.2026</text>
 <rect x="40" y="84" width="12" height="12" rx="3" class="f-frame"/>
 <text x="58.0" y="94.5" class="s">Rahmen &amp; Video</text>
 <rect x="172.0" y="84" width="12" height="12" rx="3" class="f-cpu"/>

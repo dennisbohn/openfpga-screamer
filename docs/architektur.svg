@@ -36,7 +36,7 @@
 
   <!-- title and legend -->
   <text x="40" y="44" class="h">Screamer auf dem Analogue Pocket – Architektur</text>
-  <text x="40" y="66" class="l">Datenfluss beim Laden und pro Bild · Stand 29.10.2026</text>
+  <text x="40" y="66" class="l">Datenfluss beim Laden und pro Bild · Stand 30.10.2026</text>
 
   <rect x="1190" y="16" width="22" height="13" rx="3" class="built"/>
   <text x="1220" y="27" class="l">gebaut, auf dem Pocket getestet</text>
@@ -235,5 +235,5 @@
   <!-- notes -->
   <text x="40" y="798" class="l">Pro Bild: Die CPU wählt die Bauteile in Reichweite, sortiert sie von hinten nach vorn (Maler-Algorithmus) und schreibt sie in den Puffer der Geometrie-Einheit (113 Bauteile); dahinter arbeiten Geometrie, Setup und Rasterizer gleichzeitig.</text>
   <text x="40" y="816" class="l">Gezeigt wird nur ein fertiges Bild (Doppelpufferung, Tausch in der Austastlücke, höchstens 50 Bilder pro Sekunde). Geplant: Bild N+1 und N überlappen.</text>
-  <text x="40" y="834" class="l">Start mit allen zehn Autos: 50 fps (schwerstes Bild 67 % eines Bildes). Belegung: 10.114 von 18.480 ALMs (55 %), 281 von 308 M10K (91 %), 31 von 66 DSP (47 %); Timing hält bei 74,25 MHz.</text>
+  <text x="40" y="834" class="l">Start mit allen zehn Autos: 50 fps (Startbild 1,31 Mio. Takte, 88 % eines Bildes). Belegung: 10.114 von 18.480 ALMs (55 %), 281 von 308 M10K (91 %), 31 von 66 DSP (47 %); Timing hält bei 74,25 MHz.</text>
 </svg>
