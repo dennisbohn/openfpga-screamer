@@ -211,7 +211,10 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   58 % Zuschneiden. Wie im Original an der nahen Ebene (Tiefe 128) und der fernen der
   DETAIL-Stufe; dazu ein Schutzband bei 14 × Tiefe, nur damit die Bildschirmkoordinaten in
   16 Bit passen (den Bildrand schneidet der Rasterizer). Das Objektiv ist das des
-  Originals: Brennweite 128, Augenhöhe bei 65 % der Bildhöhe. Danach blieben der CPU
+  Originals: Brennweite 128, Augenhöhe bei 65 % der Bildhöhe, und das Auge 128 Einheiten
+  hinter der Kamera (2026-10-29: die Teilung bei `0x83420` liest `TABS\PERSP01.TAB`, Bildpunkt
+  = Mitte + 128 · x / (128 + z), z von der Kamera aus; bis dahin teilten wir durch z, das
+  eigene Auto war um ein Fünftel zu groß). Danach blieben der CPU
   1,5–2,7 Mio. Takte je Bild, vor allem Flächenlisten und das Schreiben der Ecken. Die
   Geometrie-Einheit (`geom.v`, C-Modell `firmware/geom.c`) nimmt ihr das ab: Die CPU wählt
   die Bauteile aus, sortiert sie und schreibt je Bauteil 18 Wörter (Matrix, Ursprung,
