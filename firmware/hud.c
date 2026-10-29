@@ -1,7 +1,7 @@
 /*
  * The race screen (hud.h). Places, fonts and colours from the game (docs/NOTES.md section 12,
- * OpenScreamer's hud_draw), the radar from STARTL.EXE; not yet here: the record from the
- * records file (the best lap of this race stands in), the cockpit.
+ * OpenScreamer's hud_draw), the radar and the cockpit's dashboard from STARTL.EXE; not yet
+ * here: the record from the records file (the best lap of this race stands in).
  */
 #include "hud.h"
 #include <math.h>
@@ -9,6 +9,8 @@
 #include "opp.h"
 #include "track.h"
 #include "efx.h"
+#include "dat.h"
+#include "tb_hud.h"
 #include "hw.h"
 
 /* the radar's zoom: the option at 0x1d2a0 (0 off, 1, 2, 3 = 24, 48, 72 through the table at
@@ -21,6 +23,21 @@ static const uint8_t *base;
 static const struct blit_image *img;
 static const struct blit_font *font;
 static int nfont;
+
+/* the cockpit's dashboard: its boxes (tb_hud_picture()'s table, then the pixels) and the
+   numbers of its section of CARS.DTR */
+#define DASH_NUMBERS    29
+static struct { const uint8_t *mem; int32_t at[DASH_NUMBERS]; int ok; } dash;
+
+/* the list started for framebuffer buffer, the race screen section at hand */
+static void begin(struct blit_list *l, int buffer)
+{
+    int nimg;
+    blit_start(l, buffer);
+    base = track_hud();
+    img = track_hud_images(&nimg);
+    font = track_hud_fonts(&nfont);
+}
 
 static int text(struct blit_list *l, int x, int y, const char *s, int f, int colour)
 {
@@ -216,25 +233,23 @@ static void fps_mark(struct blit_list *l, int fps)
     text(l, 12, 190, buf, 3, 2);
 }
 
-void hud_build(struct blit_list *l, int buffer, int fps)
+void hud_build(struct blit_list *l, int buffer, int fps, int cockpit)
 {
-    int nimg;
-    blit_start(l, buffer);
-    base = track_hud();
-    img = track_hud_images(&nimg);
-    font = track_hud_fonts(&nfont);
+    begin(l, buffer);
     const struct car_state *c = car_state();
     const struct car_race *r = car_race();
     char buf[16];
 
-    picture(l, 0);                                      /* IMPLET_L: LAP, POSITION, the clocks */
-    picture(l, 1);                                      /* IMPRES_L: the rev counter */
-    buf[0] = 1;                                         /* fixed pitch */
-    put_dec(buf + 1, (uint32_t)(c->speed * 0.017f), 3);
-    text(l, 0x10F, 0xBB, buf, 2, 7);
-    put_dec(buf + 1, (uint32_t)c->gear, 1);
-    text(l, 0x130, 0xBB, buf, 2, 1);
-    needle(l, 0x10F, 0xA8, 0x1E, car_needle(), 0x75);
+    if(!cockpit) {                                      /* overlay 2 (0x237fc) */
+        picture(l, 0);                                  /* IMPLET_L: LAP, POSITION, the clocks */
+        picture(l, 1);                                  /* IMPRES_L: the rev counter */
+        buf[0] = 1;                                     /* fixed pitch */
+        put_dec(buf + 1, (uint32_t)(c->speed * 0.017f), 3);
+        text(l, 0x10F, 0xBB, buf, 2, 7);
+        put_dec(buf + 1, (uint32_t)c->gear, 1);
+        text(l, 0x130, 0xBB, buf, 2, 1);
+        needle(l, 0x10F, 0xA8, 0x1E, car_needle(), 0x75);
+    }
 
     put_dec(buf, (uint32_t)r->timer, 1);                /* the countdown */
     centred(l, 8, buf, 6, 2);
@@ -279,5 +294,97 @@ void hud_build(struct blit_list *l, int buffer, int fps)
     } else if(r->game_over)
         centred(l, 0x5A, track_hud_text(22), 0, 2);
     if(fps > 0) fps_mark(l, fps);
-    (void)nimg;
+}
+
+/* the word w (len bytes) is s */
+static int same(const uint8_t *w, uint32_t len, const char *s)
+{
+    uint32_t k = 0;
+    while(k < len && s[k] && w[k] == (uint8_t)s[k]) k++;
+    return k == len && !s[k];
+}
+
+/* The numbers of section name in a .DTR text (t, n bytes): from the line after the one it
+   heads, each word d<number> in turn up to END_LIST; a word from * on comments out the rest of
+   its line. 1 if there are count of them. */
+static int dtr_numbers(const uint8_t *t, uint32_t n, const char *name, int32_t *v, int count)
+{
+    int on = 0, got = 0;
+    for(uint32_t at = 0; at < n && got < count; at++) {
+        int words = 0, heads = 0;
+        while(at < n && t[at] != '\n') {
+            if(t[at] <= ' ') {
+                at++;
+                continue;
+            }
+            uint32_t w = at;
+            while(at < n && t[at] > ' ') at++;
+            uint32_t len = at - w;
+            if(t[w] == '*') {
+                while(at < n && t[at] != '\n') at++;
+                break;
+            }
+            if(!on) heads |= words == 0 && same(t + w, len, name);
+            else if(same(t + w, len, "END_LIST")) return 0;
+            else if(t[w] == 'd' && got < count) {
+                int32_t x = 0;
+                int neg = len > 1 && t[w + 1] == '-';
+                for(uint32_t k = 1 + (uint32_t)neg; k < len && t[w + k] >= '0' && t[w + k] <= '9'; k++)
+                    x = x * 10 + (t[w + k] - '0');
+                v[got++] = neg ? -x : x;
+            }
+            words++;
+        }
+        on |= heads;
+    }
+    return got == count;
+}
+
+int hud_cockpit_init(const uint8_t *game, uint32_t game_size, const uint8_t *gen, uint32_t gen_size,
+                     const struct car_spec *sp, uint8_t *mem, uint32_t cap, uint8_t *scratch,
+                     uint32_t scratch_cap)
+{
+    /* COCK and the name from its fifth letter on (the model's digits, 0x13725), A or B (0x1371a)
+       and L.PKC (0x1b25f); the section COCK, the digits, L (0x1374c) */
+    char pic[24] = "COCK", sec[24];
+    int k = 4;
+    for(int i = 4; i < 12 && sp->name[i] && k < 12; i++) pic[k++] = sp->name[i];
+    for(int i = 0; i < k; i++) sec[i] = pic[i];
+    sec[k] = 'L';
+    sec[k + 1] = 0;
+    pic[k++] = sp->livery ? 'B' : 'A';
+    for(const char *p = "L.PKC"; (pic[k++] = *p) != 0; p++) ;
+    dash.ok = 0;
+    struct dat_entry e;
+    uint32_t n;
+    if(!dat_find(game, game_size, pic, &e) || !(n = dat_extract(game, game_size, &e, scratch, scratch_cap)) ||
+       !tb_hud_picture(scratch, n, mem, cap))
+        return 0;
+    if(!dat_find(gen, gen_size, "CARS.DTR", &e) || !(n = dat_extract(gen, gen_size, &e, scratch, scratch_cap)) ||
+       !dtr_numbers(scratch, n, sec, dash.at, DASH_NUMBERS))
+        return 0;
+    while(!(MEM_STATUS & MEM_WRITES_IDLE))              /* the boxes in the SDRAM for the blitter */
+        ;
+    dash.mem = mem;
+    dash.ok = 1;
+    return 1;
+}
+
+void hud_dash(struct blit_list *l, int buffer)
+{
+    begin(l, buffer);
+    picture(l, 0);                                      /* IMPLET_L first (0x236b9) */
+    if(!dash.ok) return;
+    const uint8_t *m = dash.mem;
+    const struct blit_image *b = (const struct blit_image *)(m + 4);
+    uint32_t boxes = *(const uint32_t *)m;
+    for(uint32_t i = 0; i < boxes; i++)
+        blit_copy(l, m + b[i].off, b[i].w, b[i].h, b[i].w, b[i].x, b[i].y, BLIT_COPY, 0);
+    const int32_t *d = dash.at;
+    needle(l, d[2], d[3], d[0], car_speed_needle(), 255);
+    needle(l, d[5], d[6], d[0], car_needle(), 255);
+    /* the lamp: a sprite of GAMEL.SPR, the first image of the section's table up to the fonts' */
+    int gear = car_state()->gear, n = d[1] + gear;
+    if(gear >= 0 && gear <= 6 && n >= 0 && nfont > 0 && n < (int)font[0].first_image)
+        sprite(l, d[8 + 3 * gear], d[9 + 3 * gear], n);
 }

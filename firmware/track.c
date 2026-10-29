@@ -46,12 +46,13 @@ static const float far_depth[3] = { 27808.0f, 27808.0f, 43808.0f };     /* LOW, 
    behind the camera along the view: the near plane through the camera (depth 128 from the
    eye), the scale 128 at the eye. The camera itself stays the origin of the view's z, the
    reach, the drawing order (the places less the camera, 0x8ab8e) and the faces' eye (0x834d6:
-   the camera in the block's frame, from those places). The eye line 65 % down the view
-   (openscreamer docs/NOTES.md, section 10: 0x4c610(320, h, h * 0.65)) */
+   the camera in the block's frame, from those places). The eye line 65 % down the view, in
+   whole lines (0x19cbe: 0x4c610(320, h, h x 0.65 cut by 0x4d7b4): 130 of 200, 85 of the
+   cockpit's 132) */
 #define NEAR        128.0f
 #define FOCAL       128.0f
 #define EYE_BACK    128.0f
-#define EYE_LINE    0.65f
+#define EYE_LINE(h) ((h) * 65 / 100)
 #define CAM_UP      700.0f      /* camera over the player's line */
 #define LOOK        12          /* path points ahead for the direction of view */
 
@@ -381,7 +382,7 @@ int track_ground_colour(void)
  */
 void track_backdrop_blit(struct blit_list *l, const struct rs_clip *clip, const struct track_cam *cam)
 {
-    int w = clip->x1 - clip->x0, h = clip->y1 - clip->y0, eye = (int)((float)h * EYE_LINE);
+    int w = clip->x1 - clip->x0, h = clip->y1 - clip->y0, eye = EYE_LINE(h);
     int32_t s = (int32_t)(sinf(cam->pitch) * 16384.0f);         /* the game's sine, [0x7228c] */
     int top = eye + 22 - 256 + ((-54152 * s) >> 7) / -54152;
     int heading = (int)lrintf((cam->yaw + 1.5707964f) * (1024.0f / 3.14159265f));
@@ -558,7 +559,7 @@ void track_view(const struct rs_clip *clip, struct su_view *v)
 {
     v->cx = (clip->x0 + clip->x1) * 8 - 16; /* the centre in 1/16 pixel: column 159 on the screen,
                                                as the game's projection (0x83431) */
-    v->cy = clip->y0 * 16 + (int32_t)((float)((clip->y1 - clip->y0) * 16) * EYE_LINE);
+    v->cy = (clip->y0 + EYE_LINE(clip->y1 - clip->y0)) * 16;
     v->scale = (uint32_t)(FOCAL * 16.0f);
     v->far8 = (int32_t)((far_z + EYE_BACK) * 256.0f);  /* depths from the eye */
 }
@@ -673,8 +674,9 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
     /* the pieces in reach and in view, far to near: vf the depth from the eye */
     const float far_eye = far_z + EYE_BACK;
     const float half_w = (float)(clip->x1 - clip->x0) / 2.0f / FOCAL;
-    const float up = (float)(clip->y1 - clip->y0) * EYE_LINE / FOCAL;          /* above the eye line */
-    const float down = (float)(clip->y1 - clip->y0) * (1.0f - EYE_LINE) / FOCAL;
+    const int eye = EYE_LINE(clip->y1 - clip->y0);
+    const float up = (float)eye / FOCAL;                                       /* above the eye line */
+    const float down = (float)(clip->y1 - clip->y0 - eye) / FOCAL;
     int nv = 0;
     float nearest = 1e30f;
     /* the game's key (0x8a7b0): -(sqrt(dist^2 >> 2), rounded, >> 2) */

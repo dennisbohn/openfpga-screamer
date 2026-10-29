@@ -10,9 +10,11 @@
 #include "drive.h"
 #include "track.h"
 
-/* the views the player can choose while driving (the game's table at 0x1da0, rows 2, 6, 0):
-   near chase (where a race starts), far chase, bumper cam */
-#define CAR_VIEWS   3
+/* the views the player can choose while driving, in the order the game's key goes round them
+   (its table at 0x1da0, rows 0, 1, 2, 6): bumper cam, cockpit, near chase, far chase; a race
+   starts in the near chase (the option at 0x1d2a4, 2 from 0x1bc50) */
+#define CAR_VIEWS       4
+#define CAR_VIEW_START  2
 
 /* Set the car up from the track file: CARS.DTR row which, at the start */
 void car_init(int which);
@@ -23,6 +25,11 @@ void car_step(uint32_t keys, uint32_t keys_before);
 /* Choose the view (0 .. CAR_VIEWS - 1); the camera it gives now */
 void car_view(int view);
 void car_camera(struct track_cam *cam);
+/* The view's 3D picture: its lines from the top (the table's third column: 132 in the cockpit,
+   200 else; 0x19cbe sets the view up as 0x4c610(320, lines, lines x 0.65)), and 1 if the
+   dashboard goes over the rest (overlay 1, hud.h) */
+int car_view_lines(void);
+int car_cockpit(void);
 
 /* The car as an object for track_draw_cam(), its blocks made in the game's order for the
    camera when it comes up in the drawing; 0 when the view is from inside it */
@@ -75,8 +82,11 @@ void car_rammed(float nx, float ny, int left);
    next (0x1820c), for the player and for any car at (x, y) */
 float car_progress(void);
 float car_marker_progress(int at, int laps, float x, float y);
-/* the outside views' rev counter needle: rpm / maxrpm x pi, eased (dash_step) */
+/* the rev counter's needle: rpm / maxrpm x pi on the outside views' instrument, x 3.613 on
+   the cockpit's dashboard; the dashboard's speed needle, speed / maxspd x 4.084; both eased
+   (dash_step) */
 float car_needle(void);
+float car_speed_needle(void);
 
 /* For the screen and the log: the state, wall hits and crashes so far, the marker last
    reached */

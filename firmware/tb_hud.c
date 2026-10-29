@@ -150,6 +150,16 @@ static int32_t pkc(const uint8_t *d, uint32_t size, struct sink *s)
     return count;
 }
 
+uint32_t tb_hud_picture(const uint8_t *d, uint32_t size, uint8_t *out, uint32_t cap)
+{
+    int32_t n = pkc(d, size, NULL);
+    if(n < 0 || cap < 4 || 4 + 12 * (uint64_t)n > cap) return 0;
+    struct sink s = { out, cap, 4, 4 + 12 * (uint32_t)n };
+    if(pkc(d, size, &s) != n) return 0;
+    wr32(out, (uint32_t)n);
+    return s.at;
+}
+
 /* Python's str.splitlines() breaks in latin-1 */
 static int line_break(uint8_t c)
 {

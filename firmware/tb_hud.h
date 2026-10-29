@@ -17,3 +17,9 @@
 uint32_t tb_hud_build(const uint8_t *spr, uint32_t spr_size, const uint8_t *fnt, uint32_t fnt_size,
                       const uint8_t *implet, uint32_t implet_size, const uint8_t *impres, uint32_t impres_size,
                       const uint8_t *txt, uint32_t txt_size, uint8_t *out, uint32_t cap);
+
+/* One .PKC picture alone as boxes into out (cap bytes), cut as the section's two pictures
+   are: u32 count; per box u32 offset (from out), u16 width, height, int16 x, y; the boxes'
+   pixels. Returns the size, 0 if the file is malformed or the boxes do not fit. (The cockpit's
+   dashboard, hud.h, at the race's start.) */
+uint32_t tb_hud_picture(const uint8_t *pkc, uint32_t size, uint8_t *out, uint32_t cap);

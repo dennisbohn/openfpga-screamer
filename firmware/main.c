@@ -51,10 +51,15 @@ static const struct game_file { const char *name; uint32_t addr, max; } game_fil
     { "LOCAL.DAT", SDRAM_BASE + 0x2D50000, 0x10000 },
 };
 #define BUILD_SCRATCH   (SDRAM_BASE + 0x2D60000)
+static struct track_files game;         /* where they are, as loaded */
 /* the effects through MAPn.SMG (efx.h): 64 KB right under the track image, so that the radar's
    material at its end lies within a face's reach (32 KB) of the image's MLB */
 #define EFX_SIZE    0x10000
 #define EFX_MEM     ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE))
+/* the cockpit's dashboard as blitter boxes (hud.h), 64 KB under the effects; unpacked through
+   the build's scratch, which is free by then */
+#define DASH_SIZE   0x10000
+#define DASH_MEM    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE - DASH_SIZE))
 #define MAX_OBJECTS 32          /* the player's car, the opponents and their shadows, the player's
                                    shadow and smoke (track.c draws up to 32) */
 
@@ -297,6 +302,7 @@ static void draw_status(volatile uint8_t *fb, uint32_t st, uint32_t drawn, const
 static const struct rs_clip track_clip = { 0, 0, FB_W, FB_H };     /* the whole screen, as the game's views */
 static struct blit_list hud;            /* this frame's race screen, for the blitter (and the check) */
 static struct blit_list back;           /* this frame's backdrop, the same */
+static struct blit_list dashboard;      /* the cockpit's dashboard, the same */
 
 /* the blitter's commands (blit.v): a copy's first word is its SDRAM byte address */
 static void hw_blit(const struct blit_list *l)
@@ -312,20 +318,24 @@ static void hw_blit(const struct blit_list *l)
 }
 
 /* Once per run: the frame just drawn against the C models of the setup unit and the
-   rasterizer, drawn into the SDRAM; the track area compared pixel by pixel */
-static void track_check(volatile uint8_t *fb, const struct track_cam *cam, struct track_object *objs,
-                        int nobj, const struct blit_list *bk, const struct blit_list *bl)
+   rasterizer, drawn into the SDRAM in the same order (the 3D view in clip, the dashboard ds
+   if there is one, the radar's window, the race screen); the whole screen compared pixel by
+   pixel */
+static void track_check(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam,
+                        struct track_object *objs, int nobj, const struct blit_list *bk,
+                        const struct blit_list *ds, const struct blit_list *bl)
 {
     volatile uint8_t *m = CHECK_BUF;
     struct track_stats ts;
     uint32_t differ = 0, first = 0, t0 = rdcycle();
     blit_model(m, bk);
     track_mode = TRACK_MODEL;
-    track_draw_cam(m, &track_clip, cam, objs, nobj, &ts);
+    track_draw_cam(m, clip, cam, objs, nobj, &ts);
+    if (ds) blit_model(m, ds);
     struct su_view v;
     struct gu_piece radar;
     struct gu_stats gst = { 0, 0, 0, 0 };
-    track_view(&track_clip, &v);
+    track_view(clip, &v);
     if (efx_radar_piece(&v, &radar)) gu_draw(m, &track_clip, &v, track_mlb(), &radar, &gst);
     blit_model(m, bl);
     track_mode = TRACK_HW;
@@ -351,17 +361,18 @@ static void track_check(volatile uint8_t *fb, const struct track_cam *cam, struc
     dlog_char('\n');
 }
 
+static int dashboard_init(void);
+
 static void __attribute__((noreturn)) run_track(void)
 {
     const uint32_t *pal = track_palette();
     uint32_t drawn = 0, keys_before = 0, last_frame = 0, steps = 0;
     uint32_t fps = 0, fps_drawn = 0, fps_frame = 0;
-    int car_v = 0;
+    int car_v = CAR_VIEW_START;
     car_init(0);
     opp_init(0);
     car_view(car_v);
-    struct su_view view;
-    track_view(&track_clip, &view);
+    int dash_ok = dashboard_init();
     track_mode = TRACK_HW;
     track_hw_piece = hw_piece;
     GU_MLB = (uint32_t)((uintptr_t)track_mlb() - SDRAM_BASE);
@@ -400,13 +411,19 @@ static void __attribute__((noreturn)) run_track(void)
         int nobj = car_object(&cam, &objs[0]);
         nobj += opp_objects(objs + nobj, MAX_OBJECTS - nobj);
         nobj += car_effects(&cam, objs + nobj, MAX_OBJECTS - nobj);
+        /* the 3D view: the whole screen, or in the cockpit its first 132 lines, the eye line
+           85 down (track_view), the dashboard over the rest (without one the whole screen) */
+        int cockpit = dash_ok && car_cockpit();
+        const struct rs_clip clip = { 0, 0, FB_W, cockpit ? car_view_lines() : FB_H };
+        struct su_view view;
+        track_view(&clip, &view);
 
         /* the backdrop (the game's 0x83a68): the blitter copies it while the CPU culls the
            scene; the first piece for the geometry unit waits until it is done (hw_piece) */
         volatile uint8_t *fb = FB(!(st & VID_FRONT));
         draw_buf = !(st & VID_FRONT);
         blit_start(&back, (int)draw_buf);
-        track_backdrop_blit(&back, &track_clip, &cam);
+        track_backdrop_blit(&back, &clip, &cam);
         BL_CLOCKS = 0;
         back_clocks = back_cycles = 0;
         back_wait = 1;
@@ -425,16 +442,30 @@ static void __attribute__((noreturn)) run_track(void)
         GU_FACES = 0;
         GU_MODE = draw_buf << 8;
         draw_wait = 0;
-        RS_CLIP0 = RS_XY(track_clip.x0, track_clip.y0);
-        RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
+        RS_CLIP0 = RS_XY(clip.x0, clip.y0);
+        RS_CLIP1 = RS_XY(clip.x1, clip.y1);
         su_view_regs(&view);
-        track_draw_cam(0, &track_clip, &cam, objs, nobj, &ts);
+        track_draw_cam(0, &clip, &cam, objs, nobj, &ts);
         /* the radar's darkened window over the scene (efx.h), then the race screen: the
-           blitter draws it once the scene is done */
+           blitter draws it once the scene is done. In the cockpit the dashboard comes before
+           the window, which darkens it too: the blitter draws it once the scene is done, the
+           CPU makes the race screen's list meanwhile, then waits for both to clip the window
+           to the whole screen */
         struct gu_piece radar;
-        if (efx_radar_piece(&view, &radar)) hw_piece(&radar);
+        int has_radar = efx_radar_piece(&view, &radar);
         BL_CLOCKS = 0;
-        hud_build(&hud, (int)draw_buf, (int)fps);
+        if (cockpit) {
+            hud_dash(&dashboard, (int)draw_buf);
+            hw_blit(&dashboard);
+            hud_build(&hud, (int)draw_buf, (int)fps, 1);
+            while (RS_DRAW & RS_BUSY)
+                ;
+            RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
+            if (has_radar) hw_piece(&radar);
+        } else {
+            if (has_radar) hw_piece(&radar);
+            hud_build(&hud, (int)draw_buf, (int)fps, 0);
+        }
         hw_blit(&hud);
         while (RS_DRAW & RS_BUSY)
             ;
@@ -445,7 +476,7 @@ static void __attribute__((noreturn)) run_track(void)
         uint32_t r_drain = RS_DRAIN_CLOCKS, r_starved = RS_STARVED;
         ts.faces = GU_FACES;
         uint32_t efx_objects = efx_cyc_objects, efx_radar = efx_cyc_radar;    /* (the check adds) */
-        if (drawn == 2) track_check(fb, &cam, objs, nobj, &back, &hud);
+        if (drawn == 2) track_check(fb, &clip, &cam, objs, nobj, &back, cockpit ? &dashboard : 0, &hud);
 
         if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
             fps = drawn - fps_drawn;
@@ -582,8 +613,6 @@ static uint32_t load_file(uint32_t id, uint32_t addr, uint32_t max, int *err)
     return size;
 }
 
-static struct track_files game;
-
 /* The five containers into the SDRAM; 1 if all are there */
 static int load_game_files(void)
 {
@@ -689,6 +718,31 @@ static void effects(int image)
     dlog_str(ok ? ", in " : " - not all there, in ");
     dlog_dec((int32_t)((rdcycle() - t0) / (CPU_HZ / 1000)));
     dlog_str(" ms\n");
+}
+
+/* The player's dashboard for the cockpit (hud.h) from the GFX container GAME.DAT and GEN.DAT;
+   after the testbench's image (load_image) these two are loaded for it. 1 if it is there. */
+static int dashboard_init(void)
+{
+    uint32_t t0 = rdcycle();
+    if (!game.game_size) {
+        int err;
+        game.game = (const uint8_t *)(uintptr_t)game_files[1].addr;
+        game.game_size = load_file(GAME_SLOT + 1, game_files[1].addr, game_files[1].max, &err);
+        game.gen = (const uint8_t *)(uintptr_t)game_files[3].addr;
+        game.gen_size = load_file(GAME_SLOT + 3, game_files[3].addr, game_files[3].max, &err);
+        dcache_invalidate();
+    }
+    const struct car_spec *sp = &car_state()->spec;
+    int ok = game.game_size && game.gen_size &&
+             hud_cockpit_init(game.game, game.game_size, game.gen, game.gen_size, sp, DASH_MEM, DASH_SIZE,
+                              (uint8_t *)(uintptr_t)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH);
+    dlog_str("cockpit: the dashboard of ");
+    dlog_str(sp->name);
+    dlog_str(ok ? " ok, in " : " missing (the cockpit shows the whole 3D view), in ");
+    dlog_dec((int32_t)((rdcycle() - t0) / (CPU_HZ / 1000)));
+    dlog_str(" ms\n");
+    return ok;
 }
 
 void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)

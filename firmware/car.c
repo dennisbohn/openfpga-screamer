@@ -12,13 +12,16 @@
 /* the bumper cam's height over the car: camera_hi in TRACK_DATA of MAPnA.DTR */
 #define CAMERA_HI   ((float)track_camera_hi())
 
-/* the game's views (OpenScreamer's g_views): how far behind, how high, looking down how much */
-struct view_def { float behind, above, down; int incar; };
+/* the game's views (OpenScreamer's g_views; the table at 0x1da0: key, camera routine, lines of
+   the 3D view, overlay): how far behind, how high, looking down how much; from the car (camera
+   routine 0); the 3D view's lines from the top; the dashboard over the rest (overlay 1) */
+struct view_def { float behind, above, down; int incar, lines, cockpit; };
 static const struct view_def views[CAR_VIEWS + 1] = {
-    { 1300.0f, 300.0f, 0.1885f, 0 },    /* row 2: near chase */
-    { 1700.0f, 300.0f, 0.1257f, 0 },    /* row 6: far chase */
-    {    0.0f,   0.0f, 0.0f,    1 },    /* row 0: bumper cam */
-    { 1400.0f, 100.0f, 0.1257f, 0 },    /* row 5: the crash's, not the player's to choose */
+    {    0.0f,   0.0f, 0.0f,    1, 200, 0 },    /* row 0: bumper cam */
+    {    0.0f,   0.0f, 0.0f,    1, 132, 1 },    /* row 1: cockpit */
+    { 1300.0f, 300.0f, 0.1885f, 0, 200, 0 },    /* row 2: near chase */
+    { 1700.0f, 300.0f, 0.1257f, 0, 200, 0 },    /* row 6: far chase */
+    { 1400.0f, 100.0f, 0.1257f, 0, 200, 0 },    /* row 5: the crash's, not the player's to choose */
 };
 #define CRASH_VIEW  CAR_VIEWS
 
@@ -30,7 +33,7 @@ static uint32_t wall_hits, crashes;
 static struct car_race race;
 static uint8_t mark_seen[64];
 static int mark_count;
-static float needle;
+static float needle, needle_speed;
 static float progress;                  /* how far round the race (marker_progress) */
 
 /* a crash (0x16c90 decides, 0x18518 runs it): thrown up and tumbling, four landings */
@@ -471,7 +474,7 @@ void car_init(int which)
     race.total_laps = 3;                                /* the option's default (0x1d2ac) */
     for(int j = 0; j < 64; j++) mark_seen[j] = 0;
     mark_count = 0;
-    needle = 0.0f;
+    needle = needle_speed = 0.0f;
     pc.waiting = 1;
 
     /* player_reset: on the grid, facing as the nearest road point (0x13e07, the image's
@@ -543,10 +546,18 @@ void car_step(uint32_t keys, uint32_t keys_before)
     spin = fmodf(spin - pc.speed * DRIVE_DT / 108.6f, 6.2831853f);
     steer = -(pc.steer_max > 0.0f ? pc.steer / pc.steer_max : 0.0f) / 1.5f;
 
-    /* dash_step: the rev counter's needle eases to rpm / maxrpm x pi */
-    float want = pc.rpm / pc.spec.maxrpm * PI;
-    if(want > PI) want = PI;
+    /* dash_step (the race screen's 0x2367c eases them each frame, stiffness 0x5a): the rev
+       counter's needle to rpm / maxrpm x pi on the outside views' instrument, x 3.613 on the
+       dashboard (0x23739), no further; the dashboard's speed needle, only while it is shown, to
+       speed / maxspd x 4.084 (0x236ec), unbounded */
+    int dash = views[view].cockpit;
+    float full = dash ? 3.6128317f : PI, want = pc.rpm / pc.spec.maxrpm * full;
+    if(want > full) want = full;
     needle = want + (needle - want) * drive_damp(0x5a);
+    if(dash) {
+        want = pc.speed / pc.spec.maxspd * 4.0840706f;
+        needle_speed = want + (needle_speed - want) * drive_damp(0x5a);
+    }
 }
 
 const struct car_race *car_race(void)
@@ -557,6 +568,11 @@ const struct car_race *car_race(void)
 float car_needle(void)
 {
     return needle;
+}
+
+float car_speed_needle(void)
+{
+    return needle_speed;
 }
 
 /* model k (AUTOk) */
@@ -813,6 +829,16 @@ int car_shadow_at(float *x, float *y, float *h)
     *y = shadow.y;
     *h = shadow.h;
     return shadow.on;
+}
+
+int car_view_lines(void)
+{
+    return views[view].lines;
+}
+
+int car_cockpit(void)
+{
+    return views[view].cockpit;
 }
 
 void car_view(int v)
