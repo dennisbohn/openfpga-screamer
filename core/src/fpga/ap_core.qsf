@@ -782,6 +782,9 @@ set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to bridge_spimiso
 set_instance_assignment -name WEAK_PULL_UP_RESISTOR ON -to bridge_spimosi
 set_instance_assignment -name PARTITION_HIERARCHY root_partition -to | -section_id Top
 set_global_assignment -name SLD_FILE db/stp1_auto_stripped.stp
+# The PLL lock's synchronizer stays in registers: Quartus may pack it into a block RAM shift
+# register (it did once the rasterizer's see-through table came in)
+set_instance_assignment -name AUTO_SHIFT_REGISTER_RECOGNITION OFF -to "core_top:ic|synch_3:s01"
 # Fitter seed, set by tools/build.sh: the first that met timing. A few registers in front of the
 # FPU's DSP inputs sit within 50 ps of hold, depending on placement.
 set_global_assignment -name SEED 5

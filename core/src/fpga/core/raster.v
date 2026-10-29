@@ -15,9 +15,15 @@
 // Textured (raster_tex.v): Q, U, V at the span's first pixel from the triangle's reference
 // pixel, a = (A << 8) + dx (x0 - xr) + dy (r - yr) (four clocks a row), then one pixel a
 // clock into the texture pipeline, a += dx each.
+// Blended (routine 224, the game's smoke and shadows): textured, each pixel through the
+// see-through table (raster_tex.v), and the pixels are the game's for that routine
+// (STARTL.EXE 0xcd97a): pixel (x, r) when the point (x, r + 1) is in the triangle, rows
+// a.y .. c.y - 1, in row r from ceil(xb) of the left edge to ceil(xb) - 1 of the right one
+// (xb the edge at the bottom of the row, as above). So the triangles of a fan share their
+// edges exactly and no pixel is blended twice.
 //
-// Registers (soc.v maps them at 0xF000_3000 + 4 * wr_addr). Everything but 5, 6 and 19 is
-// copied when a triangle starts, so the next one can be set up while one is drawn. A
+// Registers (soc.v maps them at 0xF000_3000 + 4 * wr_addr). Everything but 5, 6, 19 and 27
+// is copied when a triangle starts, so the next one can be set up while one is drawn. A
 // triangle from the setup unit (su_*) brings its own values for 0..2, 5 and 7..18.
 //   0..2  vertex n: [15:0] x, [31:16] y
 //   3     clip: [15:0] x0, [31:16] y0      4  clip: [15:0] x1, [31:16] y1 (exclusive),
@@ -26,13 +32,17 @@
 //         this write back while busy)
 //   6     clears the pixel counter
 //   7     texture: SDRAM byte address of texel (0, 0), rows of 256 bytes
-//   8     texture: [8:0] width, [24:16] height (1..256), [31] texel 0 see-through
+//   8     texture: [8:0] width, [24:16] height (1..256), [30] blended, [31] texel 0
+//         see-through (left as it is when blended)
 //   9     reference pixel: [15:0] x, [31:16] y
 //   10..12  Q, U, V at the reference pixel's centre (signed)
 //   13..15  their change per pixel in x, 8 fraction bits    16..18  the same in y
 //   19    write: forget the cached texture lines (after the CPU changed textures)
 //   20    texture lines fetched from the SDRAM (cache misses); write: clear
 //   21    clocks the rasterizer was busy; write: clear (and the counters below)
+//   27    write: an entry of the see-through table, [21:8] row << 8 | old pixel, [7:0] the
+//         new pixel (16384, the track's MAPn.SMG); not held back, so written while nothing
+//         blended is drawn
 // Counters (outputs, cleared with 21): clocks the texture pipeline waited for a line, in
 // edge setup, in the work of a row (rows, span, the values at its first pixel), and idle
 // with the setup unit's next triangle waiting for the texture pipeline.
@@ -64,12 +74,14 @@ module raster (
     output  reg     [31:0]  row_clocks = 0,
     output  reg     [31:0]  drain_clocks = 0,
 
-    // framebuffer drawing port, a word of four pixels; be[3] is the leftmost pixel
+    // framebuffer drawing port, a word of four pixels; be[3] is the leftmost pixel. Blended
+    // pixels read it too: fb_q is the word at the address of the clock before
     output  wire            fb_wr,
     output  reg             fb_buf,
     output  wire    [13:0]  fb_addr,
     output  wire    [31:0]  fb_data,
     output  wire    [3:0]   fb_be,
+    input   wire    [31:0]  fb_q,
 
     // texture lines from the SDRAM (sdram_port)
     output  wire            mem_valid,
@@ -117,8 +129,9 @@ module raster (
 // is in and t_bank the one the triangle last started reads; a write goes to the other bank
 // than t_bank. A triangle from the CPU (soc.v starts it only when the rasterizer is idle)
 // takes 7..18 in the six clocks after its start, two a clock, by step ld (dx, dy and a each
-// shifted in at place 2); the first values are used at the earliest six clocks after the
-// start (S_ACC), the texture's in raster_tex later still.
+// shifted in at place 2); the texture size first (its blend flag is used from S_GO on), the
+// others at the earliest six clocks after the start (S_ACC), the texture's in raster_tex
+// later still.
 //
     reg  [31:0] v_reg [0:2];
     reg  [8:0]  clip_x0, clip_x1;               // 3 and 4, limited to the screen
@@ -143,12 +156,12 @@ module raster (
     reg  [4:0]  ra, rb;
 always @(*) begin
     case(ld_step)
-    3'd0:    begin ra = 5'd9;  rb = 5'd13; end  // reference pixel, dx Q
+    3'd0:    begin ra = 5'd8;  rb = 5'd13; end  // texture size, dx Q
     3'd1:    begin ra = 5'd16; rb = 5'd14; end  // dy Q, dx U
     3'd2:    begin ra = 5'd17; rb = 5'd15; end  // dy U, dx V
     3'd3:    begin ra = 5'd18; rb = 5'd10; end  // dy V, Q
     3'd4:    begin ra = 5'd7;  rb = 5'd11; end  // texture address, U
-    default: begin ra = 5'd8;  rb = 5'd12; end  // texture size, V
+    default: begin ra = 5'd9;  rb = 5'd12; end  // reference pixel, V
     endcase
 end
     wire        ra_bank = state == S_IDLE ? l_bank[ra] : t_bank[ra];
@@ -213,6 +226,7 @@ end
     reg  [25:0] t_base;
     reg  [8:0]  t_w, t_h;
     reg         t_cut;
+    reg         t_blend;                        // routine 224
     reg  [10:0] t_xr, t_yr;
     reg signed [31:0] t_a [0:2];
     reg signed [31:0] t_dx [0:2];
@@ -231,10 +245,10 @@ end
     wire signed [11:0] r_s = {4'd0, r}, r1_s = {3'd0, r + 9'd1};
     wire        r_is_c = r_s == cy;             // the last row: its corners
     wire        r1_is_b = r1_s == by, r1_is_c = r1_s == cy;
-    wire        r_end = r_is_c || r1_s == {4'd0, cy1};
+    wire        r_end = (t_blend ? r1_is_c : r_is_c) || r1_s == {4'd0, cy1};   // (blended: no row c.y)
 
     assign fb_wr = flat_wr || tex_wr;
-    assign fb_addr = tex_wr ? tex_word : flat_addr;
+    assign fb_addr = flat_wr ? flat_addr : tex_word;    // (a blended pixel's read: tex_word)
     assign fb_be = tex_wr ? tex_be : flat_be;
     assign fb_data = tex_wr ? {4{tex_texel}} : {4{colour}};
 
@@ -253,6 +267,12 @@ raster_tex rt (
     .tex_w              ( t_w ),
     .tex_h              ( t_h ),
     .tex_cut            ( t_cut ),
+    .tex_blend          ( t_blend ),
+    .tri_start          ( state == S_ROWS ),
+    .fb_q               ( fb_q ),
+    .smg_wr             ( wr && wr_addr == 5'd27 ),
+    .smg_addr           ( wr_data[21:8] ),
+    .smg_data           ( wr_data[7:0] ),
     .busy               ( tex_busy ),
     .front_busy         ( tex_front ),
     .misses             ( misses ),
@@ -332,7 +352,7 @@ raster_tex rt (
     // (S_ROW): the left edge, and for each edge whether its first pixel min(ceil t, floor b + 1)
     // and its end max(floor t + 1, ceil b) come from t. With T, B the integer parts and ft, fb
     // set when there is a fraction: ceil t <= floor b + 1 when B - T >= ft - 1, floor t + 1 >=
-    // ceil b when B - T <= 1 - fb
+    // ceil b when B - T <= 1 - fb. Blended: both ends ceil b
     wire signed [12:0] l_t = {l_x[27], l_x[27:16]}, l_b = {lb[27], lb[27:16]};
     wire signed [12:0] s_t = {s_x[27], s_x[27:16]}, s_b = {sb[27], sb[27:16]};
     wire        l_ft = |l_x[15:0], l_fb = |lb[15:0], s_ft = |s_x[15:0], s_fb = |sb[15:0];
@@ -346,7 +366,7 @@ raster_tex rt (
     wire signed [12:0] e_base = r_is_c ? (e_left ? {last0[11], last0} : {last1[11], last1}) :
                                 e_use_t ? (e_l ? l_t : s_t) : (e_l ? l_b : s_b);
     wire        e_inc = r_is_c ? !e_left :
-                        e_left ? (!e_use_t || (e_l ? l_ft : s_ft)) : (e_use_t || (e_l ? l_fb : s_fb));
+                        e_left && !t_blend ? (!e_use_t || (e_l ? l_ft : s_ft)) : (e_use_t || (e_l ? l_fb : s_fb));
     wire signed [12:0] e_col = e_base + {12'd0, e_inc};
     wire [8:0]  e_end = e_col < $signed({4'd0, cx0}) ? cx0 : e_col > $signed({4'd0, cx1}) ? cx1 : e_col[8:0];
     wire [8:0]  px_last = px1 - 1'b1;
@@ -370,9 +390,14 @@ raster_tex rt (
 
 always @(posedge clk) begin
     // a triangle from the CPU: 7..18 out of the RAM, a step's values a clock after its read
-    if(ld == 3'd1) begin t_xr <= cr_qa[10:0]; t_yr <= cr_qa[26:16]; end
+    if(ld == 3'd1) begin
+        t_w <= cr_qa[8:0];
+        t_h <= cr_qa[24:16];
+        t_cut <= cr_qa[31];
+        t_blend <= cr_qa[30] && textured;       // (a triangle of one colour has the usual pixels)
+    end
     if(ld == 3'd5) t_base <= cr_qa[25:0];
-    if(ld == 3'd6) begin t_w <= cr_qa[8:0]; t_h <= cr_qa[24:16]; t_cut <= cr_qa[31]; end
+    if(ld == 3'd6) begin t_xr <= cr_qa[10:0]; t_yr <= cr_qa[26:16]; end
     // dx, dy, a: shifted in at place 2, or (S_ACC) rotated so that k's values are at place 0
     // (three times, so they are in order again for S_TEX) and k - 1's a at place 2
     if(dx_in || acc_rot) begin t_dx[0] <= t_dx[1]; t_dx[1] <= t_dx[2]; t_dx[2] <= dx_in ? cr_qb : t_dx[0]; end
@@ -409,6 +434,7 @@ always @(posedge clk) begin
             t_w <= su_size[8:0];
             t_h <= su_size[24:16];
             t_cut <= su_size[31];
+            t_blend <= su_size[30] && su_draw[9];
             t_xr <= su_ref[10:0];
             t_yr <= su_ref[26:16];
             t_a[0] <= su_a0; t_a[1] <= su_a1; t_a[2] <= su_a2;
@@ -436,7 +462,7 @@ always @(posedge clk) begin
     end
 
     S_GO: begin                                 // (a clock of its own: the rows are registers)
-        if(go_none) state <= S_IDLE;            // nothing to draw
+        if(go_none || (t_blend && go_alone)) state <= S_IDLE;     // nothing to draw
         else if(go_alone) state <= S_ROW;       // row c.y alone: no edge needed
         else begin
             edge_start;                         // a-c
@@ -478,10 +504,10 @@ always @(posedge clk) begin
 
     S_ROW: begin
         long_left <= $signed({l_x, ~lb[27], lb[26:0]}) < $signed({s_x, ~sb[27], sb[26:0]});
-        l_lo_t <= !l_d[12] || (l_d == -13'sd1 && !l_ft);
-        l_hi_t <= l_d[12] || l_d == 13'sd0 || (l_d == 13'sd1 && !l_fb);
-        s_lo_t <= !s_d[12] || (s_d == -13'sd1 && !s_ft);
-        s_hi_t <= s_d[12] || s_d == 13'sd0 || (s_d == 13'sd1 && !s_fb);
+        l_lo_t <= !t_blend && (!l_d[12] || (l_d == -13'sd1 && !l_ft));
+        l_hi_t <= !t_blend && (l_d[12] || l_d == 13'sd0 || (l_d == 13'sd1 && !l_fb));
+        s_lo_t <= !t_blend && (!s_d[12] || (s_d == -13'sd1 && !s_ft));
+        s_hi_t <= !t_blend && (s_d[12] || s_d == 13'sd0 || (s_d == 13'sd1 && !s_fb));
         state <= S_ROW2;
     end
 
@@ -542,7 +568,7 @@ end
     // to the next row: both edges one row on, at the bottoms worked out for this row (those
     // differ from x + slope only where the next row is c.y, which takes its corners, or b.y);
     // from row b.y on the edge b-c, whose values are still in the edge unit (not needed when
-    // b.y is c's row). The last row is c.y or the one above clip y1.
+    // b.y is c's row). The last row is c.y (blended: the one above) or the one above clip y1.
     task next_row;
         begin
             r <= r + 1'b1;

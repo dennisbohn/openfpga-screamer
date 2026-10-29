@@ -51,10 +51,7 @@ uint32_t gu_draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         /* the material */
         const uint8_t *mat = mlb + rd16(fc + 4);
         int32_t routine = rd32(mat), tw = 0, th = 0;
-        if(routine == 224) {
-            st->see_through++;
-            continue;
-        }
+        if(routine == 224) st->see_through++;   /* through the see-through table (raster.h) */
         struct rs_texture tex;
         if(routine != 128) {
             tw = clamp_size(rd32(mat + 8));
@@ -67,7 +64,7 @@ uint32_t gu_draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
             tex.data = mlb + rd32(trec + 8 + 4 * frame);
             tex.width = tw;
             tex.height = th;
-            tex.routine = routine == 64 ? 64 : 16;
+            tex.routine = routine == 64 || routine == 224 ? routine : 16;
         }
 
         /* the corners */

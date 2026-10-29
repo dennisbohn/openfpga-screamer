@@ -648,6 +648,7 @@ raster rs (
     .fb_addr            ( rs_fb_addr ),
     .fb_data            ( rs_fb_data ),
     .fb_be              ( rs_fb_be ),
+    .fb_q               ( fb_rd_data ),             // (blended pixels read the framebuffer)
     .mem_valid          ( rs_mem_valid ),
     .mem_ready          ( rs_mem_ready ),
     .mem_addr           ( rs_mem_addr ),

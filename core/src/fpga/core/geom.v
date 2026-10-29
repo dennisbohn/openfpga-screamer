@@ -5,8 +5,9 @@
 // unit takes a piece once all of it is in and reads the mesh from the SDRAM itself (block
 // header, vertices, the face
 // row for the eye's side, faces, texture coordinates, MLB materials), takes the vertices
-// into view space (block RAM, up to 512), leaves out the faces turned away and those of
-// routine 224, and hands each other face to the setup unit as a polygon in fixed point.
+// into view space (block RAM, up to 512), leaves out the faces turned away and hands each
+// other face to the setup unit as a polygon in fixed point (routine 224 like 16, blended
+// and texel 0 see-through: raster.v's texture size bits 30 and 31).
 //
 // One multiplier, and two more for the vertices' rows and the side test (operands registered,
 // the product two clocks after it was issued), and a read cache of 4 KB (direct-mapped,
@@ -102,7 +103,7 @@ end
     reg  signed [39:0] acc [0:2];               // the origin << 8 plus a row's products
     reg  [2:0]  ms;                             // product steps
     reg  [2:0]  nc, j;
-    reg         textured, cut, okv;
+    reg         textured, cut, blend, okv;
     reg  [8:0]  tw, th;
     reg  [7:0]  colour;
 
@@ -505,8 +506,8 @@ always @(posedge clk) begin
     6'd28: pc <= 6'd47;                         // (rd_addr: mat = mlb + ..)
     6'd47: read(6'd29);                         // mat
     6'd29: begin
-        if(rd_word == 32'd224) pc <= 6'd16;     // see-through through MAPn.SMG: not yet
-        else if(untex) begin
+        blend <= rd_word == 32'd224;            // see-through through MAPn.SMG
+        if(untex) begin
             textured <= 0;
             cut <= 0;
             tw <= 0;
@@ -514,7 +515,7 @@ always @(posedge clk) begin
             read(6'd33);                        // face + 2
         end else begin
             textured <= 1;
-            cut <= rd_word == 32'd64;
+            cut <= rd_word == 32'd64 || rd_word == 32'd224;
             read(6'd30);                        // mat + 8
         end
     end
@@ -571,7 +572,7 @@ always @(posedge clk) begin
             poly_n <= nc;
             poly_mode <= {textured, buffer, colour};
             poly_tex <= {6'd0, texdata};
-            poly_size <= {cut, 6'd0, th, 7'd0, tw};
+            poly_size <= {cut, blend, 5'd0, th, 7'd0, tw};
             faces <= faces + 1'b1;
         end
         pc <= 6'd16;

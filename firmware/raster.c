@@ -17,6 +17,8 @@
  * - In a row above c.y the left edge runs from xt at its top to xb at its bottom: the span
  *   starts at min(ceil(xt), floor(xb) + 1); the right one ends at max(floor(xt), ceil(xb) - 1),
  *   that pixel drawn. Row c.y is the bottom corner (or edge) alone.
+ * - Routine 224 (raster.h, blend): rows a.y .. c.y - 1, from ceil(xb) of the left edge to
+ *   ceil(xb) - 1 of the right one.
  */
 #include "raster.h"
 
@@ -57,9 +59,9 @@ static uint32_t span_flat(volatile uint8_t *fb, int r, int x0, int x1, const voi
     return n;
 }
 
-/* the rows and spans of a triangle; span() draws each */
+/* the rows and spans of a triangle; span() draws each. blend: routine 224's pixels */
 static uint32_t walk(volatile uint8_t *fb, const struct rs_clip *clip, const struct rs_vertex v[3],
-                     span_fn span, const void *ctx)
+                     span_fn span, const void *ctx, int blend)
 {
     const struct rs_vertex *p = &v[0], *q = &v[1], *u = &v[2], *t;
     if(q->y < p->y) { t = p; p = q; q = t; }
@@ -70,7 +72,7 @@ static uint32_t walk(volatile uint8_t *fb, const struct rs_clip *clip, const str
 
     /* rows to draw: those of the triangle inside the clip rectangle */
     int ya = a.y >> 4, yb = b.y >> 4, yc = c.y >> 4;
-    int r0 = ya < clip->y0 ? clip->y0 : ya, r1 = yc + 1 > clip->y1 ? clip->y1 : yc + 1;
+    int r0 = ya < clip->y0 ? clip->y0 : ya, r1 = yc + !blend > clip->y1 ? clip->y1 : yc + !blend;
     if(r0 >= r1) return 0;
 
     /* row yc: the corners on it */
@@ -101,8 +103,8 @@ static uint32_t walk(volatile uint8_t *fb, const struct rs_clip *clip, const str
             int64_t L0 = long_left ? lt : st, L1 = long_left ? lb : sb;
             int64_t R0 = long_left ? st : lt, R1 = long_left ? sb : lb;
             int64_t la = ceil16(L0), lz = (L1 >> 16) + 1, ra = R0 >> 16, rz = ceil16(R1) - 1;
-            left = la < lz ? la : lz;
-            right = ra > rz ? ra : rz;
+            left = blend ? ceil16(L1) : la < lz ? la : lz;
+            right = blend ? rz : ra > rz ? ra : rz;
         }
         int x0 = clamp_col(left, clip->x0, clip->x1), x1 = clamp_col(right + 1, clip->x0, clip->x1);
         if(x0 < x1) n += span(fb, r, x0, x1, ctx);
@@ -115,7 +117,23 @@ static uint32_t walk(volatile uint8_t *fb, const struct rs_clip *clip, const str
 uint32_t rs_triangle(volatile uint8_t *fb, const struct rs_clip *clip,
                      const struct rs_vertex v[3], uint8_t colour)
 {
-    return walk(fb, clip, v, span_flat, &colour);
+    return walk(fb, clip, v, span_flat, &colour, 0);
+}
+
+/* routine 224: the pixel through row t of the see-through table */
+const uint8_t *rs_smg;
+
+static uint8_t smg(uint8_t t, uint8_t pixel)
+{
+    return rs_smg ? rs_smg[(t & 63) << 8 | pixel] : 0;
+}
+
+/* texel c into pixel p: routines 64 and 224 leave it for texel 0; returns 1 if drawn */
+static int put_texel(volatile uint8_t *p, uint8_t c, int routine)
+{
+    if(!c && (routine == 64 || routine == 224)) return 0;
+    *p = routine == 224 ? smg(c, *p) : c;
+    return 1;
 }
 
 /*
@@ -141,7 +159,7 @@ static struct plane plane_of(const float x[3], const float y[3], float a0, float
 
 static uint32_t span_tex(volatile uint8_t *fb, int r, int x0, int x1, const void *ctx)
 {
-    const struct tex_ctx *s = ctx;
+    const struct tex_ctx *s = (const struct tex_ctx *)ctx;
     const struct rs_texture *t = s->tex;
     volatile uint8_t *row = fb + r * FB_STRIDE;
     float fx = (float)x0 + 0.5f - s->x0, fy = (float)r + 0.5f - s->y0;
@@ -154,11 +172,7 @@ static uint32_t span_tex(volatile uint8_t *fb, int r, int x0, int x1, const void
         int u = (int)(uq * z), v = (int)(vq * z);
         u = u < 0 ? 0 : u >= t->width ? t->width - 1 : u;
         v = v < 0 ? 0 : v >= t->height ? t->height - 1 : v;
-        uint8_t c = t->data[v * 256 + u];
-        if(c || t->routine != 64) {
-            row[x] = c;
-            n++;
-        }
+        n += (uint32_t)put_texel(&row[x], t->data[v * 256 + u], t->routine);
         q += s->q.ax;
         uq += s->uq.ax;
         vq += s->vq.ax;
@@ -186,7 +200,7 @@ uint32_t rs_textured(volatile uint8_t *fb, const struct rs_clip *clip,
     s.uq = plane_of(x, y, v[0].uq, v[1].uq, v[2].uq, det);
     s.vq = plane_of(x, y, v[0].vq, v[1].vq, v[2].vq, det);
     s.tex = tex;
-    return walk(fb, clip, pos, span_tex, &s);
+    return walk(fb, clip, pos, span_tex, &s, tex->routine == 224);
 }
 
 /*
@@ -237,11 +251,7 @@ static uint32_t span_texfx(volatile uint8_t *fb, int r, int x0, int x1, const vo
 #ifdef RS_TRACE                            /* PC only: the texel addresses for a cache study */
         rs_trace(&t->data[tv * 256 + tu]);
 #endif
-        uint8_t c = t->data[tv * 256 + tu];
-        if(c || t->routine != 64) {
-            row[x] = c;
-            n++;
-        }
+        n += (uint32_t)put_texel(&row[x], t->data[tv * 256 + tu], t->routine);
         for(int k = 0; k < 3; k++) acc[k] += s->dx[k];
     }
     return n;
@@ -251,7 +261,7 @@ uint32_t rs_textured_fx(volatile uint8_t *fb, const struct rs_clip *clip, const 
                         const struct rs_tex_setup *s, const struct rs_texture *tex)
 {
     struct texfx_ctx c = { s, tex };
-    return walk(fb, clip, pos, span_texfx, &c);
+    return walk(fb, clip, pos, span_texfx, &c, tex->routine == 224);
 }
 
 static int32_t sat_round(float f)

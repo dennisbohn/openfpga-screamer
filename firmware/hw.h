@@ -109,7 +109,7 @@
 #define RS_DRAW         REG32(0xF0003014u)  /* W: colour | buffer << 8, starts; R: RS_BUSY */
 #define RS_PIXELS       REG32(0xF0003018u)  /* R: pixels drawn; W: clears */
 #define RS_TEX          REG32(0xF000301Cu)  /* texture: SDRAM byte address of texel (0, 0), rows of 256 bytes */
-#define RS_TEXSIZE      REG32(0xF0003020u)  /* [8:0] width, [24:16] height (1..256), [31] RS_CUT */
+#define RS_TEXSIZE      REG32(0xF0003020u)  /* [8:0] width, [24:16] height (1..256), [30] RS_BLEND, [31] RS_CUT */
 #define RS_REF          REG32(0xF0003024u)  /* reference pixel, RS_XY(x, y) */
 #define RS_A(k)         REG32(0xF0003028u + 4u * (k))   /* Q, U, V at the reference pixel (rs_tex_setup) */
 #define RS_DX(k)        REG32(0xF0003034u + 4u * (k))   /* their change per pixel in x, 8 fraction bits */
@@ -122,9 +122,13 @@
 #define RS_ROW_CLOCKS   REG32(0xF0003060u)  /* R: clocks in the work of a row (span, first pixel) */
 #define RS_DRAIN_CLOCKS REG32(0xF0003064u)  /* R: clocks idle while the texture pipeline drained */
 #define RS_STARVED      REG32(0xF0003068u)  /* R: clocks idle while the setup or geometry unit worked */
+#define RS_SMG          REG32(0xF000306Cu)  /* W: an entry of the see-through table (MAPn.SMG, raster.h
+                                               rs_smg): [21:8] row << 8 | old pixel, [7:0] new pixel;
+                                               not held back: write it while nothing blended is drawn */
 #define RS_BUSY         (1u << 0)
 #define RS_TEXTURED     (1u << 9)           /* RS_DRAW: textured with RS_TEX ... RS_DY */
 #define RS_CUT          (1u << 31)          /* RS_TEXSIZE: texel 0 is see-through */
+#define RS_BLEND        (1u << 30)          /* RS_TEXSIZE: routine 224, pixel = table[texel & 63][pixel] */
 #define RS_XY(x, y)     ((uint32_t)(uint16_t)(y) << 16 | (uint16_t)(x))
 
 /* the setup unit (core/src/fpga/core/setup.v, C model setup.h): polygons in view space */

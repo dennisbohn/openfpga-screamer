@@ -28,8 +28,26 @@ struct rs_tvertex { int32_t x, y; float q, uq, vq; };  /* u, v in texels */
 struct rs_texture {
     const volatile uint8_t *data;               /* rows of 256 bytes */
     int width, height;                          /* u, v are clamped to them */
-    int routine;                                /* 16 solid, 64 palette index 0 see-through */
+    int routine;                                /* 16 solid, 64 palette index 0 see-through,
+                                                   224 see-through through rs_smg (below) */
 };
+
+/*
+ * Routine 224 (the game's smoke, shadows and light beams, STARTL.EXE 0xcd9d0): the texel t
+ * is a strength, the pixel becomes rs_smg[(t & 63) << 8 | pixel], the pixel already there
+ * through row t of the track's MAPn.SMG (64 rows of 256 palette indices). Unlike the game,
+ * texel 0 leaves the pixel as it is: row 0 only maps the palette's duplicate colours to
+ * their first index, so it looks the same and saves the work. The hardware keeps the table
+ * in the rasterizer, written through RS_SMG (hw.h, one entry a write); rs_smg is the
+ * model's copy, which the firmware points at the same 16384 bytes when it writes them (0
+ * reads as a table of zeros, the hardware's after configuration).
+ * Its pixels are the game's for this routine (0xcd97a), not those of the others (raster.c):
+ * pixel (x, r) when the point (x, r + 1) is in the triangle, its left and lower edge
+ * included, so the triangles of a fan share their edges exactly and no pixel is blended
+ * twice: rows a.y .. c.y - 1, in row r the columns ceil(xl) .. ceil(xr) - 1 of the left and
+ * the right edge at the bottom of the row (the edges evaluated as for the others).
+ */
+extern const uint8_t *rs_smg;
 
 uint32_t rs_textured(volatile uint8_t *fb, const struct rs_clip *clip,
                      const struct rs_tvertex v[3], const struct rs_texture *tex);

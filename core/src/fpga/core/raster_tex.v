@@ -11,6 +11,20 @@
 // then a queue of 64 pixels and the back end: texel out of the cache, byte into the
 // framebuffer unless the texel is 0 and the texture see-through.
 //
+// Blended pixels (routine 224): the texel t is a strength, the pixel becomes smg[t[5:0],
+// pixel], the pixel already in the framebuffer through row t of the see-through table
+// (16384 bytes, the track's MAPn.SMG, written by the CPU). The drawing port reads or writes
+// in a clock, so a blended pixel takes it twice, in four stages behind B2:
+//   B2  texel (as for any pixel): the word is read (out_word, no write)
+//   B3  the read                               B4  the pixel's byte out of the word
+//   B5  table read                             B6  its byte into the write registers
+// and the write a clock later. Both port accesses come from the write registers, loaded at
+// B2 or at B6, so a pixel does not leave the queue while a blended one is in B5 (it would
+// reach B2 with that one at B6): in a row of blended pixels four go, then four clocks
+// none, half a pixel a clock. Within a triangle every pixel comes once; the first pixel of
+// the next one waits until no blended pixel is in B2 .. B5, so their writes come before its
+// read or write. Others go one a clock as before.
+//
 // Texture cache with prefetch (Igehy, Eldridge, Proudfoot: "Prefetching in a Texture
 // Cache Architecture", 1998): 16 KB direct mapped, lines of 32 bytes (index =
 // address[13:5], tag = address[25:14]). The tags are checked at T, ahead of the queue: a
@@ -44,6 +58,8 @@ module raster_tex (
     input   wire    [8:0]   tex_w,              // 1..256
     input   wire    [8:0]   tex_h,
     input   wire            tex_cut,            // texel 0 is see-through
+    input   wire            tex_blend,          // through the see-through table
+    input   wire            tri_start,          // a triangle starts: the next pixel is its first
 
     output  wire            busy,
     output  wire            front_busy,         // pixels before the queue
@@ -51,11 +67,18 @@ module raster_tex (
     output  wire            stalled,            // the back end waits for a line
     input   wire            clear_misses,
 
-    // framebuffer writes, one pixel each
+    // framebuffer writes, one pixel each; out_word is the address of a blended pixel's read
+    // too, in a clock without out_wr; fb_q is the word read the clock before
     output  reg             out_wr = 0,
     output  reg     [13:0]  out_word,
     output  reg     [3:0]   out_be,
     output  reg     [7:0]   out_texel,
+    input   wire    [31:0]  fb_q,
+
+    // the see-through table: smg_data at row << 8 | old pixel
+    input   wire            smg_wr,
+    input   wire    [13:0]  smg_addr,
+    input   wire    [7:0]   smg_data,
 
     // line reads from the SDRAM (sdram_port)
     output  reg             mem_valid = 0,
@@ -202,15 +225,18 @@ end endgenerate
     reg  [31:0] lbw_q;
 
 //
-// the queue: 64 x {marked, index, offset in the line, framebuffer word and pixel,
-// see-through}; its head read a clock ahead (a pixel written into the empty queue waits
-// one clock more)
+// the queue: 64 x {a triangle's first, blended, marked, index, offset in the line,
+// framebuffer word and pixel, see-through}; its head read a clock ahead (a pixel written
+// into the empty queue waits one clock more)
 //
-    (* ramstyle = "no_rw_check, M10K" *) reg  [31:0] pq [0:63];
-    reg  [31:0] pq_q;
+    (* ramstyle = "no_rw_check, M10K" *) reg  [33:0] pq [0:63];
+    reg  [33:0] pq_q;
     reg         q_ok = 0;                       // pq_q holds the entry at pq_rp
     reg  [6:0]  pq_wp = 0, pq_rp = 0;
     wire [6:0]  pq_n = pq_wp - pq_rp;
+    reg         t_first = 0;                    // the next pixel into the queue is a triangle's first
+    wire        h_first = pq_q[33];
+    wire        h_blend = pq_q[32];
     wire        h_fill = pq_q[31];
     wire [8:0]  h_index = pq_q[30:22];
     wire [4:0]  h_off = pq_q[21:17];
@@ -223,8 +249,12 @@ end endgenerate
     wire        adv = !inval && (!vt || t_commit);
     assign in_ready = adv;
 
-    // the back end takes the head when it is not marked or its line is in
-    wire        h_go = q_ok && pq_n != 7'd0 && (!h_fill || (s_ready[s_ru] && lq_ok));
+    // the back end takes the head when it is not marked or its line is in, and (above) no
+    // blended pixel is in B5, and a triangle's first none in B2 .. B4
+    reg         b2 = 0, b2_blend;
+    reg         rd3 = 0, rd4 = 0, rd5 = 0, rd6 = 0;     // a blended pixel in B3 .. B6
+    wire        h_go = q_ok && pq_n != 7'd0 && (!h_fill || (s_ready[s_ru] && lq_ok)) &&
+                       !rd5 && !(h_first && ((b2 && b2_blend) || rd3 || rd4));
     wire [5:0]  pq_ra = h_go ? pq_rp[5:0] + 6'd1 : pq_rp[5:0];
     assign stalled = pq_n != 7'd0 && h_fill && !s_ready[s_ru];
 
@@ -232,7 +262,7 @@ always @(posedge clk) begin
     if(inval) tags[inval_cnt] <= 13'd0;
     else if(t_miss) tags[a_t[13:5]] <= {1'b1, a_t[25:14]};
     if(adv) t_q <= tags[a_a[13:5]];
-    if(t_commit) pq[pq_wp[5:0]] <= {t_miss, a_t[13:5], a_t[4:0], wt, tex_cut};
+    if(t_commit) pq[pq_wp[5:0]] <= {t_first, tex_blend, t_miss, a_t[13:5], a_t[4:0], wt, tex_cut};
     pq_q <= pq[pq_ra];
 end
 
@@ -249,12 +279,30 @@ always @(posedge clk) begin
 end
 
     // B2: the byte, from the line buffer for a marked pixel, else from the cache
-    reg         b2 = 0, b2_fill, b2_cut;
+    reg         b2_fill, b2_cut;
     reg  [4:0]  b2_off;
     reg  [15:0] b2_w;
     wire [7:0]  texel = b2_fill ? lbw_q[8 * b2_off[1:0] +: 8] : l_q[8 * b2_off +: 8];
+    wire        b2_draw = !(b2_cut && texel == 8'd0);
 
-    assign busy = inval || front_busy || pq_n != 7'd0 || b2 || out_wr || s_used != 5'd0 || f_last;
+    // a blended pixel behind B2: strength, pixel in the word, the word, the old pixel (in
+    // registers: Quartus would make a block RAM shift register of them)
+    (* altera_attribute = "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF" *) reg  [5:0]  bt3, bt4, bt5;
+    (* altera_attribute = "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF" *) reg  [1:0]  bl3, bl4, bl5, bl6;
+    (* altera_attribute = "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF" *) reg  [13:0] bw4, bw5, bw6;
+    reg  [7:0]  old5;
+    (* ramstyle = "no_rw_check, M10K" *) reg  [7:0] smg [0:16383];
+    reg  [7:0]  smg_q;
+`ifdef VERILATOR
+    initial for(ti = 0; ti < 16384; ti = ti + 1) smg[ti] = 8'd0;   // (the FPGA's after configuration)
+`endif
+always @(posedge clk) begin
+    if(smg_wr) smg[smg_addr] <= smg_data;
+    smg_q <= smg[{bt5, old5}];
+end
+
+    assign busy = inval || front_busy || pq_n != 7'd0 || b2 || out_wr || rd3 || rd4 || rd5 || rd6 ||
+                  s_used != 5'd0 || f_last;
 
 always @(posedge clk) begin
     out_wr <= 0;
@@ -340,23 +388,42 @@ always @(posedge clk) begin
     // back end, B1: the head out of the queue; a marked pixel frees its slot
     b2 <= h_go;
     lq_ok <= !(h_go && h_fill);
+    if(tri_start) t_first <= 1;
+    else if(t_commit) t_first <= 0;
     if(h_go) begin
         pq_rp <= pq_rp + 1'b1;
         b2_fill <= h_fill;
         b2_off <= h_off;
         b2_w <= h_w;
         b2_cut <= h_cut;
+        b2_blend <= h_blend;
         if(h_fill) begin
             s_ready[s_ru] <= 0;
             s_use <= s_use + 1'b1;
         end
     end
-    // B2: the byte into the framebuffer
+    // B2: the byte into the framebuffer, or a blended pixel's word read
+    rd3 <= b2 && b2_blend && b2_draw;
     if(b2) begin
-        out_wr <= !(b2_cut && texel == 8'd0);
+        out_wr <= b2_draw && !b2_blend;
         out_word <= b2_w[15:2];
         out_be <= 4'b1000 >> b2_w[1:0];
         out_texel <= texel;
+        bt3 <= texel[5:0];
+        bl3 <= b2_w[1:0];
+    end
+    // B3 .. B6: the read, the old pixel (lane 0 is the leftmost, [31:24]), the table, the write
+    rd4 <= rd3;
+    rd5 <= rd4;
+    rd6 <= rd5;
+    bt4 <= bt3; bl4 <= bl3; bw4 <= out_word;
+    bt5 <= bt4; bl5 <= bl4; bw5 <= bw4; old5 <= fb_q[{~bl4, 3'b000} +: 8];
+    bl6 <= bl5; bw6 <= bw5;
+    if(rd6) begin
+        out_wr <= 1;
+        out_word <= bw6;
+        out_be <= 4'b1000 >> bl6;
+        out_texel <= smg_q;
     end
 
     // invalidation: every tag cleared; lines under way still come in
@@ -373,6 +440,7 @@ always @(posedge clk) begin
     if(reset) begin
         v1 <= 0; v2 <= 0; v3 <= 0; v4 <= 0; v5 <= 0; v6 <= 0; v7 <= 0; v8 <= 0; v9 <= 0;
         va <= 0; vt <= 0; b2 <= 0;
+        rd3 <= 0; rd4 <= 0; rd5 <= 0; rd6 <= 0;
         pq_wp <= 0; pq_rp <= 0; q_ok <= 0;
         s_alloc <= 0; s_req <= 0; s_fetch <= 0; s_use <= 0; s_ready <= 0; lq_ok <= 0;
         mem_valid <= 0;
