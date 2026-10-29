@@ -1,6 +1,6 @@
 # Architektur
 
-Stand: 2026-10-29. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 aus zwei
+Stand: 2026-10-30. Gebaut und auf dem Pocket getestet: Video-Ausgabe 320×200 aus zwei
 8-Bit-Framebuffern im Block-RAM, je mit eigener Palette, getauscht in der Austastlücke; die
 CPU (VexRiscv RV32IMF mit FPU und CFU, `docs/soc.md`); Geometrie-Einheit, Clipper,
 Setup-Einheit und Rasterizer mit vorausladendem Textur-Cache; Strecke 1 mit dem Auto des
@@ -12,7 +12,8 @@ Football-Helm am Start); die Strecke wird aus den originalen Spieldateien gebaut
 auf dem Pocket steht aus: Routine 224 (Rauch, Schatten unter allen Autos), das Radar, die
 Cockpit-Ansicht, die Startrichtung des Originals und der Ton: ein Mischer mit 32 Stimmen
 (`audio.v`), der die Soundeffekte aus `SOUND.DAT` spielt (Motor, Rutschen, Wand, Crash,
-Requisiten, Berührung mit einem Gegner).
+Requisiten, Berührung mit einem Gegner, die Motoren der Gegner und die Fahrzeuge der Strecke,
+im Stereobild und mit Doppler).
 Belegung siehe „Belegung“, alles gemessen.
 
 ## Hardware des Pocket (Haupt-FPGA)
@@ -379,15 +380,20 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   11025 / 48000 weiter (die Firmware rechnet das um). Die Register stehen in MLABs, je Stimme
   eine Zeile von 32 Bytes in einem M10K, geholt über den Zeilen-Port; Takt der Ausgabe wie in der
   Vorlage (MCLK 12,288 MHz), alles auf `clk_74a`. Das C-Modell `firmware/mixer.c` rechnet
-  Wert für Wert dasselbe (`tools/sim.sh audio`, 60.000 Zufallswerte). Lautstärke wie im Spiel:
-  Zeile von `SFXSBASE.DTR` mal Hauptregler `0x6000` (`0x1bc2f`). Zu hören sind der Motor (eine
+  Wert für Wert dasselbe (`tools/sim.sh audio`, 60.000 Zufallswerte). Lautstärke: Zeile von
+  `SFXSBASE.DTR` mal Hauptregler, im Spiel `0x6000` (`0x1bc2f`), hier seit 2026-10-30 `0x4000`
+  (−3,5 dB), damit der Motor des Spielers und die drei der Gegner zusammen nie übersteuern
+  (in der Simulation vorher Spitze 27.355 nach 1 s Startaufstellung). Zu hören sind der Motor (eine
   Stimme, Tonhöhe Drehzahl × 14 + 32768 bei jedem Schritt, `autogall` im Tunnel), das Rutschen
   mit der Bedingung des Rauchs (`0x17d04`, Start und Halt bei `0x180d0`), die Wand (nur ohne
   Crash, `0x16f0b`), der Crash (`dentone`), Requisiten (`hit_0`) und die Berührung mit einem
-  Gegner (`crash`, höchstens 30-mal je Sekunde). Noch nicht: die Motoren der Gegner mit Pan und
-  Doppler, die Geräusche der Strecke, der Sprecher, die Musik. Offen: ein Tiefpass wie der
-  Ausgangsfilter der Soundkarten (OpenScreamer nimmt 3,2 kHz wie die Sound Blaster Pro); ob er
-  fehlt, entscheidet das Hören auf dem Pocket.
+  Gegner (`crash`, höchstens 30-mal je Sekunde). Seit 2026-10-30 auch Geräusche mit einem Ort,
+  gehört an der Kamera (`docs/soc.md`, „Ton“): die Motoren der drei nächsten Gegner (in der
+  Startaufstellung heulen sie auf) und die Fahrzeuge der Strecke (Lastwagen, Busse, Jet; die
+  vierte Spalte von `ANIMATIONS`), mit Doppler und als einzige im Stereobild. Noch nicht: der
+  Sprecher, die Musik. Offen: ein Tiefpass wie der Ausgangsfilter der Soundkarten
+  (OpenScreamer nimmt 3,2 kHz wie die Sound Blaster Pro); ob er fehlt, entscheidet das Hören
+  auf dem Pocket.
 - **Bewegliche Teile der Strecke** (2026-10-28, aus der EXE: `0x8ad14`, `0x8acf0`, `0x8ac58`;
   das Format nach OpenScreamers Notes S2-5b, das für beide Spiele gilt): Ein Mesh kann
   mehrere Blöcke haben, und ein Block mit Positionssatz (+0x0C) wird von dort verschoben oder,

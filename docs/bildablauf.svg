@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 708" width="1120" height="708" role="img" aria-label="Ablauf eines Bildes über 20 ms: die CPU nacheinander Physik (Fahrzeug, Gegner) 2,3 ms, Vorbereitung (Kamera, Objekte, Hintergrund) 0,6 ms, Auswahl (Sichtprüfung, Sortierung) 2,2 ms, Bauteile (Matrizen, Übergabe an die Hardware) 10,4 ms, Rennanzeige und Radar 1,8 ms, Warten auf die Hardware 0,1 ms, Zähler, Protokoll 0,0 ms; fertig nach 17,6 ms. Beschäftigt: Geometrie-Einheit 11,7 ms, Setup-Einheit 7,0 ms, Rasterizer 6,2 ms, Blitter 1,5 ms.">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 708" width="1120" height="708" role="img" aria-label="Ablauf eines Bildes über 20 ms: die CPU nacheinander Physik (Fahrzeug, Gegner) 2,4 ms, Vorbereitung (Kamera, Objekte, Hintergrund) 0,5 ms, Auswahl (Sichtprüfung, Sortierung) 2,2 ms, Bauteile (Matrizen, Übergabe an die Hardware) 8,9 ms, Rennanzeige und Radar 3,3 ms, Warten auf die Hardware 0,1 ms, Zähler, Protokoll 0,0 ms; fertig nach 17,5 ms. Beschäftigt: Geometrie-Einheit 11,7 ms, Setup-Einheit 7,0 ms, Rasterizer 6,2 ms, Blitter 1,5 ms.">
 <title>Ablauf eines Bildes</title>
 <style>
   svg {
@@ -87,186 +87,186 @@
 <line x1="1020.0" y1="184" x2="1020.0" y2="438" class="grid"/>
 <text x="1020.0" y="176.0" class="m" text-anchor="middle">20 ms</text>
 <text x="208.0" y="213.0" class="t" text-anchor="end">CPU</text>
-<rect x="220.0" y="192.0" width="93.6" height="34.0" class="f-phys"><title>Physik (Fahrzeug, Gegner): 173.710 Takte (2,3 ms)</title></rect>
-<rect x="313.6" y="192.0" width="24.5" height="34.0" class="f-prep"><title>Vorbereitung (Kamera, Objekte, Hintergrund): 45.413 Takte (0,6 ms)</title></rect>
-<rect x="338.0" y="192.0" width="89.3" height="34.0" class="f-cull"><title>Auswahl (Sichtprüfung, Sortierung): 165.735 Takte (2,2 ms)</title></rect>
-<rect x="427.3" y="192.0" width="417.9" height="34.0" class="f-pieces"><title>Bauteile (Matrizen, Übergabe an die Hardware): 775.728 Takte (10,4 ms), davon Schreiben an die Hardware 35.432</title></rect>
-<rect x="845.2" y="192.0" width="73.7" height="34.0" class="f-hud"><title>Rennanzeige und Radar: 136.812 Takte (1,8 ms)</title></rect>
-<rect x="918.9" y="192.0" width="4.4" height="34.0" class="f-wait"><title>Warten auf die Hardware: 8.209 Takte (0,1 ms)</title></rect>
-<rect x="923.7" y="192.0" width="96.3" height="34.0" class="idle"><title>wartet auf den Bildwechsel: 178.841 Takte (2,4 ms)</title></rect>
-<text x="971.8" y="213.0" class="m" text-anchor="middle">frei</text>
-<text x="266.8" y="213.0" class="in" text-anchor="middle">Physik</text>
-<text x="382.7" y="213.0" class="in" text-anchor="middle">Auswahl</text>
-<text x="636.3" y="213.0" class="in" text-anchor="middle">Bauteile</text>
-<text x="882.1" y="213.0" class="in" text-anchor="middle">Anzeige</text>
+<rect x="220.0" y="192.0" width="97.4" height="34.0" class="f-phys"><title>Physik (Fahrzeug, Gegner): 180.799 Takte (2,4 ms)</title></rect>
+<rect x="317.4" y="192.0" width="21.5" height="34.0" class="f-prep"><title>Vorbereitung (Kamera, Objekte, Hintergrund): 39.909 Takte (0,5 ms)</title></rect>
+<rect x="338.9" y="192.0" width="89.2" height="34.0" class="f-cull"><title>Auswahl (Sichtprüfung, Sortierung): 165.632 Takte (2,2 ms)</title></rect>
+<rect x="428.1" y="192.0" width="356.3" height="34.0" class="f-pieces"><title>Bauteile (Matrizen, Übergabe an die Hardware): 661.443 Takte (8,9 ms), davon Schreiben an die Hardware 29.031</title></rect>
+<rect x="784.5" y="192.0" width="132.6" height="34.0" class="f-hud"><title>Rennanzeige und Radar: 246.062 Takte (3,3 ms)</title></rect>
+<rect x="917.0" y="192.0" width="4.4" height="34.0" class="f-wait"><title>Warten auf die Hardware: 8.174 Takte (0,1 ms)</title></rect>
+<rect x="921.7" y="192.0" width="98.3" height="34.0" class="idle"><title>wartet auf den Bildwechsel: 182.436 Takte (2,5 ms)</title></rect>
+<text x="970.9" y="213.0" class="m" text-anchor="middle">frei</text>
+<text x="268.7" y="213.0" class="in" text-anchor="middle">Physik</text>
+<text x="383.5" y="213.0" class="in" text-anchor="middle">Auswahl</text>
+<text x="606.3" y="213.0" class="in" text-anchor="middle">Bauteile</text>
+<text x="850.7" y="213.0" class="in" text-anchor="middle">Anzeige</text>
 <text x="208.0" y="265.0" class="t" text-anchor="end">Geometrie-Einheit</text>
-<rect x="220.0" y="244.0" width="703.7" height="34.0" class="lane"><title>Geometrie-Einheit</title></rect>
-<rect x="427.3" y="257.4" width="4.3" height="20.6" class="f-unit"><title>Geometrie-Einheit: 4.847 von 7.990 Takten beschäftigt (61 %)</title></rect>
-<rect x="431.6" y="257.9" width="4.0" height="20.1" class="f-unit"><title>Geometrie-Einheit: 4.440 von 7.494 Takten beschäftigt (59 %)</title></rect>
-<rect x="435.7" y="258.2" width="4.1" height="19.8" class="f-unit"><title>Geometrie-Einheit: 4.440 von 7.632 Takten beschäftigt (58 %)</title></rect>
-<rect x="439.8" y="251.6" width="4.2" height="26.4" class="f-unit"><title>Geometrie-Einheit: 6.060 von 7.791 Takten beschäftigt (78 %)</title></rect>
-<rect x="444.0" y="244.0" width="4.7" height="34.0" class="f-unit"><title>Geometrie-Einheit: 8.666 von 8.668 Takten beschäftigt (100 %)</title></rect>
-<rect x="448.7" y="244.0" width="4.6" height="34.0" class="f-unit"><title>Geometrie-Einheit: 8.450 von 8.453 Takten beschäftigt (100 %)</title></rect>
-<rect x="453.2" y="244.0" width="4.2" height="34.0" class="f-unit"><title>Geometrie-Einheit: 7.824 von 7.827 Takten beschäftigt (100 %)</title></rect>
-<rect x="457.4" y="244.0" width="4.2" height="34.0" class="f-unit"><title>Geometrie-Einheit: 7.837 von 7.840 Takten beschäftigt (100 %)</title></rect>
-<rect x="461.6" y="244.0" width="4.2" height="34.0" class="f-unit"><title>Geometrie-Einheit: 7.865 von 7.865 Takten beschäftigt (100 %)</title></rect>
-<rect x="465.9" y="244.0" width="4.3" height="34.0" class="f-unit"><title>Geometrie-Einheit: 8.026 von 8.028 Takten beschäftigt (100 %)</title></rect>
-<rect x="470.2" y="244.0" width="4.5" height="34.0" class="f-unit"><title>Geometrie-Einheit: 8.356 von 8.361 Takten beschäftigt (100 %)</title></rect>
-<rect x="474.7" y="244.0" width="4.5" height="34.0" class="f-unit"><title>Geometrie-Einheit: 8.311 von 8.313 Takten beschäftigt (100 %)</title></rect>
-<rect x="479.2" y="244.0" width="4.4" height="34.0" class="f-unit"><title>Geometrie-Einheit: 8.186 von 8.188 Takten beschäftigt (100 %)</title></rect>
-<rect x="483.6" y="244.0" width="11.6" height="34.0" class="f-unit"><title>Geometrie-Einheit: 21.662 von 21.592 Takten beschäftigt (100 %)</title></rect>
-<rect x="495.2" y="244.0" width="36.1" height="34.0" class="f-unit"><title>Geometrie-Einheit: 66.847 von 66.936 Takten beschäftigt (100 %)</title></rect>
-<rect x="531.3" y="244.0" width="35.8" height="34.0" class="f-unit"><title>Geometrie-Einheit: 66.503 von 66.518 Takten beschäftigt (100 %)</title></rect>
-<rect x="567.1" y="244.0" width="7.2" height="34.0" class="f-unit"><title>Geometrie-Einheit: 13.433 von 13.436 Takten beschäftigt (100 %)</title></rect>
-<rect x="574.4" y="244.0" width="27.0" height="34.0" class="f-unit"><title>Geometrie-Einheit: 50.062 von 50.068 Takten beschäftigt (100 %)</title></rect>
-<rect x="601.3" y="244.0" width="7.2" height="34.0" class="f-unit"><title>Geometrie-Einheit: 13.324 von 13.327 Takten beschäftigt (100 %)</title></rect>
-<rect x="608.5" y="244.0" width="27.4" height="34.0" class="f-unit"><title>Geometrie-Einheit: 50.829 von 50.837 Takten beschäftigt (100 %)</title></rect>
-<rect x="635.9" y="244.0" width="7.2" height="34.0" class="f-unit"><title>Geometrie-Einheit: 13.423 von 13.424 Takten beschäftigt (100 %)</title></rect>
-<rect x="643.1" y="244.0" width="6.9" height="34.0" class="f-unit"><title>Geometrie-Einheit: 12.778 von 12.781 Takten beschäftigt (100 %)</title></rect>
-<rect x="650.0" y="244.0" width="23.5" height="34.0" class="f-unit"><title>Geometrie-Einheit: 43.649 von 43.664 Takten beschäftigt (100 %)</title></rect>
-<rect x="673.5" y="244.0" width="7.0" height="34.0" class="f-unit"><title>Geometrie-Einheit: 12.894 von 12.902 Takten beschäftigt (100 %)</title></rect>
-<rect x="680.5" y="244.0" width="27.7" height="34.0" class="f-unit"><title>Geometrie-Einheit: 51.347 von 51.368 Takten beschäftigt (100 %)</title></rect>
-<rect x="708.2" y="244.0" width="6.8" height="34.0" class="f-unit"><title>Geometrie-Einheit: 12.620 von 12.621 Takten beschäftigt (100 %)</title></rect>
-<rect x="715.0" y="244.0" width="26.8" height="34.0" class="f-unit"><title>Geometrie-Einheit: 49.699 von 49.714 Takten beschäftigt (100 %)</title></rect>
-<rect x="741.7" y="244.0" width="34.8" height="34.0" class="f-unit"><title>Geometrie-Einheit: 64.536 von 64.547 Takten beschäftigt (100 %)</title></rect>
-<rect x="776.5" y="244.0" width="7.4" height="34.0" class="f-unit"><title>Geometrie-Einheit: 13.657 von 13.666 Takten beschäftigt (100 %)</title></rect>
-<rect x="783.9" y="244.0" width="25.1" height="34.0" class="f-unit"><title>Geometrie-Einheit: 46.516 von 46.530 Takten beschäftigt (100 %)</title></rect>
-<rect x="809.0" y="244.0" width="26.0" height="34.0" class="f-unit"><title>Geometrie-Einheit: 48.223 von 48.238 Takten beschäftigt (100 %)</title></rect>
-<rect x="834.9" y="244.0" width="7.2" height="34.0" class="f-unit"><title>Geometrie-Einheit: 13.442 von 13.443 Takten beschäftigt (100 %)</title></rect>
-<rect x="842.2" y="244.0" width="3.1" height="34.0" class="f-unit"><title>Geometrie-Einheit: 5.662 von 5.666 Takten beschäftigt (100 %)</title></rect>
-<rect x="845.2" y="244.0" width="1.0" height="34.0" class="f-unit"><title>Geometrie-Einheit: 1.923 von 1.898 Takten beschäftigt (100 %)</title></rect>
-<rect x="846.3" y="251.4" width="72.7" height="26.6" class="f-unit"><title>Geometrie-Einheit: 105.434 von 134.914 Takten beschäftigt (78 %)</title></rect>
+<rect x="220.0" y="244.0" width="701.7" height="34.0" class="lane"><title>Geometrie-Einheit</title></rect>
+<rect x="428.1" y="256.9" width="4.2" height="21.1" class="f-unit"><title>Geometrie-Einheit: 4.854 von 7.819 Takten beschäftigt (62 %)</title></rect>
+<rect x="432.3" y="256.3" width="3.8" height="21.7" class="f-unit"><title>Geometrie-Einheit: 4.440 von 6.972 Takten beschäftigt (64 %)</title></rect>
+<rect x="436.1" y="258.2" width="4.1" height="19.8" class="f-unit"><title>Geometrie-Einheit: 4.440 von 7.635 Takten beschäftigt (58 %)</title></rect>
+<rect x="440.2" y="252.0" width="4.3" height="26.0" class="f-unit"><title>Geometrie-Einheit: 6.051 von 7.904 Takten beschäftigt (77 %)</title></rect>
+<rect x="444.5" y="244.0" width="4.3" height="34.0" class="f-unit"><title>Geometrie-Einheit: 7.988 von 7.990 Takten beschäftigt (100 %)</title></rect>
+<rect x="448.8" y="244.0" width="4.2" height="34.0" class="f-unit"><title>Geometrie-Einheit: 7.854 von 7.857 Takten beschäftigt (100 %)</title></rect>
+<rect x="453.0" y="244.0" width="3.9" height="34.0" class="f-unit"><title>Geometrie-Einheit: 7.205 von 7.206 Takten beschäftigt (100 %)</title></rect>
+<rect x="456.9" y="244.0" width="4.0" height="34.0" class="f-unit"><title>Geometrie-Einheit: 7.409 von 7.413 Takten beschäftigt (100 %)</title></rect>
+<rect x="460.9" y="244.0" width="3.9" height="34.0" class="f-unit"><title>Geometrie-Einheit: 7.256 von 7.257 Takten beschäftigt (100 %)</title></rect>
+<rect x="464.8" y="244.0" width="4.1" height="34.0" class="f-unit"><title>Geometrie-Einheit: 7.636 von 7.637 Takten beschäftigt (100 %)</title></rect>
+<rect x="468.9" y="244.0" width="4.2" height="34.0" class="f-unit"><title>Geometrie-Einheit: 7.762 von 7.766 Takten beschäftigt (100 %)</title></rect>
+<rect x="473.1" y="244.0" width="4.4" height="34.0" class="f-unit"><title>Geometrie-Einheit: 8.250 von 8.252 Takten beschäftigt (100 %)</title></rect>
+<rect x="477.5" y="244.0" width="4.3" height="34.0" class="f-unit"><title>Geometrie-Einheit: 7.952 von 7.955 Takten beschäftigt (100 %)</title></rect>
+<rect x="481.8" y="244.0" width="8.7" height="34.0" class="f-unit"><title>Geometrie-Einheit: 16.243 von 16.219 Takten beschäftigt (100 %)</title></rect>
+<rect x="490.6" y="244.0" width="34.9" height="34.0" class="f-unit"><title>Geometrie-Einheit: 64.742 von 64.782 Takten beschäftigt (100 %)</title></rect>
+<rect x="525.5" y="244.0" width="25.3" height="34.0" class="f-unit"><title>Geometrie-Einheit: 47.032 von 47.042 Takten beschäftigt (100 %)</title></rect>
+<rect x="550.8" y="244.0" width="7.1" height="34.0" class="f-unit"><title>Geometrie-Einheit: 13.128 von 13.131 Takten beschäftigt (100 %)</title></rect>
+<rect x="557.9" y="244.0" width="21.8" height="34.0" class="f-unit"><title>Geometrie-Einheit: 40.499 von 40.511 Takten beschäftigt (100 %)</title></rect>
+<rect x="579.7" y="244.0" width="7.0" height="34.0" class="f-unit"><title>Geometrie-Einheit: 12.962 von 12.964 Takten beschäftigt (100 %)</title></rect>
+<rect x="586.7" y="244.0" width="20.9" height="34.0" class="f-unit"><title>Geometrie-Einheit: 38.732 von 38.736 Takten beschäftigt (100 %)</title></rect>
+<rect x="607.5" y="244.0" width="7.1" height="34.0" class="f-unit"><title>Geometrie-Einheit: 13.166 von 13.170 Takten beschäftigt (100 %)</title></rect>
+<rect x="614.6" y="244.0" width="5.9" height="34.0" class="f-unit"><title>Geometrie-Einheit: 10.867 von 10.868 Takten beschäftigt (100 %)</title></rect>
+<rect x="620.5" y="244.0" width="21.4" height="34.0" class="f-unit"><title>Geometrie-Einheit: 39.800 von 39.804 Takten beschäftigt (100 %)</title></rect>
+<rect x="641.9" y="244.0" width="7.0" height="34.0" class="f-unit"><title>Geometrie-Einheit: 13.078 von 13.081 Takten beschäftigt (100 %)</title></rect>
+<rect x="649.0" y="244.0" width="21.3" height="34.0" class="f-unit"><title>Geometrie-Einheit: 39.454 von 39.468 Takten beschäftigt (100 %)</title></rect>
+<rect x="670.3" y="244.0" width="6.8" height="34.0" class="f-unit"><title>Geometrie-Einheit: 12.590 von 12.593 Takten beschäftigt (100 %)</title></rect>
+<rect x="677.0" y="244.0" width="21.0" height="34.0" class="f-unit"><title>Geometrie-Einheit: 39.017 von 39.034 Takten beschäftigt (100 %)</title></rect>
+<rect x="698.1" y="244.0" width="21.0" height="34.0" class="f-unit"><title>Geometrie-Einheit: 38.953 von 38.965 Takten beschäftigt (100 %)</title></rect>
+<rect x="719.1" y="244.0" width="7.1" height="34.0" class="f-unit"><title>Geometrie-Einheit: 13.183 von 13.185 Takten beschäftigt (100 %)</title></rect>
+<rect x="726.2" y="244.0" width="21.0" height="34.0" class="f-unit"><title>Geometrie-Einheit: 38.948 von 38.962 Takten beschäftigt (100 %)</title></rect>
+<rect x="747.1" y="244.0" width="27.3" height="34.0" class="f-unit"><title>Geometrie-Einheit: 50.587 von 50.595 Takten beschäftigt (100 %)</title></rect>
+<rect x="774.4" y="244.0" width="7.0" height="34.0" class="f-unit"><title>Geometrie-Einheit: 13.012 von 13.022 Takten beschäftigt (100 %)</title></rect>
+<rect x="781.4" y="244.0" width="3.0" height="34.0" class="f-unit"><title>Geometrie-Einheit: 5.648 von 5.648 Takten beschäftigt (100 %)</title></rect>
+<rect x="784.5" y="244.0" width="1.1" height="34.0" class="f-unit"><title>Geometrie-Einheit: 2.013 von 2.013 Takten beschäftigt (100 %)</title></rect>
+<rect x="785.5" y="248.1" width="131.5" height="29.9" class="f-unit"><title>Geometrie-Einheit: 214.482 von 244.049 Takten beschäftigt (88 %)</title></rect>
 <text x="208.0" y="317.0" class="t" text-anchor="end">Setup-Einheit</text>
-<rect x="220.0" y="296.0" width="703.7" height="34.0" class="lane"><title>Setup-Einheit</title></rect>
-<rect x="427.3" y="314.7" width="4.3" height="15.3" class="f-unit"><title>Setup-Einheit: 3.588 von 7.990 Takten beschäftigt (45 %)</title></rect>
-<rect x="431.6" y="313.2" width="4.0" height="16.8" class="f-unit"><title>Setup-Einheit: 3.694 von 7.494 Takten beschäftigt (49 %)</title></rect>
-<rect x="435.7" y="310.3" width="4.1" height="19.7" class="f-unit"><title>Setup-Einheit: 4.427 von 7.632 Takten beschäftigt (58 %)</title></rect>
-<rect x="439.8" y="301.2" width="4.2" height="28.8" class="f-unit"><title>Setup-Einheit: 6.589 von 7.791 Takten beschäftigt (85 %)</title></rect>
-<rect x="444.0" y="304.0" width="4.7" height="26.0" class="f-unit"><title>Setup-Einheit: 6.620 von 8.668 Takten beschäftigt (76 %)</title></rect>
-<rect x="448.7" y="328.5" width="4.6" height="1.5" class="f-unit"><title>Setup-Einheit: 383 von 8.453 Takten beschäftigt (5 %)</title></rect>
-<rect x="453.2" y="329.1" width="4.2" height="0.9" class="f-unit"><title>Setup-Einheit: 209 von 7.827 Takten beschäftigt (3 %)</title></rect>
-<rect x="457.4" y="320.9" width="4.2" height="9.1" class="f-unit"><title>Setup-Einheit: 2.090 von 7.840 Takten beschäftigt (27 %)</title></rect>
-<rect x="461.6" y="319.6" width="4.2" height="10.4" class="f-unit"><title>Setup-Einheit: 2.398 von 7.865 Takten beschäftigt (30 %)</title></rect>
-<rect x="465.9" y="313.6" width="4.3" height="16.4" class="f-unit"><title>Setup-Einheit: 3.872 von 8.028 Takten beschäftigt (48 %)</title></rect>
-<rect x="470.2" y="304.1" width="4.5" height="25.9" class="f-unit"><title>Setup-Einheit: 6.359 von 8.361 Takten beschäftigt (76 %)</title></rect>
-<rect x="474.7" y="303.7" width="4.5" height="26.3" class="f-unit"><title>Setup-Einheit: 6.434 von 8.313 Takten beschäftigt (77 %)</title></rect>
-<rect x="479.2" y="316.6" width="4.4" height="13.4" class="f-unit"><title>Setup-Einheit: 3.226 von 8.188 Takten beschäftigt (39 %)</title></rect>
-<rect x="483.6" y="303.9" width="11.6" height="26.1" class="f-unit"><title>Setup-Einheit: 16.582 von 21.592 Takten beschäftigt (77 %)</title></rect>
-<rect x="495.2" y="309.4" width="36.1" height="20.6" class="f-unit"><title>Setup-Einheit: 40.591 von 66.936 Takten beschäftigt (61 %)</title></rect>
-<rect x="531.3" y="307.7" width="35.8" height="22.3" class="f-unit"><title>Setup-Einheit: 43.699 von 66.518 Takten beschäftigt (66 %)</title></rect>
-<rect x="567.1" y="311.2" width="7.2" height="18.8" class="f-unit"><title>Setup-Einheit: 7.435 von 13.436 Takten beschäftigt (55 %)</title></rect>
-<rect x="574.4" y="305.3" width="27.0" height="24.7" class="f-unit"><title>Setup-Einheit: 36.309 von 50.068 Takten beschäftigt (73 %)</title></rect>
-<rect x="601.3" y="309.7" width="7.2" height="20.3" class="f-unit"><title>Setup-Einheit: 7.959 von 13.327 Takten beschäftigt (60 %)</title></rect>
-<rect x="608.5" y="305.3" width="27.4" height="24.7" class="f-unit"><title>Setup-Einheit: 36.900 von 50.837 Takten beschäftigt (73 %)</title></rect>
-<rect x="635.9" y="297.1" width="7.2" height="32.9" class="f-unit"><title>Setup-Einheit: 12.972 von 13.424 Takten beschäftigt (97 %)</title></rect>
-<rect x="643.1" y="306.3" width="6.9" height="23.7" class="f-unit"><title>Setup-Einheit: 8.895 von 12.781 Takten beschäftigt (70 %)</title></rect>
-<rect x="650.0" y="315.0" width="23.5" height="15.0" class="f-unit"><title>Setup-Einheit: 19.300 von 43.664 Takten beschäftigt (44 %)</title></rect>
-<rect x="673.5" y="314.5" width="7.0" height="15.5" class="f-unit"><title>Setup-Einheit: 5.872 von 12.902 Takten beschäftigt (46 %)</title></rect>
-<rect x="680.5" y="314.5" width="27.7" height="15.5" class="f-unit"><title>Setup-Einheit: 23.476 von 51.368 Takten beschäftigt (46 %)</title></rect>
-<rect x="708.2" y="317.3" width="6.8" height="12.7" class="f-unit"><title>Setup-Einheit: 4.715 von 12.621 Takten beschäftigt (37 %)</title></rect>
-<rect x="715.0" y="314.8" width="26.8" height="15.2" class="f-unit"><title>Setup-Einheit: 22.283 von 49.714 Takten beschäftigt (45 %)</title></rect>
-<rect x="741.7" y="298.9" width="34.8" height="31.1" class="f-unit"><title>Setup-Einheit: 58.950 von 64.547 Takten beschäftigt (91 %)</title></rect>
-<rect x="776.5" y="323.4" width="7.4" height="6.6" class="f-unit"><title>Setup-Einheit: 2.635 von 13.666 Takten beschäftigt (19 %)</title></rect>
-<rect x="783.9" y="317.4" width="25.1" height="12.6" class="f-unit"><title>Setup-Einheit: 17.229 von 46.530 Takten beschäftigt (37 %)</title></rect>
-<rect x="809.0" y="307.5" width="26.0" height="22.5" class="f-unit"><title>Setup-Einheit: 31.993 von 48.238 Takten beschäftigt (66 %)</title></rect>
-<rect x="834.9" y="315.4" width="7.2" height="14.6" class="f-unit"><title>Setup-Einheit: 5.756 von 13.443 Takten beschäftigt (43 %)</title></rect>
-<rect x="842.2" y="315.2" width="3.1" height="14.8" class="f-unit"><title>Setup-Einheit: 2.474 von 5.666 Takten beschäftigt (44 %)</title></rect>
-<rect x="845.2" y="313.8" width="1.0" height="16.2" class="f-unit"><title>Setup-Einheit: 902 von 1.898 Takten beschäftigt (48 %)</title></rect>
-<rect x="846.3" y="314.4" width="72.7" height="15.6" class="f-unit"><title>Setup-Einheit: 61.995 von 134.914 Takten beschäftigt (46 %)</title></rect>
+<rect x="220.0" y="296.0" width="701.7" height="34.0" class="lane"><title>Setup-Einheit</title></rect>
+<rect x="428.1" y="314.4" width="4.2" height="15.6" class="f-unit"><title>Setup-Einheit: 3.588 von 7.819 Takten beschäftigt (46 %)</title></rect>
+<rect x="432.3" y="312.0" width="3.8" height="18.0" class="f-unit"><title>Setup-Einheit: 3.682 von 6.972 Takten beschäftigt (53 %)</title></rect>
+<rect x="436.1" y="310.1" width="4.1" height="19.9" class="f-unit"><title>Setup-Einheit: 4.478 von 7.635 Takten beschäftigt (59 %)</title></rect>
+<rect x="440.2" y="301.8" width="4.3" height="28.2" class="f-unit"><title>Setup-Einheit: 6.560 von 7.904 Takten beschäftigt (83 %)</title></rect>
+<rect x="444.5" y="302.4" width="4.3" height="27.6" class="f-unit"><title>Setup-Einheit: 6.496 von 7.990 Takten beschäftigt (81 %)</title></rect>
+<rect x="448.8" y="328.4" width="4.2" height="1.6" class="f-unit"><title>Setup-Einheit: 363 von 7.857 Takten beschäftigt (5 %)</title></rect>
+<rect x="453.0" y="329.0" width="3.9" height="1.0" class="f-unit"><title>Setup-Einheit: 220 von 7.206 Takten beschäftigt (3 %)</title></rect>
+<rect x="456.9" y="323.3" width="4.0" height="6.7" class="f-unit"><title>Setup-Einheit: 1.452 von 7.413 Takten beschäftigt (20 %)</title></rect>
+<rect x="460.9" y="322.7" width="3.9" height="7.3" class="f-unit"><title>Setup-Einheit: 1.563 von 7.257 Takten beschäftigt (22 %)</title></rect>
+<rect x="464.8" y="312.2" width="4.1" height="17.8" class="f-unit"><title>Setup-Einheit: 4.000 von 7.637 Takten beschäftigt (52 %)</title></rect>
+<rect x="468.9" y="310.1" width="4.2" height="19.9" class="f-unit"><title>Setup-Einheit: 4.555 von 7.766 Takten beschäftigt (59 %)</title></rect>
+<rect x="473.1" y="302.3" width="4.4" height="27.7" class="f-unit"><title>Setup-Einheit: 6.724 von 8.252 Takten beschäftigt (81 %)</title></rect>
+<rect x="477.5" y="308.1" width="4.3" height="21.9" class="f-unit"><title>Setup-Einheit: 5.123 von 7.955 Takten beschäftigt (64 %)</title></rect>
+<rect x="481.8" y="313.0" width="8.7" height="17.0" class="f-unit"><title>Setup-Einheit: 8.109 von 16.219 Takten beschäftigt (50 %)</title></rect>
+<rect x="490.6" y="306.0" width="34.9" height="24.0" class="f-unit"><title>Setup-Einheit: 45.695 von 64.782 Takten beschäftigt (71 %)</title></rect>
+<rect x="525.5" y="306.9" width="25.3" height="23.1" class="f-unit"><title>Setup-Einheit: 31.910 von 47.042 Takten beschäftigt (68 %)</title></rect>
+<rect x="550.8" y="306.9" width="7.1" height="23.1" class="f-unit"><title>Setup-Einheit: 8.932 von 13.131 Takten beschäftigt (68 %)</title></rect>
+<rect x="557.9" y="308.8" width="21.8" height="21.2" class="f-unit"><title>Setup-Einheit: 25.276 von 40.511 Takten beschäftigt (62 %)</title></rect>
+<rect x="579.7" y="301.0" width="7.0" height="29.0" class="f-unit"><title>Setup-Einheit: 11.053 von 12.964 Takten beschäftigt (85 %)</title></rect>
+<rect x="586.7" y="309.4" width="20.9" height="20.6" class="f-unit"><title>Setup-Einheit: 23.455 von 38.736 Takten beschäftigt (61 %)</title></rect>
+<rect x="607.5" y="306.5" width="7.1" height="23.5" class="f-unit"><title>Setup-Einheit: 9.096 von 13.170 Takten beschäftigt (69 %)</title></rect>
+<rect x="614.6" y="309.4" width="5.9" height="20.6" class="f-unit"><title>Setup-Einheit: 6.582 von 10.868 Takten beschäftigt (61 %)</title></rect>
+<rect x="620.5" y="301.9" width="21.4" height="28.1" class="f-unit"><title>Setup-Einheit: 32.897 von 39.804 Takten beschäftigt (83 %)</title></rect>
+<rect x="641.9" y="305.1" width="7.0" height="24.9" class="f-unit"><title>Setup-Einheit: 9.587 von 13.081 Takten beschäftigt (73 %)</title></rect>
+<rect x="649.0" y="313.0" width="21.3" height="17.0" class="f-unit"><title>Setup-Einheit: 19.708 von 39.468 Takten beschäftigt (50 %)</title></rect>
+<rect x="670.3" y="317.1" width="6.8" height="12.9" class="f-unit"><title>Setup-Einheit: 4.765 von 12.593 Takten beschäftigt (38 %)</title></rect>
+<rect x="677.0" y="314.1" width="21.0" height="15.9" class="f-unit"><title>Setup-Einheit: 18.200 von 39.034 Takten beschäftigt (47 %)</title></rect>
+<rect x="698.1" y="316.3" width="21.0" height="13.7" class="f-unit"><title>Setup-Einheit: 15.754 von 38.965 Takten beschäftigt (40 %)</title></rect>
+<rect x="719.1" y="301.3" width="7.1" height="28.7" class="f-unit"><title>Setup-Einheit: 11.140 von 13.185 Takten beschäftigt (84 %)</title></rect>
+<rect x="726.2" y="315.6" width="21.0" height="14.4" class="f-unit"><title>Setup-Einheit: 16.461 von 38.962 Takten beschäftigt (42 %)</title></rect>
+<rect x="747.1" y="298.2" width="27.3" height="31.8" class="f-unit"><title>Setup-Einheit: 47.248 von 50.595 Takten beschäftigt (93 %)</title></rect>
+<rect x="774.4" y="317.1" width="7.0" height="12.9" class="f-unit"><title>Setup-Einheit: 4.946 von 13.022 Takten beschäftigt (38 %)</title></rect>
+<rect x="781.4" y="323.5" width="3.0" height="6.5" class="f-unit"><title>Setup-Einheit: 1.082 von 5.648 Takten beschäftigt (19 %)</title></rect>
+<rect x="784.5" y="317.6" width="1.1" height="12.4" class="f-unit"><title>Setup-Einheit: 733 von 2.013 Takten beschäftigt (36 %)</title></rect>
+<rect x="785.5" y="313.4" width="131.5" height="16.6" class="f-unit"><title>Setup-Einheit: 119.074 von 244.049 Takten beschäftigt (49 %)</title></rect>
 <text x="208.0" y="369.0" class="t" text-anchor="end">Rasterizer</text>
-<rect x="220.0" y="348.0" width="703.7" height="34.0" class="lane"><title>Rasterizer</title></rect>
-<rect x="431.6" y="375.8" width="4.0" height="6.2" class="f-unit"><title>Rasterizer: 1.359 von 7.494 Takten beschäftigt (18 %)</title></rect>
-<rect x="435.7" y="367.7" width="4.1" height="14.3" class="f-unit"><title>Rasterizer: 3.201 von 7.632 Takten beschäftigt (42 %)</title></rect>
-<rect x="439.8" y="351.5" width="4.2" height="30.5" class="f-unit"><title>Rasterizer: 6.988 von 7.791 Takten beschäftigt (90 %)</title></rect>
-<rect x="444.0" y="351.1" width="4.7" height="30.9" class="f-unit"><title>Rasterizer: 7.867 von 8.668 Takten beschäftigt (91 %)</title></rect>
-<rect x="448.7" y="378.1" width="4.6" height="3.9" class="f-unit"><title>Rasterizer: 978 von 8.453 Takten beschäftigt (12 %)</title></rect>
-<rect x="457.4" y="378.7" width="4.2" height="3.3" class="f-unit"><title>Rasterizer: 766 von 7.840 Takten beschäftigt (10 %)</title></rect>
-<rect x="470.2" y="351.8" width="4.5" height="30.2" class="f-unit"><title>Rasterizer: 7.437 von 8.361 Takten beschäftigt (89 %)</title></rect>
-<rect x="474.7" y="350.6" width="4.5" height="31.4" class="f-unit"><title>Rasterizer: 7.685 von 8.313 Takten beschäftigt (92 %)</title></rect>
-<rect x="479.2" y="376.4" width="4.4" height="5.6" class="f-unit"><title>Rasterizer: 1.340 von 8.188 Takten beschäftigt (16 %)</title></rect>
-<rect x="483.6" y="366.8" width="11.6" height="15.2" class="f-unit"><title>Rasterizer: 9.632 von 21.592 Takten beschäftigt (45 %)</title></rect>
-<rect x="495.2" y="364.2" width="36.1" height="17.8" class="f-unit"><title>Rasterizer: 35.131 von 66.936 Takten beschäftigt (52 %)</title></rect>
-<rect x="531.3" y="365.8" width="35.8" height="16.2" class="f-unit"><title>Rasterizer: 31.734 von 66.518 Takten beschäftigt (48 %)</title></rect>
-<rect x="567.1" y="377.6" width="7.2" height="4.4" class="f-unit"><title>Rasterizer: 1.740 von 13.436 Takten beschäftigt (13 %)</title></rect>
-<rect x="574.4" y="366.0" width="27.0" height="16.0" class="f-unit"><title>Rasterizer: 23.511 von 50.068 Takten beschäftigt (47 %)</title></rect>
-<rect x="601.3" y="364.0" width="7.2" height="18.0" class="f-unit"><title>Rasterizer: 7.055 von 13.327 Takten beschäftigt (53 %)</title></rect>
-<rect x="608.5" y="356.7" width="27.4" height="25.3" class="f-unit"><title>Rasterizer: 37.891 von 50.837 Takten beschäftigt (75 %)</title></rect>
-<rect x="635.9" y="348.0" width="7.2" height="34.0" class="f-unit"><title>Rasterizer: 13.424 von 13.424 Takten beschäftigt (100 %)</title></rect>
-<rect x="643.1" y="364.5" width="6.9" height="17.5" class="f-unit"><title>Rasterizer: 6.592 von 12.781 Takten beschäftigt (52 %)</title></rect>
-<rect x="650.0" y="370.5" width="23.5" height="11.5" class="f-unit"><title>Rasterizer: 14.762 von 43.664 Takten beschäftigt (34 %)</title></rect>
-<rect x="673.5" y="373.3" width="7.0" height="8.7" class="f-unit"><title>Rasterizer: 3.316 von 12.902 Takten beschäftigt (26 %)</title></rect>
-<rect x="680.5" y="369.0" width="27.7" height="13.0" class="f-unit"><title>Rasterizer: 19.566 von 51.368 Takten beschäftigt (38 %)</title></rect>
-<rect x="708.2" y="374.9" width="6.8" height="7.1" class="f-unit"><title>Rasterizer: 2.640 von 12.621 Takten beschäftigt (21 %)</title></rect>
-<rect x="715.0" y="368.8" width="26.8" height="13.2" class="f-unit"><title>Rasterizer: 19.248 von 49.714 Takten beschäftigt (39 %)</title></rect>
-<rect x="741.7" y="350.5" width="34.8" height="31.5" class="f-unit"><title>Rasterizer: 59.711 von 64.547 Takten beschäftigt (93 %)</title></rect>
-<rect x="776.5" y="376.1" width="7.4" height="5.9" class="f-unit"><title>Rasterizer: 2.363 von 13.666 Takten beschäftigt (17 %)</title></rect>
-<rect x="783.9" y="372.2" width="25.1" height="9.8" class="f-unit"><title>Rasterizer: 13.456 von 46.530 Takten beschäftigt (29 %)</title></rect>
-<rect x="809.0" y="359.1" width="26.0" height="22.9" class="f-unit"><title>Rasterizer: 32.424 von 48.238 Takten beschäftigt (67 %)</title></rect>
-<rect x="834.9" y="362.5" width="7.2" height="19.5" class="f-unit"><title>Rasterizer: 7.723 von 13.443 Takten beschäftigt (57 %)</title></rect>
-<rect x="842.2" y="365.9" width="3.1" height="16.1" class="f-unit"><title>Rasterizer: 2.677 von 5.666 Takten beschäftigt (47 %)</title></rect>
-<rect x="845.2" y="366.9" width="1.0" height="15.1" class="f-unit"><title>Rasterizer: 841 von 1.898 Takten beschäftigt (44 %)</title></rect>
-<rect x="846.3" y="362.4" width="72.7" height="19.6" class="f-unit"><title>Rasterizer: 77.893 von 134.914 Takten beschäftigt (58 %)</title></rect>
+<rect x="220.0" y="348.0" width="701.7" height="34.0" class="lane"><title>Rasterizer</title></rect>
+<rect x="432.3" y="375.6" width="3.8" height="6.4" class="f-unit"><title>Rasterizer: 1.320 von 6.972 Takten beschäftigt (19 %)</title></rect>
+<rect x="436.1" y="367.4" width="4.1" height="14.6" class="f-unit"><title>Rasterizer: 3.280 von 7.635 Takten beschäftigt (43 %)</title></rect>
+<rect x="440.2" y="352.0" width="4.3" height="30.0" class="f-unit"><title>Rasterizer: 6.974 von 7.904 Takten beschäftigt (88 %)</title></rect>
+<rect x="444.5" y="349.1" width="4.3" height="32.9" class="f-unit"><title>Rasterizer: 7.733 von 7.990 Takten beschäftigt (97 %)</title></rect>
+<rect x="448.8" y="377.5" width="4.2" height="4.5" class="f-unit"><title>Rasterizer: 1.032 von 7.857 Takten beschäftigt (13 %)</title></rect>
+<rect x="460.9" y="378.5" width="3.9" height="3.5" class="f-unit"><title>Rasterizer: 756 von 7.257 Takten beschäftigt (10 %)</title></rect>
+<rect x="468.9" y="365.3" width="4.2" height="16.7" class="f-unit"><title>Rasterizer: 3.825 von 7.766 Takten beschäftigt (49 %)</title></rect>
+<rect x="473.1" y="348.0" width="4.4" height="34.0" class="f-unit"><title>Rasterizer: 8.252 von 8.252 Takten beschäftigt (100 %)</title></rect>
+<rect x="477.5" y="364.9" width="4.3" height="17.1" class="f-unit"><title>Rasterizer: 4.011 von 7.955 Takten beschäftigt (50 %)</title></rect>
+<rect x="481.8" y="380.9" width="8.7" height="1.1" class="f-unit"><title>Rasterizer: 533 von 16.219 Takten beschäftigt (3 %)</title></rect>
+<rect x="490.6" y="361.0" width="34.9" height="21.0" class="f-unit"><title>Rasterizer: 40.046 von 64.782 Takten beschäftigt (62 %)</title></rect>
+<rect x="525.5" y="365.1" width="25.3" height="16.9" class="f-unit"><title>Rasterizer: 23.435 von 47.042 Takten beschäftigt (50 %)</title></rect>
+<rect x="550.8" y="370.3" width="7.1" height="11.7" class="f-unit"><title>Rasterizer: 4.521 von 13.131 Takten beschäftigt (34 %)</title></rect>
+<rect x="557.9" y="365.3" width="21.8" height="16.7" class="f-unit"><title>Rasterizer: 19.841 von 40.511 Takten beschäftigt (49 %)</title></rect>
+<rect x="579.7" y="352.4" width="7.0" height="29.6" class="f-unit"><title>Rasterizer: 11.295 von 12.964 Takten beschäftigt (87 %)</title></rect>
+<rect x="586.7" y="373.8" width="20.9" height="8.2" class="f-unit"><title>Rasterizer: 9.382 von 38.736 Takten beschäftigt (24 %)</title></rect>
+<rect x="607.5" y="354.6" width="7.1" height="27.4" class="f-unit"><title>Rasterizer: 10.620 von 13.170 Takten beschäftigt (81 %)</title></rect>
+<rect x="614.6" y="364.7" width="5.9" height="17.3" class="f-unit"><title>Rasterizer: 5.543 von 10.868 Takten beschäftigt (51 %)</title></rect>
+<rect x="620.5" y="353.1" width="21.4" height="28.9" class="f-unit"><title>Rasterizer: 33.835 von 39.804 Takten beschäftigt (85 %)</title></rect>
+<rect x="641.9" y="361.7" width="7.0" height="20.3" class="f-unit"><title>Rasterizer: 7.827 von 13.081 Takten beschäftigt (60 %)</title></rect>
+<rect x="649.0" y="368.4" width="21.3" height="13.6" class="f-unit"><title>Rasterizer: 15.832 von 39.468 Takten beschäftigt (40 %)</title></rect>
+<rect x="670.3" y="377.4" width="6.8" height="4.6" class="f-unit"><title>Rasterizer: 1.686 von 12.593 Takten beschäftigt (13 %)</title></rect>
+<rect x="677.0" y="369.0" width="21.0" height="13.0" class="f-unit"><title>Rasterizer: 14.962 von 39.034 Takten beschäftigt (38 %)</title></rect>
+<rect x="698.1" y="371.1" width="21.0" height="10.9" class="f-unit"><title>Rasterizer: 12.450 von 38.965 Takten beschäftigt (32 %)</title></rect>
+<rect x="719.1" y="350.9" width="7.1" height="31.1" class="f-unit"><title>Rasterizer: 12.051 von 13.185 Takten beschäftigt (91 %)</title></rect>
+<rect x="726.2" y="370.4" width="21.0" height="11.6" class="f-unit"><title>Rasterizer: 13.308 von 38.962 Takten beschäftigt (34 %)</title></rect>
+<rect x="747.1" y="350.0" width="27.3" height="32.0" class="f-unit"><title>Rasterizer: 47.649 von 50.595 Takten beschäftigt (94 %)</title></rect>
+<rect x="774.4" y="369.3" width="7.0" height="12.7" class="f-unit"><title>Rasterizer: 4.854 von 13.022 Takten beschäftigt (37 %)</title></rect>
+<rect x="781.4" y="377.9" width="3.0" height="4.1" class="f-unit"><title>Rasterizer: 678 von 5.648 Takten beschäftigt (12 %)</title></rect>
+<rect x="784.5" y="373.9" width="1.1" height="8.1" class="f-unit"><title>Rasterizer: 482 von 2.013 Takten beschäftigt (24 %)</title></rect>
+<rect x="785.5" y="363.4" width="131.5" height="18.6" class="f-unit"><title>Rasterizer: 133.290 von 244.049 Takten beschäftigt (55 %)</title></rect>
 <text x="208.0" y="421.0" class="t" text-anchor="end">Blitter</text>
-<rect x="220.0" y="400.0" width="703.7" height="34.0" class="lane"><title>Blitter</title></rect>
-<rect x="313.6" y="431.9" width="24.5" height="2.1" class="f-unit"><title>Blitter: 2.760 von 45.413 Takten beschäftigt (6 %)</title></rect>
-<rect x="338.0" y="417.3" width="89.3" height="16.7" class="f-unit"><title>Blitter: 81.536 von 165.735 Takten beschäftigt (49 %)</title></rect>
-<rect x="846.3" y="429.5" width="72.7" height="4.5" class="f-unit"><title>Blitter: 17.771 von 134.914 Takten beschäftigt (13 %)</title></rect>
-<rect x="918.9" y="401.2" width="4.4" height="32.8" class="f-unit"><title>Blitter: 7.914 von 8.209 Takten beschäftigt (96 %)</title></rect>
+<rect x="220.0" y="400.0" width="701.7" height="34.0" class="lane"><title>Blitter</title></rect>
+<rect x="317.4" y="431.5" width="21.5" height="2.5" class="f-unit"><title>Blitter: 2.920 von 39.909 Takten beschäftigt (7 %)</title></rect>
+<rect x="338.9" y="417.3" width="89.2" height="16.7" class="f-unit"><title>Blitter: 81.534 von 165.632 Takten beschäftigt (49 %)</title></rect>
+<rect x="785.5" y="431.5" width="131.5" height="2.5" class="f-unit"><title>Blitter: 17.813 von 244.049 Takten beschäftigt (7 %)</title></rect>
+<rect x="917.0" y="401.0" width="4.4" height="33.0" class="f-unit"><title>Blitter: 7.926 von 8.174 Takten beschäftigt (97 %)</title></rect>
 <line x1="1020.0" y1="184" x2="1020.0" y2="442" class="limit"/>
 <text x="1020.0" y="456.0" class="m" text-anchor="middle">Bildwechsel bei 50 fps</text>
 <text x="40.0" y="482.0" class="t">Die CPU in diesem Bild</text>
 <text x="560.0" y="482.0" class="t">Die Hardware in diesem Bild</text>
 <text x="40.0" y="510.0" class="s">Physik (Fahrzeug, Gegner)</text>
-<text x="400.0" y="510.0" class="v" text-anchor="end">173.710</text>
-<text x="470.0" y="510.0" class="v" text-anchor="end">2,3 ms</text>
+<text x="400.0" y="510.0" class="v" text-anchor="end">180.799</text>
+<text x="470.0" y="510.0" class="v" text-anchor="end">2,4 ms</text>
 <text x="520.0" y="510.0" class="v" text-anchor="end">12 %</text>
 <text x="40.0" y="530.0" class="s">Vorbereitung (Kamera, Objekte, Hintergrund)</text>
-<text x="400.0" y="530.0" class="v" text-anchor="end">45.413</text>
-<text x="470.0" y="530.0" class="v" text-anchor="end">0,6 ms</text>
+<text x="400.0" y="530.0" class="v" text-anchor="end">39.909</text>
+<text x="470.0" y="530.0" class="v" text-anchor="end">0,5 ms</text>
 <text x="520.0" y="530.0" class="v" text-anchor="end">3 %</text>
 <text x="40.0" y="550.0" class="s">Auswahl (Sichtprüfung, Sortierung)</text>
-<text x="400.0" y="550.0" class="v" text-anchor="end">165.735</text>
+<text x="400.0" y="550.0" class="v" text-anchor="end">165.632</text>
 <text x="470.0" y="550.0" class="v" text-anchor="end">2,2 ms</text>
 <text x="520.0" y="550.0" class="v" text-anchor="end">11 %</text>
 <text x="40.0" y="570.0" class="s">Bauteile (Matrizen, Übergabe an die Hardware)</text>
-<text x="400.0" y="570.0" class="v" text-anchor="end">775.728</text>
-<text x="470.0" y="570.0" class="v" text-anchor="end">10,4 ms</text>
-<text x="520.0" y="570.0" class="v" text-anchor="end">52 %</text>
+<text x="400.0" y="570.0" class="v" text-anchor="end">661.443</text>
+<text x="470.0" y="570.0" class="v" text-anchor="end">8,9 ms</text>
+<text x="520.0" y="570.0" class="v" text-anchor="end">45 %</text>
 <text x="40.0" y="590.0" class="s">Rennanzeige und Radar</text>
-<text x="400.0" y="590.0" class="v" text-anchor="end">136.812</text>
-<text x="470.0" y="590.0" class="v" text-anchor="end">1,8 ms</text>
-<text x="520.0" y="590.0" class="v" text-anchor="end">9 %</text>
+<text x="400.0" y="590.0" class="v" text-anchor="end">246.062</text>
+<text x="470.0" y="590.0" class="v" text-anchor="end">3,3 ms</text>
+<text x="520.0" y="590.0" class="v" text-anchor="end">17 %</text>
 <text x="40.0" y="610.0" class="s">Warten auf die Hardware</text>
-<text x="400.0" y="610.0" class="v" text-anchor="end">8.209</text>
+<text x="400.0" y="610.0" class="v" text-anchor="end">8.174</text>
 <text x="470.0" y="610.0" class="v" text-anchor="end">0,1 ms</text>
 <text x="520.0" y="610.0" class="v" text-anchor="end">1 %</text>
 <text x="40.0" y="630.0" class="s">Zähler, Protokoll</text>
-<text x="400.0" y="630.0" class="v" text-anchor="end">552</text>
+<text x="400.0" y="630.0" class="v" text-anchor="end">545</text>
 <text x="470.0" y="630.0" class="v" text-anchor="end">0,0 ms</text>
 <text x="520.0" y="630.0" class="v" text-anchor="end">0 %</text>
 <text x="40.0" y="650.0" class="s">frei bis zum Bildwechsel</text>
-<text x="400.0" y="650.0" class="v" text-anchor="end">178.841</text>
-<text x="470.0" y="650.0" class="v" text-anchor="end">2,4 ms</text>
+<text x="400.0" y="650.0" class="v" text-anchor="end">182.436</text>
+<text x="470.0" y="650.0" class="v" text-anchor="end">2,5 ms</text>
 <text x="520.0" y="650.0" class="v" text-anchor="end">12 %</text>
 <text x="560.0" y="510.0" class="s">Geometrie-Einheit</text>
-<text x="940.0" y="510.0" class="v" text-anchor="end">871.771</text>
+<text x="940.0" y="510.0" class="v" text-anchor="end">867.233</text>
 <text x="1010.0" y="510.0" class="v" text-anchor="end">11,7 ms</text>
-<text x="1060.0" y="510.0" class="v" text-anchor="end">59 %</text>
+<text x="1060.0" y="510.0" class="v" text-anchor="end">58 %</text>
 <text x="560.0" y="530.0" class="s">Setup-Einheit</text>
-<text x="940.0" y="530.0" class="v" text-anchor="end">518.811</text>
+<text x="940.0" y="530.0" class="v" text-anchor="end">520.507</text>
 <text x="1010.0" y="530.0" class="v" text-anchor="end">7,0 ms</text>
 <text x="1060.0" y="530.0" class="v" text-anchor="end">35 %</text>
 <text x="560.0" y="550.0" class="s">Rasterizer</text>
-<text x="940.0" y="550.0" class="v" text-anchor="end">460.951</text>
+<text x="940.0" y="550.0" class="v" text-anchor="end">461.303</text>
 <text x="1010.0" y="550.0" class="v" text-anchor="end">6,2 ms</text>
 <text x="1060.0" y="550.0" class="v" text-anchor="end">31 %</text>
 <text x="560.0" y="570.0" class="s">Blitter</text>
-<text x="940.0" y="570.0" class="v" text-anchor="end">109.981</text>
+<text x="940.0" y="570.0" class="v" text-anchor="end">110.193</text>
 <text x="1010.0" y="570.0" class="v" text-anchor="end">1,5 ms</text>
 <text x="1060.0" y="570.0" class="v" text-anchor="end">7 %</text>
 <text x="560.0" y="590.0" class="s">CPU: Schreiben an die Hardware (mit Warten)</text>
-<text x="940.0" y="590.0" class="v" text-anchor="end">35.634</text>
-<text x="1010.0" y="590.0" class="v" text-anchor="end">0,5 ms</text>
+<text x="940.0" y="590.0" class="v" text-anchor="end">29.178</text>
+<text x="1010.0" y="590.0" class="v" text-anchor="end">0,4 ms</text>
 <text x="1060.0" y="590.0" class="v" text-anchor="end">2 %</text>
 <text x="40.0" y="684.0" class="m">Prozent: Anteil an den 20 ms eines Bildes. Gemessen mit Zeitmarken der Firmware (main.c, tl_mark) und den Taktzählern der Einheiten; gezeichnet von tools/make_timeline_svg.py.</text>
 </svg>

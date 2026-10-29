@@ -139,8 +139,26 @@ Stimmen an, die Ausgabe läuft weiter.
 
 Die Firmware (`firmware/sound.c`) spielt die Effekte aus `SFXSBASE.DTR` (GEN.DAT): die Samples
 liegen ungepackt in `SOUND.DAT`, der Mischer liest sie direkt aus dem geladenen Container.
-Lautstärke wie im Spiel: die Zeile der Liste mal der Hauptregler für Effekte (`0x6000` von
-`0x7fff`), ein volles Sample bewegt den Ausgang um 192 je 8-Bit-Stufe.
+Lautstärke: die Zeile der Liste mal der Hauptregler für Effekte, `0x4000` von `0x7fff`, zwei
+Drittel des Werts im Spiel (`0x6000`, `0x1bc2f`): so bleiben der Motor des Spielers und die
+drei der Gegner bei voller Lautstärke unter 16 Bit, auch wenn alle Samples zugleich am
+Anschlag sind (höchstens 32.000). Ein volles Sample bewegt den Ausgang um 128 je 8-Bit-Stufe.
+
+Geräusche mit einem Ort (OpenScreamers Notes Abschnitte 15 und 17) hört man an der Kamera, mit
+dem Abstand d in x und y; `car_step` setzt sie jeden Schritt (`snd_ear`). Die Motoren der
+Gegner (`oppmotor`, `0x1dffc`, `opp.c`): nur Autos innerhalb von 35000 Einheiten und nur die
+drei nächsten, Lautstärke ((35000 − d) / 35000)² × 23552, Tonhöhe Tempo × 2,4 + 13568; bis
+Grün gilt als Tempo sin(Autonummer × 0,5 × Uhr) × 15000, die Gegner lassen die Motoren
+aufheulen (`0x20e63`; unter der kleinsten Tonhöhe bleibt die Stimme stehen). Die beweglichen
+Teile der Strecke (`0x21b80`, `scenery.c`): die vierte Spalte von `ANIMATIONS` nennt eine
+Zeile der eigenen `SOUND_FX`-Liste in `MAPnDAT.DTR` (Strecke 1: `truck`, `airplane`), die
+hinter denen von `SFXSBASE.DTR` geladen wird; innerhalb von 40000 Einheiten, Lautstärke
+((40000 − d) / 40000)², Tonhöhe 65536. Bei beiden kommt der Doppler dazu, + 9 je Einheit, die
+die Quelle in einem Bild des Spiels (1/30 s) näher kam, hier je Schritt × 50 / 30; springt die
+Kamera in einem Schritt über 1000 Einheiten (ein Schnitt), entfällt er. Nur diese Geräusche
+liegen im Stereobild: die Linie zur Quelle im Rahmen der Kamera, pan = 0x8000 ± 32767 ×
+√(|seitlich| / d), die ferne Seite linear leiser; die eigenen Geräusche des Spielers bleiben in
+der Mitte.
 
 ## Framebuffer
 
