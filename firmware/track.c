@@ -58,6 +58,23 @@ static const float far_depth[3] = { 27808.0f, 27808.0f, 43808.0f };     /* LOW, 
 #define EYE_LINE(h) ((h) * 65 / 100)
 #define CAM_UP      700.0f      /* camera over the player's line */
 #define LOOK        12          /* path points ahead for the direction of view */
+#define PI          3.14159265f
+
+/* The game's view angles (0x829e3): each cut to a 2048th of a turn (the camera record's float,
+   0 .. 2 pi, times 2048 / 2 pi, cut towards 0) and its sine and cosine from the table at
+   0x30190 (16 bits, 32768 = 1, halved: 16384 = 1); the table is sin x 32768 cut towards 0
+   (32 of its 2048 entries are 1 larger) */
+static int view_angle(float a)
+{
+    a = fmodf(a, 2.0f * PI);
+    if(a < 0.0f) a += 2.0f * PI;
+    return (int)(a * (2048.0f / (2.0f * PI))) & 2047;
+}
+
+static int32_t view_sin16(int i)          /* 16384 = 1 */
+{
+    return (int32_t)(sinf((float)i * (PI / 1024.0f)) * 32768.0f) >> 1;
+}
 
 struct piece { int32_t obj, x, y, h, t; };
 struct pt { int32_t x, y, h; };
@@ -386,7 +403,7 @@ int track_ground_colour(void)
 void track_backdrop_blit(struct blit_list *l, const struct rs_clip *clip, const struct track_cam *cam)
 {
     int w = clip->x1 - clip->x0, h = clip->y1 - clip->y0, eye = EYE_LINE(h);
-    int32_t s = (int32_t)(sinf(cam->pitch) * 16384.0f);         /* the game's sine, [0x7228c] */
+    int32_t s = view_sin16(view_angle(cam->pitch));             /* the game's sine, [0x8228c] */
     int top = eye + 22 - 256 + ((-54152 * s) >> 7) / -54152;
     int heading = (int)lrintf((cam->yaw + 1.5707964f) * (1024.0f / 3.14159265f));
     int col = ((2047 - heading) >> 1) & 511;
