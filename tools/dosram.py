@@ -183,15 +183,8 @@ def race(conf):
     d = os.environ.get("GAME_DIR", "C:/GOG Games/Screamer")
     if conf is None:
         conf = os.path.join(root, "build", "dosrace.conf")
-        open(conf, "w").write('[autoexec]
-@ECHO OFF
-mount C "%s"
-imgmount d "%s/scream.dat" -t iso -fs iso
-'
-                              'c:
-STARTL.EXE
-exit
-' % (d, d))
+        open(conf, "w").write('[autoexec]\n@ECHO OFF\nmount C "%s"\nimgmount d "%s/scream.dat" -t iso -fs iso\n'
+                              'c:\nSTARTL.EXE\nexit\n' % (d, d))
     subprocess.Popen([d + "/DOSBOX/DOSBox.exe", "-conf", d + "/dosboxScreamer.conf", "-conf", conf,
                       "-noconsole"], cwd=d + "/DOSBOX")
     end = time.time() + 120
