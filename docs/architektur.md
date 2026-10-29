@@ -118,7 +118,7 @@ Block-RAM spart er 190 ALMs, kostet aber 19 M10K, die knappere Ressource). Setup
 3.041 → 1.512, Geometrie-Einheit 2.288 → 648, Rasterizer mit Texturen 2.539 → 1.895 ALMs; dafür
 11 M10K mehr und 5 DSP weniger. Geschätzt ist nur, was noch fehlt.
 
-![Platzbudget im FPGA: Logik heute 55 %, mit Geplantem 55 %; Block-RAM heute 91 %, mit Geplantem 91 %; DSP heute 47 %, mit Geplantem 47 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik 55 %, Block-RAM 91 %, DSP 47 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py`: die gemessenen Zeilen aus dem Fitter-Report
 (`core/src/fpga/output_files/ap_core.fit.rpt`, Tabelle „Resource Utilization by Entity“), die
@@ -143,7 +143,6 @@ diese Tabelle.
 | Audio: Mischer 32 Stimmen, I²S | 416 | 1 | 1 |
 | Bus, Register, Arbiter | 528 | – | – |
 | **gebaut** | **10.114 (55 %)** | **281 (91 %)** | **31 (47 %)** |
-| **mit Geplantem** | **10.114 (55 %)** | **281 (91 %)** | **31 (47 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es

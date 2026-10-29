@@ -192,23 +192,25 @@ def main():
                  0 if measured_only else sum(c[i][which] for c in comps if c[1] == key and not c[2]))
                 for key, *_ in GROUPS]
 
-    # title and legend
+    # title and legend (the planned part only while something is planned)
+    planned = bool(PLANNED)
     svg.text(40, 40, "Platzbudget im FPGA", "h")
-    svg.text(40, 62, f"Cyclone V 5CEBA4 · gebaut = gemessen im Quartus-Build ({BUILD}) · geplant = geschätzt · "
-                     f"Stand {STAND}", "s")
+    svg.text(40, 62, f"Cyclone V 5CEBA4 · gebaut = gemessen im Quartus-Build ({BUILD})"
+                     f"{' · geplant = geschätzt' if planned else ''} · Stand {STAND}", "s")
     lx = 40
     for key, label, _, _ in GROUPS:
         svg.add(f'<rect x="{lx}" y="84" width="12" height="12" rx="3" class="f-{key}"/>')
         svg.text(lx + 18, 94.5, label, "s")
         lx += 18 + 6.0 * len(label) + 30
-    svg.add('<rect x="40" y="106" width="22" height="12" rx="3" class="f-gfx"/>')
-    svg.text(68, 116.5, "gebaut, gemessen", "s")
-    svg.add('<rect x="186" y="106" width="22" height="12" rx="3" class="f-gfx tint"/>')
-    svg.add('<rect x="210" y="106" width="22" height="12" rx="3" class="f-gfx tint2"/>')
-    svg.text(238, 116.5, "geplant, geschätzt: untere Schätzung, heller die Spanne bis zur oberen", "s")
+    if planned:
+        svg.add('<rect x="40" y="106" width="22" height="12" rx="3" class="f-gfx"/>')
+        svg.text(68, 116.5, "gebaut, gemessen", "s")
+        svg.add('<rect x="186" y="106" width="22" height="12" rx="3" class="f-gfx tint"/>')
+        svg.add('<rect x="210" y="106" width="22" height="12" rx="3" class="f-gfx tint2"/>')
+        svg.text(238, 116.5, "geplant, geschätzt: untere Schätzung, heller die Spanne bis zur oberen", "s")
 
     # section 1: share of the FPGA per resource
-    y = 156
+    y = 156 if planned else 134
     svg.text(40, y, "Anteil an der Kapazität", "t")
     y += 22
     for p in (0, 25, 50, 75, 100):
@@ -222,11 +224,11 @@ def main():
         svg.text(40 + 7.6 * len(name) + 10, y + 13, cap_label, "m")
         y += 22
         group_top = y
-        for row_label, values in (
-            ("heute gebaut", total(res, 0, measured_only=True)),
-            ("mit Geplantem, untere Schätzung", total(res, 0)),
-            ("mit Geplantem, obere Schätzung", total(res, 1)),
-        ):
+        rows = [("heute gebaut", total(res, 0, measured_only=True))]
+        if planned:
+            rows += [("mit Geplantem, untere Schätzung", total(res, 0)),
+                     ("mit Geplantem, obere Schätzung", total(res, 1))]
+        for row_label, values in rows:
             h = 18
             svg.text(X0 - 12, y + 13, row_label, "s", "end")
             end = stacked(svg, y, h, values, cap, row_label)
@@ -287,9 +289,13 @@ def main():
 
     a, m, d = span(3, CAPACITY["alm"]), span(4, CAPACITY["m10k"]), span(5, CAPACITY["dsp"])
     biggest = [c[0] for c in sorted(comps, key=lambda c: -c[3][1])[:3]]
-    aria = (f"Platzbudget im FPGA: Logik heute {a[0]} Prozent, mit Geplantem {a[1]} bis {a[2]} Prozent, "
-            f"{'über' if a[2] > 80 else 'unter'} der 80-Prozent-Grenze; Block-RAM heute {m[0]}, geplant {m[1]} bis {m[2]} Prozent; "
-            f"DSP heute {d[0]}, geplant {d[1]} bis {d[2]} Prozent. Größte Posten: {', '.join(biggest)}.")
+    if planned:
+        aria = (f"Platzbudget im FPGA: Logik heute {a[0]} Prozent, mit Geplantem {a[1]} bis {a[2]} Prozent, "
+                f"{'über' if a[2] > 80 else 'unter'} der 80-Prozent-Grenze; Block-RAM heute {m[0]}, geplant {m[1]} bis {m[2]} Prozent; "
+                f"DSP heute {d[0]}, geplant {d[1]} bis {d[2]} Prozent. Größte Posten: {', '.join(biggest)}.")
+    else:
+        aria = (f"Platzbudget im FPGA: Logik {a[0]} Prozent, {'über' if a[0] > 80 else 'unter'} der 80-Prozent-Grenze; "
+                f"Block-RAM {m[0]} Prozent; DSP {d[0]} Prozent. Größte Posten: {', '.join(biggest)}.")
 
     light = "\n".join(f"    --{k}: {lc};" for k, _, lc, _ in GROUPS)
     dark = "\n".join(f"      --{k}: {dc};" for k, _, _, dc in GROUPS)
@@ -367,12 +373,17 @@ def write_table(comps, md):
     rows += [f"| {c[0]} | {cell(c[3])} | {cell(c[4])} | {cell(c[5])} |" for c in comps if c[2]]
     rows.append("| **gebaut** | " + " | ".join(total_cell(3 + k, caps[k], True) for k in range(3)) + " |")
     rows += [f"| geplant: {c[0]} | {cell(c[3])} | {cell(c[4])} | {cell(c[5])} |" for c in comps if not c[2]]
-    rows.append("| **mit Geplantem** | " + " | ".join(total_cell(3 + k, caps[k], False) for k in range(3)) + " |")
+    if any(not c[2] for c in comps):
+        rows.append("| **mit Geplantem** | " + " | ".join(total_cell(3 + k, caps[k], False) for k in range(3)) + " |")
     pc = [(pct(totals(i, True)[0], caps[i - 3]), pct(totals(i, False)[0], caps[i - 3]),
            pct(totals(i, False)[1], caps[i - 3])) for i in (3, 4, 5)]
     r = lambda p: f"{p[1]} %" if p[1] == p[2] else f"{p[1]}–{p[2]} %"
-    alt = (f"![Platzbudget im FPGA: Logik heute {pc[0][0]} %, mit Geplantem {r(pc[0])}; Block-RAM heute "
-           f"{pc[1][0]} %, mit Geplantem {r(pc[1])}; DSP heute {pc[2][0]} %, mit Geplantem {r(pc[2])}](ressourcen.svg)")
+    if any(not c[2] for c in comps):
+        alt = (f"![Platzbudget im FPGA: Logik heute {pc[0][0]} %, mit Geplantem {r(pc[0])}; Block-RAM heute "
+               f"{pc[1][0]} %, mit Geplantem {r(pc[1])}; DSP heute {pc[2][0]} %, mit Geplantem {r(pc[2])}](ressourcen.svg)")
+    else:
+        alt = (f"![Platzbudget im FPGA: Logik {pc[0][0]} %, Block-RAM {pc[1][0]} %, DSP {pc[2][0]} %]"
+               f"(ressourcen.svg)")
     lines = open(md, encoding="utf-8").read().split("\n")
     start = next(i for i, l in enumerate(lines) if l.startswith("| Komponente | ALMs |"))
     end = start
