@@ -4,10 +4,8 @@
 #include "efx.h"
 #include "dat.h"
 #include "hw.h"
+#include "raster.h"
 
-#ifndef RS_SMG
-#define RS_SMG      REG32(0xF000306Cu)  /* W: MAPn.SMG into the rasterizer, (byte address << 8) | byte */
-#endif
 
 #define SMG_SIZE    16384               /* 64 rows of 256 palette indices */
 #define SMG_RADAR   63                  /* the row the radar's texels pick */
@@ -147,7 +145,7 @@ int efx_init(const uint8_t *gfx, uint32_t gfx_size, int n, const uint8_t *mlb, c
         darken(pal, smg + SMG_RADAR * 256);
         for(uint32_t a = 0; a < SMG_SIZE; a++)          /* nothing blended is drawn now */
             RS_SMG = a << 8 | smg[a];
-        /* TODO(merge with the hardware branch): rs_smg = smg;  (raster.h: the C models' table) */
+        rs_smg = smg;                                   /* the C models' copy (raster.h) */
         radar = radar_mesh(mem + AT_RADAR, mem + AT_TEX, mem + cap, mlb);
     }
     shadow = mesh(gfx, gfx_size, "SHADOW.3DX", mem + AT_SHADOW);
