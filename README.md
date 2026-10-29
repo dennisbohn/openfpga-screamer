@@ -44,8 +44,9 @@ mit `tools/deploy.sh /i` (SD-Karte bzw. Pocket im USB-Modus als Laufwerk I:).
 Der Core braucht nur die originalen Spieldateien, unverändert: die Ordner `DATA`, `GFX`
 und `TABS` aus dem Spielordner (etwa der GOG-Fassung) so, wie sie sind, nach
 `Assets/screamer/common/` auf der SD-Karte kopieren. Heute liest er daraus
-`GFX/MAP1H.DAT`, `GFX/GAME.DAT`, `DATA/MAP1.DAT`, `DATA/GEN.DAT` und `DATA/LOCAL.DAT`. Nichts
-wird auf dem PC umgewandelt: Die Firmware liest die Container (Data-Slots 3 bis 7),
+`GFX/MAP1H.DAT`, `GFX/GAME.DAT`, `DATA/MAP1.DAT`, `DATA/GEN.DAT`, `DATA/LOCAL.DAT` und
+`DATA/SOUND.DAT`. Nichts wird auf dem PC umgewandelt: Die Firmware liest die Container
+(Data-Slots 3 bis 8),
 entpackt sie und baut daraus beim Start das Abbild der Strecke (Platzierungen, Palette,
 Kamerapfad, die befahrbaren Teile je Rasterzelle, Marker, Wände, die Autos aus `CARS.DTR`,
 die Rennanzeige, das Hintergrundbild `MAP1.BCK`, die Linien und Werte der Gegner aus
@@ -96,6 +97,10 @@ tools/sim_faults.sh
 tools/sim.sh sdram 1 2000000
 # Selbsttest des SDRAM-Modells: je Regel ein richtiger und ein falscher Ablauf.
 tools/sim.sh sdram_model
+# Der Mischer (audio.v) gegen sein C-Modell firmware/mixer.c: zufällige Stimmen, Schleifen,
+# Schritte und Lautstärken, Zeilen mit zufälliger Wartezeit; verglichen wird jeder Ausgabewert,
+# wie er über I²S hinausgeht. Ausgabewerte, Seed.
+tools/sim.sh audio 20000 1
 ```
 
 Die Speichermodelle in `sim/models/` (`sdram_model.v`, `sram_model.v`, `psram_model.v`)
@@ -118,7 +123,10 @@ Fehlern bauen (`SIM_DEFINES`, siehe `tools/sim.sh`).
   Ergebnis, Pixelvergleich mit den C-Modellen, die Zählerstände des ersten Rennbilds mit der
   Änderung zum gespeicherten Vergleichsstand (`--save`). Ohne `--full` der Schnelllauf: ohne
   die zwei Resets und mit dem fertigen Streckenabbild als Slot der Testbench, den das
-  Programm nur in der Simulation findet; `--full` wie auf dem Pocket.
+  Programm nur in der Simulation findet; `--full` wie auf dem Pocket. Den Ton des Laufs
+  (die I²S-Ausgabe, 48 kHz Stereo) schreibt sie nach `build/sim/audio.wav`; zum Anhören mit
+  Gas: `SIM_KEYS=20 SIM_RACE_FRAMES=75 tools/simcheck.sh drive`. `build/gamedata/` braucht
+  dafür auch `DATA/SOUND.DAT`.
 - `tools/pocketlog.py [debug.txt]` liest das Protokoll des Pocket (Vorgabe: die SD-Karte als
   I:) als kurze Tabelle: Laden, Prüfungen, Fehler, je Probe Tempo, Flächen, fps und Bildzeit.
 - `tools/dis.sh [-h] [-f] <von> <bis>` disassembliert ein Stück von `STARTL.EXE` (`-h`:

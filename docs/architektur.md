@@ -10,8 +10,10 @@ Platzierung, Berührungen, Überholen, Crash eines Gegners), der schnelleren Gra
 (50 fps auch am Start mit allen zehn Autos) und beweglichen Teilen der Strecke (der drehende
 Football-Helm am Start); die Strecke wird aus den originalen Spieldateien gebaut. Gebaut, Test
 auf dem Pocket steht aus: Routine 224 (Rauch, Schatten unter allen Autos), das Radar, die
-Cockpit-Ansicht und die Startrichtung des Originals.
-Belegung siehe „Belegung“; geschätzt ist nur noch, was fehlt (Audio).
+Cockpit-Ansicht, die Startrichtung des Originals und der Ton: ein Mischer mit 32 Stimmen
+(`audio.v`), der die Soundeffekte aus `SOUND.DAT` spielt (Motor, Rutschen, Wand, Crash,
+Requisiten, Berührung mit einem Gegner).
+Belegung siehe „Belegung“, alles gemessen.
 
 ## Hardware des Pocket (Haupt-FPGA)
 
@@ -38,13 +40,15 @@ zeichnet.
 | Speicher | Inhalt |
 |---|---|
 | SDRAM | Programm, Geometrie, Spielzustand, Texturen der aktuellen Strecke (`MAPn.MLB`, ≤ 3 MB, über den 16-KB-Textur-Cache) |
-| SDRAM (geplant) | Soundeffekte (`SOUND.DAT`, 1,9 MB) |
-| Block-RAM | zwei Framebuffer (2 × 64 KB) und zwei Paletten, Boot-RAM, CPU-Caches, Puffer der Geometrie-Einheit, Textur- und Mesh-Cache, Transparenztabelle (`MAPn.SMG`), geplant der Audiopuffer |
+| SDRAM | Soundeffekte (`SOUND.DAT`, 1,9 MB, ungepackt; der Mischer liest die Samples direkt) |
+| Block-RAM | zwei Framebuffer (2 × 64 KB) und zwei Paletten, Boot-RAM, CPU-Caches, Puffer der Geometrie-Einheit, Textur- und Mesh-Cache, Transparenztabelle (`MAPn.SMG`), die Zeilen des Mischers (32 × 32 Bytes) |
 | SRAM, cram0, cram1 | nicht benutzt |
 
 Eine Cache-Zeile Texturen kostet aus dem SDRAM etwa 30 Takte, aus dem PSRAM (asynchron)
 etwa 130; deshalb liegt alles im SDRAM, auch die Sounds, die der Mischer gleichmäßig und
-langsam liest. Ein Audiopuffer im Block-RAM fängt dabei jede Wartezeit ab.
+langsam liest. Je Stimme hält der Mischer die Zeile von 32 Bytes um ihre Stelle im Block-RAM
+und fordert die nächste an, sobald die Stelle hineinrückt; bis er sie liest, vergeht ein ganzer
+Ausgabewert (1547 Takte), das fängt jede Wartezeit ab.
 
 ## Speicherbedarf eines Rennens (gemessen, entpackt)
 
@@ -68,7 +72,8 @@ Dateinamen eines Slots an, `GFX/MAP1H.DAT`, auf dem Pocket getestet 2026-10-28).
 ein Data-Slot mit `deferload`:
 der Core liest das Inhaltsverzeichnis am Dateiende und holt sich die Einträge, die er
 braucht. Gebaut (2026-10-28): die fünf Dateien von Strecke 1 (Slots 3 bis 7: `MAP1H.DAT`,
-`GAME.DAT`, `MAP1.DAT`, `GEN.DAT`, `LOCAL.DAT`); die Firmware entpackt sie (`dat.c`, LZW)
+`GAME.DAT`, `MAP1.DAT`, `GEN.DAT`, `LOCAL.DAT`), seit 2026-10-29 dazu `SOUND.DAT` (Slot 8,
+ungepackt, der Mischer spielt die Samples aus dem Container); die Firmware entpackt sie (`dat.c`, LZW)
 und baut daraus beim Start das Abbild der Strecke, das bis dahin `tools/make_track.py` auf
 dem PC baute, Byte für Byte dasselbe (`track_build.c`; Simulation: 3,2 s, davon 1 s
 Entpacken, der Rest vor allem der Kamerapfad in `double` und die Prüfsummen). Alle Dateien
@@ -82,9 +87,11 @@ weg, und mit der CD-Musik `MUSIC.DAT`, dafür kommen `SCREAM.gog` und `SCREAM.DA
 
 ## Belegung
 
-Gemessen am 2026-10-29 (Quartus-Build mit Routine 224, Timing hält bei 74,25 MHz: Setup
-+0,94 ns, Hold +0,09 ns; Bauzeit knapp 5 min): 9.683 von 18.480 ALMs (52 %), 280 von 308 M10K
-(91 %, davon 16 die Tabelle der Routine 224), 30 von 66 DSP (45 %). Von Build zu Build
+Gemessen am 2026-10-29 (Quartus-Build mit dem Mischer, Timing hält bei 74,25 MHz: Setup
++0,28 ns, Hold +0,10 ns, die knappsten Pfade im Rasterizer; Bauzeit 5,5 min): 10.114 von
+18.480 ALMs (55 %), 281 von 308 M10K (91 %, davon 16 die Tabelle der Routine 224), 31 von 66
+DSP (47 %). Der Mischer: 416 ALMs (117 davon die MLABs seiner Register), 1 M10K, 1 DSP; vorher
+9.683 ALMs, 280 M10K, 30 DSP, Setup +0,94 ns. Von Build zu Build
 schwankt die Logik um einige hundert ALMs: Die Platzierung packt verschieden dicht, und wo
 das Timing knapp ist, baut der Fitter Logik und Register um (Physical Synthesis).
 
@@ -111,7 +118,7 @@ Block-RAM spart er 190 ALMs, kostet aber 19 M10K, die knappere Ressource). Setup
 3.041 → 1.512, Geometrie-Einheit 2.288 → 648, Rasterizer mit Texturen 2.539 → 1.895 ALMs; dafür
 11 M10K mehr und 5 DSP weniger. Geschätzt ist nur, was noch fehlt.
 
-![Platzbudget im FPGA: Logik heute 52 %, mit Geplantem 55–56 %; Block-RAM heute 91 %, mit Geplantem 92 %; DSP heute 45 %, mit Geplantem 47 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik heute 55 %, mit Geplantem 55 %; Block-RAM heute 91 %, mit Geplantem 91 %; DSP heute 47 %, mit Geplantem 47 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py`: die gemessenen Zeilen aus dem Fitter-Report
 (`core/src/fpga/output_files/ap_core.fit.rpt`, Tabelle „Resource Utilization by Entity“), die
@@ -120,23 +127,23 @@ diese Tabelle.
 
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
-| Analogue-Rahmen (Bridge, PLLs) | 502 | 2 | – |
-| Framebuffer ×2 + Video | 122 | 130 | – |
-| VexRiscv + 2× 8 KB Cache | 1.275 | 19 | 4 |
-| FPU (RV32F) | 1.441 | 5 | 4 |
+| Analogue-Rahmen (Bridge, PLLs) | 408 | 2 | – |
+| Framebuffer ×2 + Video | 120 | 130 | – |
+| VexRiscv + 2× 8 KB Cache | 1.280 | 19 | 4 |
+| FPU (RV32F) | 1.470 | 5 | 4 |
 | CFU (16.16-Multiplikation) | 9 | – | 3 |
 | Boot-RAM 32 KB + Protokoll | – | 36 | – |
-| Geometrie-Einheit | 812 | 22 | 4 |
-| Clipper | 953 | 6 | 2 |
-| Setup-Einheit | 1.488 | 7 | 4 |
-| Rasterizer | 1.234 | 2 | 5 |
-| Texturen: Pipeline + Cache | 534 | 47 | 4 |
-| Blitter (Hintergrund, HUD) | 487 | 2 | – |
-| SDRAM-Controller + Ports | 306 | 2 | – |
-| Bus, Register, Arbiter | 520 | – | – |
-| **gebaut** | **9.683 (52 %)** | **280 (91 %)** | **30 (45 %)** |
-| geplant: Audio: Mischer 32 Stimmen, I2S, CD-Musik | 520–650 | 3 | 1 |
-| **mit Geplantem** | **10.203–10.333 (55–56 %)** | **283 (92 %)** | **31 (47 %)** |
+| Geometrie-Einheit | 684 | 22 | 4 |
+| Clipper | 955 | 6 | 2 |
+| Setup-Einheit | 1.510 | 7 | 4 |
+| Rasterizer | 1.258 | 2 | 5 |
+| Texturen: Pipeline + Cache | 672 | 47 | 4 |
+| Blitter (Hintergrund, HUD) | 496 | 2 | – |
+| SDRAM-Controller + Ports | 308 | 2 | – |
+| Audio: Mischer 32 Stimmen, I²S | 416 | 1 | 1 |
+| Bus, Register, Arbiter | 528 | – | – |
+| **gebaut** | **10.114 (55 %)** | **281 (91 %)** | **31 (47 %)** |
+| **mit Geplantem** | **10.114 (55 %)** | **281 (91 %)** | **31 (47 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es
@@ -365,6 +372,23 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Viereck nach der Szene, darauf die Wände (MMP-Feld 3) als Blitter-Linien in Farbe 255, mit
   der Nase nach oben um (40, 160) gedreht, Gegner als Sprite 5, der Spieler als Sprite 4 bei
   (38, 158), ein Pixel 32768 / 24 Einheiten (Voreinstellung des Spiels, `0x1bc3e`).
+- **Der Ton: ein Mischer in Hardware** (2026-10-29, nach OpenScreamers Notes Abschnitt 17 und
+  der EXE): Der Treiber des Spiels läuft mit 11025 Hz und nimmt das gespeicherte Sample ohne
+  Glätten (Index += Tonhöhe 16.16). `audio.v` macht dasselbe mit 48 kHz am Ausgang: je Ausgabewert
+  ein Durchgang durch 32 Stimmen (vier Takte je Stimme, ein Rechenweg, ein DSP), das Byte an der
+  Stelle mal Lautstärke links und rechts, Summe auf 16 Bit begrenzt, dann die Stelle um Tonhöhe ×
+  11025 / 48000 weiter (die Firmware rechnet das um). Die Register stehen in MLABs, je Stimme
+  eine Zeile von 32 Bytes in einem M10K, geholt über den Zeilen-Port; Takt der Ausgabe wie in der
+  Vorlage (MCLK 12,288 MHz), alles auf `clk_74a`. Das C-Modell `firmware/mixer.c` rechnet
+  Wert für Wert dasselbe (`tools/sim.sh audio`, 60.000 Zufallswerte). Lautstärke wie im Spiel:
+  Zeile von `SFXSBASE.DTR` mal Hauptregler `0x6000` (`0x1bc2f`). Zu hören sind der Motor (eine
+  Stimme, Tonhöhe Drehzahl × 14 + 32768 bei jedem Schritt, `autogall` im Tunnel), das Rutschen
+  mit der Bedingung des Rauchs (`0x17d04`, Start und Halt bei `0x180d0`), die Wand (nur ohne
+  Crash, `0x16f0b`), der Crash (`dentone`), Requisiten (`hit_0`) und die Berührung mit einem
+  Gegner (`crash`, höchstens 30-mal je Sekunde). Noch nicht: die Motoren der Gegner mit Pan und
+  Doppler, die Geräusche der Strecke, der Sprecher, die Musik. Offen: ein Tiefpass wie der
+  Ausgangsfilter der Soundkarten (OpenScreamer nimmt 3,2 kHz wie die Sound Blaster Pro); ob er
+  fehlt, entscheidet das Hören auf dem Pocket.
 - **Bewegliche Teile der Strecke** (2026-10-28, aus der EXE: `0x8ad14`, `0x8acf0`, `0x8ac58`;
   das Format nach OpenScreamers Notes S2-5b, das für beide Spiele gilt): Ein Mesh kann
   mehrere Blöcke haben, und ein Block mit Positionssatz (+0x0C) wird von dort verschoben oder,

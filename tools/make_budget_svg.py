@@ -24,7 +24,7 @@ GROUPS = [
     ("cpu", "CPU: VexRiscv, FPU, Boot-RAM", "#eb6834", "#d95926"),
     ("gfx", "Grafik: Geometrie bis Blitter", "#1baf7a", "#199e70"),
     ("mem", "SDRAM, Bus, Register", "#eda100", "#c98500"),
-    ("audio", "Audio (geplant)", "#e87ba4", "#d55181"),
+    ("audio", "Audio", "#e87ba4", "#d55181"),
 ]
 
 TOP = "|apf_top"
@@ -53,17 +53,17 @@ MEASURED = [
     ("Texturen: Pipeline + Cache", "gfx", [(1, RT)]),
     ("Blitter (Hintergrund, HUD)", "gfx", [(1, SOC + "|blit:bl")]),
     ("SDRAM-Controller + Ports", "mem", [(1, SOC + "|sdram:sdc"), (1, SOC + "|sdram_port:sdp")]),
+    ("Audio: Mischer 32 Stimmen, I²S", "audio", [(1, SOC + "|audio:au")]),
 ]
 # the SoC's own logic (bus, registers, arbiters): the SoC minus everything measured inside it
 SOC_REST = ("Bus, Register, Arbiter", "mem")
 
 # name, group, ALMs (lo, hi), M10K (lo, hi), DSP (lo, hi)
 PLANNED = [
-    ("Audio: Mischer 32 Stimmen, I2S, CD-Musik", "audio", (520, 650), (3, 3), (1, 1)),
 ]
 TIMING_LIMIT = 0.80         # logic utilisation above which timing closure gets hard
 STAND = "29.10.2026"
-BUILD = "Rauch, Schatten, Radar"
+BUILD = "Audio: Mischer"
 
 # layout
 WIDTH = 1120

@@ -20,7 +20,7 @@ etwas daran ändert, ändert beide Seiten und dieses Dokument.
 - **Firmware:** zwei Teile. Data-Slot 0 `firmware.bin` (höchstens 32 KB) an Bridge-Adresse
   `0x00000000` ins Boot-RAM: der Lader (Selbsttests, Speichertest). Data-Slot 2
   `program.bin` an `0x1300_0000` ins SDRAM: das Programm.
-- **Slots im SDRAM erst nach der Phasensuche:** Die Slots 2 (`program.bin`) und 3 bis 7 (die
+- **Slots im SDRAM erst nach der Phasensuche:** Die Slots 2 (`program.bin`) und 3 bis 8 (die
   Spieldateien) haben `deferload`, der Pocket lädt sie nicht von selbst. Die Phasensuche des Speichertests
   stellt den SDRAM auch in schlechte Phasen, dort kann der Chip Befehle und Adressen falsch
   übernehmen und irgendwo schreiben (gemessen: 15 von 63 MB verändert). Der Lader fordert
@@ -46,10 +46,12 @@ etwas daran ändert, ändert beide Seiten und dieses Dokument.
 | Adresse | Größe | Inhalt | Cache |
 |---|---|---|---|
 | `0x0000_0000` | 32 KB | Boot-RAM: der Lader, darüber der Stack des Programms. Reset-Vektor `0x0000_0000`, `mtvec` nach Reset `0x0000_0020` | ja |
-| `0x1000_0000` | 64 MB | SDRAM: das Abbild der Strecke ab `0x1210_0000` (von der Firmware gebaut), die Spieldateien ab `0x1280_0000` (Slots 3 bis 7: `MAP1H.DAT` `0x1280_0000`, `GAME.DAT` `0x12C0_0000`, `MAP1.DAT` `0x12D0_0000`, `GEN.DAT` `0x12D4_0000`, `LOCAL.DAT` `0x12D5_0000`), Arbeitsspeicher des Aufbaus ab `0x12D6_0000`, das Programm ab `0x1300_0000` (Slot 2) | ja |
+| `0x1000_0000` | 64 MB | SDRAM: die Soundeffekte `SOUND.DAT` ab `0x11C0_0000` (Slot 8, bis 2 MB; der Mischer spielt sie von dort), das Abbild der Strecke ab `0x1210_0000` (von der Firmware gebaut), die Spieldateien ab `0x1280_0000` (Slots 3 bis 7: `MAP1H.DAT` `0x1280_0000`, `GAME.DAT` `0x12C0_0000`, `MAP1.DAT` `0x12D0_0000`, `GEN.DAT` `0x12D4_0000`, `LOCAL.DAT` `0x12D5_0000`), Arbeitsspeicher des Aufbaus ab `0x12D6_0000`, das Programm ab `0x1300_0000` (Slot 2) | ja |
 | `0xF000_0000` | 4 KB | System- und Speicher-Register | nein |
 | `0xF000_1000` | 4 KB | Video-Register und Palette | nein |
 | `0xF000_2000` | 4 KB | Eingabe | nein |
+| `0xF000_3000` | 4 KB | Rasterizer, Setup- und Geometrie-Einheit, Blitter | nein |
+| `0xF000_4000` | 4 KB | Ton: der Mischer | nein |
 | `0xF000_8000` | 4 KB | Protokoll (`debug.txt`, siehe unten) | nein |
 | `0xF100_0000` | 64 000 B | Framebuffer 0 | nein |
 | `0xF101_0000` | 64 000 B | Framebuffer 1 | nein |
@@ -112,6 +114,33 @@ Alle Register sind 32 Bit, Zugriff als Wort.
 | `0xF000_315C` | `GU_PUSH` | W | Geometrie-Einheit (`geom.v`, bitgenau `firmware/geom.c`): das nächste Wort eines Bauteils in ihren Puffer (2048 Wörter, 113 Bauteile); wartet nur, wenn er voll ist. Ein Bauteil sind 18 Wörter: lokal nach Kamerasicht (Zeilen r, u, f der Spalten x, y, z, 16 Nachkommabits, innerhalb ±2^17), Ursprung in Kamerasicht und Auge im Rahmen des Bauteils (je 8 Nachkommabits), SDRAM-Byte-Adressen von Mesh-Objekt und Block, Bit 4 und 2..0 die Flächenliste für die Seite des Auges (0..15, gelesen bei Block +0x28 + 4 × Liste; Bit 4 zählt 8: das Auge unter der x-z-Ebene des Blocks, wie im Spiel bei `0x8a598`), Bit 3 ein Block eines beweglichen Teils (seine Bilder spiegeln ihn, die Rückseiten sind die anderen, wie im Spiel bei `0x8acf0`) und Bit 29..16 die Texturphase (von n Bildern einer Textur, Texturdatensatz +0, wird Bild n × Phase >> 14 gezeichnet, wie im Spiel: Streckentexturen nach der Animationsuhr, beim Auto Lackierung, Bremslicht und Radbild). Die Einheit nimmt ein Bauteil, sobald es ganz im Puffer liegt, liest das Mesh selbst (4-KB-Lese-Cache, Zeilen über den Port des Rasterizers), rechnet die Eckpunkte um, lässt Rückseiten und Material 224 weg und gibt jede Fläche an die Setup-Einheit; Ecken der CPU an die Setup-Einheit warten, bis sie fertig ist |
 | `0xF000_3180` | `BL_PUSH` | W | Blitter (`blit.v`, bitgenau `firmware/blit.c`): das nächste Wort eines Befehls in seinen Puffer (512 Wörter, 128 Befehle); wartet nur, wenn er voll ist. Ein Befehl sind 4 Wörter: Wort 0 die SDRAM-Byte-Adresse des ersten Quellpixels (Linie: Bit 9..0 x, 25..16 y ihres Endes), Wort 1 Bit 9..0 x, 25..16 y des ersten Pixels bzw. Linienanfangs (mit Vorzeichen), 29..28 die Art (0 Kopie, 1 Schrift, 2 Linie, 3 Füllen), 30 der Puffer, 31 bei Kopien deckend; Wort 2 Breite und Höhe (Linie: Clip links, oben), Wort 3 Bit 9..0 Bytes von Zeile zu Zeile (Linie: Bit 8..0 und 24..16 Clip rechts, unten, ausschließlich), 31..24 die Farbe. Kopie: das Byte, 0 durchsichtig (deckend: auch 0); Schrift: Schattierung 1..15 als Farbe × 16 + Schattierung; Linie: Bresenham, die Pixel im Clip; Füllen: das Rechteck in der Farbe. Kopien, Schrift und Füllen werden auf den Bildschirm beschnitten. Der Blitter beginnt einen Befehl nur, solange Geometrie-Einheit, Setup-Einheit und Rasterizer stillstehen: den Hintergrund vor der Szene (die Firmware hält das erste Bauteil zurück, bis er fertig ist), die Rennanzeige danach. Kopie und Schrift ein Pixel pro Takt, die Quelle zeilenweise über den gemeinsamen Zeilen-Port; Füllen ein Wort (vier Pixel) pro Takt |
 | `0xF000_3184` | `BL_CLOCKS` | R/W | Takte, in denen der Blitter gearbeitet hat; Schreiben löscht |
+| `0xF000_4000` + 32·v | `AU_ADDR(v)` | W | Mischer (`audio.v`, bitgenau `firmware/mixer.c`), Stimme v (0..31): SDRAM-Byte-Adresse des ersten Bytes ihres Samples (8 Bit vorzeichenlos). Ein Register wirkt, wenn der Durchgang zu seiner Stimme kommt; zwischen zwei Durchgängen geschrieben, alle zugleich |
+| `0xF000_4004` + 32·v | `AU_END(v)` | W | Byte-Adresse, an der das Sample (bzw. seine Schleife) endet |
+| `0xF000_4008` + 32·v | `AU_LOOP(v)` | W | Bit 19..0: am Ende geht die Stelle um so viele Bytes zurück; Bit 31..24: wie oft (0 nie, dann hört die Stimme am Ende auf; 255 immer) |
+| `0xF000_400C` + 32·v | `AU_STEP(v)` | W | Schritt je Ausgabewert in Samples, 2.16 (unter 4): die Tonhöhe des Spiels (16.16 der eigenen 11025 Hz) × 11025 / 48000 |
+| `0xF000_4010` + 32·v | `AU_VOL(v)` | W | Bit 7..0 links, 15..8 rechts: das zentrierte Byte (Byte − 128) mal diese Zahl |
+| `0xF000_4400` | `AU_PLAY` | R/W | Schreiben: Bit v startet Stimme v (neu) an ihrem ersten Byte mit ihrer Schleifenzahl; der nächste Durchgang setzt die Stelle und holt ihre Zeile, der übernächste spielt das Byte. Lesen: Bit v = Stimme v spielt |
+| `0xF000_4404` | `AU_STOP` | W | Bit v hält Stimme v an |
+| `0xF000_4408` | `AU_STATUS` | R/W | Bit 0: ein Durchgang war bis zum nächsten Ausgabewert nicht fertig (der vorige Wert wurde wiederholt); Schreiben löscht |
+
+## Ton
+
+Der Mischer (`audio.v`) geht einmal je Ausgabewert (48 kHz) durch die 32 Stimmen, alle vier
+Takte eine, mit einem gemeinsamen Rechenweg: das gespeicherte Byte an der Stelle der Stimme
+(das nächstliegende Sample, nichts geglättet, wie der Treiber des Spiels), zentriert, mal
+Lautstärke links und rechts, aufsummiert, auf 16 Bit begrenzt; dann rückt die Stelle um den
+Schritt weiter, in ihre Schleife zurück oder bis zum Ende. Die Register stehen in MLABs, je
+Stimme liegt die Zeile (32 Bytes) um ihre Stelle in einem M10K; wechselt die Stelle in eine
+andere Zeile, holt der Durchgang sie über den Zeilen-Port (vor dem Rasterizer), lange bevor
+der nächste sie braucht. Ausgabe als I²S an den Pocket im Takt der Vorlage: MCLK 12,288 MHz
+aus einem Bruchteiler auf `clk_74a`, Bittakt MCLK / 4, 64 Bit je Wert, LRCK low links, high
+rechts, je 16 Bit MSB zuerst ab dem zweiten Bittakt der Hälfte. Ein CPU-Reset hält alle
+Stimmen an, die Ausgabe läuft weiter.
+
+Die Firmware (`firmware/sound.c`) spielt die Effekte aus `SFXSBASE.DTR` (GEN.DAT): die Samples
+liegen ungepackt in `SOUND.DAT`, der Mischer liest sie direkt aus dem geladenen Container.
+Lautstärke wie im Spiel: die Zeile der Liste mal der Hauptregler für Effekte (`0x6000` von
+`0x7fff`), ein volles Sample bewegt den Ausgang um 192 je 8-Bit-Stufe.
 
 ## Framebuffer
 
