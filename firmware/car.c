@@ -541,7 +541,8 @@ void car_init(int which)
 
 /* the engine's note every step (0x19408): pitch rpm x 14 + 32768, automoto, autogall in a tunnel
    (the last marker's kind 1); the skid's sample while the skid flag of 0x17d04 is up (0x180d0,
-   the same flag as the smoke's); both stop when the race is over */
+   the same flag as the smoke's) or the wheels spin off the line in a gear (0x1883d); both stop
+   when the race is over */
 static void sound_step(int skid)
 {
     if(race.finished || race.game_over) {
@@ -590,11 +591,12 @@ void car_step(uint32_t keys, uint32_t keys_before)
     /* 0x17d04's smoke: its branch for locked wheels, taken only out of a crash and while the
        engine pulls (flag 0x40 at 0x18e19, time over), or the body more than 0.23 rad off its
        heading (ds:0x810, 0x180be); and state 5, the wheels spinning off the line, smokes in a
-       gear (0x18879) */
+       gear (0x18879) and starts the skid's sample too (0x1883d) */
     uint32_t t0 = rdcycle();
     int skid = (pc.skid_lock && !crash.on && !race.time_out) || fabsf(pc.drift) > 0.23f;
+    int spin = pc.launch && pc.gear != 0;
     if(skid) smoke_spawn();
-    if(pc.launch && pc.gear != 0) smoke_spawn();
+    if(spin) smoke_spawn();
     efx_cyc_objects += rdcycle() - t0;
     walls_step();
     markers_step();
@@ -608,7 +610,7 @@ void car_step(uint32_t keys, uint32_t keys_before)
         shadow_roll = -pc.roll + crash.roll;
     }
     efx_cyc_objects += rdcycle() - t0;
-    sound_step(skid);
+    sound_step(skid || spin);
 
     /* wheels_step: the wheels turn with the speed; the front ones steer by the share of the
        lock, the sign as OpenScreamer has it since its fix (the model's +x is the car's left) */
