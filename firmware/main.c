@@ -8,7 +8,8 @@
  * d-pad.
  * Every frame into the back buffer: palette, test band, background, the scene, the counts
  * and FPS; then a swap. After the third completed swap the results go to SYS_SIM once
- * (0x80001FFF when everything passed).
+ * (0x80001FFF when everything passed); in the simulation's race (RACE_SLOT) after the swap of
+ * the frame it names.
  */
 #include "hw.h"
 #include "console.h"
@@ -42,6 +43,8 @@ static uint8_t col_bg = COL_BG, col_text = COL_TEXT, col_dim = COL_DIM, col_aler
    to the program */
 #define GAME_SLOT   3
 #define IMAGE_SLOT  30          /* the simulation only: the finished track image (load_image) */
+#define RACE_SLOT   29          /* the simulation only: its size, the frames after the green light
+                                   (run_track) */
 static const struct game_file { const char *name; uint32_t addr, max; } game_files[5] = {
     { "MAP1H.DAT", SDRAM_BASE + 0x2800000, 0x400000 },
     { "GAME.DAT",  SDRAM_BASE + 0x2C00000, 0x100000 },
@@ -377,10 +380,16 @@ static void __attribute__((noreturn)) run_track(void)
     GU_MLB = (uint32_t)((uintptr_t)track_mlb() - SDRAM_BASE);
     GU_INVAL = 1;
     uint32_t frame_cycles = 0;                  /* the last frame's, from the swap to the next */
+    /* The simulation's race (tools/sim.sh, SIM_RACE_FRAMES; the keys SIM_KEYS holds): the
+       testbench gives data slot RACE_SLOT, which core/data.json does not have, the size n; the
+       start lights' countdown then runs at once before the first picture, and the n-th frame
+       after the green light is checked and reported instead of the third. 0: as on the Pocket. */
+    uint32_t sim_race = (SYS_FLAGS & FLAG_SIM) ? slot_size(RACE_SLOT) : 0;
+    uint32_t check_at = 2 + sim_race;           /* the frame checked against the C models */
     for (;;) {
         uint32_t st = wait_swap_done(), keys = IN_KEY, t_frame = rdcycle();
         frames_shown = drawn;
-        if (drawn == 3) {
+        if (drawn == check_at + 1) {
             SYS_SIM = SIM_DONE | results;
             dlog_str("stack used ");
             dlog_dec((int32_t)stack_used());
@@ -399,6 +408,7 @@ static void __attribute__((noreturn)) run_track(void)
             car_step(keys, keys_before);
             opp_step();
             keys_before = keys;
+            if (sim_race && !car_race()->on && k == n - 1) n++;    /* the simulation's countdown at once */
         }
         t_phys = rdcycle() - t_phys;
         steps += n;
@@ -475,14 +485,14 @@ static void __attribute__((noreturn)) run_track(void)
         uint32_t r_drain = RS_DRAIN_CLOCKS, r_starved = RS_STARVED;
         ts.faces = GU_FACES;
         uint32_t efx_objects = efx_cyc_objects, efx_radar = efx_cyc_radar;    /* (the check adds) */
-        if (drawn == 2) track_check(fb, &clip, &cam, objs, nobj, &back, cockpit ? &dashboard : 0, &hud);
+        if (drawn == check_at) track_check(fb, &clip, &cam, objs, nobj, &back, cockpit ? &dashboard : 0, &hud);
 
         if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
             fps = drawn - fps_drawn;
             fps_drawn = drawn;
             fps_frame = VID_FRAME(st);
         }
-        if (drawn % 250 == 2) {
+        if (drawn % 250 == 2 || drawn == check_at) {
             dlog_str("track frame ");
             dlog_dec((int32_t)drawn);
             dlog_str(": car ");
@@ -543,7 +553,7 @@ static void __attribute__((noreturn)) run_track(void)
             dlog_dec((int32_t)fps);
             dlog_str(", frame ");
             dlog_dec((int32_t)frame_cycles);
-            if (drawn == 2) {                   /* the log has 4 KB: once */
+            if (drawn == check_at) {                /* the log has 4 KB: once */
                 dlog_str(", camera ");
                 dlog_dec(ts.cam[0]);
                 dlog_char(' ');

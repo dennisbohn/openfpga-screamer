@@ -70,6 +70,14 @@ static float shadow_pitch, shadow_roll;
 static struct puff { int on; int32_t lx, lz, phase; float x, y, h; } puff[PUFFS];
 static float puff_clock;                /* +0x304 */
 
+/* the player's whole-number place as the game keeps it (car +0x4b0, +0x4b8, which the smoke
+   reads as ds:0xfdc8, 0xfdd0): each move is added to it and the sum cut towards 0 (0x4d7b4:
+   frndint with the rounding set to chop, then fistp; x 0x171ae, 0x17229, 0x1732d, z 0x171f8,
+   0x1725a), so every step loses its fraction: a move a hair under 0, as off the grid with the
+   heading just past pi, takes it a whole unit. Ours moves in floats (drive.c); this follows
+   those moves (fx, fy: the float place it last took) */
+static struct { int32_t x, y; float fx, fy; } whole;
+
 static float wrap_pi(float a)
 {
     while(a > PI) a -= 2.0f * PI;
@@ -239,8 +247,24 @@ static void walls_step(void)
     }
 }
 
-/* the game's tick counter T (obj1:0x7fd, counted up by its 100 Hz timer's callback 0x1020d),
-   from the cycle counter: it runs on whatever the frame rate */
+static int32_t whole_add(int32_t w, float d)
+{
+    return w + (int32_t)((float)w + d >= 0.0f ? floorf(d) : ceilf(d));
+}
+
+/* after a step's move: added to the whole-number place, the sum cut towards 0 */
+static void whole_step(void)
+{
+    whole.x = whole_add(whole.x, pc.x - whole.fx);
+    whole.y = whole_add(whole.y, pc.y - whole.fy);
+    whole.fx = pc.x;
+    whole.fy = pc.y;
+}
+
+/* the game's tick counter T (obj1:0x7fd, counted up by its 100 Hz timer's callback 0x1020d;
+   the fixups at 0x198b8 and 0x10215 both name object 1, not the data object, whose 0x7fd,
+   the middle of a constant, OpenScreamer took for a fixed 51), from the cycle counter: it
+   runs on whatever the frame rate */
 static uint32_t ticks(void)
 {
     static uint32_t last, rest, t;
@@ -255,9 +279,12 @@ static uint32_t ticks(void)
 /* 0x19818, called on every step that smokes: the clock (+0x304) gains the step's time while
    it is under 0.05 s (ds:0x8cb); else it starts again and each rear wheel (records 1 and 3,
    rear left and rear right) takes the first free slot: its place on the model pushed sideways
-   by (x & 7) (T & 63) and back by (z & 7) (T & 63), x and z the car's whole-number place
-   (ds:0xfdc8, 0xfdd0); the right one's push turned round when T has bit 1 (0x198bf: T and
-   the wheel's index 2). At 50 steps a second a pair every 4 steps. */
+   by (x & 7) (T & 63) and back by (z & 7) (T & 63), x and z the player's whole-number place
+   as the game keeps it (ds:0xfdc8, 0xfdd0: the car record 0x10f918's +0x4b0, +0x4b8; whole,
+   not the float place cut: off the grid that sits a hair under 2600, x & 7 = 7, every push
+   the largest); the right one's push turned round when T has bit 1 (0x198bf: T and the
+   wheel's index 2). The pushes go out to the left and either way on the right, up to 441
+   units. At 50 steps a second a pair every 4 steps. */
 static void smoke_spawn(void)
 {
     if(puff_clock < 0.05f) {
@@ -274,8 +301,8 @@ static void smoke_spawn(void)
         struct puff *p = &puff[k];
         p->on = 1;
         p->phase = 0;
-        p->lx = (w ? -wx : wx) + ((int32_t)pc.x & 7) * tt * ((t & (uint32_t)w) ? -1 : 1);
-        p->lz = wz + ((int32_t)pc.y & 7) * tt;
+        p->lx = (w ? -wx : wx) + (whole.x & 7) * tt * ((t & (uint32_t)w) ? -1 : 1);
+        p->lz = wz + (whole.y & 7) * tt;
     }
 }
 
@@ -495,6 +522,10 @@ void car_init(int which)
     shadow_roll = -pc.roll;
     for(int j = 0; j < PUFFS; j++) puff[j].on = 0;
     puff_clock = 0.0f;
+    whole.x = (int32_t)pc.x;
+    whole.y = (int32_t)pc.y;
+    whole.fx = pc.x;
+    whole.fy = pc.y;
 }
 
 void car_step(uint32_t keys, uint32_t keys_before)
@@ -521,6 +552,7 @@ void car_step(uint32_t keys, uint32_t keys_before)
     int crashed = crash.on;
     crash_step();
     drive_step(&pc, &in);
+    whole_step();
     /* 0x17d04's smoke: its branch for locked wheels, taken only out of a crash and while the
        engine pulls (flag 0x40 at 0x18e19, time over), or the body more than 0.23 rad off its
        heading (ds:0x810, 0x180be); and state 5, the wheels spinning off the line, smokes in a

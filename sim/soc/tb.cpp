@@ -137,10 +137,12 @@ struct Sim {
     std::map<uint32_t, std::vector<uint8_t>> files;     // by slot id
     bool race = false;                                  // every game file is there
     int slot_reads = 0;
+    uint32_t keys = 0;                                  // SIM_KEYS, held from the program's first read
     void serve_read() {
         top.ds_done = 0; top.eval();
         rise_74(8);
         uint32_t id = top.ds_id, off = top.ds_offset, addr = top.ds_addr, len = top.ds_length, err = 2;
+        if (id >= 3) top.cont1_key = keys;              // the program runs: the boot loader is past its keys
         auto it = files.find(id);
         if (it != files.end()) {
             const std::vector<uint8_t> &f = it->second;
@@ -343,6 +345,12 @@ int main(int argc, char **argv) {
         }
     }
 
+    // SIM_KEYS (tools/sim.sh): these buttons (hex, cont1_key's bits as firmware/hw.h names
+    // them) held from the program's first read of a game file on (the boot loader reads the
+    // buttons at its start: Select there asks for the full memory test); none without it
+    if (const char *k = getenv("SIM_KEYS")) s.keys = uint32_t(strtoul(k, nullptr, 16));
+    if (s.keys) printf("buttons held: 0x%04x, from the program's first game file read\n", s.keys);
+
     Vsoc_system &top = s.top;
     top.clk_74a = 0; top.clk_vid = 0; top.reset_n = 0; top.bridge_wr = 0; top.bridge_rd = 0; top.cont1_key = 0;
     top.ds_done = 0; top.ds_err = 0;
@@ -362,9 +370,22 @@ int main(int argc, char **argv) {
         s.bridge_write(0xF8002000u + 8 * uint32_t(k), id);
         s.bridge_write(0xF8002004u + 8 * uint32_t(k), size);
     }
-    if (s.files.count(30) && slots.size() < 32) {
-        s.bridge_write(0xF8002000u + 8 * uint32_t(slots.size()), 30);
-        s.bridge_write(0xF8002004u + 8 * uint32_t(slots.size()), uint32_t(s.files[30].size()));
+    size_t extra = slots.size();
+    if (s.files.count(30) && extra < 32) {
+        s.bridge_write(0xF8002000u + 8 * uint32_t(extra), 30);
+        s.bridge_write(0xF8002004u + 8 * uint32_t(extra), uint32_t(s.files[30].size()));
+        extra++;
+    }
+    // SIM_RACE_FRAMES=n (tools/sim.sh): slot 29, which core/data.json does not have either, with
+    // the size n: the firmware runs the start lights' countdown at once and checks and reports
+    // the n-th frame after the green light instead of the third (firmware/main.c)
+    if (const char *r = getenv("SIM_RACE_FRAMES")) {
+        uint32_t n = uint32_t(strtoul(r, nullptr, 10));
+        if (n && extra < 32) {
+            s.bridge_write(0xF8002000u + 8 * uint32_t(extra), 29);
+            s.bridge_write(0xF8002004u + 8 * uint32_t(extra), n);
+            printf("race: the frame %u after the green light (slot 29)\n", n);
+        }
     }
     {
         // the core ignores the debug log's load (docs/soc.md), so it still holds what it held
@@ -398,7 +419,7 @@ int main(int argc, char **argv) {
         uint64_t limit = s.now + 4 * FRAME_PS;
         while (!(top.swap_req && top.front) && s.now < limit) s.step();
         if (!(top.swap_req && top.front)) { printf("FAIL: buffer 1 never in front with no swap pending\n"); fails++; }
-        top.reset_n = 0; top.eval();
+        top.reset_n = 0; top.cont1_key = 0; top.eval();
         s.rise_74(16);
         printf("in reset: swap request %d, buffer in front %d, SYS_SIM 0x%08x\n", top.swap_req, top.front, top.sim_status);
         if (top.swap_req || top.front || top.sim_status) { printf("FAIL: all three should be 0\n"); fails++; }
@@ -409,7 +430,7 @@ int main(int argc, char **argv) {
         // and one in the middle of the memory test's SDRAM traffic
         s.run(timeout_frames, last, done, unasked, 1500000);
         printf("==== reset in the middle of the memory test, firmware loaded again ====\n");
-        top.reset_n = 0; top.eval();
+        top.reset_n = 0; top.cont1_key = 0; top.eval();
         s.load(0, fw);
         s.rise_74(16);
         top.reset_n = 1; top.eval();
