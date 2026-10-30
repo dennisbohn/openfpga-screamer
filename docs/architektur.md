@@ -108,11 +108,30 @@ Positionssatz, der fernste zuerst. Davor das Bild `MENU3L.PCX` aus `GRAF.DAT` (s
 ist die des Bildschirms), darüber Titel (`MENU.TXT` Zeile 45, Schrift 3), Streckenname
 (`TRACKDAT.TXT`, Schrift 2, 2 Schrifthöhen über dem unteren Rand) und die Pfeile (Sprites 0
 und 1 bei x 8 und 238, y 100) aus `MENUL.FNT` und `MENUL.SPR`, alles über den Blitter. B oder
-START startet; danach entpackt und baut der Core die Strecke (auf dem Pocket rund 4,5 s, das
-letzte Bild bleibt so lange stehen). SELECT im Rennen oder 5 s nach seinem Ende führt zurück.
+START startet; danach lädt, entpackt und baut der Core die Strecke (einige Sekunden; Strecke 1
+auf dem Pocket: 1,2 s Laden, 3,2 s Bauen; das letzte Bild bleibt so lange stehen). SELECT im Rennen oder 5 s nach seinem Ende führt zurück.
 Nicht dabei: Autowahl, Hauptmenü, Optionen, Intro, Kameraflüge, Menügeräusche, die
-gespiegelten Strecken, „NEW TRACK AVAILABLE“. Die Simulation hat keinen Streckenbildschirm,
-sie fährt die Strecke aus `SIM_TRACK` (Slot 28).
+gespiegelten Strecken, „NEW TRACK AVAILABLE“. Die Simulation fährt gleich die Strecke aus
+`SIM_TRACK` (Slot 28); mit `SIM_MENU=1` (Slot 27) zeigt sie stattdessen den
+Streckenbildschirm und prüft sein drittes Bild gegen die C-Modelle (2026-10-30: 0 Pixel
+Unterschied). `TRACK=n` und `MENU=1` für `tools/render.sh` zeichnen Start oder
+Streckenbildschirm auf dem PC.
+
+Die sechs Startbilder (Simulation, Schnelllauf, nahe Verfolgerkamera, Bild 2; jeweils 0 Pixel
+Unterschied zu den C-Modellen; „Bild“ ist die ganze Zeit von Bild 1, 20 ms = 1,485 M Takte):
+
+| Strecke | Platzierungen | Bauteile | Flächen | Pixel | Bild |
+|---|---|---|---|---|---|
+| 1 Palm Town | 1164 | 260 | 2620 | 108.027 | 1.315.412 = 17,7 ms |
+| 2 Lake Valley | 1408 | 243 | 2411 | 113.588 | 1.206.304 = 16,2 ms |
+| 3 Lindburg | 1590 | 235 | 2283 | 98.100 | 1.151.696 = 15,5 ms |
+| 4 Palm Town Night | 1764 | 260 | 2763 | 112.283 | 1.363.361 = 18,4 ms |
+| 5 Sunbeach Hill | 2359 | 249 | 3166 | 120.056 | 1.295.826 = 17,5 ms |
+| 6 Sandrock | 2073 | 265 | 2502 | 132.668 | 1.354.951 = 18,2 ms |
+
+Die Strecken 5 und 6 haben mehr Platzierungen als die 2048, die `track.c` hielt (jetzt 2560).
+Strecke 5 stellt keine Requisiten auf: die Knoten von `MAP5OST.SPL` liegen nicht über ihrer
+Fahrbahn (offen, am Original zu prüfen).
 
 ## Belegung
 
