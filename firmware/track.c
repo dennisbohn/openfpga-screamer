@@ -128,6 +128,11 @@ static uint8_t cobj_grass[MAX_OBJ];
 #define MAX_CLIST   65536
 static struct cgrid { float x0, z0, sx, sz; int32_t at[CGRID * CGRID + 1]; } cgrid[MAX_OBJ];
 static uint16_t clist[MAX_CLIST];       /* the cells' faces, from the mesh's first */
+/* the ground list's placements as track_under reads them, worked out once (the same values):
+   place, its block's middle, the square of its reach, its turn; obj -1 if it has no faces */
+struct gpiece { float x, y, ox, oy, r2, c, s; int32_t obj, h; };
+#define MAX_GROUND  4096
+static struct gpiece gpieces[MAX_GROUND];
 static float sin_q[513];                /* sin(2 pi i / 2048) for i = 0..512 */
 static float under_n[3];                /* track_under's face: its normal in world axes (x, y, up) */
 static float far_z = 43808.0f;          /* the far plane of the DETAIL level */
@@ -239,6 +244,25 @@ static void cgrid_build(void)
     }
 }
 
+/* ground list entry at as track_under reads it */
+static void gpiece_make(int at, struct gpiece *g)
+{
+    const struct piece *pc = &pieces[ground_list[at]];
+    g->obj = -1;
+    if(pc->obj < 0 || pc->obj >= unr_count || cobj_first[pc->obj] < 0) return;
+    const uint8_t *obj, *blk = block_of(pc->obj, &obj);
+    float r = (float)rd32(blk);
+    g->x = (float)pc->x;
+    g->y = (float)pc->y;
+    g->ox = (float)rd16(blk + 4);
+    g->oy = (float)rd16(blk + 8);
+    g->r2 = r * r;
+    g->c = sin2048((uint32_t)pc->t + 512);
+    g->s = sin2048((uint32_t)pc->t);
+    g->obj = pc->obj;
+    g->h = pc->h;
+}
+
 int track_open(const volatile uint8_t *file)
 {
     const uint8_t *f = (const uint8_t *)file;
@@ -334,6 +358,7 @@ int track_init(void)
         cobj_grass[k] = blk[0x6b] == 'e';
     }
     cgrid_build();
+    for(int at = 0; at < ground_first[65536] && at < MAX_GROUND; at++) gpiece_make(at, &gpieces[at]);
 
     for(int k = 0; k < unr_count; k++) {
         const uint8_t *obj, *blk = block_of(k, &obj);
@@ -542,9 +567,9 @@ void track_start(float *x, float *y, float *yaw)
     *yaw = start->yaw;
 }
 
-/* track_under's test of face q of placement pc at (lx, lz) in its frame (c, s its turn): 1 the
+/* track_under's test of face q of placement gp at (lx, lz) in its frame (c, s its turn): 1 the
    point is over it (*h, under_n set if a height is asked for), 0 the next face */
-static inline int under_face(const struct cface *q, const struct piece *pc, float lx, float lz, float c, float s,
+static inline int under_face(const struct cface *q, const struct gpiece *gp, float lx, float lz, float c, float s,
                              float *h, int *grass)
 {
     if(q->boxed && (lx < q->x0 || lx > q->x1 || lz < q->z0 || lz > q->z1)) return 0;
@@ -557,11 +582,11 @@ static inline int under_face(const struct cface *q, const struct piece *pc, floa
         if(cr > 0.0f) pos++; else if(cr < 0.0f) neg++;
     }
     if(pos && neg) return 0;
-    if(grass) *grass = cobj_grass[pc->obj];
+    if(grass) *grass = cobj_grass[gp->obj];
     if(!h) return 1;
     if(q->n[1] == 0) return 0;
     int num = ((int)lx - q->v[0]) * q->n[0] + ((int)lz - q->v[2]) * q->n[2];
-    *h = (float)pc->h + (float)q->v[1] + (float)(-num / q->n[1]);
+    *h = (float)gp->h + (float)q->v[1] + (float)(-num / q->n[1]);
     under_n[0] = (float)q->n[0] * c - (float)q->n[2] * s;
     under_n[1] = (float)q->n[0] * s + (float)q->n[2] * c;
     under_n[2] = (float)q->n[1];
@@ -576,25 +601,24 @@ int track_under(float x, float y, float *h, int *grass)
         int kx = cx + cell[ci][0], ky = cy + cell[ci][1];
         if(kx < 0 || kx > 255 || ky < 0 || ky > 255) continue;
         for(int at = ground_first[ky * 256 + kx]; at < ground_first[ky * 256 + kx + 1]; at++) {
-            const struct piece *pc = &pieces[ground_list[at]];
-            if(pc->obj < 0 || pc->obj >= unr_count) continue;
-            if(cobj_first[pc->obj] < 0) continue;
-            const uint8_t *obj, *blk = block_of(pc->obj, &obj);
-            float dx = x - (float)pc->x, dy = y - (float)pc->y;
-            float r = (float)rd32(blk), bx = dx - (float)rd16(blk + 4), by = dy - (float)rd16(blk + 8);
-            if(bx * bx + by * by > r * r) continue;
-            float c = sin2048((uint32_t)pc->t + 512), s = sin2048((uint32_t)pc->t);
+            struct gpiece made;
+            const struct gpiece *gp = at < MAX_GROUND ? &gpieces[at] : (gpiece_make(at, &made), &made);
+            if(gp->obj < 0) continue;
+            float dx = x - gp->x, dy = y - gp->y;
+            float bx = dx - gp->ox, by = dy - gp->oy;
+            if(bx * bx + by * by > gp->r2) continue;
+            float c = gp->c, s = gp->s;
             float lx = dx * c + dy * s, lz = -dx * s + dy * c;  /* into the piece's frame */
-            const struct cface *f0 = &cfaces[cobj_first[pc->obj]], *fe = f0 + cobj_count[pc->obj];
-            const struct cgrid *g = &cgrid[pc->obj];
+            const struct cface *f0 = &cfaces[cobj_first[gp->obj]], *fe = f0 + cobj_count[gp->obj];
+            const struct cgrid *g = &cgrid[gp->obj];
             for(int tries = 0; tries < 3; tries++, lx += 10.0f, lz += 10.0f)
                 if(g->at[0] >= 0 && lx == lx && lz == lz) {    /* (not a number: all faces) */
                     int k = cgrid_cell(lz, g->z0, g->sz) * CGRID + cgrid_cell(lx, g->x0, g->sx);
                     for(const uint16_t *li = clist + g->at[k], *le = clist + g->at[k + 1]; li < le; li++)
-                        if(under_face(f0 + *li, pc, lx, lz, c, s, h, grass)) return 1;
+                        if(under_face(f0 + *li, gp, lx, lz, c, s, h, grass)) return 1;
                 } else
                     for(const struct cface *q = f0; q < fe; q++)
-                        if(under_face(q, pc, lx, lz, c, s, h, grass)) return 1;
+                        if(under_face(q, gp, lx, lz, c, s, h, grass)) return 1;
         }
     }
     return 0;
