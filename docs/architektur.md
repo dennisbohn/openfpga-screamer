@@ -93,7 +93,8 @@ das Inhaltsverzeichnis und die Einträge, die er braucht, jeden an seiner Stelle
 Datei (`load_parts` in `main.c`): 2,4 MB statt 5,9 MB, bei den gemessenen 1,3 MB/s des
 Pocket rund 1,8 statt viereinhalb Sekunden beim Start (davon 1,4 MB `MENU.MLB`, ganz, weil
 die Texturen der Autos über die ganze Datei verteilt liegen; ohne Autowahl waren es 0,7 MB;
-seit 2026-10-30 dazu die sechs Ladebilder `LOADnL.PCX`, 0,28 MB, rund 0,2 s). `GAME.DAT`,
+seit 2026-10-30 dazu die sechs Ladebilder `LOADnL.PCX`, 0,28 MB, rund 0,2 s, und die
+acht Bilder der Meisterschaft `CHAMPnL.PCX`, 0,33 MB, rund 0,25 s). `GAME.DAT`,
 `GEN.DAT`, `LOCAL.DAT` und `SOUND.DAT` lädt er einmal, `SOUND.DAT` (1,9 MB, 1,3 s) während
 die erste Strecke gebaut wird: die Firmware stößt das Lesen nur an (`sound_start` in
 `main.c`), der Pocket schreibt die Datei in den SDRAM, während die CPU baut.
@@ -141,9 +142,10 @@ führt dort zurück. NORMAL GAME: die Kamera fährt zurück nach z 20.000 (Fakto
 vierte Potenz) und rollt von −4π an mit π/s, die Buchstaben stehen, das Bild blendet mit 2/s
 aus (`0x293e8`), dann die Streckenwahl; das Original fragt vorher den Namen ab (Bildschirm 4,
 fehlt noch). NETWORK GAME zeigt wie das Original ohne Netzwerk `NETWORK NOT FOUND` (Zeile 55,
-Schrift 0, Farbe 2, y 190, blinkend), SPECIAL MODES siehe „Spezialmodi“, CHAMPIONSHIP und VIEW RECORDS spielen
-vorerst nur ihr Geräusch. Die Seiten blenden mit 0,6/s ein (`0x29ea0`): nach dem Start, nach
-A oder SELECT in der Streckenwahl und nach jedem Rennen (`0x2a114` → `0x29ea0`).
+Schrift 0, Farbe 2, y 190, blinkend), SPECIAL MODES siehe „Spezialmodi“, CHAMPIONSHIP siehe
+„Meisterschaft“, VIEW RECORDS spielt vorerst nur sein Geräusch. Die Seiten blenden mit 0,6/s
+ein (`0x29ea0`): nach dem Start, nach A oder SELECT in der Streckenwahl und nach jedem Rennen
+(`0x2a114` → `0x29ea0`).
 
 **Die Optionen wirken** (für die Sitzung; Speichern kommt mit den Rekorden): LAP NUMBER ist
 die Rundenzahl des Rennens (`car_laps` in `car.c`; das Original nimmt `0x21e0` + 1: 3, 5, 10,
@@ -180,6 +182,61 @@ y 90), mit allen Hütchen dazu `PERFECT!` (15, y 120; `0x23fbc`, `0x24204`), son
 `TIME OVER`. Der Sprecher: „cones“ (Ereignis 19) einmal nach der Linie, „all“ (26) sobald alle
 umgefahren sind (`0x24570`, `0x24386`), im Ziel „win“. `MODE=0x20` für `tools/render.sh`
 zeichnet und fährt (`REPLAYCHECK`) den Modus auf dem PC.
+
+## Meisterschaft
+
+Wie im Original (sein Modus 2; OpenScreamer `docs/NOTES.md` Abschnitt 21, im EXE
+nachgelesen): Regeln in `firmware/champ.c`, der Bildschirm 5 in `menu.c`, der Ablauf in
+`main.c` (`championship`).
+
+- **NEW / RESUME:** CHAMPIONSHIP öffnet die Seite 5 des Originals (`MENU.TXT` Zeilen 26/27,
+  `0x28b3a`, A oder SELECT zurück). Beide verlassen das Menü wie NORMAL GAME. NEW (`0x28c6b`,
+  `0x2c698`): Stufe 0, alle Plätze leer; RESUME (`0x28c9e`): zurück zur gemerkten Stufe.
+- **Ablauf:** eine Tabelle von 53 Stufen bei `0x22b8` (je 44 Byte: Art, zwei Werte, Textblock,
+  nächste Stufe, Stufe bei Misserfolg, Bild `champN`, Rennen, Schrift), vier Ligen (ROOKIE,
+  AMATEUR, PRO, BULLET) zu 13 Stufen: vor jedem der sechs Rennen ein Textbild (WELCOME TO …
+  vor dem ersten, sonst PREPARE FOR THE NEXT RACE!), nach jedem der Stand, nach dem sechsten
+  CONGRATULATIONS!; Stufe 51 alles gewonnen, 52 LOSER!!. `champ_at` baut sie nach (regelmäßig,
+  gegen den Dump geprüft).
+- **Auto:** ENTER auf dem Textbild öffnet die Autowahl (`0x291ae`), vor *jedem* Rennen, mit
+  dem zuletzt gewählten Auto; A oder SELECT dort führt zurück zum Textbild (`0x28118`). Fest
+  für die Saison ist das Auto im Original nicht (OpenScreamer wählt es einmal bei NEW).
+- **Rennen:** die Strecken 1–6 der Reihe nach, 3 Runden, die Gegner aus der Datei der Liga
+  `MAPnA`–`MAPnD.DTR` (`0x28ef6`: `0x2a264(2, Strecke, Liga)`); in der Bullet-Liga (D: ein
+  Gegner) fährt er die Bullet (`0x14373`: Schwierigkeit über PRO → Wagen 12, in der Lackierung
+  seiner Reihe; `opp_bullet`). Ein beendetes Rennen geht nach den 5 s des Endbilds von selbst
+  weiter, ohne Wiederholung und ohne PLAY AGAIN? (`0x1fd60`, `0x1fe86`); Zeit um oder
+  verlassen (SELECT): PLAY AGAIN?, YES fährt es noch einmal.
+- **Ergebnis** (`0x29acc`): ein verlassenes Rennen zählt nicht (die Stufe bleibt); sonst
+  kommen Platz, Gesamtzeit und Punkte (9/7/5 für Platz 1/2/3, `0x21ec`) in seine Zeile, und
+  die Stufe geht auf den Stand. Zeit um merkt sich 1, unerreichbar 2: wenn selbst Siege in
+  den übrigen Rennen die Punktzahl der Liga (42/46/50/54) nicht mehr bringen.
+- **Stand** (`0x2ce58`): `CHAMPnL.PCX` (n die Liga), der Kasten (16, 36, 288 × 136) zweimal
+  abgedunkelt (`0x25cc8` mit der Tabelle für die Palette des Bildes, 0,75, `0x25870`); der
+  Name der Liga (Schrift 2, Farbe 2, y 2), TRACK/POS/TIME/SCORE (y 48, x 28/88/170/246,
+  Schrift 0, Farbe 15), je Rennen eine Zeile, 14 hoch ab y 62: `-n-`, Platz, `mm.ss.hh`,
+  Punkte, für ein noch nicht gefahrenes Striche, für eins mit Zeit um `10`, `00.00.00`, `0`;
+  4 tiefer TOTAL SCORE (rechtsbündig bis x 276), 24 tiefer QUALIFY:n zentriert. ENTER
+  (`0x292c8`): weiter nur unter den ersten drei (Bullet-Liga: als Sieger), in der Zeit und
+  nach dem sechsten Rennen mit der Punktzahl der Liga; sonst LOSER!!, und RESUME fährt das
+  verlorene Rennen noch einmal.
+- **Textbilder:** die Zeilen des Blocks aus `CHAMP.TXT` (Blöcke durch Zeilen mit `#`
+  getrennt) zentriert ab y 32, eine Schrifthöhe auseinander, Schrift 3 (Liga gewonnen und Ende:
+  2), Farbe 2. Auf allen Bildern blinkt PRESS ENTER TO CONTINUE (Zeile 56, y 190). B oder
+  START ist ENTER, 10 s ohne Taste auch (`0x2d301`); A oder SELECT nur auf dem Textbild vor
+  einem Rennen, zurück ins Hauptmenü (`0x2829d`). Ohne Geräusch; Einblenden mit 1,5/s,
+  Verlassen mit Schnitt nach Schwarz wie die Autowahl.
+- **Nach dem letzten Rennen:** Liga gewonnen → CONGRATULATIONS! → WELCOME TO der nächsten
+  (das Original gibt dabei eine Strecke mehr frei, `0x290a5`; der Core bietet ohnehin alle
+  an); nach der Bullet-Liga YOU'RE THE GREATEST DRIVER EVER … NOW THE BULLET IS YOURS !
+  (`0x29141`: Bullet, gespiegelte Strecken und AFTERBURNER frei) und zurück ins Hauptmenü,
+  ebenso nach LOSER!!.
+- **Der Stand** liegt im Format der Einstellungsdatei des Originals, `CONFIG\CHOICE.DAT`
+  (`struct choice` in `champ.h`: 0x460 Byte, gelesen nach `0x203c0` von `0x1bbb8`, geschrieben
+  von `0x1be5c` vor und nach jedem Rennen und beim Beenden): Auto, Strecke, Name, Optionen, ab
+  +0x18 die Meisterschaft (Stufe, Stufe für RESUME, Punktzahl, je Rennen Zeit, Platz, Punkte),
+  ab +0x6c die Rekorde (je Strecke fünf beste Runden und Gesamtzeiten), ab +0x42c
+  Freischaltungen. Speichern auf der SD-Karte: folgt.
 
 ## Strecken- und Autowahl
 
