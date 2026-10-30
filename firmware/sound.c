@@ -4,8 +4,8 @@
 #include "dat.h"
 #include "track.h"
 
-#define SND_MAX     16
-#define MASTER      0x4000              /* the effects' master volume, of 0x7fff (sound.h) */
+#define SND_MAX     72                  /* the 12 effects, the 58 recordings, a track's 2 */
+#define MASTER      0x4000              /* the effects' and the speech's master volume (sound.h) */
 
 /* a row: SDRAM byte address and length, where it ends or loops (from the start), back by how
    much and how often (AU_LOOP), its volume */
@@ -114,17 +114,28 @@ static int list(const char *p, const char *end)
     return ok;
 }
 
+/* the rows of GEN.DAT's list name after the ones there are: how many have their sample */
+static int gen_list(const uint8_t *gen, uint32_t gen_size, const char *name)
+{
+    static uint8_t text[2560];          /* the longest, SPFXFULL.DTR, has 2356 bytes */
+    struct dat_entry e;
+    if (!dat_find(gen, gen_size, name, &e) || e.size >= sizeof text) return 0;
+    uint32_t size = dat_extract(gen, gen_size, &e, text, sizeof text);
+    return list((const char *)text, (const char *)text + size);
+}
+
 int snd_init(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint32_t gen_size)
 {
-    static uint8_t text[1024];
-    struct dat_entry e;
     AU_STOP = 0xFFFFFFFFu;
     nfx = 0;
     dat = sound;
     dat_size = sound_size;
-    if (!dat_find(gen, gen_size, "SFXSBASE.DTR", &e) || e.size >= sizeof text) return 0;
-    uint32_t size = dat_extract(gen, gen_size, &e, text, sizeof text);
-    return list((const char *)text, (const char *)text + size);
+    int n = gen_list(gen, gen_size, "SFXSBASE.DTR");
+    if (nfx == SND_SPEECH) {
+        n += gen_list(gen, gen_size, "SPFXBASE.DTR");
+        n += gen_list(gen, gen_size, "SPFXFULL.DTR");
+    }
+    return n;
 }
 
 int snd_add_list(const uint8_t *text, uint32_t size)

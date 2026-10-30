@@ -9,7 +9,11 @@
  * effects' master volume is 0x4000 of 0x7fff, two thirds of where the game starts it (0x6000,
  * 0x1bc2f), so that the player's engine and the three opponents' at full volume stay under the
  * 16 bits even with every sample at its peak (at most 32 000); a full sample at full volume
- * moves the output by 128 per 8-bit step.
+ * moves the output by 128 per 8-bit step. The commentary (speech.h) comes after the effects,
+ * the rows of SPFXBASE.DTR and SPFXFULL.DTR, at the same master volume: the game starts the
+ * speech's at 0x6000 as well (0x1bc2f), so the voice keeps its loudness beside the effects. A
+ * recording peaks at full scale (+-16 300 here); the engines and the voice at their peaks
+ * together could pass the 16 bits, the mix of a race does not come near (docs/soc.md).
  *
  * Sounds with a place (the opponents' engines, the moving scenery; NOTES.md sections 15 and 17)
  * are heard from the camera, by the 2D distance, and only they are panned: the line to the
@@ -23,12 +27,15 @@
 /* SFXSBASE.DTR's rows */
 enum { SND_SKID, SND_CRASH, SND_OPP_ENGINE, SND_ENGINE, SND_WALL, SND_HIT, SND_CLICK, SND_ENGINE_TUNNEL,
        SND_DENT, SND_DOOR, SND_TAZ3, SND_TAZ4 };
+/* the commentary's recordings after them: SPFXBASE.DTR's 11 rows, then SPFXFULL.DTR's 47 */
+#define SND_SPEECH  12
 
-/* The effects of GEN.DAT's SFXSBASE.DTR from SOUND.DAT (both whole in memory, SOUND.DAT in the
-   SDRAM where the mixer reads it); every voice stopped. Returns how many rows have their sample. */
+/* The effects of GEN.DAT's SFXSBASE.DTR and the recordings of its SPFXBASE.DTR and SPFXFULL.DTR
+   from SOUND.DAT (both whole in memory, SOUND.DAT in the SDRAM where the mixer reads it); every
+   voice stopped. Returns how many rows have their sample. */
 int snd_init(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint32_t gen_size);
 /* The rows of the first SOUND_FX section of another DTR text (the track's MAPnDAT.DTR) after
-   SFXSBASE.DTR's: the effect number of its first row, or -1 */
+   those: the effect number of its first row, or -1 */
 int snd_add_list(const uint8_t *text, uint32_t size);
 
 /* Start effect id on a free voice at its row's volume, pitch 0x10000, in the middle: a handle,
