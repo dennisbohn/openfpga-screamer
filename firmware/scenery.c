@@ -370,9 +370,11 @@ int scenery_objects(const struct track_cam *cam, struct track_object *objs, int 
 {
     int n = 0;
     for(int k = 0; k < nmoving && n < max; k++) {
-        const struct moving *m = &moving[k];
+        struct moving *m = &moving[k];
         float dx = m->x - cam->x, dy = m->y - cam->y;
         if(dx * dx + dy * dy > (REACH + MOVING_RADIUS) * (REACH + MOVING_RADIUS)) continue;
+        /* its textures play by the clock (0x153e3: the record's phase -1), the rotor's 20 frames */
+        for(int b = 0; b < m->nb; b++) m->b[b].phase = track_phase();
         objs[n++] = (struct track_object){ m->x, m->y, m->h, MOVING_RADIUS, m->nb, m->b, 0, k, m->key };
     }
     for(int k = 0; k < nprops && n < max; k++) {

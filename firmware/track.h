@@ -61,6 +61,8 @@ const struct track_wall *track_walls(int *n);
 /* The animation clock (0x1fcc4): + 0.3 a second, one turn in 3.33 s; the track's textures
    play their frames by it */
 void track_clock(uint32_t steps);
+/* the texture phase the clock gives (a record's +0x20 of -1: the pieces, the moving scenery) */
+uint32_t track_phase(void);
 
 /* where the player starts: place and heading (forward = (sin a, -cos a)) */
 void track_start(float *x, float *y, float *yaw);

@@ -363,6 +363,11 @@ const struct track_wall *track_walls(int *n)
     return walls;
 }
 
+uint32_t track_phase(void)
+{
+    return piece_phase;
+}
+
 void track_clock(uint32_t steps)
 {
     anim += (float)steps * 0.02f * 0.3f;
