@@ -182,6 +182,22 @@ void music_play(int k)
     AU_MUSIC = 1;
 }
 
+void music_fade(int32_t f)
+{
+    AU_MUSIC_VOL = (uint32_t)(MASTER * (f < 0 ? 0 : f > 0x8000 ? 0x8000 : f)) >> 15;
+}
+
+int music_disc(int *lo, int *hi)
+{
+    *lo = *hi = 0;
+    for (int i = 1; i <= MAX_TRACKS; i++)
+        if (audio[i] && first[i] >= 0 && (uint32_t)first[i] < sectors) {
+            if (!*lo) *lo = i;
+            *hi = i;
+        }
+    return playing;
+}
+
 void music_frame(void)
 {
     if (!playing) return;

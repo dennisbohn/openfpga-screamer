@@ -6,7 +6,8 @@
 #   tools/make_track.py if it is missing; the GFX and DATA containers from $GAME_DIR (default
 #   "C:/GOG Games/Screamer"). CAR=r: the player's car, row r of CARS.DTR (default 0).
 #   MENU=1: the track screen instead, track TRACK chosen, [view] taken as steps of 1/50 s after
-#   entering it (the models turn); MENU=2: the car screen, car CAR chosen.
+#   entering it (the models turn); MENU=2: the car screen, car CAR chosen. PAUSE=1: the pause's
+#   picture over the race's, PAUSE=2: PLAY AGAIN? (tools/host/render.c).
 # The firmware's sources are copied to build/host/ with hw.h's RISC-V instructions made plain C;
 # built and run with the simulation's Docker image (gcc).
 set -e
@@ -44,13 +45,14 @@ else
             "$root/build/check/track$n.bin" "$root/build/check/track$n.png" > /dev/null
     fi
     cp "$root/build/check/track$n.bin" "$root/build/host/track$n.bin"
+    [ -n "$PAUSE" ] && cp "$game/GFX/GAME.DAT" "$root/build/host/"
     cp "$game/GFX/MAP${n}H.DAT" "$game/DATA/MAP$n.DAT" "$root/build/host/"
     run="./render track$n.bin MAP${n}H.DAT MAP$n.DAT"
     args="${2:-2} ${3:-2} $n ${CAR:-0}"
 fi
 if command -v cygpath >/dev/null 2>&1; then mount=$(cygpath -wa "$root/build"); else mount=$root/build; fi
 out=$(basename "$1")
-MSYS_NO_PATHCONV=1 docker run --rm ${CAM:+-e CAM} -v "$mount:/b" --entrypoint sh verilator/verilator:v5.050 -c "
+MSYS_NO_PATHCONV=1 docker run --rm ${CAM:+-e CAM} ${PAUSE:+-e PAUSE} -v "$mount:/b" --entrypoint sh verilator/verilator:v5.050 -c "
     cd /b/host/src && gcc -O2 -w ${DUMP:+-DTRACK_DUMP} -o ../render render.c track.c geom.c setup.c raster.c car.c drive.c opp.c \
-        efx.c scenery.c sound.c speech.c blit.c dlog.c crc32.c dat.c console.c menu.c tb_hud.c tb_spl.c tb_mmp.c -lm && cd /b/host && $run $out $args"
+        efx.c scenery.c sound.c speech.c blit.c dlog.c crc32.c dat.c console.c menu.c tb_hud.c tb_spl.c tb_mmp.c hud.c -lm && cd /b/host && $run $out $args"
 mv "$root/build/host/$out" "$1"

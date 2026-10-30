@@ -30,3 +30,8 @@ void music_play(int k);
 void music_frame(void);
 /* The music stops; a read still running is waited for (before any other slot call) */
 void music_stop(void);
+/* The music at f of 0x8000 of its volume (the pause's fade); a song started has it whole */
+void music_fade(int32_t f);
+/* For the CD player (hud.h): the disc's first and last audio track (0 without the image) and
+   the CD track playing (0 none) */
+int music_disc(int *lo, int *hi);

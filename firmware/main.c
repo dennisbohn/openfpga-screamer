@@ -1,10 +1,12 @@
 /*
  * The program (program.bin, data slot 2) in the SDRAM, started by the boot loader with its
  * results (docs/soc.md). With the game's original files in data slots 3-20 it shows the track
- * screen (menu.c: left and right choose, B or START take the track), builds the track chosen
- * from them (track_build.c) and puts the player's car on it (car.c): B accelerates, Y
+ * screen and the car screen (menu.c: left and right choose, B or START take the track or car, Y
+ * or SELECT go back from the cars to the tracks), builds the track chosen from them
+ * (track_build.c) and puts the player's car on it (car.c): B accelerates, Y
  * brakes, left and right steer, L and R change gear on a manual car, X changes the view; the CPU picks and sorts the pieces (track.c), the geometry unit, setup unit and
- * rasterizer draw them. SELECT, or the race over for 5 s, goes back to the track screen.
+ * rasterizer draw them. START pauses the race (the game's CD player), SELECT or the race over
+ * for 5 s asks PLAY AGAIN? (YES the race again, NO the track screen).
  * Without the files, the texture scene with test patterns, checked
  * once a run against the rasterizer's C model (raster.c), and a triangle moved with the
  * d-pad.
@@ -203,6 +205,10 @@ static void tl_log(void)
 struct demo_stats { uint32_t triangles, pixels, cycles; };
 
 #define CHECK_BUF   ((volatile uint8_t *)(SDRAM_BASE + 0x100000))  /* the C model's picture */
+#define STILL_MEM   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x110000))    /* the pause's and PLAY AGAIN?'s
+                                                                           picture (still) */
+#define CD_MEM      ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x120000))    /* the CD player's front (hud.h) */
+#define CD_SIZE     0x10000
 #define MESH_MEM    ((volatile uint8_t *)(SDRAM_BASE + 0x1F00000)) /* the test scene's cube */
 
 /* the player's triangle: 2 pixels a frame, kept inside the demo area */
@@ -455,13 +461,116 @@ static void track_check(volatile uint8_t *fb, const struct rs_clip *clip, const 
     compare_log(fb, m, t0);
 }
 
+/* The picture on the screen (st: VID_STATUS) into STILL_MEM for the blitter, darkened times
+   times through the radar's table (efx.h; the game's 0x25cc8 darkens with the same, 0x15cbc) */
+static void still(uint32_t st, int times)
+{
+    const volatile uint32_t *fb = (const volatile uint32_t *)FB(st & VID_FRONT);
+    const uint8_t *d = efx_darken();
+    uint32_t *out = (uint32_t *)STILL_MEM;
+    for (int i = 0; i < FB_W * FB_H / 4; i++) {
+        uint32_t w = fb[i], o = 0;
+        for (int b = 0; b < 32; b += 8) {
+            uint32_t c = w >> b & 255;
+            for (int k = 0; d && k < times; k++) c = d[c];
+            o |= c << b;
+        }
+        out[i] = o;
+    }
+    while (!(MEM_STATUS & MEM_WRITES_IDLE))
+        ;
+}
+
+/* The steps of 1/50 s since *last_frame (st: VID_STATUS), the game's 1/100 s counted on in
+   *ticks */
+static uint32_t still_steps(uint32_t st, uint32_t *last_frame, uint32_t *ticks)
+{
+    uint32_t steps = (VID_FRAME(st) - *last_frame) & 0xFFFF;
+    *last_frame = VID_FRAME(st);
+    *ticks += 2 * steps;
+    return steps;
+}
+
+/* the list over the still picture to the blitter, a swap once it is done */
+static void still_show(const struct blit_list *l)
+{
+    hw_blit(l);
+    while (RS_DRAW & RS_BUSY)
+        ;
+    VID_SWAP = 1;
+}
+
+#define FADE_STEP   437         /* the pause's fade: 0x8000 in 1.5 s of steps (16384 a second of 0x6000) */
+
+/* The pause: the game's CD player (0x21328, P in a race, 0x211d0) over the picture on the
+   screen darkened twice (hud.h), the race standing; the effects and the music fade out at the
+   game's 16384 a second of its 0x6000, then the music stops (0x26458). START again: the volumes
+   back and track n's song, from its start if it had stopped, as PLAY does. */
+static void pause_race(uint32_t st, int n)
+{
+    int first, last, playing = music_disc(&first, &last);
+    uint32_t keys_before = IN_KEY, last_frame = VID_FRAME(st), ticks = 0;
+    int32_t fade = 0x8000;
+    still(st, 2);
+    for (;;) {
+        st = wait_swap_done();
+        uint32_t keys = IN_KEY;
+        music_frame();
+        if (keys & ~keys_before & KEY_START) break;
+        keys_before = keys;
+        uint32_t steps = still_steps(st, &last_frame, &ticks);
+        draw_buf = !(st & VID_FRONT);
+        hud_cd(&hud, (int)draw_buf, STILL_MEM, first, last, playing, (ticks & 0x20) != 0);
+        still_show(&hud);
+        if (fade > 0) {
+            fade -= (int32_t)steps * FADE_STEP;
+            if (fade <= 0) {
+                fade = 0;
+                music_stop();
+            }
+            snd_fade(fade);
+            music_fade(fade);
+        }
+    }
+    snd_fade(0x8000);
+    music_fade(0x8000);
+    music_play(n);
+}
+
+/* PLAY AGAIN? (0x219d0), as the game asks it when a race is left (0x1fe86): the effects stop
+   (0x1f8cc), the music goes on; over the picture on the screen darkened three times (hud.h). Up
+   or left YES, down or right NO, B or START take the answer, Y or SELECT are NO (the game's
+   ESC). 1 for YES. */
+static int play_again(uint32_t st)
+{
+    uint32_t keys_before = IN_KEY, last_frame = VID_FRAME(st), ticks = 0;
+    int no = 0;
+    AU_STOP = 0xFFFFFFFFu;
+    still(st, 3);
+    for (;;) {
+        st = wait_swap_done();
+        uint32_t keys = IN_KEY, press = keys & ~keys_before;
+        music_frame();
+        if (press & (KEY_UP | KEY_LEFT)) no = 0;
+        if (press & (KEY_DOWN | KEY_RIGHT)) no = 1;
+        if (press & (KEY_B | KEY_START)) return !no;
+        if (press & (KEY_Y | KEY_SELECT)) return 0;
+        keys_before = keys;
+        still_steps(st, &last_frame, &ticks);
+        draw_buf = !(st & VID_FRONT);
+        hud_question(&hud, (int)draw_buf, STILL_MEM, no, (ticks & 0x10) != 0);
+        still_show(&hud);
+    }
+}
+
 static int dashboard_init(void);
 
-#define OVER_STEPS  250         /* the race over for 5 s: back to the track screen */
+#define OVER_STEPS  250         /* the race over for 5 s: PLAY AGAIN? */
 
-/* The race with the car of CARS.DTR row car until SELECT or OVER_STEPS after its end (never in
-   the simulation, which stops after the frame it checks); the opponents take the other rows */
-static void run_track(int car)
+/* The race on track n with the car of CARS.DTR row car until SELECT or OVER_STEPS after its end
+   (never in the simulation, which stops after the frame it checks); the opponents take the other
+   rows. START pauses it. 1 when PLAY AGAIN? is answered YES. */
+static int run_track(int n, int car)
 {
     const uint32_t *pal = track_palette();
     uint32_t drawn = 0, keys_before = 0, last_frame = 0, steps = 0, over = 0;
@@ -508,26 +617,33 @@ static void run_track(int car)
             }
             dlog_char('\n');
         }
+        uint32_t press = keys & ~keys_before;
+        if ((press & KEY_START) && drawn && !car_race()->finished && !car_race()->game_over) {
+            pause_race(st, n);
+            keys_before = IN_KEY;
+            last_frame = VID_FRAME(VID_STATUS);
+            continue;
+        }
+        if ((press & KEY_SELECT) || over >= OVER_STEPS) return play_again(st);
         /* the physics at 50 steps a second: one per video frame since the last picture */
-        uint32_t n = drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
+        uint32_t steps_now = drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
         last_frame = VID_FRAME(st);
-        if (n > 4) n = 4;
-        if ((keys & ~keys_before) & KEY_X) car_view(++car_v);
-        if (((keys & ~keys_before) & KEY_SELECT) || over >= OVER_STEPS) return;
+        if (steps_now > 4) steps_now = 4;
+        if (press & KEY_X) car_view(++car_v);
         efx_cyc_objects = efx_cyc_radar = 0;
         uint32_t t_phys = rdcycle();
-        for (uint32_t k = 0; k < n; k++) {
+        for (uint32_t k = 0; k < steps_now; k++) {
             car_step(keys, keys_before);
             opp_step();
             scenery_step();
             keys_before = keys;
-            if (sim_race && !car_race()->on && k == n - 1) n++;    /* the simulation's countdown at once */
+            if (sim_race && !car_race()->on && k == steps_now - 1) steps_now++;    /* the simulation's countdown at once */
             if (car_race()->finished || car_race()->game_over) over++;
         }
         t_phys = rdcycle() - t_phys;
         tl_mark(TL_PHYS);
-        steps += n;
-        track_clock(n);
+        steps += steps_now;
+        track_clock(steps_now);
         const struct car_state *cs = car_state();
         struct track_cam cam;
         static struct track_object objs[MAX_OBJECTS];
@@ -645,7 +761,7 @@ static void run_track(int car)
             dlog_str(", steps ");
             dlog_dec((int32_t)steps);
             dlog_str(" (");
-            dlog_dec((int32_t)n);
+            dlog_dec((int32_t)steps_now);
             dlog_str(" now, ");
             dlog_dec((int32_t)t_phys);
             dlog_str(" cycles)");
@@ -1045,7 +1161,8 @@ static int menu_screen(int screen, int n)
 
 /* Track n from its containers: the image built at TEX_FILE (or the testbench's) and used only
    once all its blocks are as written, the effects and scenery, then the race with the car of
-   CARS.DTR row car until it is left; 0 if the track could not be set up */
+   CARS.DTR row car until it is left, again while PLAY AGAIN? is answered YES; 0 if the track
+   could not be set up */
 static int race(int n, int car)
 {
     int placements = 0;
@@ -1078,14 +1195,18 @@ static int race(int n, int car)
     dlog_str(" placements, ");
     dlog_dec((int32_t)track_path_length());
     dlog_str(" path points\n");
-    effects(n);
-    sounds();                   /* before the scenery, which adds the track's own sounds */
-    scenery(n);
-    RS_CTRL = 1;
-    music_play(n);
-    run_track(car);
-    AU_STOP = 0xFFFFFFFFu;                      /* the race's sounds end with it */
-    return 1;
+    for (;;) {
+        effects(n);
+        sounds();               /* before the scenery, which adds the track's own sounds */
+        scenery(n);
+        RS_CTRL = 1;
+        music_play(n);
+        int again = run_track(n, car);
+        AU_STOP = 0xFFFFFFFFu;                  /* the race's sounds end with it */
+        if (!again) return 1;
+        music_stop();                           /* PLAY AGAIN? YES: the race set up again (0x128dc),
+                                                   its song from the start */
+    }
 }
 
 void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
@@ -1102,6 +1223,8 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
        with the first car at once, or shows the screen MENU_CHECK_SLOT names. */
     if (load_containers(0, FIXED_FILES)) {
         music_init(game.gen, game.gen_size);
+        if (!hud_cd_init(game.game, game.game_size, CD_MEM, CD_SIZE, (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH))
+            dlog_str("pause: CDFRONTL.PKC missing (the darkened picture alone)\n");
         int sim = (SYS_FLAGS & FLAG_SIM) != 0, check = sim ? (int)slot_size(MENU_CHECK_SLOT) : 0;
         int screen = (!sim || check) && menus();
         int n = sim && slot_size(TRACK_SLOT) ? (int)slot_size(TRACK_SLOT) : 1, car = 0;

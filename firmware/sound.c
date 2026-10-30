@@ -20,6 +20,7 @@ static uint32_t dat_size;
 static uint32_t serial[AU_VOICES];
 static int voice_fx[AU_VOICES];
 static int32_t voice_vol[AU_VOICES], voice_pan[AU_VOICES];
+static int32_t fade = 0x8000;           /* snd_fade: all of them at this of 0x8000 */
 
 /* the next token of the text from *p up to the line's end (spaces and tabs between): its length */
 static uint32_t token(const char **p, const char *end, const char **tok)
@@ -162,7 +163,7 @@ static uint32_t vol_reg(const struct snd *s, int32_t vol, int32_t pan)
 {
     int id = (int)(s - fx);
     uint32_t master = id >= SND_SPEECH && id < speech_end ? SPEECH_MASTER : MASTER;
-    uint32_t t = ((s->vol * (uint32_t)vol) >> 15) * master >> 15;
+    uint32_t t = (((s->vol * (uint32_t)vol) >> 15) * master >> 15) * (uint32_t)fade >> 15;
     uint32_t fl = pan <= 0x8000 ? 0x7FFF : (uint32_t)(0xFFFF - pan), fr = pan >= 0x8000 ? 0x7FFF : (uint32_t)pan;
     return (t * fl >> 22) | (t * fr >> 22) << 8;
 }
@@ -229,6 +230,13 @@ void snd_swap(int h, int id)
     if (v < 0 || id < 0 || id >= nfx || !fx[id].len || voice_fx[v] == id) return;
     AU_STOP = 1u << v;
     start(v, id);
+}
+
+void snd_fade(int32_t f)
+{
+    fade = f < 0 ? 0 : f > 0x8000 ? 0x8000 : f;
+    for(int v = 0; v < AU_VOICES; v++)
+        AU_VOL(v) = vol_reg(&fx[voice_fx[v]], voice_vol[v], voice_pan[v]);
 }
 
 int snd_play_once(int id, int h)

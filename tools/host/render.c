@@ -12,6 +12,9 @@
  *   view: 0 bumper, 1 cockpit, 2 near chase (default), 3 far chase; steps: physics steps on
  *   the grid before the picture (default 2); n: the track's number (default 1); car: the
  *   player's row of CARS.DTR (default 0), the opponents take the others
+ *   PAUSE=1 in the environment: the pause's picture over the frame (the race screen left out),
+ *   with the disc's tracks 2-8, 3 playing (GAME.DAT for the CD player in the working directory);
+ *   PAUSE=2: PLAY AGAIN?
  *        render menu <MENU.DAT> <GRAF.DAT> <LOCAL.DAT> <GEN.DAT> <out.rgb> [screen [n [steps]]]
  *   the track screen (screen 1, the default) with track n chosen or the car screen (screen 2)
  *   with the car of row n - 1 (menu.h; default 1), steps of 1/50 s after entering it (default 0)
@@ -29,6 +32,7 @@
 #include "scenery.h"
 #include "blit.h"
 #include "menu.h"
+#include "hud.h"
 
 #define MENU_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x200000))       /* as main.c */
 #define GRAF_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x600000))
@@ -42,6 +46,9 @@
 #define EFX_MEM     ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE))
 #define SCENERY_MEM   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE - 0x20000))
 #define DATA_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2D00000))
+#define GAME_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2C00000))
+#define STILL_MEM   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x110000))       /* as main.c */
+#define CD_MEM      ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x120000))
 #define MAX_OBJECTS 64
 
 static void map(void)
@@ -147,6 +154,24 @@ int main(int argc, char **argv)
     struct track_stats ts;
     track_mode = TRACK_MODEL;
     track_draw_cam(fb, &clip, &cam, objs, nobj, &ts);
+    const char *pause = getenv("PAUSE");
+    if (pause && *pause != '0') {                       /* main.c's still(), pause_race(), play_again() */
+        int ask = atoi(pause) == 2;
+        const uint8_t *d = efx_darken();
+        for (int i = 0; i < FB_W * FB_H; i++) {
+            uint8_t c = fb[i];
+            for (int k = 0; d && k < 2 + ask; k++) c = d[c];
+            STILL_MEM[i] = c;
+        }
+        static struct blit_list l;
+        if (ask) hud_question(&l, 0, STILL_MEM, 0, 1);
+        else {
+            if (!hud_cd_init(GAME_FILE, load("GAME.DAT", GAME_FILE, 0x100000), CD_MEM, 0x10000, SCRATCH, 0x2A0000))
+                fprintf(stderr, "CDFRONTL.PKC missing\n");
+            hud_cd(&l, 0, STILL_MEM, 2, 8, 3, 0);
+        }
+        blit_model(fb, &l);
+    }
 
     write_rgb(argv[4], track_palette());
     for (int k = 0; k < opp_count(); k++) {

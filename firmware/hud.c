@@ -28,6 +28,7 @@ static int nfont;
    numbers of its section of CARS.DTR */
 #define DASH_NUMBERS    29
 static struct { const uint8_t *mem; int32_t at[DASH_NUMBERS]; int ok; } dash;
+static const uint8_t *cd_front;         /* the CD player's front, boxes as the dashboard's */
 
 /* the list started for framebuffer buffer, the race screen section at hand */
 static void begin(struct blit_list *l, int buffer)
@@ -58,6 +59,15 @@ static void picture(struct blit_list *l, int k)
     track_hud_picture(k, &first, &count);
     for(int i = first; i < first + count; i++)
         blit_copy(l, base + img[i].off, img[i].w, img[i].h, img[i].w, img[i].x, img[i].y, BLIT_COPY, 0);
+}
+
+/* a picture as boxes (tb_hud_picture()'s table, then the pixels) at their places */
+static void boxes(struct blit_list *l, const uint8_t *m)
+{
+    const struct blit_image *b = (const struct blit_image *)(m + 4);
+    uint32_t n = *(const uint32_t *)m;
+    for(uint32_t i = 0; i < n; i++)
+        blit_copy(l, m + b[i].off, b[i].w, b[i].h, b[i].w, b[i].x, b[i].y, BLIT_COPY, 0);
 }
 
 /* sprite n with its offset, at (x, y) */
@@ -375,11 +385,7 @@ void hud_dash(struct blit_list *l, int buffer)
     begin(l, buffer);
     picture(l, 0);                                      /* IMPLET_L first (0x236b9) */
     if(!dash.ok) return;
-    const uint8_t *m = dash.mem;
-    const struct blit_image *b = (const struct blit_image *)(m + 4);
-    uint32_t boxes = *(const uint32_t *)m;
-    for(uint32_t i = 0; i < boxes; i++)
-        blit_copy(l, m + b[i].off, b[i].w, b[i].h, b[i].w, b[i].x, b[i].y, BLIT_COPY, 0);
+    boxes(l, dash.mem);
     const int32_t *d = dash.at;
     needle(l, d[2], d[3], d[0], car_speed_needle(), 255);
     needle(l, d[5], d[6], d[0], car_needle(), 255);
@@ -387,4 +393,47 @@ void hud_dash(struct blit_list *l, int buffer)
     int gear = car_state()->gear, n = d[1] + gear;
     if(gear >= 0 && gear <= 6 && n >= 0 && nfont > 0 && n < (int)font[0].first_image)
         sprite(l, d[8 + 3 * gear], d[9 + 3 * gear], n);
+}
+
+int hud_cd_init(const uint8_t *game, uint32_t game_size, uint8_t *mem, uint32_t cap, uint8_t *scratch,
+                uint32_t scratch_cap)
+{
+    struct dat_entry e;
+    uint32_t n;
+    cd_front = 0;
+    if(!dat_find(game, game_size, "CDFRONTL.PKC", &e) || !(n = dat_extract(game, game_size, &e, scratch, scratch_cap)) ||
+       !tb_hud_picture(scratch, n, mem, cap))
+        return 0;
+    while(!(MEM_STATUS & MEM_WRITES_IDLE))              /* the boxes in the SDRAM for the blitter */
+        ;
+    cd_front = mem;
+    return 1;
+}
+
+/* the list started with the still picture, opaque */
+static void still(struct blit_list *l, int buffer, const uint8_t *pic)
+{
+    begin(l, buffer);
+    blit_copy(l, pic, 320, 200, 320, 0, 0, BLIT_COPY | BLIT_OPAQUE, 0);
+}
+
+void hud_cd(struct blit_list *l, int buffer, const uint8_t *pic, int first, int last, int track, int blink)
+{
+    still(l, buffer, pic);
+    if(cd_front) boxes(l, cd_front);
+    for(int k = first; first > 0 && k <= last; k++) {
+        if(k == track && blink) continue;
+        char s[8] = { 3 };                              /* "\x03%d" (0xd05): no column before */
+        put_dec(s + 1, (uint32_t)k, 0);
+        text(l, 0x40 + 13 * (k - first), 0x4E, s, 5, 9);
+    }
+    sprite(l, 59, 0x61, 7);
+}
+
+void hud_question(struct blit_list *l, int buffer, const uint8_t *pic, int no, int blink)
+{
+    still(l, buffer, pic);
+    centred(l, 0x34, track_hud_text(19), 0, 2);
+    centred(l, 0x5C, track_hud_text(20), 0, !no && blink ? 2 : 14);
+    centred(l, 0x7A, track_hud_text(21), 0, no && blink ? 2 : 14);
 }

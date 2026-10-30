@@ -28,6 +28,9 @@ int efx_init(const uint8_t *gfx, uint32_t gfx_size, int n, const uint8_t *mlb, c
 int efx_table(void);
 const uint8_t *efx_smg(void);
 
+/* The radar's darkening (below): per colour the darker one, 256 bytes; 0 without the table */
+const uint8_t *efx_darken(void);
+
 /* SHADOW.3DX and SMOKE.3DX as objects for the geometry unit, 0 if not loaded */
 const uint8_t *efx_shadow(void);
 const uint8_t *efx_smoke(void);

@@ -35,3 +35,19 @@ int hud_cockpit_init(const uint8_t *game, uint32_t game_size, const uint8_t *gen
    three lines each in colour 255 (0x2390c), the lamp of the gear (sprite first lamp + gear at
    that gear's place, 0x237b4) */
 void hud_dash(struct blit_list *l, int buffer);
+
+/* The pause: the game's CD player (0x21328, P in a race), over the race's last picture pic
+   (320 x 200 bytes in the SDRAM) darkened twice. The car stereo CDFRONTL.PKC of the GFX
+   container GAME.DAT, made boxes in mem (cap bytes, 64 KB) through scratch by hud_cd_init() (1
+   if it is there); the disc's audio tracks first .. last 13 apart from (64, 78) in font 5 colour
+   9, track (the one playing) left out while blink (0x2172b); the cursor on PLAY, the first of
+   its seven buttons (table 0x1f1c: x 59, sprite 7) on row 97. Not the buttons' work: START
+   leaves it, as PLAY does. */
+int hud_cd_init(const uint8_t *game, uint32_t game_size, uint8_t *mem, uint32_t cap, uint8_t *scratch,
+                uint32_t scratch_cap);
+void hud_cd(struct blit_list *l, int buffer, const uint8_t *pic, int first, int last, int track, int blink);
+
+/* PLAY AGAIN? (0x219d0) over pic, the race's last picture darkened three times: GAME.TXT's
+   lines 19, 20 and 21 (PLAY AGAIN?, YES, NO) centred on rows 52, 92 and 122 in font 0, the
+   question in colour 2, the answers in 14, the chosen one (YES unless no) in 2 while blink */
+void hud_question(struct blit_list *l, int buffer, const uint8_t *pic, int no, int blink);

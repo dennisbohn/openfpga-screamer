@@ -55,6 +55,9 @@ void snd_volume(int h, int32_t vol, int32_t pan);
 void snd_swap(int h, int id);
 /* h if it still plays effect id, else snd_play(id) */
 int snd_play_once(int id, int h);
+/* Every voice, playing or not, at f of 0x8000 of its loudness from now on (the pause's fade,
+   the game's master volumes going down, 0x21328); 0x8000 again: as before */
+void snd_fade(int32_t f);
 
 /* Where the sounds with a place are heard from: the camera, once a step */
 struct track_cam;
