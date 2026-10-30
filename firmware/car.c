@@ -142,8 +142,8 @@ static void contact(void)
 {
     float tr = model.half_track, af = model.axle_front, ar = model.axle_rear;
     const float lx[4] = { tr, tr, -tr, -tr }, lz[4] = { -af, ar, -af, ar };
-    float cr = fabsf(cosf(pc.roll)), cp = fabsf(cosf(pc.pitch));
-    float a = pc.yaw + pc.drift, cs = cosf(a), sn = sinf(a);
+    float cr = fabsf(drive_cos(pc.roll)), cp = fabsf(drive_cos(pc.pitch));
+    float a = pc.yaw + pc.drift, cs = drive_cos(a), sn = drive_sin(a);
     float jolted[4];
     int found[4];
     if(!ct.ready)
@@ -166,7 +166,7 @@ static void contact(void)
         }
     }
     /* the same turned by the heading alone: the same places while the body does not slip */
-    float cs2 = cosf(pc.yaw), sn2 = sinf(pc.yaw);
+    float cs2 = drive_cos(pc.yaw), sn2 = drive_sin(pc.yaw);
     for(int n = 0; n < 4; n++) {
         float x = lx[n] * cr, z = lz[n] * cp, h;
         if(pc.drift == 0.0f) {
@@ -278,8 +278,8 @@ static void walls_step(void)
 {
     int nw;
     const struct track_wall *w = track_walls(&nw);
-    float fx = sinf(pc.yaw), fy = -cosf(pc.yaw), rx = -cosf(pc.yaw), ry = -sinf(pc.yaw);
-    float cr = fabsf(cosf(pc.roll)), cp = fabsf(cosf(pc.pitch));
+    float fx = drive_sin(pc.yaw), fy = -drive_cos(pc.yaw), rx = -drive_cos(pc.yaw), ry = -drive_sin(pc.yaw);
+    float cr = fabsf(drive_cos(pc.roll)), cp = fabsf(drive_cos(pc.pitch));
     int out[4], any = 0;
     float px[4], py[4], wall_angle = 0.0f;
     const struct track_dir *d = nearest_dir(pc.x, pc.y);   /* 0x16cbb, before any wall */
@@ -413,7 +413,7 @@ static void smoke_step(void)
     int any = 0;
     for(int k = 0; k < PUFFS; k++) any |= puff[k].on;
     if(!any) return;
-    float a = pc.yaw + pc.drift, ca = cosf(a), sa = sinf(a), cp = cosf(pc.pitch), sp = sinf(pc.pitch);
+    float a = pc.yaw + pc.drift, ca = drive_cos(a), sa = drive_sin(a), cp = drive_cos(pc.pitch), sp = drive_sin(pc.pitch);
     int32_t cx = (int32_t)pc.x, cy = (int32_t)pc.y, ch = (int32_t)pc.z;
     for(int k = 0; k < PUFFS; k++) {
         struct puff *p = &puff[k];
@@ -579,7 +579,7 @@ int car_backwards(void)
 float car_circles(float cx[2], float cy[2])
 {
     float nose = model.axle_front + 250.0f, tail = model.axle_rear + 150.0f, q = (nose + tail) * 0.25f;
-    float fx = sinf(pc.yaw), fy = -cosf(pc.yaw), zf = nose - q, zr = -(tail - q);
+    float fx = drive_sin(pc.yaw), fy = -drive_cos(pc.yaw), zf = nose - q, zr = -(tail - q);
     cx[0] = pc.x + fx * zf; cy[0] = pc.y + fy * zf;
     cx[1] = pc.x + fx * zr; cy[1] = pc.y + fy * zr;
     return q;
@@ -1371,9 +1371,9 @@ void car_camera(struct track_cam *cam)
         cam->roll = pc.roll - 3.0f * body.roll;
         return;
     }
-    float cp = cosf(chase.pitch);
-    cam->x = pc.x - cp * v->behind * sinf(chase.yaw);
-    cam->y = pc.y + cp * v->behind * cosf(chase.yaw);
+    float cp = drive_cos(chase.pitch);
+    cam->x = pc.x - cp * v->behind * drive_sin(chase.yaw);
+    cam->y = pc.y + cp * v->behind * drive_cos(chase.yaw);
     cam->h = chase.height;
     cam->yaw = chase.yaw;
     cam->pitch = chase.pitch;

@@ -89,3 +89,7 @@ void  drive_hit_wall(struct car_state *c, float push_x, float push_y, float side
 float drive_kmh(const struct car_state *c);
 /* the game's per-step smoothing factor for stiffness i: v = (v - target) * damp + target */
 float drive_damp(int i);
+/* sinf and cosf, the last few angles' values kept: a step asks for the heading's, pitch's and
+   roll's in several places, the frame for the camera's again; for the same bits the same values */
+float drive_sin(float a);
+float drive_cos(float a);

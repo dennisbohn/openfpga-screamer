@@ -37,6 +37,26 @@ static float damp(int i)
 
 float drive_damp(int i) { return damp(i); }
 
+#define MEMO 8
+static float memo(float a, int c)
+{
+    static uint32_t key[2][MEMO];
+    static float val[2][MEMO];
+    static uint8_t kept[2][MEMO];
+    uint32_t b;
+    memcpy(&b, &a, sizeof b);
+    int i = (int)((b ^ b >> 11 ^ b >> 19) & (MEMO - 1));
+    if(kept[c][i] && key[c][i] == b) return val[c][i];
+    float v = c ? cosf(a) : sinf(a);
+    key[c][i] = b;
+    val[c][i] = v;
+    kept[c][i] = 1;
+    return v;
+}
+
+float drive_sin(float a) { return memo(a, 0); }
+float drive_cos(float a) { return memo(a, 1); }
+
 static void approach(float *v, float target, int i)        /* 0x22b60 */
 {
     *v = (*v - target) * damp(i) + target;
@@ -263,7 +283,7 @@ static void skid(struct car_state *c)
             approach(&c->slip, 0.0f, 7);
             c->yaw += c->slip * 0.2f;
         }
-        approach_angle(&c->drift, sqrt0(fabsf(cosf(c->roll)) * 2.0f) * c->slip, 0x5a);
+        approach_angle(&c->drift, sqrt0(fabsf(drive_cos(c->roll)) * 2.0f) * c->slip, 0x5a);
     }
     approach(&c->slide, c->slide_want, 0x50);
     if(c->slide < 10.0f) c->slide = 0.0f;
@@ -288,7 +308,7 @@ static void skid(struct car_state *c)
 static void integrate(struct car_state *c)
 {
     const float dt = DRIVE_DT;
-    float cp = cosf(c->pitch);
+    float cp = drive_cos(c->pitch);
 
     /* forward */
     c->x += sinf(c->yaw) * cp * c->speed * dt;
@@ -304,7 +324,7 @@ static void integrate(struct car_state *c)
 
     /* running wide in a skid (0x172d8): along (sin, -cos) of heading - 90 degrees, the
        direction set when the slide starts (0x17f4d) */
-    float k = sqrt0(fabsf(cosf(c->roll)));
+    float k = sqrt0(fabsf(drive_cos(c->roll)));
     c->x += k * dt * c->slide * c->slide_dx;
     c->y += k * dt * c->slide * c->slide_dy;
 
