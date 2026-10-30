@@ -493,8 +493,10 @@ void opp_step(void)
             }
         }
         o->wheel = fmodf(o->wheel - o->speed * dt / 108.6f, 2.0f * PI);
-        place(o, k);
     }
+    /* where each now stands, in a loop of its own: the opponents do not touch each other until
+       collide(), and one loop with both halves did not keep their code in the cache */
+    for(int k = 0; k < nopp; k++) place(&opp[k], k);
     collide();
     /* the running order (0x20418): once the race is on and the player has crossed the line,
        the first opponent found on the wrong side of the player -- further on with a worse
