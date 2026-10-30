@@ -225,22 +225,22 @@ diese Tabelle.
 
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
-| Analogue-Rahmen (Bridge, PLLs) | 417 | 2 | – |
-| Framebuffer ×2 + Video | 122 | 130 | – |
-| VexRiscv + 2× 8 KB Cache | 1.280 | 19 | 4 |
-| FPU (RV32F) | 1.450 | 5 | 4 |
+| Analogue-Rahmen (Bridge, PLLs) | 420 | 2 | – |
+| Framebuffer ×2 + Video | 121 | 130 | – |
+| VexRiscv + 2× 8 KB Cache | 1.276 | 19 | 4 |
+| FPU (RV32F) | 1.459 | 5 | 4 |
 | CFU (16.16-Multiplikation) | 9 | – | 3 |
 | Boot-RAM 32 KB + Protokoll | – | 36 | – |
-| Geometrie-Einheit | 692 | 22 | 4 |
-| Clipper | 943 | 6 | 2 |
-| Setup-Einheit | 1.511 | 7 | 4 |
-| Rasterizer | 1.260 | 2 | 5 |
-| Texturen: Pipeline + Cache | 695 | 47 | 4 |
-| Blitter (Hintergrund, HUD) | 509 | 2 | – |
-| SDRAM-Controller + Ports | 305 | 2 | – |
-| Audio: Mischer 32 Stimmen + Musik, I²S | 572 | 1 | 1 |
-| Bus, Register, Arbiter | 556 | – | – |
-| **gebaut** | **10.321 (56 %)** | **281 (91 %)** | **31 (47 %)** |
+| Geometrie-Einheit | 678 | 22 | 4 |
+| Clipper | 952 | 6 | 2 |
+| Setup-Einheit | 1.499 | 7 | 4 |
+| Rasterizer | 1.281 | 2 | 5 |
+| Texturen: Pipeline + Cache | 678 | 47 | 4 |
+| Blitter (Hintergrund, HUD) | 510 | 2 | – |
+| SDRAM-Controller + Ports | 307 | 2 | – |
+| Audio: Mischer 32 Stimmen + Musik, I²S | 567 | 1 | 1 |
+| Bus, Register, Arbiter | 548 | – | – |
+| **gebaut** | **10.305 (56 %)** | **281 (91 %)** | **31 (47 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es

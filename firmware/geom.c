@@ -63,7 +63,10 @@ uint32_t gu_draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
                n taken as its low half when it is above 0 */
             const uint8_t *trec = mlb + rd32(mat + 4);
             int32_t n = rd32(trec);
-            uint32_t frame = n > 0 ? ((uint32_t)n & 0xFFFF) * (p->phase & 0x3FFF) >> 14 : 0;
+            /* routine 160 (a car's windows) takes its frame from the object's own reflection
+               phase ([0x84288], record +0x3c), 0 for every car, not from the paint job's phase
+               with its brake lights ([0x84284]) */
+            uint32_t frame = n > 0 && routine != 160 ? ((uint32_t)n & 0xFFFF) * (p->phase & 0x3FFF) >> 14 : 0;
             tex.data = mlb + rd32(trec + 8 + 4 * frame);
             tex.width = tw;
             tex.height = th;

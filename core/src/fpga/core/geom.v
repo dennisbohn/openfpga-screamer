@@ -97,6 +97,7 @@ end
     reg         mirror;
     reg  [13:0] phase;
     reg  [29:0] fmul;                           // frames x phase
+    reg         refl;                           // routine 160: its frame from its own phase, 0
     reg  [9:0]  nvert;                          // 0..512 once step 7 let the piece through
     reg         nbad;                           // the block's vertex count is not 0..512
     reg  [9:0]  vi, nf;
@@ -507,6 +508,7 @@ always @(posedge clk) begin
     6'd47: read(6'd29);                         // mat
     6'd29: begin
         blend <= rd_word == 32'd224;            // see-through through MAPn.SMG
+        refl <= rd_word == 32'd160;
         if(untex) begin
             textured <= 0;
             cut <= 0;
@@ -524,7 +526,7 @@ always @(posedge clk) begin
     6'd32: pc <= 6'd49;                         // (rd_addr: texrec = mlb + ..)
     6'd49: read(6'd45);                         // texrec
     6'd45: begin                                // the frame: frames (if > 0, low half) x phase >> 14
-        fmul <= rd_word[31] ? 30'd0 : {14'd0, rd_word[15:0]} * {16'd0, phase};
+        fmul <= rd_word[31] || refl ? 30'd0 : {14'd0, rd_word[15:0]} * {16'd0, phase};
         pc <= 6'd46;                            // (rd_addr: texrec + 8)
     end
     6'd46: read(6'd34);                         // texrec + 8 + 4 frame
