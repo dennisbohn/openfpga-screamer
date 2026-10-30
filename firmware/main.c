@@ -506,6 +506,50 @@ static void still_show(const struct blit_list *l)
 }
 
 #define FADE_STEP   437         /* the pause's fade: 0x8000 in 1.5 s of steps (16384 a second of 0x6000) */
+#define FADE_MENU   983         /* a menu screen from black: 1.5 a second (0x20374, 0x2c078, 0x29738) */
+#define FADE_RACE   1311        /* a race in and out: 2 a second (0x21e50, 0x21d8c) */
+
+/* pal at f of 0x8000 into the back buffer's palette: towards black, as the game's 0x27de8 */
+static void pal_faded(const uint32_t *pal, int32_t f)
+{
+    uint32_t k = f < 0 ? 0 : f > 0x8000 ? 0x8000 : (uint32_t)f;
+    for (int i = 0; i < 256; i++) {
+        uint32_t c = pal[i];
+        VID_PAL[i] = ((c >> 16 & 255) * k >> 15) << 16 | ((c >> 8 & 255) * k >> 15) << 8 | (c & 255) * k >> 15;
+    }
+}
+
+/* A cut to black: the other buffer swapped in with an all-black palette (a menu screen left:
+   the game's 0x1d220 = 0, the palette black in the frame of the press) */
+static void black(void)
+{
+    wait_swap_done();
+    for (int i = 0; i < 256; i++) VID_PAL[i] = 0;
+    VID_SWAP = 1;
+}
+
+/* The picture on the screen, shown through pal, to black in half a second (0x21d8c): copied
+   into the other buffer, then each frame one of the two gets the palette and is swapped in;
+   with sound the effects and the music go down with it. The music is kept fed. */
+static void fade_out(const uint32_t *pal, int sound)
+{
+    uint32_t st = wait_swap_done(), last_frame = VID_FRAME(st);
+    const volatile uint32_t *from = (const volatile uint32_t *)FB(st & VID_FRONT);
+    volatile uint32_t *to = (volatile uint32_t *)FB(!(st & VID_FRONT));
+    for (int i = 0; i < FB_W * FB_H / 4; i++) to[i] = from[i];
+    for (int32_t f = 0x8000; f > 0;) {
+        st = wait_swap_done();
+        music_frame();
+        f -= (int32_t)((VID_FRAME(st) - last_frame) & 0xFFFF) * FADE_RACE;
+        last_frame = VID_FRAME(st);
+        pal_faded(pal, f);
+        if (sound) {
+            snd_fade(f);
+            music_fade(f);
+        }
+        VID_SWAP = 1;
+    }
+}
 
 /* The pause: the game's CD player (0x21328, P in a race, 0x211d0) over the picture on the
    screen darkened twice (hud.h), the race standing; the effects and the music fade out at the
@@ -587,10 +631,14 @@ static int rec_full;
    the trackside camera (car.h). START pauses it. A finished race then runs again from its keys
    (RACE_REPLAY; time over and SELECT have none, 0x1fe28): with replay set, as the game's replay
    (0x1fd64, 0x22e74) until its keys run out (0x22dd8) or B, START or SELECT skip it (the game's
-   ENTER and ESC). Then PLAY AGAIN?: RACE_AGAIN for YES, RACE_LEAVE for NO. */
+   ENTER and ESC). Then PLAY AGAIN?: RACE_AGAIN for YES, RACE_LEAVE for NO. It fades in from
+   black, the picture and the sound, in half a second (0x21e50 each frame). */
 static int run_track(int n, int car, int replay)
 {
     const uint32_t *pal = track_palette();
+    int32_t fade = 0;
+    snd_fade(0);
+    music_fade(0);
     uint32_t drawn = 0, keys_before = replay ? IN_KEY : 0, last_frame = 0, steps = 0, over = 0;
     uint32_t fps = 0, fps_drawn = 0, fps_frame = 0, rec_at = 0;
     int car_v = CAR_VIEW_START;
@@ -662,6 +710,11 @@ static int run_track(int n, int car, int replay)
         uint32_t steps_now = drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
         last_frame = VID_FRAME(st);
         if (steps_now > 4) steps_now = 4;
+        if (fade < 0x8000) {
+            fade += (int32_t)steps_now * FADE_RACE;
+            snd_fade(fade);
+            music_fade(fade);
+        }
         if (press & KEY_X) car_view(++car_v);
         efx_cyc_objects = efx_cyc_radar = 0;
         uint32_t t_phys = rdcycle();
@@ -710,7 +763,7 @@ static int run_track(int n, int car, int replay)
         back_clocks = back_cycles = 0;
         back_wait = 1;
         hw_blit(&back);
-        for (int i = 0; i < 256; i++) VID_PAL[i] = pal[i];
+        pal_faded(pal, fade);
 
         /* the pieces from the CPU to the geometry unit, its faces to the setup unit, the
            triangles to the rasterizer */
@@ -1160,11 +1213,13 @@ static int dashboard_init(void)
 /* The track screen or the car screen (menu.h) from choice n on until one is taken: its number
    (the track, the car's row + 1), -1 when the car screen goes back to the track screen. The
    picture by the blitter, the models through the geometry unit while it waits (hw_piece), the
-   texts after them. In the simulation (SIM_MENU) its third frame is checked against the C models
-   and reported. */
+   texts after them. It fades in from black, the models already turning (0x2c078, 0x2bdcc: the
+   palette at 1.5 a second, 0x29738), and is left with a cut to black. In the simulation
+   (SIM_MENU) its third frame is checked against the C models and reported. */
 static int menu_screen(int screen, int n)
 {
     uint32_t drawn = 0, keys_before = IN_KEY, last_frame = 0, sim = SYS_FLAGS & FLAG_SIM;
+    int32_t fade = 0;
     menu_enter(screen, n);
     const uint32_t *pal = menu_palette();
     music_play(0);
@@ -1189,14 +1244,19 @@ static int menu_screen(int screen, int n)
         for (uint32_t k = 0; k < steps; k++) {
             int chosen = menu_step(keys, keys_before);
             keys_before = keys;
-            if (chosen) return chosen;
+            if (chosen) {
+                black();
+                return chosen;
+            }
         }
+        fade += (int32_t)steps * FADE_MENU;
+        if (fade > 0x8000) fade = 0x8000;
         draw_buf = !(st & VID_FRONT);
         blit_start(&back, (int)draw_buf);
         menu_backdrop(&back);
         back_wait = 1;
         hw_blit(&back);
-        for (int i = 0; i < 256; i++) VID_PAL[i] = pal[i];
+        pal_faded(pal, fade);
         GU_MODE = draw_buf << 8;
         RS_CLIP0 = RS_XY(track_clip.x0, track_clip.y0);
         RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
@@ -1233,32 +1293,35 @@ static int menu_screen(int screen, int n)
     }
 }
 
-/* Track n's loading screen (menu.h, 0x2a264) by the blitter in a swap; it stays up while the
-   track is set up, until the race's first picture (no fade). Nothing without the menu's files
-   (the simulation's race). */
-static void loading(int n)
+/* Track n's loading screen (menu.h, 0x2a264) by the blitter in a swap, at once with its palette;
+   it stays up while the track is set up. Its palette, 0 without the menu's files (the
+   simulation's race): nothing shown. */
+static const uint32_t *loading(int n)
 {
     uint32_t st = wait_swap_done();
     draw_buf = !(st & VID_FRONT);
     blit_start(&hud, (int)draw_buf);
     const uint32_t *pal = menu_loading(n, &hud);
-    if (!pal) return;
+    if (!pal) return 0;
     while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* the picture in the SDRAM for the blitter */
         ;
     for (int i = 0; i < 256; i++) VID_PAL[i] = pal[i];
     still_show(&hud);
+    return pal;
 }
 
 /* Track n from its containers behind its loading screen: the image built at TEX_FILE (or the
    testbench's) and used only once all its blocks are as written, the effects and scenery, then
    the race with the car of CARS.DTR row car until it is left, again while PLAY AGAIN? is
-   answered YES (without the loading screen, as the game); 0 if the track could not be set up */
+   answered YES (without the loading screen, as the game); 0 if the track could not be set up.
+   Once all is set up the loading screen fades out, the picture alone (0x128dc(1): 0x21d8c(0));
+   a race left, or to be set up again, fades out with its sound (0x21d8c(1): 0x1feed, 0x128dc(0)). */
 static int race(int n, int car)
 {
     int placements = 0;
     music_stop();                               /* before the loads: none of its reads running; the
                                                    menu's song ends as the loading screen goes up */
-    loading(n);
+    const uint32_t *shown = loading(n);
     if (track_loaded != n) {
         track_loaded = 0;
         if (!load_containers(n, TRACK_FILES)) return 0;
@@ -1295,12 +1358,16 @@ static int race(int n, int car)
         sounds();               /* before the scenery, which adds the track's own sounds */
         scenery(n);
         RS_CTRL = 1;
+        if (shown) fade_out(shown, 0);
+        shown = 0;
         music_play(n);
         int end = run_track(n, car, replay);
-        AU_STOP = 0xFFFFFFFFu;                  /* the race's sounds end with it */
+        fade_out(track_palette(), 1);
+        AU_STOP = 0xFFFFFFFFu;                  /* the race's sounds end with it, its song too: */
+        music_stop();                           /* after PLAY AGAIN? YES or for the replay the race
+                                                   is set up again (0x128dc), its song from the start */
+        snd_fade(0x8000);
         if (end == RACE_LEAVE) return 1;
-        music_stop();                           /* PLAY AGAIN? YES or the replay: the race set up
-                                                   again (0x128dc), its song from the start */
         replay = end == RACE_REPLAY;
     }
 }
