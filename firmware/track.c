@@ -160,9 +160,17 @@ static inline uint32_t now(void)
 /* the three worked out here, before the branches after it: the FPU's pipeline takes them side
    by side, where one after the other each waits for the last (the values stay the same) */
 #define FP_NOW(a, b, c) __asm__ ("" : "+f"(a), "+f"(b), "+f"(c))
+/* the FPU's answers to comparisons (whole numbers) all asked for before any is used: an answer
+   comes back late, and a use right after its question waits for it; asked one after the other,
+   they come back side by side and the CPU waits once */
+#define INT_NOW4(a, b, c, d) __asm__ ("" : "+r"(a), "+r"(b), "+r"(c), "+r"(d))
+#define INT_NOW8(a, b, c, d, e, f, g, h) \
+    __asm__ ("" : "+r"(a), "+r"(b), "+r"(c), "+r"(d), "+r"(e), "+r"(f), "+r"(g), "+r"(h))
 #else
 static inline uint32_t now(void) { return 0; }
 #define FP_NOW(a, b, c) ((void)0)
+#define INT_NOW4(a, b, c, d) ((void)0)
+#define INT_NOW8(a, b, c, d, e, f, g, h) ((void)0)
 #endif
 
 static int32_t rd32(const uint8_t *p) { return *(const int32_t *)p; }
@@ -905,27 +913,31 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
     for(int i = 0; i < npieces; i++) {
         if(i % GROUP == 0) {                        /* the whole group out of reach (in the plane) */
             int g = i / GROUP;
-            float gx = cx < groups[g].x0 ? groups[g].x0 - cx : cx > groups[g].x1 ? cx - groups[g].x1 : 0.0f;
-            float gy = cy < groups[g].y0 ? groups[g].y0 - cy : cy > groups[g].y1 ? cy - groups[g].y1 : 0.0f;
+            int wx = cx < groups[g].x0, ex = cx > groups[g].x1, sy = cy < groups[g].y0, ny = cy > groups[g].y1;
+            INT_NOW4(wx, ex, sy, ny);
+            float gx = wx ? groups[g].x0 - cx : ex ? cx - groups[g].x1 : 0.0f;
+            float gy = sy ? groups[g].y0 - cy : ny ? cy - groups[g].y1 : 0.0f;
             if(gx * gx + gy * gy >= REACH2) {
                 i += GROUP - 1;
                 continue;
             }
         }
         const struct cpiece *pc = &cpieces[i];
-        float rad = pc->rad;
-        if(rad < 0.0f) continue;
-        float dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch;
+        int32_t no_mesh;                                /* (its reach -1, as a whole number) */
+        memcpy(&no_mesh, &pc->rad, sizeof no_mesh);
+        if(no_mesh < 0) continue;
+        float rad = pc->rad, dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch;
         float d2 = dx * dx + dy * dy + dh * dh;
-        if(d2 < nearest) nearest = d2;
-        if(d2 >= REACH2) continue;
-        /* behind the eye or past the far plane (more than half of those in reach), then out at a
-           side: each one's tests at once (| not ||, one branch: the FPU answers them side by side) */
-        float vf = dx * fx + dy * fy + dh * fh + EYE_BACK;
-        if((vf + rad < NEAR) | (vf - rad > far_eye)) continue;
-        float vr = dx * rx + dy * ry + dh * rh, vu = dx * ux + dy * uy + dh * uh;
-        if((vr - rad > half_w * (vf + rad)) | (vr + rad < -half_w * (vf + rad)) | (vu - rad > up * (vf + rad)) |
-           (vu + rad < -down * (vf + rad))) continue;
+        float vf = dx * fx + dy * fy + dh * fh + EYE_BACK, vr = dx * rx + dy * ry + dh * rh;
+        float vu = dx * ux + dy * uy + dh * uh;
+        /* the nearest so far, and out of reach or out of view: all the comparisons asked for at
+           once, then one wait for their answers */
+        int nearer = d2 < nearest, o0 = d2 >= REACH2, o1 = vf + rad < NEAR, o2 = vf - rad > far_eye;
+        int o3 = vr - rad > half_w * (vf + rad), o4 = vr + rad < -half_w * (vf + rad);
+        int o5 = vu - rad > up * (vf + rad), o6 = vu + rad < -down * (vf + rad);
+        INT_NOW8(nearer, o0, o1, o2, o3, o4, o5, o6);
+        if(nearer) nearest = d2;
+        if(o0 | o1 | o2 | o3 | o4 | o5 | o6) continue;
         vis[nv++] = (KEY(d2) + cpiece_key[i]) * 65536 + i;
     }
     for(int k = 0; k < nobj && k < MAX_OBJS; k++) {
