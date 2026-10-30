@@ -17,7 +17,9 @@
  *   with the disc's tracks 2-8, 3 playing (GAME.DAT for the CD player in the working directory);
  *   PAUSE=2: PLAY AGAIN? TRACKSIDE=1: the trackside camera after the steps, HUD=1 with the race
  *   screen. REPLAYCHECK=s: the replay's determinism check instead (replay_check()), REPLAYAT=k
- *   its picture at step k of the replay, NOHUD=1 without the race screen. MODE=m: the game
+ *   its picture at step k of the replay, NOHUD=1 without the race screen, REPLAYDUMP=f: the
+ *   race's values of every step and each drawn frame's CRC-32 and race screen into file f (two
+ *   versions of the code compared with cmp). MODE=m: the game
  *   mode (car.h, 4 time attack, 0x20 cone carnage, 0x40 slalom), its props, rules and race screen;
  *   GHOST=1 with MODE=4: ghost_check() instead of replay_check().
  *        render menu <MENU.DAT> <GRAF.DAT> <LOCAL.DAT> <GEN.DAT> <out.rgb> [screen [n [steps]]]
@@ -45,6 +47,7 @@
 #include "menu.h"
 #include "champ.h"
 #include "hud.h"
+#include "crc32.h"
 
 #define MENU_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x200000))       /* as main.c */
 #define GRAF_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x600000))
@@ -108,6 +111,7 @@ static void write_rgb(const char *path, const uint32_t *pal)
 #define CHECK_VALS  (5 + 2 * 16)
 static uint32_t rec[CHECK_MAX];
 static float vals[CHECK_MAX][CHECK_VALS];
+static FILE *dump;                      /* REPLAYDUMP: the race's steps and frames */
 
 static uint32_t robot(uint32_t step)
 {
@@ -173,6 +177,12 @@ static void check_frame(uint32_t frame, uint32_t steps_now, const char *out)
         track_draw_cam(FB(0), &clip, &cam, objs, nobj, &ts);
     }
     hud_build(&l, 0, 0, car_overlay());
+    if (dump && frame % 32 == 0) {
+        uint32_t crc = crc32((const uint8_t *)FB(0), (const uint8_t *)FB(0) + FB_W * FB_H);
+        fwrite(&crc, 4, 1, dump);
+        fwrite(&l.n, 4, 1, dump);
+        fwrite(l.c, 16, (size_t)l.n, dump);
+    }
     if (out) {
         printf("picture: camera %.0f %.0f %.0f yaw %.4f pitch %.4f, car %.0f %.0f %.0f\n", cam.x, cam.y, cam.h, cam.yaw,
                cam.pitch, car_state()->x, car_state()->y, car_state()->z);
@@ -242,6 +252,7 @@ static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gf
     int props, moving;
     uint32_t steps = 0, frames = 0, seed = 1, keys_before = 0, end = 0;
     if (max > CHECK_MAX) max = CHECK_MAX;
+    if (getenv("REPLAYDUMP")) dump = fopen(getenv("REPLAYDUMP"), "wb");
     car_init(car, 0);
     opp_init(car);
     while ((int)steps < max && (!end || steps < end)) {
@@ -255,9 +266,14 @@ static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gf
             opp_step();
             scenery_step();
             check_values(vals[steps++]);
+            if (dump) fwrite(vals[steps - 1], sizeof vals[0], 1, dump);
             if (car_race()->finished && !end) end = steps + 250;
         }
         check_frame(frames++, now, 0);
+    }
+    if (dump) {
+        fclose(dump);
+        dump = 0;
     }
     const struct car_race *r = car_race();
     printf("race: %u steps in %u frames, %d laps (progress %.1f), finished %d, time over %d, place %d, walls %u, "

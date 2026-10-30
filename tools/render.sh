@@ -17,9 +17,11 @@
 #   trackside camera of the race's end after the steps (MAPnRPL.SPL); HUD=1: the race screen over it.
 #   REPLAYCHECK=s: the replay's determinism check instead (a robot's race of at most s steps, its
 #   replay compared step by step; CAR=6 finishes track 1); the picture is the replay's at its
-#   end, or at step REPLAYAT, NOHUD=1 without the race screen. MODE=m: the game mode (car.h,
-#   4 time attack, 0x20 cone carnage, 0x40 slalom) instead of the normal game; with GHOST=1 and
-#   MODE=4 REPLAYCHECK runs two robot races, the second against the first one's ghost.
+#   end, or at step REPLAYAT, NOHUD=1 without the race screen; REPLAYDUMP=f: the race's steps and
+#   frames into build/host/f (tools/host/render.c), to compare two versions with cmp. MODE=m: the
+#   game mode (car.h, 4 time attack, 0x20 cone carnage, 0x40 slalom) instead of the normal game;
+#   with GHOST=1 and MODE=4 REPLAYCHECK runs two robot races, the second against the first one's
+#   ghost.
 # The firmware's sources are copied to build/host/ with hw.h's RISC-V instructions made plain C;
 # built and run with the simulation's Docker image (gcc).
 set -e
@@ -65,7 +67,7 @@ fi
 if command -v cygpath >/dev/null 2>&1; then mount=$(cygpath -wa "$root/build"); else mount=$root/build; fi
 out=$(basename "$1")
 MSYS_NO_PATHCONV=1 docker run --rm ${CAM:+-e CAM} ${REFL:+-e REFL} ${GAS:+-e GAS} ${TURN:+-e TURN} ${BRAKE:+-e BRAKE} ${PAUSE:+-e PAUSE} ${MENUKEYS:+-e MENUKEYS} ${CHAMP:+-e CHAMP} \
-    ${TRACKSIDE:+-e TRACKSIDE} ${HUD:+-e HUD} ${REPLAYCHECK:+-e REPLAYCHECK} ${REPLAYAT:+-e REPLAYAT} ${NOHUD:+-e NOHUD} ${MODE:+-e MODE} ${GHOST:+-e GHOST} -v "$mount:/b" --entrypoint sh verilator/verilator:v5.050 -c "
+    ${TRACKSIDE:+-e TRACKSIDE} ${HUD:+-e HUD} ${REPLAYCHECK:+-e REPLAYCHECK} ${REPLAYAT:+-e REPLAYAT} ${NOHUD:+-e NOHUD} ${REPLAYDUMP:+-e REPLAYDUMP} ${MODE:+-e MODE} ${GHOST:+-e GHOST} -v "$mount:/b" --entrypoint sh verilator/verilator:v5.050 -c "
     cd /b/host/src && gcc -O2 -w ${DUMP:+-DTRACK_DUMP} -o ../render render.c track.c geom.c setup.c raster.c car.c drive.c opp.c ghost.c \
         efx.c scenery.c sound.c speech.c blit.c dlog.c crc32.c dat.c console.c menu.c champ.c tb_hud.c tb_spl.c tb_mmp.c hud.c -lm && cd /b/host && $run $out $args"
 mv "$root/build/host/$out" "$1"
