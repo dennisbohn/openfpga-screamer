@@ -105,11 +105,13 @@ static void place(struct opp *o, int k)
     o->y = pos[1] + o->offy;
     o->yaw = atan2f(der[0], -der[1]);                   /* forward = (sin yaw, -cos yaw) */
     float h;
-    if(track_under(o->x, o->y, &h, 0)) {
+    int on = track_under(o->x, o->y, &h, 0);
+    if(on) {
         o->z = h;
         track_under_tilt(o->yaw, &o->pitch, &o->roll);
     }
-    if(o->speed > 3000.0f && !track_under(o->x, o->y, 0, 0)) o->speed = 0.0f;
+    /* (a face found with its height is found without: only a miss asks again) */
+    if(o->speed > 3000.0f && !on && !track_under(o->x, o->y, 0, 0)) o->speed = 0.0f;
     if(!o->crash && o->prev_speed - o->speed > 5000.0f) {
         if((((int)o->x + (int)o->y) >> 2) & 1) {
             o->crash = 4;
@@ -163,10 +165,12 @@ static void place(struct opp *o, int k)
     }
 }
 
-/* its two circles (0x142e8, as the player's) */
-static void circles(const struct opp *o, float cx[2], float cy[2])
+/* its two circles (0x142e8, as the player's), and its forward (sin yaw, -cos yaw) in f */
+static void circles(const struct opp *o, float cx[2], float cy[2], float f[2])
 {
     float fx = sinf(o->yaw), fy = -cosf(o->yaw);
+    f[0] = fx;
+    f[1] = fy;
     cx[0] = o->x + fx * o->nose; cy[0] = o->y + fy * o->nose;
     cx[1] = o->x + fx * o->tail; cy[1] = o->y + fy * o->tail;
 }
@@ -220,10 +224,12 @@ static void collide(void)
     float pcx[2], pcy[2], pr = car_circles(pcx, pcy);
     hitcar = (hitcar - (float)touch) * drive_damp(0x32) + (float)touch;     /* 0x175aa, 0x177f7 */
     touch = 0;
+    /* each one's circles and forward, once: nothing here moves an opponent or turns it */
+    float occ[OPP_MAX][2][2], of[OPP_MAX][2];
+    for(int k = 0; k < nopp; k++) circles(&opp[k], occ[k][0], occ[k][1], of[k]);
     for(int k = 0; k < nopp; k++) {
         struct opp *o = &opp[k];
-        float ocx[2], ocy[2];
-        circles(o, ocx, ocy);
+        const float *ocx = occ[k][0], *ocy = occ[k][1];
         if(fabsf(c->x - o->x) < 1500.0f && fabsf(c->y - o->y) < 1500.0f && fabsf(c->z - o->z) < 600.0f)
             for(int a = 0; a < 2; a++)
                 for(int b = 0; b < 2; b++) {
@@ -233,11 +239,10 @@ static void collide(void)
                     if(dist < pr + o->radius) {
                         player_hits(o, dx / dist, dy / dist, pr + o->radius - dist);
                         pr = car_circles(pcx, pcy);
-                        circles(o, ocx, ocy);
                         break;
                     }
                 }
-        float fx = sinf(o->yaw), fy = -cosf(o->yaw);
+        float fx = of[k][0], fy = of[k][1];
         float qx = o->x + fx * o->radius * 3.0f, qy = o->y + fy * o->radius * 3.0f;
         if(fabsf(qx - c->x) < 5000.0f && fabsf(qy - c->y) < 5000.0f && c->speed < o->speed &&
            fabsf(c->z - o->z) < 600.0f) {
@@ -256,8 +261,7 @@ static void collide(void)
         for(int j = k + 1; j < nopp; j++) {
             struct opp *q = &opp[j];
             if(fabsf(o->x - q->x) >= 1500.0f || fabsf(o->y - q->y) >= 1500.0f) continue;
-            float qcx[2], qcy[2];
-            circles(q, qcx, qcy);
+            const float *qcx = occ[j][0], *qcy = occ[j][1];
             for(int a = 0; a < 2; a++)
                 for(int b = 0; b < 2; b++) {
                     float dx = ocx[a] - qcx[b], dy = ocy[a] - qcy[b];
