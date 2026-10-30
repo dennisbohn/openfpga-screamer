@@ -1059,16 +1059,18 @@ void car_trackside_init(const uint8_t *dat, uint32_t dat_size, int n)
     }
 }
 
-/* The trackside camera (0x1a620): the node nearest the car on the ground, the car's
-   whole-number place (+0x4b0, +0x4b8) against the node's, the distance cut (a node at the
-   car's very place is passed over, the first of equals kept); from there straight at the car,
+/* The trackside camera (0x1a620): the node nearest the car on the ground, the car's place in
+   whole units (+0x4b0, +0x4b8: where the game draws it; ours is the float place cut, not
+   `whole`, which loses up to a unit a step and is thousands off after a race) against the
+   node's, the distance cut (a node at the car's very place is passed over, the first of
+   equals kept); from there straight at the car,
    heading the way (forward = sin yaw, -cos yaw), pitch 2 pi - acos(flat / distance): down by
    the angle the height between them gives, whichever is the higher; no lean. More than 1500
    units from the car it moves on along its heading and pitch until it is 1500 away, each
    coordinate cut to a whole unit. */
 static void trackside_camera(struct track_cam *cam)
 {
-    int32_t cx = whole.x, cy = whole.y, ch = (int32_t)pc.z, near = 0x7FFFFFFF;
+    int32_t cx = (int32_t)pc.x, cy = (int32_t)pc.y, ch = (int32_t)pc.z, near = 0x7FFFFFFF;
     int at = 0;
     for(int k = 0; k < rpl_n; k++) {
         float dx = (float)(rpl[k][0] - cx), dy = (float)(rpl[k][1] - cy), d = sqrtf(dx * dx + dy * dy);
