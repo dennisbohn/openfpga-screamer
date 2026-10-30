@@ -833,6 +833,28 @@ void car_flat_block(const uint8_t *file, float x, float y, float z, float yaw, f
     out->phase = 0;
 }
 
+int car_mesh_blocks(const uint8_t *file, float x, float y, float z, float yaw, float pitch, float roll,
+                    struct track_block *out, int max)
+{
+    struct pose ps = { { 1.0f, 0.0f, 1.0f, 0.0f }, { 0 }, { 1.0f, 0.0f, 1.0f, 0.0f }, 0, x, y, z };
+    sin_cos(pitch, &ps.car[1], &ps.car[0]);
+    sin_cos(roll, &ps.car[3], &ps.car[2]);
+    ps.car[4] = cosf(yaw);
+    ps.car[5] = sinf(yaw);
+    int nb = *(const int32_t *)(file + 0x14), n = 0;
+    for(int b = 0; b < nb && n < max; b++, n++) {
+        struct cblock q = { 0 };
+        q.blk = file + *(const int32_t *)(file + 0x18 + 4 * b);
+        int32_t so = *(const int32_t *)(q.blk + 0x0C);         /* its place in the mesh, as cmodel() */
+        for(int j = 0; j < 3; j++) q.t[j] = so > 0 ? (float)*(const int32_t *)(file + so + 0x10 + 4 * j) : 0.0f;
+        place_block(&q, &ps, &out[n]);
+        out[n].file = file;
+        out[n].blk = q.blk;
+        out[n].phase = 0;
+    }
+    return n;
+}
+
 static struct { float x, y, h; int on; } shadow;
 
 /* The player's shadow and puffs, their blocks made at once, all in a row (the code stays in the

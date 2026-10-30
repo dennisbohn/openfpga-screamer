@@ -20,6 +20,7 @@
 #define NEAR_MOVE   52000.0f    /* moving scenery moves only this near the player */
 #define PROP_RADIUS 800.0f      /* round a prop's origin (the barrier is 580 wide) */
 #define MOVING_RADIUS 12000.0f  /* round a vehicle's (the jet) */
+#define MOVING_BLOCKS 4           /* blocks of a moving thing's mesh (the helicopter has 2) */
 #define FRAMES      (DRIVE_DT * 30.0f)  /* the game's frames in a step, on a PC of 30 a second */
 #define HALF_PI     1.5707964f
 
@@ -36,7 +37,8 @@ struct moving {
     int sound, voice;                   /* its effect (sound.h) or -1, the handle of its voice */
     float u, speed, x, y, h, yaw;
     float last;                         /* its distance from the ear a step before */
-    struct track_block b;
+    struct track_block b[MOVING_BLOCKS];    /* its mesh's blocks (the helicopter: body, rotor) */
+    int nb;
 };
 static struct prop props[PROPS_MAX];
 static struct moving moving[MOVING_MAX];
@@ -227,7 +229,7 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
         m->sound = sounds >= 0 && cell[k][3][0] ? sounds + (int)number(cell[k][3]) : -1;
         m->voice = -1;
         moving_place(m, 0);
-        car_flat_block(m->mesh, m->x, m->y, m->h, m->yaw, 0.0f, 0.0f, &m->b);
+        m->nb = car_mesh_blocks(m->mesh, m->x, m->y, m->h, m->yaw, 0.0f, 0.0f, m->b, MOVING_BLOCKS);
     }
 
     /* the props' places: MAPnOST.SPL's one spline, each node a prop */
@@ -343,7 +345,7 @@ static void moving_step(void)
             }
         }
         moving_place(m, 0);
-        car_flat_block(m->mesh, m->x, m->y, m->h, m->yaw, 0.0f, 0.0f, &m->b);
+        m->nb = car_mesh_blocks(m->mesh, m->x, m->y, m->h, m->yaw, 0.0f, 0.0f, m->b, MOVING_BLOCKS);
     }
 }
 
@@ -371,7 +373,7 @@ int scenery_objects(const struct track_cam *cam, struct track_object *objs, int 
         const struct moving *m = &moving[k];
         float dx = m->x - cam->x, dy = m->y - cam->y;
         if(dx * dx + dy * dy > (REACH + MOVING_RADIUS) * (REACH + MOVING_RADIUS)) continue;
-        objs[n++] = (struct track_object){ m->x, m->y, m->h, MOVING_RADIUS, 1, &m->b, 0, k, m->key };
+        objs[n++] = (struct track_object){ m->x, m->y, m->h, MOVING_RADIUS, m->nb, m->b, 0, k, m->key };
     }
     for(int k = 0; k < nprops && n < max; k++) {
         const struct prop *p = &props[k];

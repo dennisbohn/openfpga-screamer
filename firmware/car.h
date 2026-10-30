@@ -51,6 +51,10 @@ int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, 
    tilted by pitch and roll (struct car_look's) */
 void car_flat_block(const uint8_t *file, float x, float y, float z, float yaw, float pitch, float roll,
                     struct track_block *out);
+/* Every block of a mesh placed so (the helicopter: its body and its rotor), each at its own
+   place in the mesh; how many went into out, up to max */
+int car_mesh_blocks(const uint8_t *file, float x, float y, float z, float yaw, float pitch, float roll,
+                    struct track_block *out, int max);
 
 /* The player's shadow (SHADOW.3DX, efx.h) and tyre smoke (SMOKE.3DX, up to 8 puffs) as objects
    for track_draw_cam() (up to max), their blocks made when they come up in the drawing; the
