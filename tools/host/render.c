@@ -179,7 +179,7 @@ static void check_frame(uint32_t frame, uint32_t steps_now, const char *out)
         track_mode = TRACK_MODEL;
         track_draw_cam(FB(0), &clip, &cam, objs, nobj, &ts);
     }
-    hud_build(&l, 0, 0, car_overlay());
+    hud_build(&l, 0, car_overlay());
     if (dump && frame % 32 == 0) {
         uint32_t crc = crc32((const uint8_t *)FB(0), (const uint8_t *)FB(0) + FB_W * FB_H);
         fwrite(&crc, 4, 1, dump);
@@ -489,7 +489,7 @@ int main(int argc, char **argv)
     track_draw_cam(fb, &clip, &cam, objs, nobj, &ts);
     if (getenv("HUD")) {                                /* HUD=1: the race screen over it */
         static struct blit_list l;
-        hud_build(&l, 0, 0, car_overlay());
+        hud_build(&l, 0, car_overlay());
         blit_model(fb, &l);
     }
     const char *pause = getenv("PAUSE");

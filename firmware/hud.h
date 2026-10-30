@@ -2,8 +2,7 @@
  * The race screen of the outside views (the game's 0x23400 and 0x2367c, as OpenScreamer's
  * hud_draw has them): the labels, the rev counter with its needle, speed and gear, the
  * countdown, the lap, the position, the three clocks, the start lights and the end of the
- * race; as blitter commands (blit.h) that come after the scene. Not the game's: the frame
- * rate in the bottom left corner, frames drawn in the last second (0: none yet).
+ * race; as blitter commands (blit.h) that come after the scene.
  *
  * In the cockpit (car_cockpit(), overlay 1 of the view table) 0x2367c draws the labels, then
  * the car's dashboard, its two needles and its gear lamp instead of the rev counter, speed and
@@ -20,7 +19,7 @@
    labels and the outside views' instruments, 1 (the cockpit) neither, 0 (the trackside camera)
    the labels alone (0x2367c). In the replay (car_replay()) only a blinking R, the start lights
    and the end (0x2346c). */
-void hud_build(struct blit_list *l, int buffer, int fps, int overlay);
+void hud_build(struct blit_list *l, int buffer, int overlay);
 
 /* The cockpit's dashboard for car sp (the car's own, 0x136c8): the picture COCKnn{A,B}L.PKC
    of the GFX container GAME.DAT (nn the model of "AUTOnn", B for the second paint job; 0x1b22c

@@ -820,7 +820,7 @@ static int run_track(int n, int car, int replay)
         if (cockpit) {
             hud_dash(&dashboard, (int)draw_buf);
             hw_blit(&dashboard);
-            hud_build(&hud, (int)draw_buf, (int)fps, 1);
+            hud_build(&hud, (int)draw_buf, 1);
             while (RS_DRAW & RS_BUSY)
                 ;
             RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
@@ -828,7 +828,7 @@ static int run_track(int n, int car, int replay)
         } else {
             if (has_radar) hw_piece(&radar);
             if (ask) blit_start(&hud, (int)draw_buf);                           /* the question's: nothing */
-            else hud_build(&hud, (int)draw_buf, (int)fps, car_overlay() ? 2 : 0);   /* no dashboard: the instruments */
+            else hud_build(&hud, (int)draw_buf, car_overlay() ? 2 : 0);   /* no dashboard: the instruments */
         }
         hw_blit(&hud);
         tl_mark(TL_HUD);

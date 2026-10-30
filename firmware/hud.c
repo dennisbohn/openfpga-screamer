@@ -179,22 +179,6 @@ static void radar(struct blit_list *l)
     efx_radar_lines = lines;
 }
 
-/* the palette index nearest to colour 0xRRGGBB */
-static int nearest(uint32_t colour)
-{
-    const uint32_t *pal = track_palette();
-    int best = 0;
-    int32_t best_d = 0x7FFFFFFF;
-    for(int i = 0; i < 256; i++) {
-        int32_t dr = (int32_t)(pal[i] >> 16 & 255) - (int32_t)(colour >> 16 & 255);
-        int32_t dg = (int32_t)(pal[i] >> 8 & 255) - (int32_t)(colour >> 8 & 255);
-        int32_t db = (int32_t)(pal[i] & 255) - (int32_t)(colour & 255);
-        int32_t d = dr * dr + dg * dg + db * db;
-        if(d < best_d) { best_d = d; best = i; }
-    }
-    return best;
-}
-
 /* a few numbers as text (no printf in the firmware) */
 static char *put_dec(char *p, uint32_t v, int digits)
 {
@@ -225,21 +209,6 @@ static void needle(struct blit_list *l, int px, int py, int len, float angle, in
     blit_line(l, px, py, tx, ty, 0, 0, 320, 200, colour);
     blit_line(l, (int)((float)px + sinf(b)), (int)((float)py - cosf(b)), tx, ty, 0, 0, 320, 200, colour);
     blit_line(l, (int)((float)px - sinf(b)), (int)((float)py + cosf(b)), tx, ty, 0, 0, 320, 200, colour);
-}
-
-/* the frame rate (not the game's): frames drawn in the last second on a square, green at the
-   full 50, yellow below */
-static void fps_mark(struct blit_list *l, int fps)
-{
-    static int green = -1, yellow;
-    char buf[8];
-    if(green < 0) {
-        green = nearest(0x00FF00);
-        yellow = nearest(0xFFFF00);
-    }
-    blit_fill(l, 4, 191, 5, 5, fps >= 50 ? green : yellow);
-    put_dec(buf, (uint32_t)fps, 1);
-    text(l, 12, 190, buf, 3, 2);
 }
 
 /* the race screen proper (0x234a5 on): the labels and the overlay's instruments (0x2367c), the
@@ -284,7 +253,7 @@ static void race_screen(struct blit_list *l, int overlay, int rank)
     efx_cyc_radar = rdcycle() - t0;
 }
 
-void hud_build(struct blit_list *l, int buffer, int fps, int overlay)
+void hud_build(struct blit_list *l, int buffer, int overlay)
 {
     begin(l, buffer);
     const struct car_race *r = car_race();
@@ -323,7 +292,6 @@ void hud_build(struct blit_list *l, int buffer, int fps, int overlay)
         centred(l, 0x78, buf, 0, 2);
     } else if(r->game_over)
         centred(l, 0x5A, track_hud_text(22), 0, 2);
-    if(fps > 0) fps_mark(l, fps);
 }
 
 /* the word w (len bytes) is s */
