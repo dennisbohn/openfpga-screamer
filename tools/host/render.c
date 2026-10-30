@@ -112,7 +112,7 @@ static void write_rgb(const char *path, const uint32_t *pal)
    place, heading and speed and the opponents' places compared bit for bit after every step. */
 #define CHECK_MAX   60000
 #define CHECK_VALS  (5 + 2 * 16)
-static uint32_t rec[CHECK_MAX];
+static struct car_input rec[CHECK_MAX];
 static float vals[CHECK_MAX][CHECK_VALS];
 static FILE *dump;                      /* REPLAYDUMP: the race's steps and frames */
 
@@ -220,7 +220,8 @@ static int ghost_check(int max, int car, int n, uint32_t data_size, uint32_t gfx
             uint32_t now = 1 + (seed >> 16) % 4;
             for (uint32_t k = 0; k < now && (int)steps < max; k++) {
                 uint32_t keys = robot(steps);
-                car_step(car_keys(keys, keys_before));
+                struct car_input in = car_keys(keys, keys_before, 0, 0);
+                car_step(&in);
                 keys_before = keys;
                 opp_step();
                 scenery_step();
@@ -263,9 +264,9 @@ static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gf
         uint32_t now = 1 + (seed >> 16) % 4;
         for (uint32_t k = 0; k < now && (int)steps < max; k++) {
             uint32_t keys = robot(steps);
-            rec[steps] = car_keys(keys, keys_before);
+            rec[steps] = car_keys(keys, keys_before, 0, 0);
             keys_before = keys;
-            car_step(rec[steps]);
+            car_step(&rec[steps]);
             opp_step();
             scenery_step();
             check_values(vals[steps++]);
@@ -296,7 +297,7 @@ static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gf
         seed = seed * 1103515245u + 12345u;
         uint32_t now = 1 + (seed >> 16) % 4;
         for (uint32_t k = 0; k < now && at < steps; k++) {
-            car_step(rec[at]);
+            car_step(&rec[at]);
             opp_step();
             scenery_step();
             float v[CHECK_VALS];
@@ -454,7 +455,8 @@ int main(int argc, char **argv)
         if (k >= steps - abs(turn)) keys |= turn > 0 ? KEY_LEFT : KEY_RIGHT;   /* TURN=k: the last k steps
                                                                                   left, -k right */
         if (k >= steps - brake) keys = (keys & ~KEY_B) | KEY_Y;                /* BRAKE=k: braking */
-        car_step(keys);
+        struct car_input in = { (uint16_t)keys, 0x80, 0, 0 };    /* (no stick: car_keys) */
+        car_step(&in);
         opp_step();
         scenery_step();
     }
