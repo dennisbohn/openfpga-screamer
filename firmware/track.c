@@ -923,16 +923,22 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
        sorted by their high half, keeping that order (two passes of 8 bits, radix), it is in the
        order of the whole key, as any sort by it has it */
     static int32_t vis2[MAX_PIECES + MAX_OBJS];
+    static int cnt[2][256];                     /* both passes' counts in one go; the sums clear
+                                                   them (no memset: picolibc's goes byte by byte) */
+    for(int n = 0; n < nv; n++) {
+        uint32_t u = (uint32_t)vis[n] ^ 0x80000000u;
+        cnt[0][u >> 16 & 255]++;
+        cnt[1][u >> 24]++;
+    }
     for(int pass = 0; pass < 2; pass++) {
         const int sh = 16 + 8 * pass;
         const int32_t *from = pass ? vis2 : vis;
         int32_t *to = pass ? vis : vis2;
-        int at[256] = { 0 };
-        for(int n = 0; n < nv; n++) at[((uint32_t)from[n] ^ 0x80000000u) >> sh & 255]++;
+        int at[256];
         for(int d = 0, s = 0; d < 256; d++) {
-            int c = at[d];
             at[d] = s;
-            s += c;
+            s += cnt[pass][d];
+            cnt[pass][d] = 0;
         }
         for(int n = 0; n < nv; n++) to[at[((uint32_t)from[n] ^ 0x80000000u) >> sh & 255]++] = from[n];
     }
