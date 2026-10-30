@@ -176,6 +176,7 @@ static int text_line(const uint8_t *t, uint32_t n, int k, char *out, int max)
                 if(e - i >= 11 && !memcmp(t + i, "PRESS ENTER", 11)) {
                     for(const char *r = "PRESS START"; *r && m < max - 1; r++) out[m++] = *r;
                     i += 11;
+                    if(e - i >= 9 && !memcmp(t + i, " TO START", 9)) i += 9;    /* not START TO START */
                     continue;
                 }
                 out[m++] = (char)t[i++];
