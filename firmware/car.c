@@ -1146,14 +1146,27 @@ int car_mesh_blocks(const uint8_t *file, float x, float y, float z, float yaw, f
 
 static struct { float x, y, h; int on; } shadow;
 
-/* The player's shadow and puffs, their blocks made at once, all in a row (the code stays in the
-   cache). The shadow (0x15c0c): heading the car object's, the tilt kept in a crash. A puff
-   faces the screen (flag 0x8000 of its object, 0x118a4: the engine puts the camera's angles in
+/* the player's shadow block (0x15c0c), made when it is drawn (the CPU's time before the first
+   piece is the frame's; once the pieces go, the geometry unit's work is): heading the car
+   object's, the tilt kept in a crash */
+static int shadow_make(int id, const struct track_cam *cam, struct track_object *obj)
+{
+    static struct track_block shadow_block;
+    (void)id;
+    (void)cam;
+    car_flat_block(efx_shadow(), obj->x, obj->y, obj->h, pc.yaw + pc.drift, shadow_pitch, shadow_roll, &shadow_block);
+    obj->n = 1;
+    obj->b = &shadow_block;
+    return 1;
+}
+
+/* The player's shadow and puffs, the puffs' blocks made at once, all in a row (the code stays
+   in the cache). A puff faces the screen (flag 0x8000 of its object, 0x118a4: the engine puts the camera's angles in
    for its own, 0x8abc7 -> 0x4bca0): its block's axes are the camera's right, up and forward;
    the texture's frame 6 x (phase >> 2) >> 14 (0xcd906). */
 int car_effects(const struct track_cam *cam, struct track_object *objs, int max)
 {
-    static struct track_block shadow_block, puff_block[PUFFS];
+    static struct track_block puff_block[PUFFS];
     uint32_t t0 = rdcycle();
     int n = 0;
     const uint8_t *sh = efx_shadow(), *sm = efx_smoke();
@@ -1170,9 +1183,7 @@ int car_effects(const struct track_cam *cam, struct track_object *objs, int max)
             shadow.y = (float)(int32_t)((float)cy - (float)ey / d * 20.0f);
             shadow.h = (float)(ground - 2);
             shadow.on = 1;
-            car_flat_block(sh, shadow.x, shadow.y, shadow.h, pc.yaw + pc.drift, shadow_pitch, shadow_roll,
-                           &shadow_block);
-            objs[n++] = (struct track_object){ shadow.x, shadow.y, shadow.h, 900.0f, 1, &shadow_block, 0, 0,
+            objs[n++] = (struct track_object){ shadow.x, shadow.y, shadow.h, 900.0f, 0, 0, shadow_make, 0,
                                                track_class_key(sh), 0, 0 };
         }
     }
