@@ -67,10 +67,10 @@ void menu_enter(int screen, int n);
 /* One step of 1/50 s with the keys (IN_KEY) held now and on the step before. Track and car
    screen: left and right choose (a press is taken once the camera is most of the way to the
    last one; the menu's sound SND_MENU_MOVE with it, sound.h), B or START take the choice: its
-   number as menu_enter's n; Y or SELECT go back: -1 (both without a sound, as the game). The
+   number as menu_enter's n; A or SELECT go back: -1 (both without a sound, as the game). The
    pages (0x28080): up and down go from line to line (SND_MENU_LINE), left and right change an
    option, B or START too, as the game's ENTER (SND_MENU_OPTION; once the words have landed,
-   0x297d4), B or START on OPTIONS opens its page (SND_MENU_PAGE), Y or SELECT go back to the
+   0x297d4), B or START on OPTIONS opens its page (SND_MENU_PAGE), A or SELECT go back to the
    main menu (the same sound); NORMAL GAME: 1 (SND_MENU_GAME), from then on the camera pulls back
    and rolls (0x293e8) while the caller fades out at 2 a second, the keys not taken. NETWORK
    GAME shows the game's NETWORK NOT FOUND; CHAMPIONSHIP, SPECIAL MODES and VIEW RECORDS only

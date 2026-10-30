@@ -435,7 +435,7 @@ static int page_step(uint32_t press)
             page = 1;
             turning = 1;
         }
-    } else if((press & (KEY_Y | KEY_SELECT)) && page == 1) {    /* the game's ESC (0x280cb) */
+    } else if((press & (KEY_A | KEY_SELECT)) && page == 1) {    /* the game's ESC (0x280cb) */
         page = 0;
         turning = 1;
         snd_play(SND_MENU_PAGE);
@@ -466,7 +466,7 @@ int menu_step(uint32_t keys, uint32_t keys_before)
         }
     }
     if(press & (KEY_B | KEY_START)) return pick + 1;
-    return press & (KEY_Y | KEY_SELECT) ? -1 : 0;
+    return press & (KEY_A | KEY_SELECT) ? -1 : 0;
 }
 
 void menu_backdrop(struct blit_list *l)

@@ -136,14 +136,14 @@ die Modelle der Strecken- und Autowahl durch die Geometrie-Einheit, der fernste 
 
 **Tasten** (`0x28080`, `0x28ac4`): hoch/runter von Zeile zu Zeile (ohne Umlauf), links/rechts
 ändert eine Option, B oder START auch (das ENTER des Originals zählt hoch, `0x297d4`; erst wenn
-alle Buchstaben gelandet sind). B oder START auf OPTIONS öffnet die Optionen, Y oder SELECT
+alle Buchstaben gelandet sind). B oder START auf OPTIONS öffnet die Optionen, A oder SELECT
 führt dort zurück. NORMAL GAME: die Kamera fährt zurück nach z 20.000 (Faktor 1 → 0 mit 0,6/s,
 vierte Potenz) und rollt von −4π an mit π/s, die Buchstaben stehen, das Bild blendet mit 2/s
 aus (`0x293e8`), dann die Streckenwahl; das Original fragt vorher den Namen ab (Bildschirm 4,
 fehlt noch). NETWORK GAME zeigt wie das Original ohne Netzwerk `NETWORK NOT FOUND` (Zeile 55,
 Schrift 0, Farbe 2, y 190, blinkend), CHAMPIONSHIP, SPECIAL MODES und VIEW RECORDS spielen
 vorerst nur ihr Geräusch. Die Seiten blenden mit 0,6/s ein (`0x29ea0`): nach dem Start, nach
-Y oder SELECT in der Streckenwahl und nach jedem Rennen (`0x2a114` → `0x29ea0`).
+A oder SELECT in der Streckenwahl und nach jedem Rennen (`0x2a114` → `0x29ea0`).
 
 **Die Optionen wirken** (für die Sitzung; Speichern kommt mit den Rekorden): LAP NUMBER ist
 die Rundenzahl des Rennens (`car_laps` in `car.c`; das Original nimmt `0x21e0` + 1: 3, 5, 10,
@@ -184,7 +184,7 @@ Schrifthöhen tief), Getriebe (Zeile 37/38, 5 Höhen über dem Rand), `MAX SPEED
 Auto gibt es zweimal, Automatik in der ersten und Schaltung in der zweiten Lackierung, wie
 die Zeilen von `CARS.DTR`; angeboten sind alle 13 Zeilen, auch der Bullet, wie alle sechs
 Strecken (im Original erst nach Freischalten). Die Seitenansichten 16–28 aus `MENUL.SPR`
-zeichnet `0x2e08c` nicht. B oder START nimmt das Auto, Y oder SELECT führt zurück zur
+zeichnet `0x2e08c` nicht. B oder START nimmt das Auto, A oder SELECT führt zurück zur
 Streckenwahl. Die Zeile ist das Auto des Spielers (Modell, Fahrdaten, Getriebe, Armaturenbrett
 im Cockpit), die Gegner nehmen die übrigen Zeilen der Reihe nach (`0x142e8`, wie bisher).
 Danach lädt, entpackt und baut der Core die Strecke (einige Sekunden; Strecke 1 auf dem
@@ -244,7 +244,7 @@ SELECT, Zeitablauf und nach der Wiederholung. Dieses Bild dreimal abgedunkelt, d
 Zeilen 19–21 (PLAY AGAIN?, YES, NO) zentriert in den Zeilen 52, 92 und 122 (Schrift 0), die
 Frage in Farbe 2, die Antworten in 14, die gewählte blinkt nach 2. Hoch/links YES,
 runter/rechts NO, jeder Druck mit dem Klick (siehe „Menügeräusche“), B oder START nimmt die
-Antwort, Y oder SELECT ist NO (ESC im Original). YES baut das Rennen neu auf (ohne die
+Antwort, A oder SELECT ist NO (ESC im Original). YES baut das Rennen neu auf (ohne die
 Strecke neu zu bauen), NO führt ins Hauptmenü.
 
 **Überblendungen** (2026-10-30, aus der EXE): alle über die Palette, jeder Wert mal f zu

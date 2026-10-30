@@ -591,7 +591,7 @@ static void pause_race(uint32_t st, int n)
    (0x1f8cc), the music goes on; over the picture on the screen darkened three times (hud.h),
    which run_track has drawn without the race screen and the end's texts (0x219d0 draws the
    scene anew, 0x81870, and nothing over it). Up or left YES, down or right NO, each press with
-   the click (SFXSBASE.DTR's row 6, 0x21b0e, 0x21b47), B or START take the answer, Y or SELECT
+   the click (SFXSBASE.DTR's row 6, 0x21b0e, 0x21b47), B or START take the answer, A or SELECT
    are NO (the game's ESC). 1 for YES. */
 static int play_again(uint32_t st)
 {
@@ -607,7 +607,7 @@ static int play_again(uint32_t st)
         if (press & (KEY_UP | KEY_LEFT)) no = 0;
         if (press & (KEY_DOWN | KEY_RIGHT)) no = 1;
         if (press & (KEY_B | KEY_START)) return !no;
-        if (press & (KEY_Y | KEY_SELECT)) return 0;
+        if (press & (KEY_A | KEY_SELECT)) return 0;
         keys_before = keys;
         still_steps(st, &last_frame, &ticks);
         draw_buf = !(st & VID_FRONT);
@@ -1424,8 +1424,8 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     dlog_str("program.bin: running in the SDRAM\n");
 
     /* the game's files that stay (data slots 4, 6, 7, deferload) and the menu's; then the main
-       menu, from NORMAL GAME on the track screen (Y or SELECT there: the main menu again), the
-       car screen (Y or SELECT: the track screen again) and the race on the track chosen with the
+       menu, from NORMAL GAME on the track screen (A or SELECT there: the main menu again), the
+       car screen (A or SELECT: the track screen again) and the race on the track chosen with the
        car chosen and the options page's laps, difficulty and speech, then the main menu again
        (0x2a114 -> 0x29ea0), for ever. The simulation races the testbench's track with the first
        car at once, or shows the screen MENU_CHECK_SLOT names. */
