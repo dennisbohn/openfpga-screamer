@@ -239,5 +239,5 @@
   <!-- notes -->
   <text x="40" y="798" class="l">Pro Bild: Die CPU wählt die Bauteile in Reichweite, sortiert sie von hinten nach vorn (Maler-Algorithmus) und schreibt sie in den Puffer der Geometrie-Einheit (107 Bauteile); dahinter arbeiten Geometrie, Setup und Rasterizer gleichzeitig.</text>
   <text x="40" y="816" class="l">Gezeigt wird nur ein fertiges Bild (Doppelpufferung, Tausch in der Austastlücke, höchstens 50 Bilder pro Sekunde). Geplant: Bild N+1 und N überlappen.</text>
-  <text x="40" y="834" class="l">Start mit allen zehn Autos: 50 fps (Startbild 1,34 Mio. Takte, 90 % eines Bildes). Belegung: 11.046 von 18.480 ALMs (60 %), 282 von 308 M10K (92 %), 31 von 66 DSP (47 %); Timing hält bei 74,25 MHz.</text>
+  <text x="40" y="834" class="l">Start mit allen zehn Autos: 50 fps (Startbild 1,34 Mio. Takte, 90 % eines Bildes). Belegung: 10.902 von 18.480 ALMs (59 %), 282 von 308 M10K (92 %), 31 von 66 DSP (47 %); Timing hält bei 74,25 MHz.</text>
 </svg>

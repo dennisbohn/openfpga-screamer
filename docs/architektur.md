@@ -149,7 +149,7 @@ Schrift 0, Farbe 2, y 190, blinkend), SPECIAL MODES siehe „Spezialmodi“, CHA
 ein (`0x29ea0`): nach dem Start, nach A oder SELECT in der Streckenwahl und nach jedem Rennen
 (`0x2a114` → `0x29ea0`).
 
-**Die Optionen wirken** (für die Sitzung; Speichern kommt mit den Rekorden): LAP NUMBER ist
+**Die Optionen wirken** (gespeichert in `CHOICE.DAT`, siehe „Meisterschaft“): LAP NUMBER ist
 die Rundenzahl des Rennens (`car_laps` in `car.c`; das Original nimmt `0x21e0` + 1: 3, 5, 10,
 25), Ende des Rennens und „1/3“ der Anzeige folgen ihr. Die Schwierigkeit wählt die Datei
 `MAPnA.DTR`, `MAPnB.DTR` oder `MAPnC.DTR` (`0x13251`; `track_build_difficulty`), aus der der
@@ -208,8 +208,8 @@ schnell `TRY AGAIN` (`GAME.TXT` 13) und „lose“, sonst (oder ohne Geist) `YOU
 `REPLAYS\MAPn.ATK`) und PLAY AGAIN fährt gegen ihn. Bei uns: eine Stellung je 4 Schritte
 (12,5/s) ab dem Aufbau, abgespielt im selben Schritt, der Ort über die Kubik des Originals
 durch vier Stellungen (`0x22724`), die Winkel zwischen zwei Stellungen gedreht; ohne Schatten
-und Motor. Je Strecke der beste Geist für die Sitzung (`ghost_track()`, im Format der
-Speicherdatei: 16 Byte Kopf „ATK1“, Strecke, Auto, Anzahl, Runde in 1/50 s, Startplatz; dann je
+und Motor. Je Strecke der beste Geist, gespeichert in `ATTACK.DAT` (`ghost_track()` liegt
+im Speicher dieses Slots, siehe „Meisterschaft“), im Format der Speicherdatei: 16 Byte Kopf „ATK1“, Strecke, Auto, Anzahl, Runde in 1/50 s, Startplatz; dann je
 Stellung 20 Byte: x, y, Höhe als int32, Richtung, Neigung, Rollen als int16 mit 65536 = 2π, Stand
 im Rennen × 64 und die Bremslicht-Bits; höchstens 3000 Stellungen, 60.016 Byte). `MODE=4
 GHOST=1 REPLAYCHECK=9000 tools/render.sh` fährt zwei Roboterrennen, das zweite gegen den Geist
@@ -276,7 +276,9 @@ nachgelesen): Regeln in `firmware/champ.c`, der Bildschirm 5 in `menu.c`, der Ab
   DOS-Spiel geht auch. Die Rekorde stehen schon darin, für VIEW RECORDS später. Für das
   Zeitfahren (`REPLAYS\MAPn.ATK` des Originals: 36 Byte Kopf mit der Bestzeit bei +0x1c,
   dann je gezeichnetem Bild ein Satz von 40 Byte mit Ort, Lage und Uhr, `0x1b964`,
-  `0x1ba3c`, `0x231d0`) gibt es den Slot `ATTACK.DAT` (id 24), je Strecke 60 KB.
+  `0x1ba3c`, `0x231d0`) hält der Slot `ATTACK.DAT` (id 24) je Strecke den behaltenen Lauf
+  (`struct ghost_file`, 60.016 Byte, zusammen 360.096): `ghost_track(n)` zeigt direkt in
+  seinen Speicher, so überlebt der Geist das Ausschalten wie `CHOICE.DAT`.
 
 ## Strecken- und Autowahl
 
@@ -433,10 +435,13 @@ Fahrbahn (offen, am Original zu prüfen).
 
 ## Belegung
 
-Gemessen am 2026-10-30 (Quartus-Build mit den Spiegelungen der Routine 160, Timing hält bei
-74,25 MHz: Setup +0,85 ns, Hold +0,01 ns; Bauzeit 6 min): 11.046 von 18.480 ALMs (60 %), 282
-von 308 M10K (92 %, davon 16 die Tabelle der Routine 224), 31 von 66 DSP (47 %). Die
-Spiegelungen kosten 727 ALMs und 1 M10K in der Geometrie-Einheit (678 → 1.405 ALMs: die
+Gemessen am 2026-10-30 (Quartus-Build mit dem Lesen über die Bridge aus dem SDRAM für die
+Spielstände, Timing hält bei 74,25 MHz: Setup +0,78 ns, Hold +0,08 ns; Bauzeit 5,5 min): 10.902
+von 18.480 ALMs (59 %), 282 von 308 M10K (92 %, davon 16 die Tabelle der Routine 224), 31 von
+66 DSP (47 %). Das Lesen kostet rund 46 ALMs (`sdram_port` 102 → 118, die eigene Logik von
+`soc` 554 → 585: Leseregister, Antwort, Größe in die Slot-Tabelle) und kein M10K; dass die
+Summe sank, ist die Platzierung. Davor (mit den Spiegelungen der Routine 160): 11.046 ALMs,
+Setup +0,85 ns, Hold +0,01 ns. Die Spiegelungen kosten 727 ALMs und 1 M10K in der Geometrie-Einheit (678 → 1.405 ALMs: die
 Auswahl vor ihren drei Multiplizierern, jetzt 18 Bit breit, der Normierer des Eckpunkts, die
 Umrechnung der Normale, Summen und Register der Rechnung, die Tabelle), keinen DSP. Davor
 (mit der CD-Musik): 10.278 ALMs, 281 M10K, Setup +0,94 ns, Hold +0,06 ns. Der Mischer mit der Musik:
@@ -470,7 +475,7 @@ Block-RAM spart er 190 ALMs, kostet aber 19 M10K, die knappere Ressource). Setup
 3.041 → 1.512, Geometrie-Einheit 2.288 → 648, Rasterizer mit Texturen 2.539 → 1.895 ALMs; dafür
 11 M10K mehr und 5 DSP weniger. Geschätzt ist nur, was noch fehlt.
 
-![Platzbudget im FPGA: Logik 60 %, Block-RAM 92 %, DSP 47 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik 59 %, Block-RAM 92 %, DSP 47 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py`: die gemessenen Zeilen aus dem Fitter-Report
 (`core/src/fpga/output_files/ap_core.fit.rpt`, Tabelle „Resource Utilization by Entity“), die
@@ -479,22 +484,22 @@ diese Tabelle.
 
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
-| Analogue-Rahmen (Bridge, PLLs) | 417 | 2 | – |
-| Framebuffer ×2 + Video | 120 | 130 | – |
-| VexRiscv + 2× 8 KB Cache | 1.258 | 19 | 4 |
-| FPU (RV32F) | 1.458 | 5 | 4 |
-| CFU (16.16-Multiplikation) | 9 | – | 3 |
+| Analogue-Rahmen (Bridge, PLLs) | 468 | 2 | – |
+| Framebuffer ×2 + Video | 124 | 130 | – |
+| VexRiscv + 2× 8 KB Cache | 1.254 | 19 | 4 |
+| FPU (RV32F) | 1.443 | 5 | 4 |
+| CFU (16.16-Multiplikation) | 8 | – | 3 |
 | Boot-RAM 32 KB + Protokoll | – | 36 | – |
-| Geometrie-Einheit | 1.405 | 23 | 4 |
+| Geometrie-Einheit | 1.254 | 23 | 4 |
 | Clipper | 956 | 6 | 2 |
-| Setup-Einheit | 1.521 | 7 | 4 |
-| Rasterizer | 1.301 | 2 | 5 |
-| Texturen: Pipeline + Cache | 683 | 47 | 4 |
-| Blitter (Hintergrund, HUD) | 492 | 2 | – |
-| SDRAM-Controller + Ports | 304 | 2 | – |
-| Audio: Mischer 32 Stimmen + Musik, I²S | 568 | 1 | 1 |
-| Bus, Register, Arbiter | 555 | – | – |
-| **gebaut** | **11.047 (60 %)** | **282 (92 %)** | **31 (47 %)** |
+| Setup-Einheit | 1.513 | 7 | 4 |
+| Rasterizer | 1.235 | 2 | 5 |
+| Texturen: Pipeline + Cache | 694 | 47 | 4 |
+| Blitter (Hintergrund, HUD) | 481 | 2 | – |
+| SDRAM-Controller + Ports | 316 | 2 | – |
+| Audio: Mischer 32 Stimmen + Musik, I²S | 571 | 1 | 1 |
+| Bus, Register, Arbiter | 584 | – | – |
+| **gebaut** | **10.901 (59 %)** | **282 (92 %)** | **31 (47 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es

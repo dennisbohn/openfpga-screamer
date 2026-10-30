@@ -229,7 +229,8 @@ die neue Firmware den Bereich löscht, steht dort noch das Protokoll des vorigen
 **Spielstände** gehen denselben Weg, liegen aber im SDRAM: die nichtflüchtigen Data-Slots
 `CHOICE.DAT` (id 23, `0x13F0_0000`, 1120 Byte: die Einstellungsdatei des Originals mit
 Optionen, Meisterschaft, Rekorden und Freischaltungen) und `ATTACK.DAT` (id 24, `0x13F1_0000`,
-6 × 60 KB für die Bestzeiten und Geister des Zeitfahrens). Beide sind `deferload`: Die
+6 × 60.016 Byte: je Strecke der behaltene Lauf des Zeitfahrens, `struct ghost_file` in
+`ghost.h`, den `ghost.c` direkt dort liest und schreibt). Beide sind `deferload`: Die
 Firmware liest sie gleich nach dem Start (`save_load` in `save.c`), ohne Datei oder bei einem
 `CHOICE.DAT`, das nicht wie das des Originals aussieht, nimmt sie die Vorgaben des Originals
 (`0x1bbb8`), und trägt dann mit `DS_SIZE` die volle Größe in die Slot-Tabelle ein, damit der
