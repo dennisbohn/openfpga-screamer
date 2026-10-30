@@ -10,11 +10,11 @@
  * 0x1bc2f), so that the player's engine and the three opponents' at full volume stay under the
  * 16 bits even with every sample at its peak (at most 32 000); a full sample at full volume
  * moves the output by 128 per 8-bit step. The commentary (speech.h) comes after the effects,
- * the rows of SPFXBASE.DTR and SPFXFULL.DTR, at the same master volume: the game starts the
- * speech's at 0x6000 as well (0x1bc2f), so the voice keeps its loudness beside the effects. A
- * recording peaks at full scale (+-16 300 here). Like a crash or the wall, the voice on top of
- * the engines at their peaks could pass the 16 bits; in the simulation the loudest moment, "go"
- * over the revving grid, peaked at 31 157.
+ * the rows of SPFXBASE.DTR and SPFXFULL.DTR, at a master volume of its own, 0x3000: the game
+ * starts the speech's at 0x6000 like the others (0x1bc2f), but a recording peaks at full scale,
+ * and at 0x4000 (+-16 300) the countdown over the revving grid and the music clipped in the
+ * simulation; at 0x3000 (+-12 200, the voice 2.5 dB under the game's balance) it peaks at
+ * 28 631.
  *
  * Sounds with a place (the opponents' engines, the moving scenery; NOTES.md sections 15 and 17)
  * are heard from the camera, by the 2D distance, and only they are panned: the line to the

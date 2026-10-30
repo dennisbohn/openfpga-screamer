@@ -447,7 +447,8 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   vierte Spalte von `ANIMATIONS`), mit Doppler und als einzige im Stereobild. Seit 2026-10-30
   der Sprecher, nur Firmware (`speech.c`, `docs/soc.md`, „Ton“): 58 Aufnahmen aus
   `SPFXBASE/SPFXFULL.DTR`, 27 Ereignisse mit den Auslösern, Zeiten und der Warteschlange des
-  Spiels, eine Stimme in der Mitte mit dem Hauptregler der Effekte. Offen: ein Tiefpass wie der
+  Spiels, eine Stimme in der Mitte, Hauptregler `0x3000` (mit `0x4000` übersteuerte der Countdown
+  über Motoren und Musik). Offen: ein Tiefpass wie der
   Ausgangsfilter der Soundkarten
   (OpenScreamer nimmt 3,2 kHz wie die Sound Blaster Pro); ob er fehlt, entscheidet das Hören
   auf dem Pocket.

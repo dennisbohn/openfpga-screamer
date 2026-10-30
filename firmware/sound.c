@@ -5,13 +5,15 @@
 #include "track.h"
 
 #define SND_MAX     72                  /* the 12 effects, the 58 recordings, a track's 2 */
-#define MASTER      0x4000              /* the effects' and the speech's master volume (sound.h) */
+#define MASTER      0x4000              /* the effects' master volume (sound.h) */
+#define SPEECH_MASTER 0x3000            /* the commentary's (sound.h) */
 
 /* a row: SDRAM byte address and length, where it ends or loops (from the start), back by how
    much and how often (AU_LOOP), its volume */
 static struct snd { uint32_t addr, len, end, back, times, vol; } fx[SND_MAX];
 static int nfx;
-static const uint8_t *dat;              /* SOUND.DAT */
+static int speech_end;                  /* the rows from SND_SPEECH up to here are the commentary */
+static const uint8_t *dat;             /* SOUND.DAT */
 static uint32_t dat_size;
 
 /* per voice: which start of it a handle names, its effect, loudness and pan */
@@ -135,6 +137,7 @@ int snd_init(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint
         n += gen_list(gen, gen_size, "SPFXBASE.DTR");
         n += gen_list(gen, gen_size, "SPFXFULL.DTR");
     }
+    speech_end = nfx;
     return n;
 }
 
@@ -153,11 +156,13 @@ static int voice_of(int h)
     return serial[v] == (uint32_t)h >> 5 && (AU_PLAY & 1u << v) ? v : -1;
 }
 
-/* AU_VOL from the row's volume, the voice's own and its pan, times the master volume: a
-   centred byte times up to 127 */
+/* AU_VOL from the row's volume, the voice's own and its pan, times the master volume (the
+   effects' or the commentary's): a centred byte times up to 127 */
 static uint32_t vol_reg(const struct snd *s, int32_t vol, int32_t pan)
 {
-    uint32_t t = ((s->vol * (uint32_t)vol) >> 15) * MASTER >> 15;
+    int id = (int)(s - fx);
+    uint32_t master = id >= SND_SPEECH && id < speech_end ? SPEECH_MASTER : MASTER;
+    uint32_t t = ((s->vol * (uint32_t)vol) >> 15) * master >> 15;
     uint32_t fl = pan <= 0x8000 ? 0x7FFF : (uint32_t)(0xFFFF - pan), fr = pan >= 0x8000 ? 0x7FFF : (uint32_t)pan;
     return (t * fl >> 22) | (t * fr >> 22) << 8;
 }
