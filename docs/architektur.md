@@ -90,7 +90,11 @@ Strecke 1, geladen erst, wenn die Strecke gewählt ist) und für Strecken- und A
 das Inhaltsverzeichnis und die Einträge, die er braucht, jeden an seiner Stelle wie in der
 Datei (`load_parts` in `main.c`): 2,4 MB statt 5,9 MB, bei den gemessenen 1,3 MB/s des
 Pocket rund 1,8 statt viereinhalb Sekunden beim Start (davon 1,4 MB `MENU.MLB`, ganz, weil
-die Texturen der Autos über die ganze Datei verteilt liegen; ohne Autowahl waren es 0,7 MB). `GAME.DAT`, `GEN.DAT`, `LOCAL.DAT` und `SOUND.DAT` lädt er einmal.
+die Texturen der Autos über die ganze Datei verteilt liegen; ohne Autowahl waren es 0,7 MB;
+seit 2026-10-30 dazu die sechs Ladebilder `LOADnL.PCX`, 0,28 MB, rund 0,2 s). `GAME.DAT`,
+`GEN.DAT`, `LOCAL.DAT` und `SOUND.DAT` lädt er einmal, `SOUND.DAT` (1,9 MB, 1,3 s) während
+die erste Strecke gebaut wird: die Firmware stößt das Lesen nur an (`sound_start` in
+`main.c`), der Pocket schreibt die Datei in den SDRAM, während die CPU baut.
 Dazu seit 2026-10-30 GOGs Abbild der CD oben im Spielordner: `SCREAM.DAT` (Slot 21, das
 Cue-Sheet) und `SCREAM.gog` (Slot 22, 383 MB); daraus liest der Core nur die Musik, 32 KB auf
 einmal, während er zeichnet (siehe „Die CD-Musik“).
@@ -134,7 +138,13 @@ zeichnet `0x2e08c` nicht. B oder START nimmt das Auto, Y oder SELECT führt zur�
 Streckenwahl. Die Zeile ist das Auto des Spielers (Modell, Fahrdaten, Getriebe, Armaturenbrett
 im Cockpit), die Gegner nehmen die übrigen Zeilen der Reihe nach (`0x142e8`, wie bisher).
 Danach lädt, entpackt und baut der Core die Strecke (einige Sekunden; Strecke 1 auf dem
-Pocket: 1,2 s Laden, 3,2 s Bauen; das letzte Bild bleibt so lange stehen).
+Pocket: 1 s Laden, 3,2 s Bauen, 0,6 s Effekte, Kulisse und Armaturenbrett). So lange steht,
+wie im Original (`0x2a264`, vor jedem Rennen außer nach PLAY AGAIN), das Ladebild:
+`LOADnL.PCX` aus `GRAF.DAT` mit eigener Palette, darüber `LOADING` (`MENU.TXT` Zeile 47)
+zentriert in Zeile 0x50, Schrift 3, Farbe 0 (`0x2e598`), ohne Überblendung, bis zum ersten
+Bild des Rennens (`menu_loading` in `menu.c`, `loading` in `main.c`; `MENU=3` für
+`tools/render.sh`). Die Musik des Menüs hört auf, wenn es erscheint: Die CPU baut die Strecke
+am Stück und liest dabei aus den Data-Slots, den Ring der Musik füllt in der Zeit niemand.
 
 **Pause:** START im Rennen, solange es läuft. Das Original hat dafür den CD-Spieler (P,
 `0x211d0` → `0x21328`): das letzte Bild zweimal abgedunkelt (`0x25cc8`, dieselbe Tabelle wie
@@ -186,7 +196,10 @@ Bildschirmen, Menügeräusche, die gespiegelten Strecken, „NEW TRACK AVAILABLE
 als Datei (`REPLAYS\TEMP.RPL`). Die Simulation fährt gleich die Strecke aus `SIM_TRACK` (Slot 28) mit dem
 ersten Auto; mit `SIM_MENU=1` (Slot 27) zeigt sie stattdessen den Streckenbildschirm, mit
 `SIM_MENU=2` den Autobildschirm, und prüft das dritte Bild gegen die C-Modelle (2026-10-30:
-beide 0 Pixel Unterschied; der Autobildschirm braucht 0,22 M Takte, 3 ms je Bild).
+beide 0 Pixel Unterschied; der Autobildschirm braucht 0,22 M Takte, 3 ms je Bild). Den
+Abgleich des Rennbildes mit den C-Modellen (`track_check`) macht nur die Simulation: Auf dem
+Pocket zeichnete die CPU das Bild dafür eine Sekunde lang nach und hielt das Rennen gleich nach
+„three“ an; dort steht jetzt `track check: simulation only` im Protokoll.
 `TRACK=n`, `CAR=r` und `MENU=1` oder `2` für `tools/render.sh` zeichnen Start mit Auto r,
 Strecken- oder Autobildschirm auf dem PC, `PAUSE=1` oder `2` Pause oder Frage über dem Start.
 
