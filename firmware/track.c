@@ -181,11 +181,13 @@ static const uint8_t *block_of(int k, const uint8_t **obj)
 }
 
 /* the cell of v along an axis of a grid: never smaller for a larger v, so a face's box from lo
-   to hi reaches into the cells cell(lo) .. cell(hi), and a point between lies in one of those */
+   to hi reaches into the cells cell(lo) .. cell(hi), and a point between lies in one of those.
+   (v - v0) * s stays well inside an int: the boxes are whole numbers at least 1 apart, s at
+   most CGRID / 1, and track_under asks only for places nearer than 4,000,000 */
 static inline int cgrid_cell(float v, float v0, float s)
 {
-    float f = (v - v0) * s;
-    return f >= (float)(CGRID - 1) ? CGRID - 1 : f > 0.0f ? (int)f : 0;
+    int i = (int)((v - v0) * s);
+    return i < 0 ? 0 : i > CGRID - 1 ? CGRID - 1 : i;
 }
 
 /* the cells a face reaches into: all for one without a box */
@@ -579,14 +581,17 @@ void track_start(float *x, float *y, float *yaw)
 static inline int under_face(const struct cface *q, const struct gpiece *gp, float lx, float lz, float c, float s,
                              float *h, int *grass)
 {
-    if(q->boxed && (lx < q->x0 || lx > q->x1 || lz < q->z0 || lz > q->z1)) return 0;
+    /* (the comparisons with | and the counts without branches: the FPU answers them side by
+       side, where each branch would wait for one) */
+    if(q->boxed && ((lx < q->x0) | (lx > q->x1) | (lz < q->z0) | (lz > q->z1))) return 0;
     int nc = q->nc, pos = 0, neg = 0;
     if(!nc) return 0;
     for(int j = 0; j < nc; j++) {
         int b = j + 1 < nc ? j + 1 : 0;
         float ax = q->x[j], az = q->z[j];
         float cr = (q->x[b] - ax) * (lz - az) - (q->z[b] - az) * (lx - ax);
-        if(cr > 0.0f) pos++; else if(cr < 0.0f) neg++;
+        pos += cr > 0.0f;
+        neg += cr < 0.0f;
     }
     if(pos && neg) return 0;
     if(grass) *grass = cobj_grass[gp->obj];
@@ -604,6 +609,7 @@ int track_under(float x, float y, float *h, int *grass)
 {
     static const int8_t cell[9][2] = { {0,0}, {1,0}, {-1,0}, {0,1}, {0,-1}, {1,1}, {-1,-1}, {1,-1}, {-1,1} };
     int cx = ((int)x + 0x100000) >> 13, cy = ((int)y + 0x100000) >> 13;
+    int near = (fabsf(x) < 4.0e6f) & (fabsf(y) < 4.0e6f);  /* (else, or not a number: all faces) */
     for(int ci = 0; ci < 9; ci++) {
         int kx = cx + cell[ci][0], ky = cy + cell[ci][1];
         if(kx < 0 || kx > 255 || ky < 0 || ky > 255) continue;
@@ -619,7 +625,7 @@ int track_under(float x, float y, float *h, int *grass)
             const struct cface *f0 = &cfaces[cobj_first[gp->obj]], *fe = f0 + cobj_count[gp->obj];
             const struct cgrid *g = &cgrid[gp->obj];
             for(int tries = 0; tries < 3; tries++, lx += 10.0f, lz += 10.0f)
-                if(g->at[0] >= 0 && lx == lx && lz == lz) {    /* (not a number: all faces) */
+                if(g->at[0] >= 0 && near) {
                     int k = cgrid_cell(lz, g->z0, g->sz) * CGRID + cgrid_cell(lx, g->x0, g->sx);
                     for(const uint16_t *li = clist + g->at[k], *le = clist + g->at[k + 1]; li < le; li++)
                         if(under_face(f0 + *li, gp, lx, lz, c, s, h, grass)) return 1;
