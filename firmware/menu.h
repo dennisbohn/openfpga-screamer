@@ -17,7 +17,12 @@
  * colour each, the cars' textured); the rest is the blitter's. Then, while the race is set up,
  * the loading screen (0x2a264): LOADnL.PCX of GRAF.DAT with LOADING (MENU.TXT) over it. The
  * championship's screen 5 (0x2ce58, champ.h): its stage's CHAMPnL.PCX with the stage's lines of
- * CHAMP.TXT (LOCAL.DAT) or the standings over it.
+ * CHAMP.TXT (LOCAL.DAT) or the standings over it. VIEW RECORDS (the options' last line) opens the
+ * page of the six tracks (the game's page 6), each a track's screen 6 (0x2d348): its LOADnL.PCX
+ * darkened, the five best totals and laps of CHOICE.DAT (champ.h) over it. ENTER YOUR NAME
+ * (screen 4, before every game, 0x2c320): the 26 letters' cubes in a ring, dropping in, the
+ * camera walking round outside to the alphabet's letter, MENU2L.PCX behind them, the title and
+ * the name over them (0x2e4f8).
  */
 #pragma once
 #include <stdint.h>
@@ -31,11 +36,15 @@
 #define MENU_PAGE_SCREEN    0
 #define MENU_CAR_SCREEN     2
 #define MENU_TRACK_SCREEN   3
+#define MENU_NAME_SCREEN    4       /* ENTER YOUR NAME, before every game (0x2c320, 0x2e4f8) */
 #define MENU_CHAMP_SCREEN   5       /* the championship's stage (champ.h) */
+#define MENU_RECORDS_SCREEN 6       /* VIEW RECORDS: a track's (0x2c844, 0x2d348) */
 
 /* what the pages' NEW and RESUME of CHAMPIONSHIP return (the game's items 26 and 27 + 1) */
 #define MENU_CHAMP_NEW      27
 #define MENU_CHAMP_RESUME   28
+/* and a track's line on VIEW RECORDS' page: this + the track (1 .. MENU_TRACKS) */
+#define MENU_RECORDS        40
 
 /* The options page's choices (the game's page 1, kept in CHOICE.DAT): DETAIL 0 LOW .. 2 HI
    (shown only: the core always draws the H set whole), the difficulty 0 ROOKIE, 1 NORMAL, 2 PRO
@@ -74,8 +83,10 @@ const uint8_t *menu_mlb(void);
 
 /* Onto screen MENU_TRACK_SCREEN or MENU_CAR_SCREEN with choice n chosen (the track 1 ..
    MENU_TRACKS, the car's row + 1), the camera at it; onto MENU_PAGE_SCREEN at page n - 1 (1
-   the main menu, 2 the options), its words flying in (0x29ea0), each page's line kept; onto
-   MENU_CHAMP_SCREEN with the championship's stage now (0x2c698, n not used) */
+   the main menu, 2 the options, 7 VIEW RECORDS' tracks; 0 the page shown last), its words flying
+   in (0x29ea0), each page's line kept; onto MENU_CHAMP_SCREEN with the championship's stage now
+   (0x2c698, n not used); onto MENU_RECORDS_SCREEN with track n's records; onto MENU_NAME_SCREEN
+   (n not used) */
 void menu_enter(int screen, int n);
 
 /* One step of 1/50 s with the keys (IN_KEY) held now and on the step before. Track and car
@@ -90,8 +101,13 @@ void menu_enter(int screen, int n);
    the championship's NEW MENU_CHAMP_NEW and RESUME MENU_CHAMP_RESUME (SND_MENU_GAME, menu_mode()
    the game's mode), from then on the camera pulls back and rolls (0x293e8) while the caller fades
    out at 2 a second, the keys not taken. NETWORK GAME shows the game's NETWORK NOT FOUND; VIEW
-   RECORDS only sounds, for now. The championship's screen: B or START, or 10 s without a key (0x2d301), as ENTER: 1; A
-   or SELECT on a race's text screen as ESC (0x2829d): -1 (both silent). 0 while none is taken. */
+   RECORDS opens the page of the six tracks (SND_MENU_PAGE; A or SELECT there back to the
+   options), a track there leaves as a game does: MENU_RECORDS + the track. The championship's
+   screen: B or START, or 10 s without a key (0x2d301), as ENTER: 1; A or SELECT on a race's text
+   screen as ESC (0x2829d): -1 (both silent). A track's records: up and down choose a total
+   (SND_MENU_RECORD), A or SELECT: -1. The name: up and down the letter being set
+   (SND_MENU_LETTER), left and right turn the alphabet and set the letter (CHOICE.DAT's name), B
+   or START: 1, A or SELECT: -1. 0 while none is taken. */
 int menu_step(uint32_t keys, uint32_t keys_before);
 
 /* The frame in the order it is drawn: the picture (for the blitter), the projection and the

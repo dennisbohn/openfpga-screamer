@@ -41,6 +41,13 @@ struct choice_dat {
 /* The settings as the game has them without the file (0x1bbb8) */
 void choice_defaults(void);
 
+/* A finished race of the normal game or the championship into track n's records (0x2e5e4, as
+   0x2a1a8, 0x1febf before PLAY AGAIN and 0x28f42 call it; never for a race out of time or left,
+   flags 0x1020): its best lap always (flag 1), its total only in a race of three laps (0x1d2ac
+   == 2; flag 0, as the game leaves it without a saved replay, and the game mode), each ahead of
+   the first time it is not slower than, under the name choice.name */
+void choice_record(int n, float lap, float total, int three_laps, int mode);
+
 /* The stages' kinds (+0x00) */
 enum { CHAMP_TEXT, CHAMP_LEAGUE_WON, CHAMP_END, CHAMP_STANDINGS };
 

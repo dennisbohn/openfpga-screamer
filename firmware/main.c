@@ -1324,7 +1324,8 @@ static int menu_screen(int screen, int n)
             ;
         if (drawn % 250 == 2) {
             dlog_str(screen == MENU_CAR_SCREEN ? "car screen" : screen == MENU_TRACK_SCREEN ? "track screen" :
-                     screen == MENU_CHAMP_SCREEN ? "championship" : "pages");
+                     screen == MENU_CHAMP_SCREEN ? "championship" : screen == MENU_RECORDS_SCREEN ? "records" :
+                     screen == MENU_NAME_SCREEN ? "name" : "pages");
             dlog_str(" frame ");
             dlog_dec((int32_t)drawn);
             dlog_str(": ");
@@ -1367,6 +1368,9 @@ static const uint32_t *loading(int n)
    testbench's) and used only once all its blocks are as written, the effects and scenery, then
    the race with the car of CARS.DTR row car until it is left, again while PLAY AGAIN? is
    answered YES (without the loading screen, as the game); 0 if the track could not be set up.
+   A finished race of the normal game or the championship goes into the track's records
+   (choice_record, as 0x2a1a8 and 0x1febf call 0x2e5e4 after each race), its lap to beat from them
+   (0x2a264), PLAY AGAIN's from the race before (0x20eb8).
    Once all is set up the loading screen fades out, the picture alone (0x128dc(1): 0x21d8c(0));
    a race left, or to be set up again, fades out with its sound (0x21d8c(1): 0x1feed, 0x128dc(0)). */
 static int race(int n, int car)
@@ -1375,6 +1379,7 @@ static int race(int n, int car)
     music_stop();                               /* before the loads: none of its reads running; the
                                                    menu's song ends as the loading screen goes up */
     const uint32_t *shown = loading(n);
+    car_lap_to_beat = choice.lap[(n - 1) % MENU_TRACKS].time[0];
     if (track_loaded != n) {
         track_loaded = 0;
         if (!load_containers(n, TRACK_FILES)) return 0;
@@ -1415,6 +1420,12 @@ static int race(int n, int car)
         shown = 0;
         music_play(n);
         int end = run_track(n, car, replay);
+        if (!replay) {
+            const struct car_race *r = car_race();
+            car_lap_to_beat = car_lap_record();
+            if (r->finished && (car_mode == CAR_NORMAL || car_mode == CAR_CHAMP))
+                choice_record(n, r->best, r->total, car_laps == 3, car_mode);
+        }
         ghost_end();                            /* time attack: a run that counted is kept (0x1fd64) */
         fade_out(track_palette(), 1);
         AU_STOP = 0xFFFFFFFFu;                  /* the race's sounds end with it, its song too: */
@@ -1477,11 +1488,14 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     menu_options_load();
 
     /* the game's files that stay (data slots 4, 6, 7, deferload) and the menu's; then the main
-       menu, from NORMAL GAME on the track screen (A or SELECT there: the main menu again), the
-       car screen (A or SELECT: the track screen again) and the race on the track chosen with the
-       car chosen and the options page's laps, difficulty and speech, then the main menu again
-       (0x2a114 -> 0x29ea0), for ever. The simulation races the testbench's track with the first
-       car at once, or shows the screen MENU_CHECK_SLOT names. */
+       menu, from a game's line on ENTER YOUR NAME (A or SELECT there: the page again; 0x293e8(4)),
+       then the track screen (A or SELECT there: the name again, 0x281c2), the car screen (A or
+       SELECT: the track screen again) and the race on the track chosen with the car chosen and
+       the options page's laps, difficulty and speech, then the main menu again (0x2a114 ->
+       0x29ea0), for ever; the championship after the name (champ.h). A track of VIEW RECORDS'
+       page shows its records, A or SELECT there goes back to the page (0x28a7c). The simulation
+       races the testbench's track with the first car at once, or shows the screen
+       MENU_CHECK_SLOT names. */
     if (load_containers(0, FIXED_FILES)) {
         music_init(game.gen, game.gen_size);
         if (!hud_cd_init(game.game, game.game_size, CD_MEM, CD_SIZE, (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH))
@@ -1491,25 +1505,48 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         int n = sim && slot_size(TRACK_SLOT) ? (int)slot_size(TRACK_SLOT) : choice.track % MENU_TRACKS + 1;
         int car = choice.car;                   /* the last track and car, as CHOICE.DAT keeps them */
         if (screen) menu_sounds();
-        for (int pages = !check;;) {
+        enum { AT_PAGES, AT_NAME, AT_TRACKS, AT_CARS };     /* the screen to go on with */
+        const int first = !check ? AT_PAGES : check == 2 ? AT_CARS : AT_TRACKS;
+        for (int at = first, page = 1, g = 0;;) {
             if (screen) {
-                int g = pages ? menu_screen(MENU_PAGE_SCREEN, 1) : 0;
-                if (g == MENU_CHAMP_NEW || g == MENU_CHAMP_RESUME) {
-                    championship(g == MENU_CHAMP_RESUME, &car);
-                    continue;
+                if (at == AT_PAGES) {
+                    g = menu_screen(MENU_PAGE_SCREEN, page);
+                    page = 0;                   /* back to it: the page as it was */
+                    if (g > MENU_RECORDS) {
+                        menu_screen(MENU_RECORDS_SCREEN, g - MENU_RECORDS);
+                        continue;
+                    }
+                    at = AT_NAME;
                 }
-                pages = !check;
-                if (check != 2) {
+                if (at == AT_NAME) {
+                    if (menu_screen(MENU_NAME_SCREEN, 0) < 0) {
+                        at = AT_PAGES;
+                        continue;
+                    }
+                    if (g == MENU_CHAMP_NEW || g == MENU_CHAMP_RESUME) {
+                        championship(g == MENU_CHAMP_RESUME, &car);
+                        at = AT_PAGES;
+                        page = 1;
+                        continue;
+                    }
+                    at = AT_TRACKS;
+                }
+                if (at == AT_TRACKS) {
                     int t = menu_screen(MENU_TRACK_SCREEN, n);
-                    if (t < 0) continue;
+                    if (t < 0) {
+                        at = first == AT_PAGES ? AT_NAME : first;
+                        continue;
+                    }
                     n = t;
                     choice.track = n - 1;
                 }
                 int c = menu_screen(MENU_CAR_SCREEN, car + 1);
                 if (c < 0) {
-                    pages = 0;
+                    at = first == AT_CARS ? AT_CARS : AT_TRACKS;
                     continue;
                 }
+                at = first;
+                page = 1;
                 car = choice.car = c - 1;
                 struct menu_options opt;
                 menu_options(&opt);

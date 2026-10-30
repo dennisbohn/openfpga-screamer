@@ -26,7 +26,9 @@
  *   the track screen (screen 1, the default) with track n chosen or the car screen (screen 2)
  *   with the car of row n - 1 (menu.h; default 1), steps of 1/50 s after entering it (default 0);
  *   screen 3: track n's loading screen; screen 4 the main menu, 5 the options page; screen 6 the
- *   championship's stage CHAMP="s[,failed]" (default 0), races before it with made-up results.
+ *   championship's stage CHAMP="s[,failed]" (default 0), races before it with made-up results;
+ *   screen 7 VIEW RECORDS of track n, two made-up races entered (choice_record); screen 8 ENTER
+ *   YOUR NAME.
  *   MENUKEYS in the environment: presses before the steps, each for one step, then 30 steps
  *   without (U D L R up, down, left, right; B; A)
  */
@@ -318,9 +320,9 @@ static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gf
 static int menu(int argc, char **argv)
 {
     int which = argc > 7 ? atoi(argv[7]) : 1;
-    int screen = which == 2 ? MENU_CAR_SCREEN : which == 6 ? MENU_CHAMP_SCREEN : which >= 4 ? MENU_PAGE_SCREEN
-                                                                                       : MENU_TRACK_SCREEN;
-    int n = which >= 4 ? which - 3 : argc > 8 ? atoi(argv[8]) : 1, steps = argc > 9 ? atoi(argv[9]) : 0;
+    int screen = which == 2 ? MENU_CAR_SCREEN : which == 6 ? MENU_CHAMP_SCREEN : which == 7 ? MENU_RECORDS_SCREEN
+               : which == 8 ? MENU_NAME_SCREEN : which >= 4 ? MENU_PAGE_SCREEN : MENU_TRACK_SCREEN;
+    int n = which == 4 || which == 5 ? which - 3 : argc > 8 ? atoi(argv[8]) : 1, steps = argc > 9 ? atoi(argv[9]) : 0;
     uint32_t menu_size = load(argv[2], MENU_FILE, 0x400000), graf_size = load(argv[3], GRAF_FILE, 0x400000);
     uint32_t local_size = load(argv[4], LOCAL_FILE, 0x10000), gen_size = load(argv[5], GEN_FILE, 0x10000);
     if (!menu_init(MENU_FILE, menu_size, GRAF_FILE, graf_size, LOCAL_FILE, local_size, GEN_FILE, gen_size, MENU_MEM,
@@ -348,6 +350,12 @@ static int menu(int argc, char **argv)
             choice.pts[i] = pts[i % 3];
         }
         choice.failed = failed;
+    }
+    if (which == 7) {                   /* a three-lap race by DEN, then a longer one by ABC */
+        memcpy(choice.name, "DEN", 4);
+        choice_record(n, 75.37f, 241.52f, 1, CAR_NORMAL);
+        memcpy(choice.name, "ABC", 4);
+        choice_record(n, 77.01f, 420.0f, 0, CAR_NORMAL);
     }
     menu_enter(screen, n);
     for (const char *s = getenv("MENUKEYS"); s && *s; s++) {

@@ -1,7 +1,6 @@
 /*
  * The race screen (hud.h). Places, fonts and colours from the game (docs/NOTES.md section 12,
- * OpenScreamer's hud_draw), the radar and the cockpit's dashboard from STARTL.EXE; not yet
- * here: the record from the records file (the best lap of this race stands in).
+ * OpenScreamer's hud_draw), the radar and the cockpit's dashboard from STARTL.EXE.
  */
 #include "hud.h"
 #include <math.h>
@@ -276,8 +275,9 @@ static void race_screen(struct blit_list *l, int overlay, int rank)
     text(l, 8, 0x38, buf, 3, 2);
     clock_text(buf, r->lap);
     text(l, 8, 0x48, buf, 3, 2);
-    /* the third clock: the best lap; in time attack until the finish the ghost's (0x1d268) */
-    clock_text(buf, car_mode == CAR_ATTACK && !r->finished ? car_lap_record() : r->best);
+    /* the third clock: the lap to beat (0x1d268, the text at 0x1f88): the track's record, in
+       time attack the ghost's lap, after the finish the race's best */
+    clock_text(buf, car_lap_record());
     text(l, 8, 0x58, buf, 3, 2);
     uint32_t t0 = rdcycle();
     radar(l);

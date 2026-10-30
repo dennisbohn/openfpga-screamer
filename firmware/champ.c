@@ -29,6 +29,33 @@ void choice_defaults(void)
     choice.difficulties = 2;
 }
 
+/* time t into the five of r ahead of the first it is not slower than, the rest a place down
+   (the totals' modes with them, mode >= 0, not the laps'); its place, 5 if it is not among them */
+static int record_put(struct choice_rec *r, float t, int flag, int mode)
+{
+    int at = 0;
+    while(at < 5 && t > r->time[at]) at++;
+    if(at == 5) return at;
+    for(int k = 4; k > at; k--) {
+        r->time[k] = r->time[k - 1];
+        r->flag[k] = r->flag[k - 1];
+        if(mode >= 0) r->mode[k] = r->mode[k - 1];
+        memcpy(r->name[k], r->name[k - 1], 4);
+    }
+    r->time[at] = t;
+    r->flag[at] = flag;
+    if(mode >= 0) r->mode[at] = mode;
+    memcpy(r->name[at], choice.name, 4);
+    return at;
+}
+
+void choice_record(int n, float lap, float total, int three_laps, int mode)
+{
+    if(n < 1 || n > 6) return;
+    record_put(&choice.lap[n - 1], lap, 1, -1);
+    if(three_laps) record_put(&choice.race[n - 1], total, 0, mode);
+}
+
 /* The table is regular (the dump of 0x22b8 checked against this): league L's thirteen stages
    from 13 L, a text screen and the standings for each race in turn, the league won after the
    sixth; the Bullet league's sixth standings lead to stage 51 instead. A text screen's league

@@ -127,9 +127,15 @@ extern int car_mode;
 void car_mode_init(const uint8_t *dat, uint32_t dat_size, int n, int difficulty);
 /* slalom: the gates driven through so far; how many there are into *total (if given) */
 int car_gates(int *total);
-/* the lap to beat (0x1d268): the game's 180 s, none (0) in the special modes but time attack's
-   ghost's lap (ghost.h); a lap under it replaces it with "new lap record" */
+/* the lap to beat (0x1d268), the race screen's third clock: in the normal game and the
+   championship car_lap_to_beat, none (0) in the special modes but time attack's ghost's lap
+   (ghost.h); a lap under it replaces it with "new lap record"; at the finish the race's best lap
+   (0x20eb8) */
 float car_lap_record(void);
+/* what car_init() takes as the lap to beat of the normal game and the championship: the caller
+   sets the track's best lap of the records before the first race (0x2a264: CHOICE.DAT's
+   0x2042c + 0x50 x track) and car_lap_record() after it, which PLAY AGAIN starts with */
+extern float car_lap_to_beat;
 /* Contact with the opponents (opp.c, the game's 0x17818): the car's two circles (0x136c8:
    the body from 250 ahead of the front wheels to 150 behind the rear ones, length L, each
    circle L/4 in from its end and L/4 round; returns the radius); moved out of an opponent's

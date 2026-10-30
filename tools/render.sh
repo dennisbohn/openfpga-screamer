@@ -8,7 +8,8 @@
 #   MENU=1: the track screen instead, track TRACK chosen, [view] taken as steps of 1/50 s after
 #   entering it (the models turn); MENU=2: the car screen, car CAR chosen; MENU=3: track TRACK's
 #   loading screen; MENU=4: the main menu, MENU=5: the options page, MENU=6: the championship's
-#   stage CHAMP="s[,failed]"; MENUKEYS="DDB...": presses first (U D L R B A, tools/host/render.c).
+#   stage CHAMP="s[,failed]"; MENU=7: VIEW RECORDS of track TRACK (two made-up races entered),
+#   MENU=8: ENTER YOUR NAME; MENUKEYS="DDB...": presses first (U D L R B A, tools/host/render.c).
 #   PAUSE=1: the pause's picture over the race's, PAUSE=2: PLAY AGAIN? (tools/host/render.c).
 #   CAM="x y h yaw pitch roll": the original's camera record; REFL="x y z [phase]": the player's
 #   reflection accumulators and picture from the original's car record (+0x30, +0x3c), the car

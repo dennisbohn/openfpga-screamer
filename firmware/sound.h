@@ -43,6 +43,8 @@ int snd_init(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint
 #define SND_MENU_LINE   1       /* smenu2: up or down a line (0x283ca, 0x284ba) */
 #define SND_MENU_OPTION 2       /* smenu3: an option changed (0x28df0) */
 #define SND_MENU_GAME   3       /* smenu4: an item that starts a game (0x28ba2) */
+#define SND_MENU_RECORD 4       /* smenu5: up or down a record (0x28409, 0x284f7) */
+#define SND_MENU_LETTER 5       /* smenu6: the name's next or last letter (0x283e9, 0x284d9) */
 #define SND_MENU_MOVE   6       /* smenu7: the camera on to the next track or car (0x2859e, 0x2874b) */
 int snd_menu(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint32_t gen_size);
 /* The rows of the first SOUND_FX section of another DTR text (the track's MAPnDAT.DTR) after

@@ -64,7 +64,8 @@ static uint8_t mark_seen[64];
 static int mark_count;
 static float needle, needle_speed;
 static float progress;                  /* how far round the race (marker_progress) */
-static float record;                    /* the lap to beat (0x1d268): the game's default, 180 s */
+static float record;                    /* the lap to beat (0x1d268) */
+float car_lap_to_beat = 180.0f;         /* (the game's default record) */
 static float road;                      /* the road's heading at the nearest road point, set
                                            each step (player +0x13c: 0x16c90's first lines, which
                                            run every frame, 0x15ae4) */
@@ -511,6 +512,7 @@ static void markers_step(void)
             race.timer = race.timer / 5.0f + bonus;
             speech_rearm(SAY_HURRY);
         } else if(i == 0 && mark_count >= n - 1) {        /* across the line */
+            int finish = race.laps + 1 >= race.total_laps && !race.finished;
             if(race.laps + 1 >= race.total_laps) {
                 race.finished = 1;
                 int all, down = scenery_hits(&all);     /* PERFECT! (flag 0x8000): */
@@ -533,6 +535,7 @@ static void markers_step(void)
             }
             if(!race.finished) speech_say(SAY_LAP, race.laps + 1 == race.total_laps ? 2 : best, 0.0f);
             if(best) race.best = race.last;
+            if(finish) record = race.best;      /* 0x20eb8: the race's best lap to 0x1d268 */
             for(int j = 0; j < n && j < 64; j++) mark_seen[j] = 0;
             mark_count = 0;
             race.lap = 0.0f;
@@ -656,7 +659,7 @@ void car_init(int which, int replay)
     snd_over = 0;
     snd_engine = snd_play(SND_ENGINE);
     speech_reset();
-    if(!replay) record = car_mode == CAR_ATTACK ? ghost_time() : car_mode & CAR_ALONE ? 0.0f : 180.0f;
+    if(!replay) record = car_mode == CAR_ATTACK ? ghost_time() : car_mode & CAR_ALONE ? 0.0f : car_lap_to_beat;
                                                         /* (0x1ba3c); a lap the race beat it with stays */
     race = (struct car_race){ 0 };
     race.timer = 15.0f;

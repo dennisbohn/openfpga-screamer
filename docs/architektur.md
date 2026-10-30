@@ -116,7 +116,7 @@ Wert, Höchstwert]` hinter `0x2de4`; OpenScreamer `docs/NOTES.md` Abschnitte 18 
 `firmware/menu.c`. Seite 0: NORMAL GAME, CHAMPIONSHIP, SPECIAL MODES, NETWORK GAME, OPTIONS;
 Seite 1: DETAIL (LOW/MID/HI, anfangs HI), Schwierigkeit (ROOKIE/NORMAL/PRO, anfangs NORMAL),
 LAP NUMBER (3/5/10/25, anfangs 3), SPEECH und MUSIC (anfangs ON), VIEW RECORDS; die Wörter
-aus `MENU.TXT` (Zeilen 0–30; eine Option zeigt ihre Zeile + ihren Wert).
+aus `MENU.TXT` (Zeilen 0–36; eine Option zeigt ihre Zeile + ihren Wert).
 
 **Die Wörter sind Würfel im Menü-Szenenbild, wie im Original** (`0x2b33c`): jeder Buchstabe
 ein Würfel `ALETTER.3DX` aus `MENU.DAT` (516 Einheiten), seine Textur (Material 1 von
@@ -142,12 +142,29 @@ die Modelle der Strecken- und Autowahl durch die Geometrie-Einheit, der fernste 
 alle Buchstaben gelandet sind). B oder START auf OPTIONS öffnet die Optionen, A oder SELECT
 führt dort zurück. NORMAL GAME: die Kamera fährt zurück nach z 20.000 (Faktor 1 → 0 mit 0,6/s,
 vierte Potenz) und rollt von −4π an mit π/s, die Buchstaben stehen, das Bild blendet mit 2/s
-aus (`0x293e8`), dann die Streckenwahl; das Original fragt vorher den Namen ab (Bildschirm 4,
-fehlt noch). NETWORK GAME zeigt wie das Original ohne Netzwerk `NETWORK NOT FOUND` (Zeile 55,
-Schrift 0, Farbe 2, y 190, blinkend), SPECIAL MODES siehe „Spezialmodi“, CHAMPIONSHIP siehe
-„Meisterschaft“, VIEW RECORDS spielt vorerst nur sein Geräusch. Die Seiten blenden mit 0,6/s
-ein (`0x29ea0`): nach dem Start, nach A oder SELECT in der Streckenwahl und nach jedem Rennen
-(`0x2a114` → `0x29ea0`).
+aus (`0x293e8`), dann ENTER YOUR NAME (siehe unten) und die Streckenwahl. NETWORK GAME zeigt
+wie das Original ohne Netzwerk `NETWORK NOT FOUND` (Zeile 55, Schrift 0, Farbe 2, y 190,
+blinkend), SPECIAL MODES siehe „Spezialmodi“, CHAMPIONSHIP siehe „Meisterschaft“, VIEW RECORDS
+siehe „Rekorde“. Die Seiten blenden mit 0,6/s ein (`0x29ea0`): nach dem Start, nach A oder
+SELECT auf dem Namen, den Rekorden einer Strecke und nach jedem Rennen (`0x2a114` → `0x29ea0`;
+zurück vom Namen oder den Rekorden die Seite, auf der man war, `0x28a7c`).
+
+**ENTER YOUR NAME** (Bildschirm 4 des Originals, vor jedem Spiel: alle Zeilen, die ein Spiel
+starten, gehen über `0x293e8(4)` dorthin, `0x28b80` … `0x28cba`; A oder SELECT in der
+Streckenwahl führt zurück zum Namen, `0x281c2`). Der Name steht in Rekorden und wird in
+`CHOICE.DAT` behalten (+0x08, anfangs „GRA“). Das Original braucht dafür keine Tastatur, also
+wie dort (`0x2c320`, `0x2cd74`, `0x2b54c`, `0x2e4f8`): die 26 Buchstaben als Würfel im Ring
+(Radius 3500, alle 2π/26), jeder fällt 0,04 s nach dem vorigen aus 2560 (ungerade 3060) auf
+160 und springt mit 0,4 der Höhe zurück (fallen p bis 1 mit 2,5/s, steigen mit 2/s, Höhe über
+p²); der Würfel des gewählten Buchstabens kippt mit 4π rad/s auf −36° zur Kamera, die übrigen
+auf 126°. Die Kamera steht außen (Radius 4500, Höhe 1800, 36° nach unten) und geht in 1/8 s
+linear zum Buchstaben weiter (`0x29530`, der Kurs den kürzeren Weg). Davor `MENU2L.PCX`,
+darüber der Titel (Zeile 46, y 2, Schrift 3), der Name bei (0x83, 0x4c) in Schrift 2 mit fester
+Breite, ein Strich 12 tiefer unter dem Buchstaben, der gesetzt wird (21 Pixel je Buchstabe).
+Tasten (`0x28080`): runter/hoch der nächste/vorige Buchstabe (`smenu6`), links/rechts dreht
+das Alphabet um eins und setzt dessen Buchstaben (still; erst wenn die Kamera fast da ist,
+unter 0,1) – EIN Alphabet für alle drei Buchstaben, wie im Original (`0x1d238`). B oder START
+weiter, A oder SELECT zurück zur Seite (beide still).
 
 **Die Optionen wirken** (gespeichert in `CHOICE.DAT`, siehe „Meisterschaft“): LAP NUMBER ist
 die Rundenzahl des Rennens (`car_laps` in `car.c`; das Original nimmt `0x21e0` + 1: 3, 5, 10,
@@ -164,7 +181,7 @@ SPECIAL MODES öffnet Seite 4 des Originals (`0x28eab`): TIME ATTACK, CONE CARNA
 (`MENU.TXT` Zeilen 28–30, ids 28–30), A oder SELECT führt zurück. Die Wahl setzt das
 Modus-Wort des Originals (`0x1d25c`: 1 normal, 2 Meisterschaft, 4 Zeitfahren, `0x10` Netzwerk,
 `0x20` Cone Carnage, `0x40` Slalom; bei uns `car_mode` in `car.c`, aus `menu_mode()`), dann
-wie NORMAL GAME Strecken- und Autowahl (`0x28bb0`; das Original fragt vorher den Namen ab).
+wie NORMAL GAME der Name, Strecken- und Autowahl (`0x28bb0`).
 Seite 3 (NEW/RESUME, ids 24/25) gehört dem Zeitfahren, Seite 5 (ids 26/27) der Meisterschaft.
 
 In allen drei Modi (Maske `0x64`): allein auf der Strecke (`0x1311c`, `0x1309c`, `0x12e14`
@@ -173,7 +190,37 @@ Spline Gegnerzahl − 1 statt des eigenen, Richtung die der Straße dort), keine
 schlagen (`0x2a264`: 0); nach dem Ziel keine Wiederholung (nur im normalen Spiel, `0x1fe45`),
 gleich PLAY AGAIN?. Der Sprecher sagt dort kein „lead“ (Maske `0x13`, `0x24308`), in Cone
 Carnage und Slalom auch kein „hurry“ (Maske `0x17`, `0x242dc`). Rekorde trägt das Original nur
-für normales Spiel und Meisterschaft ein (`0x2e5e4`).
+für normales Spiel und Meisterschaft ein (`0x2e5e4`, siehe „Rekorde“).
+
+## Rekorde
+
+Je Strecke fünf beste Runden und fünf beste Gesamtzeiten mit Namen (`CHOICE.DAT` +0x6c und
++0x24c, je 0x50 Byte: fünf Zeiten, fünf Namen, fünf Merker, bei den Gesamtzeiten der
+Spielmodus; anfangs 180 s und 900 s unter „GRA“), `choice_record` in `champ.c`.
+
+- **Eintragen** (`0x2e5e4`, nach jedem Rennen des normalen Spiels und der Meisterschaft:
+  `0x2a1a8`, `0x1febf` vor PLAY AGAIN, `0x28f42`; nicht, wenn die Zeit ablief oder das Rennen
+  verlassen wurde, Merker `0x1020`): die beste Runde des Rennens immer (Merker 1), die
+  Gesamtzeit nur bei drei Runden (`0x1d2ac` = 2; Merker 0, Spielmodus), jede vor der ersten
+  Zeit, die sie nicht unterbietet, die übrigen einen Platz tiefer, unter dem Namen. Der
+  Merker einer Gesamtzeit ist im Original die Nummer einer gespeicherten Wiederholung
+  (`REPLAYS\REPLAY<Strecke><n>.RPL`, ein „R“ hinter der Zeit, ENTER spielt sie ab); der Core
+  speichert keine, das „R“ zeigt er nur für eine `CHOICE.DAT` aus dem DOS-Spiel.
+- **Die zu schlagende Runde** (`0x1d268`, die dritte Uhr der Rennanzeige, `car_lap_record`):
+  vor dem Rennen die beste Runde der Strecke (`0x2a264`; in den Spezialmodi 0, im Zeitfahren
+  die des Geistes), eine Runde darunter ersetzt sie („new lap record“), im Ziel die beste
+  Runde des Rennens (`0x20eb8`); PLAY AGAIN beginnt mit ihr.
+- **VIEW RECORDS** (letzte Zeile der Optionen, id 21) öffnet Seite 6 des Originals
+  (`0x28cd8`): die sechs Strecken als Würfelwörter (`MENU.TXT` Zeilen 31–36, id 31, die Strecke
+  als Höchstwert), A oder SELECT zurück zu den Optionen. Eine Strecke verlässt die Seite wie
+  ein Spiel (`0x28d0b`: `smenu4`, die Kamera fährt zurück, Abblenden), dann ihr Bildschirm 6
+  (`0x2c844`, `0x2d348`): `LOADnL.PCX`, der Kasten (48, 36, 226 × 160) zweimal abgedunkelt,
+  der Streckenname (y 2, Schrift 3), `BEST TOTAL TIME` (y 0x28) und `BEST LAP TIME` (y 0x78,
+  Schrift 0), darunter je fünf Zeilen „n. NAM mm.ss.hh“ (Schrift 1, feste Breite, zentriert,
+  10 auseinander ab y 0x3c und 0x8c), alles in Farbe 0, die gewählte Gesamtzeit in Farbe 1.
+  Hoch/runter wählt eine Gesamtzeit (`smenu5`), A oder SELECT zurück zur Seite der Strecken.
+  Weiterblättern zur nächsten Strecke gibt es im Original nicht. `SCORE.TXT` (`LOCAL.DAT`)
+  liest `STARTL.EXE` nicht.
 
 **CONE CARNAGE** (`0x20`): die Hindernisse aus `MAPnCNG.SPL` statt `MAPnOST.SPL` (`0x14fb4`;
 Strecke 1: 36 Hütchen, Strecke 5: 99). Ziellinie und Checkpoints geben statt der Bonuszeit die
@@ -273,7 +320,7 @@ nachgelesen): Regeln in `firmware/champ.c`, der Bildschirm 5 in `menu.c`, der Ab
   (`0x1bbb8`); jede Änderung (Stufe, Ergebnis, Optionen, zuletzt gewählte Strecke und Auto)
   schreibt die CPU gleich dorthin, und der Pocket speichert sie beim Beenden wie
   `debug.txt` (`docs/soc.md`, „Protokoll auf die SD-Karte“). Eine `CHOICE.DAT` aus dem
-  DOS-Spiel geht auch. Die Rekorde stehen schon darin, für VIEW RECORDS später. Für das
+  DOS-Spiel geht auch. Die Rekorde stehen darin (siehe „Rekorde“). Für das
   Zeitfahren (`REPLAYS\MAPn.ATK` des Originals: 36 Byte Kopf mit der Bestzeit bei +0x1c,
   dann je gezeichnetem Bild ein Satz von 40 Byte mit Ort, Lage und Uhr, `0x1b964`,
   `0x1ba3c`, `0x231d0`) hält der Slot `ATTACK.DAT` (id 24) je Strecke den behaltenen Lauf

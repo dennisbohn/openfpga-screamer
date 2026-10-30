@@ -41,6 +41,9 @@
 #define LINE_CARS   44              /* CAR SELECTION; */
 #define LINE_TRACKS 45              /* TRACK SELECTION; LOADING */
 #define LINE_LOADING 47
+#define LINE_TRACK_WORDS 31         /* PALM TOWN .. SANDROCK: the records' page and titles */
+#define LINE_BEST   42              /* BEST TOTAL TIME, BEST LAP TIME */
+#define LINE_NAME   46              /* ENTER YOUR NAME */
 #define LOADING_Y   0x50            /* the loading screen's LOADING: its row, font 3, colour 0 (0x2a264) */
 #define SPR_GRIP    4               /* MENUL.SPR: the grip bar's five steps, the acceleration's */
 #define SPR_ACCEL   9
@@ -55,7 +58,7 @@
 #define TURN_RATE   12.566371f      /* a letter turns at 4 pi rad a second (0x2b8b8) */
 #define WAVE_RATE   9.424778f       /* the ripple's clock: 3 pi a second, round at 8 pi */
 #define OPTION      1234            /* an option's item id (0x4d2) */
-#define WORDS       31              /* MENU.TXT's lines 0 .. 30: the pages' words */
+#define WORDS       37              /* MENU.TXT's lines 0 .. 36: the pages' words */
 #define PAGES       7               /* the game's pages (0x2de4) */
 #define LINE_NETWORK 55             /* NETWORK NOT FOUND */
 #define SPR_LOGO    14              /* MENUL.SPR: the logos 14 and 15 (0x2df38) */
@@ -65,6 +68,18 @@
 #define CHAMP_BLOCKS 20             /* its blocks (each ends with a line with a '#') */
 #define IDLE_STEPS  500             /* 10 s without a key on the championship's screen: ENTER */
 #define ROW_COLOUR  15              /* the standings' table (0x2ce58) */
+#define FONT_ROW    1               /* the records' rows (0x2d348) */
+#define RING        26              /* the name screen's cubes A .. Z in a ring (0x2c320): radius */
+#define RING_R      3500.0f         /* 3500, one every 2 pi / 26; the camera outside at 4500, 1800 */
+#define RING_STEP   0.24166098f     /* up, looking 36 degrees down at the chosen letter */
+#define RING_CAM_R  4500.0f
+#define RING_CAM_H  1800.0f
+#define RING_PITCH  -0.6283185f
+#define RING_WALK   8.0f            /* its walk: a factor from 1 to 0 at this a second, linear; */
+#define RING_TAKE   0.1f            /* a press is taken under 0.1 */
+#define REST_Y      160             /* a cube comes to rest at height 160 from 16 times that (an odd */
+#define TILT_ON     -0.6283185f     /* one's 500 higher); the chosen letter's tilts to -36 degrees, */
+#define TILT_OFF    2.1991148f      /* the rest to 126 (0x2b54c) */
 
 /* per screen (the tracks, the cars) the row and the camera: the gap between two models along x,
    the camera's height and z, its pitch, the models' turn in rad a second (from a quarter turn
@@ -84,7 +99,7 @@ const struct menu_part menu_graf_parts[] = {
     { "LOAD1L.PCX", ~0u }, { "LOAD2L.PCX", ~0u }, { "LOAD3L.PCX", ~0u }, { "LOAD4L.PCX", ~0u },
     { "LOAD5L.PCX", ~0u }, { "LOAD6L.PCX", ~0u }, { "CHAMP0L.PCX", ~0u }, { "CHAMP1L.PCX", ~0u },
     { "CHAMP2L.PCX", ~0u }, { "CHAMP3L.PCX", ~0u }, { "CHAMP4L.PCX", ~0u }, { "CHAMP5L.PCX", ~0u },
-    { "CHAMP6L.PCX", ~0u }, { "CHAMP7L.PCX", ~0u }, { 0, 0 } };
+    { "CHAMP6L.PCX", ~0u }, { "CHAMP7L.PCX", ~0u }, { "MENU2L.PCX", ~0u }, { 0, 0 } };
 
 /* CARDAT.TXT's six lines a car: name, gearbox (0 automatic, 1 manual), km/h, grip and
    acceleration steps (0..4), 0; of its CARS.DTR row the model and the paint job */
@@ -93,9 +108,10 @@ static const uint8_t *mlb, *model[MENU_TRACKS], *cube, *pic[4], *hud, *graf_dat;
 static const struct blit_image *img;
 static const struct blit_font *font;
 static uint32_t nimg, nfont, graf_len, pal[4][256];     /* the tracks', the cars', the pages', loading */
-static char title[2][32], name[MENU_TRACKS][32], gears[2][32], label[3][32], loading[32];
+static char title[2][32], name[MENU_TRACKS][32], gears[2][32], label[3][32], loading[32], best[2][32];
+static char name_title[32];
 static char words[WORDS][16], network_text[32], enter_text[32], champ_text[CHAMP_LINES][24];
-static int ncars, cars_on, pages_on, champ_on, pick, way, block[CHAMP_BLOCKS + 1], idle;
+static int on, ncars, cars_on, pages_on, pick, way, block[CHAMP_BLOCKS + 1], idle;   /* on: the screen */
 static float turn[2] = { 1.5707964f, 1.5707964f }, cam_x, from_x, to_x, slide;
 
 /* The game's pages (0x2de4, items of 16 bytes: MENU.TXT's line, id, value, highest value; an
@@ -104,15 +120,18 @@ static float turn[2] = { 1.5707964f, 1.5707964f }, cam_x, from_x, to_x, slide;
    game's values at the start (the difficulty, LAP NUMBER, SPEECH, MUSIC; VIEW RECORDS 21). The
    game's first option, DETAIL, is left out: the core always draws everything, as far as HI
    reaches; CHOICE.DAT keeps it at HI (2). 3 time attack's NEW 24 and RESUME 25, 4 the special modes (TIME ATTACK 28, CONE CARNAGE
-   29, SLALOM 30), 5 the championship's NEW 26 and RESUME 27 */
+   29, SLALOM 30), 5 the championship's NEW 26 and RESUME 27, 6 VIEW RECORDS' six tracks (id 31,
+   the track 0 .. 5 as the highest value) */
 static struct item { int line, id, value, max; } items[PAGES][6] = {
     [0] = { { 0, 0, 0, 0 }, { 1, 1, 0, 0 }, { 2, 2, 0, 0 }, { 3, 3, 0, 0 }, { 4, 4, 0, 0 } },
     [1] = { { 8, OPTION, 1, 2 }, { 13, OPTION, 0, 3 }, { 17, OPTION, 1, 1 }, { 19, OPTION, 1, 1 },
             { 21, 21, 0, 0 } },
     [3] = { { 24, 24, 0, 0 }, { 25, 25, 0, 0 } },
     [4] = { { 28, 28, 0, 0 }, { 29, 29, 0, 0 }, { 30, 30, 0, 0 } },
-    [5] = { { 26, 26, 0, 0 }, { 27, 27, 0, 0 } } };
-static const int page_lines[PAGES] = { [0] = 5, [1] = 5, [3] = 2, [4] = 3, [5] = 2 };
+    [5] = { { 26, 26, 0, 0 }, { 27, 27, 0, 0 } },
+    [6] = { { 31, 31, 0, 0 }, { 32, 31, 0, 1 }, { 33, 31, 0, 2 }, { 34, 31, 0, 3 }, { 35, 31, 0, 4 },
+            { 36, 31, 0, 5 } } };
+static const int page_lines[PAGES] = { [0] = 5, [1] = 5, [3] = 2, [4] = 3, [5] = 2, [6] = 6 };
 static int mode = CAR_NORMAL;           /* the game mode the last game was started in (0x1d25c) */
 static const int laps[4] = { 3, 5, 10, 25 };            /* 0x21e0 + 1 */
 
@@ -125,12 +144,24 @@ static const int16_t fly[8][5] = {
 
 /* A letter's cube (0x1db74): its line, its character - 32 (the frame of the cube's texture),
    where it lands, where it flies in from and its swing, the fly's progress from 1 to 0 in a
-   second, its turn about x (0 the front to the camera, the letter bright; pi the back, dim)
-   and its place now (x left, y up, z to the camera, as the game's) */
-static struct letter { int line, code; float t[3], s[3], ax, ay, p, a, pos[3]; } let[LETTERS];
+   second, its turn about x (0 the front to the camera, the letter bright; pi the back, dim),
+   its place now (x left, y up, z to the camera, as the game's) and its heading (the name's
+   ring; turned about y after x) */
+static struct letter { int line, code; float t[3], s[3], ax, ay, p, a, pos[3], h; } let[LETTERS];
 static int nlet, page, shown, sel[PAGES], style, turning, leaving, network;    /* shown: the letters' page */
 static float wave, logo[2], cam_z = PAGE_CAM_Z, back_f, roll;
 static uint32_t ticks;                                  /* 100 a second, for the blinking */
+static int rec_track, rec_sel;          /* VIEW RECORDS: the track (0x20988), the total chosen (0x2098c) */
+/* the name screen's cubes (records of 0x1db74 too): the wait before it drops, its fall's
+   progress p (the height top + p^2 (rest - top)), the height it drops from, falling 1, rising 0,
+   at rest -1, its tilt; the alphabet's place (0x1d238, all three letters'), the letter being
+   set (0x1d240), the camera's walk (0x29530): its factor 1 to 0, the place it set out from */
+static struct ring { float wait, p, tilt; int top, state; } ring[RING];
+static int alpha, name_at, walk_from;
+static float walk;
+static void records_enter(int n);
+static void name_enter(void);
+static void room(const char *file, int x0, int y0, int w, int h);
 
 static uint32_t rd16(const uint8_t *p)
 {
@@ -277,6 +308,9 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
     for(int k = 0; k < WORDS; k++) ok &= text_line(scratch, tn, k, words[k], sizeof words[k]);
     ok &= text_line(scratch, tn, LINE_NETWORK, network_text, sizeof network_text);
     ok &= text_line(scratch, tn, LINE_ENTER, enter_text, sizeof enter_text);
+    for(int k = 0; k < 2; k++) ok &= text_line(scratch, tn, LINE_BEST + k, best[k], sizeof best[k]);
+    ok &= text_line(scratch, tn, LINE_NAME, name_title, sizeof name_title);
+    ok &= in_place(graf, graf_size, "MENU2L.PCX", 0, &len) != 0;
     /* CHAMP.TXT's blocks, as 0x2c698 splits it: each up to a line with a '#' */
     tn = unpack(local, local_size, "CHAMP.TXT", scratch, scratch_cap);
     int nb = 0;
@@ -321,7 +355,7 @@ int menu_cars(void)
 
 const uint32_t *menu_palette(void)
 {
-    return pal[champ_on ? 3 : pages_on ? 2 : cars_on];
+    return pal[on == MENU_PAGE_SCREEN ? 2 : on == MENU_CAR_SCREEN ? 1 : on == MENU_TRACK_SCREEN ? 0 : 3];
 }
 
 void menu_options(struct menu_options *o)
@@ -387,7 +421,7 @@ static void page_build(int flying)
             int ch = (unsigned char)w[k];
             *l = (struct letter){ i, ch < 32 || ch > 107 ? 0 : ch - 32, { x, y, 0.0f }, { sx != 0.0f ? sx : x,
                                   sy != 0.0f ? sy : y, f[2] }, f[3], f[4], flying ? 1.0f : 0.0f,
-                                  i != sel[page] ? PI : flying ? 0.0f : 0.5f * PI, { x, y, 0.0f } };
+                                  i != sel[page] ? PI : flying ? 0.0f : 0.5f * PI, { x, y, 0.0f }, 0.0f };
             float ox = sx;
             sx = (float)(int)(ox * c + sy * s);
             sy = (float)(int)(sy * c - ox * s);
@@ -400,13 +434,14 @@ static void stage_enter(void);
 
 void menu_enter(int screen, int n)
 {
+    on = screen;
     pages_on = screen == MENU_PAGE_SCREEN;
-    if((champ_on = screen == MENU_CHAMP_SCREEN)) {
-        stage_enter();
-        return;
-    }
+    if(screen == MENU_CHAMP_SCREEN) stage_enter();
+    if(screen == MENU_RECORDS_SCREEN) records_enter(n);
+    if(screen == MENU_NAME_SCREEN) name_enter();
+    if(screen == MENU_CHAMP_SCREEN || screen == MENU_RECORDS_SCREEN || screen == MENU_NAME_SCREEN) return;
     if(pages_on) {                              /* 0x29ea0: the logos 400 and 800 left of their places */
-        page = n == 2;
+        if(n >= 1 && n <= PAGES && page_lines[n - 1]) page = n - 1;
         page_build(1);
         turning = leaving = network = 0;
         cam_z = PAGE_CAM_Z;
@@ -496,30 +531,117 @@ static int page_step(uint32_t press)
     } else if(press & (KEY_B | KEY_START)) {
         /* the items that start a game, by id: NORMAL GAME (0x28b80), time attack's NEW and RESUME
            (0x28c0f, 0x28c3c), the championship's (0x28c6b, 0x28c9e), CONE CARNAGE (0x28bb0),
-           SLALOM (0x28bdf); those that open a page: CHAMPIONSHIP (0x28b3a), SPECIAL MODES
-           (0x28eab), OPTIONS (0x28db2), TIME ATTACK (0x28e0d) */
+           SLALOM (0x28bdf), and a track's records (0x28d0b) the same way; those that open a
+           page: CHAMPIONSHIP (0x28b3a), SPECIAL MODES (0x28eab), OPTIONS (0x28db2), TIME ATTACK
+           (0x28e0d), VIEW RECORDS (0x28cd8) */
         int id = it->id, game = id == 0 ? CAR_NORMAL : id == 24 || id == 25 ? CAR_ATTACK :
                  id == 26 || id == 27 ? CAR_CHAMP : id == 29 ? CAR_CONES : id == 30 ? CAR_SLALOM : 0;
-        if(game) {
-            mode = game;
+        if(game || id == 31) {
+            if(game) mode = game;
             if(game == CAR_ATTACK) ghost_resume = id == 25;
             leaving = 1;
             back_f = 1.0f;
             roll = -4.0f * PI;
             snd_play(SND_MENU_GAME);
-            return mode == CAR_CHAMP ? id + 1 : 1;
+            return id == 31 ? MENU_RECORDS + it->max + 1 : mode == CAR_CHAMP ? id + 1 : 1;
         }
         if(id == 3) network = 1;                /* the game without a network (0x28d78), silent */
         else snd_play(SND_MENU_PAGE);
-        int to = id == 1 ? 5 : id == 2 ? 4 : id == 4 ? 1 : id == 28 ? 3 : -1;
+        int to = id == 1 ? 5 : id == 2 ? 4 : id == 4 ? 1 : id == 28 ? 3 : id == 21 ? 6 : -1;
         if(to >= 0) {
             page = to;
             turning = 1;
         }
     } else if((press & (KEY_A | KEY_SELECT)) && page != 0) {    /* the game's ESC (0x280cb): */
-        page = page == 3 ? 4 : 0;                               /* the page before */
+        page = page == 3 ? 4 : page == 6 ? 1 : 0;               /* the page before */
         turning = 1;
         snd_play(SND_MENU_PAGE);
+    }
+    return 0;
+}
+
+/* The camera of the name screen (0x29530): outside the ring at the alphabet's place k, turned
+   to it */
+static void ring_cam(int k, float *x, float *z, float *h)
+{
+    float a = -RING_STEP * (float)k;
+    *x = sinf(a) * RING_CAM_R;
+    *z = cosf(a) * RING_CAM_R;
+    *h = RING_STEP * (float)k;
+}
+
+/* where it is on its walk from the place it last stood at to the alphabet's place (linear; the
+   heading the shorter way round) */
+static struct track_cam name_view(void)
+{
+    float x0, z0, h0, x1, z1, h1;
+    ring_cam(walk_from, &x0, &z0, &h0);
+    ring_cam(alpha, &x1, &z1, &h1);
+    if(h0 - h1 > PI) h1 += TWO_PI;
+    if(h1 - h0 > PI) h0 += TWO_PI;
+    return (struct track_cam){ x1 + (x0 - x1) * walk, z1 + (z0 - z1) * walk, RING_CAM_H, h1 + (h0 - h1) * walk,
+                               RING_PITCH, 0.0f };
+}
+
+/* ENTER YOUR NAME (0x2c320): MENU2L.PCX; the alphabet at the name's first letter, the first
+   letter being set; the cubes dropping in one after the other, 0.04 s apart */
+static void name_enter(void)
+{
+    room("MENU2L.PCX", 0, 0, 0, 0);
+    alpha = walk_from = choice.name[0] >= 'A' && choice.name[0] <= 'Z' ? choice.name[0] - 'A' : 0;
+    name_at = 0;
+    walk = 0.0f;
+    for(int k = 0; k < RING; k++)
+        ring[k] = (struct ring){ 0.04f * (float)k, 0.0f, TILT_OFF, 16 * REST_Y + (k & 1) * 500, 1 };
+    nlet = 0;
+}
+
+/* A step of the name screen. The keys (0x28080): B or START go on (1), A or SELECT back (-1),
+   both silent; down and up the letter being set (smenu6), left and right turn the alphabet one
+   place, its letter then the one being set (silent), once the camera has walked most of the way
+   (0x2865a, 0x28810). Then the camera's walk, then each cube (0x2cd74, 0x2b54c): once its wait is
+   over it drops (p to 1 at 2.5 a second), bounces up again to 0.4 of the height (p to 0 at 2 a
+   second) until that is under where it rests; the alphabet's letter tilts to the camera, the
+   rest away, at 4 pi a second. */
+static int name_step(uint32_t press)
+{
+    if(press & (KEY_B | KEY_START)) return 1;
+    if(press & (KEY_A | KEY_SELECT)) return -1;
+    if((press & KEY_DOWN) && name_at < 2) {
+        name_at++;
+        snd_play(SND_MENU_LETTER);
+    } else if((press & KEY_UP) && name_at > 0) {
+        name_at--;
+        snd_play(SND_MENU_LETTER);
+    } else if((press & (KEY_LEFT | KEY_RIGHT)) && walk < RING_TAKE) {
+        walk_from = alpha;
+        alpha = (alpha + (press & KEY_LEFT ? RING - 1 : 1)) % RING;
+        choice.name[name_at] = (char)('A' + alpha);
+        walk = 1.0f;
+    }
+    if(walk > 0.0f && (walk -= DT * RING_WALK) < 0.0f) walk = 0.0f;
+    nlet = 0;
+    for(int k = 0; k < RING; k++) {
+        struct ring *r = &ring[k];
+        if((r->wait -= DT) >= 0.0f) continue;   /* not there yet */
+        r->wait = 0.0f;
+        float a = -RING_STEP * (float)k, y = (float)r->top + r->p * r->p * (float)(REST_Y - r->top);
+        let[nlet++] = (struct letter){ .code = k + 'A' - 32, .a = r->tilt,
+                                       .pos = { sinf(a) * RING_R, y, cosf(a) * RING_R }, .h = RING_STEP * (float)k };
+        if(r->state > 0 && (r->p += DT * 2.5f) > 1.0f) {
+            r->p = 1.0f;
+            r->state = 0;
+            if((r->top = (int)((float)r->top * 0.4f)) < REST_Y) {
+                r->state = -1;
+                r->top = REST_Y;
+            }
+        } else if(r->state == 0 && (r->p -= DT * 2.0f) < 0.0f) {
+            r->p = 0.0f;
+            r->state = 1;
+        }
+        if(k != alpha) {
+            if((r->tilt += DT * TURN_RATE) > TILT_OFF) r->tilt = TILT_OFF;
+        } else if((r->tilt -= DT * TURN_RATE) < TILT_ON) r->tilt = TILT_ON;
     }
     return 0;
 }
@@ -528,7 +650,19 @@ int menu_step(uint32_t keys, uint32_t keys_before)
 {
     const struct row *r = &rows[cars_on];
     uint32_t press = keys & ~keys_before;
-    if(champ_on) {                              /* 0x2d301, 0x2829d */
+    if(on == MENU_NAME_SCREEN) return name_step(press);
+    if(on == MENU_RECORDS_SCREEN) {             /* 0x28359, 0x2844f: up and down choose a total */
+        if(press & (KEY_A | KEY_SELECT)) return -1;
+        if((press & KEY_DOWN) && rec_sel < 4) {
+            rec_sel++;
+            snd_play(SND_MENU_RECORD);
+        } else if((press & KEY_UP) && rec_sel > 0) {
+            rec_sel--;
+            snd_play(SND_MENU_RECORD);
+        }
+        return 0;
+    }
+    if(on == MENU_CHAMP_SCREEN) {               /* 0x2d301, 0x2829d */
         ticks += 2;
         idle = press ? 0 : idle + 1;
         if((press & (KEY_B | KEY_START)) || idle > IDLE_STEPS) return 1;
@@ -558,7 +692,8 @@ int menu_step(uint32_t keys, uint32_t keys_before)
 
 void menu_backdrop(struct blit_list *l)
 {
-    blit_copy(l, pic[champ_on ? 3 : pages_on ? 2 : cars_on], PIC_W, PIC_H, PIC_W, 0, 0, BLIT_COPY | BLIT_OPAQUE, 0);
+    blit_copy(l, pic[on == MENU_PAGE_SCREEN ? 2 : on == MENU_CAR_SCREEN ? 1 : on == MENU_TRACK_SCREEN ? 0 : 3], PIC_W,
+              PIC_H, PIC_W, 0, 0, BLIT_COPY | BLIT_OPAQUE, 0);
 }
 
 /* the race's lens (track.c: the eye 128 behind the camera, 128 / depth) round the menu's centre,
@@ -630,9 +765,10 @@ static int car_blocks(const struct track_cam *cam, struct track_block *b)
     return n;
 }
 
-/* The page's cubes, the furthest first (by the distance from the camera to the cube's middle),
-   each turned about x by its turn (y up towards z), its face the frame of its character: the
-   record's +0x20 0x35e (character - 32) + 0x226, of which the phase is a quarter (geom.h) */
+/* The page's or the name's cubes, the furthest first (by the distance from the camera to the
+   cube's middle), each turned about x by its turn (y up towards z), then about y by its heading,
+   its face the frame of its character: the record's +0x20 0x35e (character - 32) + 0x226, of
+   which the phase is a quarter (geom.h) */
 static int letter_blocks(const struct track_cam *cam, struct track_block *b)
 {
     float key[LETTERS];
@@ -640,10 +776,10 @@ static int letter_blocks(const struct track_cam *cam, struct track_block *b)
     int n = 0;
     for(int k = 0; k < nlet; k++) {
         const struct letter *l = &let[k];
-        const float c = cosf(l->a), s = sinf(l->a);
+        const float c = cosf(l->a), s = sinf(l->a), ch = cosf(l->h), sh = sinf(l->h);
         /* the world's x, y and height are the game's x, z and y */
-        struct track_block t = { cube, blk, { 1.0f, 0.0f, 0.0f, 0.0f, s, c, 0.0f, c, -s }, { l->pos[0], l->pos[2], l->pos[1] },
-                                 (0x35Eu * (uint32_t)l->code + 0x226u) >> 2 };
+        struct track_block t = { cube, blk, { ch, -sh * s, -sh * c, sh, ch * s, ch * c, 0.0f, c, -s },
+                                 { l->pos[0], l->pos[2], l->pos[1] }, (0x35Eu * (uint32_t)l->code + 0x226u) >> 2 };
         float dx = t.o[0] - cam->x, dy = t.o[1] - cam->y, dh = t.o[2] - cam->h, d = dx * dx + dy * dy + dh * dh;
         int i = n++;
         for(; i > 0 && key[i - 1] < d; i--) {
@@ -661,9 +797,11 @@ void menu_scene(volatile uint8_t *fb)
     static const struct rs_clip clip = { 0, 0, PIC_W, PIC_H };
     const struct row *r = &rows[cars_on];
     const struct track_cam cam = pages_on ? (struct track_cam){ 0.0f, cam_z, 0.0f, 0.0f, 0.0f, roll }
-                                          : (struct track_cam){ cam_x, r->cam_z, r->cam_h, 0.0f, r->pitch, 0.0f };
+                               : on == MENU_NAME_SCREEN ? name_view()
+                                                        : (struct track_cam){ cam_x, r->cam_z, r->cam_h, 0.0f, r->pitch, 0.0f };
     static struct track_block b[MAX_DRAWN];
-    int n = champ_on ? 0 : pages_on ? letter_blocks(&cam, b) : cars_on ? car_blocks(&cam, b) : map_blocks(&cam, b);
+    int n = pages_on || on == MENU_NAME_SCREEN ? letter_blocks(&cam, b) : on == MENU_CAR_SCREEN ? car_blocks(&cam, b)
+          : on == MENU_TRACK_SCREEN ? map_blocks(&cam, b) : 0;
     struct su_view v;
     struct gu_stats st = { 0, 0, 0, 0 };
     menu_view(&v);
@@ -680,11 +818,16 @@ static int text(struct blit_list *l, int x, int y, const char *s, uint32_t f)
     return blit_text(l, hud, img, &font[f], x, y, s, COLOUR, 1);
 }
 
-/* a string centred on the screen at row y (0x2e598) */
+/* a string centred on the screen at row y (0x2e598) in a colour, or in the texts' */
+static void centred_in(struct blit_list *l, int y, const char *s, uint32_t f, int colour)
+{
+    int w = blit_text(l, hud, img, &font[f], 0, 0, s, colour, 0);
+    blit_text(l, hud, img, &font[f], (PIC_W - w) / 2, y, s, colour, 1);
+}
+
 static void centred(struct blit_list *l, int y, const char *s, uint32_t f)
 {
-    int w = blit_text(l, hud, img, &font[f], 0, 0, s, COLOUR, 0);
-    text(l, (PIC_W - w) / 2, y, s, f);
+    centred_in(l, y, s, f, COLOUR);
 }
 
 static void sprite(struct blit_list *l, int x, int y, uint32_t k)
@@ -734,14 +877,16 @@ static void car_text(struct blit_list *l, const struct car *c)
    the arrows where there is a neighbour, lit (sprites 2 and 3) while the camera slides that way
    (0x2e2f0, 0x2e33c) */
 static void stage_text(struct blit_list *l);
+static void records_text(struct blit_list *l);
+static void name_text(struct blit_list *l);
 
 void menu_text(struct blit_list *l)
 {
     int lit = slide > LIT;
-    if(champ_on) {
-        stage_text(l);
-        return;
-    }
+    if(on == MENU_CHAMP_SCREEN) stage_text(l);
+    if(on == MENU_RECORDS_SCREEN) records_text(l);
+    if(on == MENU_NAME_SCREEN) name_text(l);
+    if(on == MENU_CHAMP_SCREEN || on == MENU_RECORDS_SCREEN || on == MENU_NAME_SCREEN) return;
     if(pages_on) {          /* the logos (0x2df38), off the screen not drawn; NETWORK NOT FOUND blinking */
         for(int k = 0; k < 2; k++) {
             const struct blit_image *s = &img[SPR_LOGO + 1 - k];
@@ -773,25 +918,103 @@ const uint32_t *menu_loading(int n, struct blit_list *l)
     return pal[3];
 }
 
-/* The championship's screen (0x2c698): the stage's picture CHAMPnL.PCX into the loading
-   screen's room, for the standings the box (16, 36, 288 x 136) darkened twice through the
-   picture's palette (0x25cc8 with 0x25870's table, 0.75), as the game darkens it every frame */
+/* A picture of GFX/GRAF.DAT, unpacked from its place there, into the loading screen's room (black
+   without it), the box (x0, y0, w x h) darkened twice through its palette (0x25cc8 with 0x25870's
+   table, 0.75), as the game darkens it every frame */
+static void room(const char *file, int x0, int y0, int w, int h)
+{
+    uint32_t len;
+    const uint8_t *p = graf_dat ? in_place(graf_dat, graf_len, file, 0, &len) : 0;
+    uint8_t *px = (uint8_t *)pic[3];
+    if(!p || !pcx(p, len, px, pal[3])) memset(px, 0, PIC_W * PIC_H);
+    if(!w) return;
+    uint8_t dark[256];
+    efx_darken_table(pal[3], dark, 0.75f);
+    for(int y = y0; y < y0 + h; y++)
+        for(int x = x0; x < x0 + w; x++) px[y * PIC_W + x] = dark[dark[px[y * PIC_W + x]]];
+}
+
+/* The championship's screen (0x2c698): the stage's picture CHAMPnL.PCX, for the standings the box
+   (16, 36, 288 x 136) darkened */
 static void stage_enter(void)
 {
     struct champ_stage st = champ_at(choice.stage);
     char file[16] = "CHAMP0L.PCX";
-    uint32_t len;
     file[5] = (char)('0' + st.pic);
-    const uint8_t *p = graf_dat ? in_place(graf_dat, graf_len, file, 0, &len) : 0;
-    uint8_t *px = (uint8_t *)pic[3];
-    if(!p || !pcx(p, len, px, pal[3])) memset(px, 0, PIC_W * PIC_H);
-    if(st.kind == CHAMP_STANDINGS) {
-        uint8_t dark[256];
-        efx_darken_table(pal[3], dark, 0.75f);
-        for(int y = 0x24; y < 0x24 + 0x88; y++)
-            for(int x = 0x10; x < 0x10 + 0x120; x++) px[y * PIC_W + x] = dark[dark[px[y * PIC_W + x]]];
-    }
+    room(file, 0x10, 0x24, st.kind == CHAMP_STANDINGS ? 0x120 : 0, 0x88);
     idle = 0;
+}
+
+/* VIEW RECORDS of track n (0x2c844): its LOADnL.PCX, the box (48, 36, 226 x 160) darkened, the
+   first total chosen */
+static void records_enter(int n)
+{
+    char file[16] = "LOAD1L.PCX";
+    rec_track = n >= 1 && n <= MENU_TRACKS ? n - 1 : 0;
+    rec_sel = 0;
+    file[4] = (char)('1' + rec_track);
+    room(file, 0x30, 0x24, 0xE2, 0xA0);
+}
+
+/* v at p with at least two digits (%02d): the end */
+static char *dec02(char *p, int v)
+{
+    if(v < 10) *p++ = '0';
+    return dec(p, v);
+}
+
+/* A record's row as the game prints it (0x2d348: "\x01%d. %3s %02d.%02d.%02d R", or two spaces
+   at the end; fixed pitch): its place i + 1, the name right-aligned in three, the time in
+   minutes, seconds and hundredths, cut off; then a space and r */
+static void record_row(char *s, int i, const char *who, float t, char r)
+{
+    int n = 0, whole = (int)t;
+    while(n < 4 && who[n]) n++;
+    *s++ = 1;
+    s = dec(s, i + 1);
+    *s++ = '.';
+    *s++ = ' ';
+    for(int k = n; k < 3; k++) *s++ = ' ';
+    memcpy(s, who, (size_t)n);
+    s += n;
+    *s++ = ' ';
+    s = dec02(s, whole / 60);
+    *s++ = '.';
+    s = dec02(s, whole % 60);
+    *s++ = '.';
+    s = dec02(s, (int)((t - (float)whole) * 100.0f));
+    *s++ = ' ';
+    *s++ = r;
+    *s = 0;
+}
+
+/* VIEW RECORDS (0x2d348): the track's name centred at row 2 (font 3), BEST TOTAL TIME at row 0x28
+   and BEST LAP TIME at 0x78 (font 0), under each its five times, 10 rows apart from 0x3c and
+   0x8c, centred in font 1: the totals with an R for a saved replay (the core keeps none); all in
+   colour 0, the total chosen in colour 1 */
+static void records_text(struct blit_list *l)
+{
+    char s[40];
+    const struct choice_rec *race = &choice.race[rec_track], *lap = &choice.lap[rec_track];
+    centred_in(l, 2, words[LINE_TRACK_WORDS + rec_track], FONT_TITLE, 0);
+    centred_in(l, 0x28, best[0], FONT_MSG, 0);
+    centred_in(l, 0x78, best[1], FONT_MSG, 0);
+    for(int i = 0; i < 5; i++) {
+        record_row(s, i, race->name[i], race->time[i], race->flag[i] ? 'R' : ' ');
+        centred_in(l, 0x3C + 10 * i, s, FONT_ROW, i == rec_sel);
+        record_row(s, i, lap->name[i], lap->time[i], ' ');
+        centred_in(l, 0x8C + 10 * i, s, FONT_ROW, 0);
+    }
+}
+
+/* ENTER YOUR NAME (0x2e4f8): the title centred at row 2 (font 3), the name at (0x83, 0x4c) in
+   font 2, fixed pitch, a dash 12 rows under the letter being set, 21 pixels a letter */
+static void name_text(struct blit_list *l)
+{
+    char s[8] = { 1, choice.name[0], choice.name[1], choice.name[2], 0 };
+    centred(l, 2, name_title, FONT_TITLE);
+    text(l, 0x83, 0x4C, s, FONT_NAME);
+    text(l, 0x83 + 21 * name_at, 0x58, "\1-", FONT_NAME);
 }
 
 /* line i of CHAMP.TXT's block b */
