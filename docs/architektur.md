@@ -17,7 +17,8 @@ im Stereobild und mit Doppler) und den Sprecher. Seit 2026-10-30 gebaut, Test au
 steht aus: alle sechs Strecken, gewählt im Streckenbildschirm des Originals, danach das Auto
 im Autobildschirm (siehe „Strecken- und Autowahl“), die Pause und „PLAY AGAIN?“, die
 CD-Musik aus GOGs Abbild der CD, in den Menüs und im Rennen wie im Spiel, und die
-Überblendungen und Menügeräusche des Originals.
+Überblendungen und Menügeräusche des Originals; dazu Hauptmenü und Optionen (siehe
+„Hauptmenü und Optionen“).
 Belegung siehe „Belegung“, alles gemessen.
 
 ## Hardware des Pocket (Haupt-FPGA)
@@ -104,6 +105,54 @@ einmal, während er zeichnet (siehe „Die CD-Musik“).
 - `GFX/`: `GAME`, `GRAF`, `MENU`, `MAP1L`–`MAP6L`, `MAP1H`–`MAP6H` (L und H sind die Sätze der
   Option DETAIL: L bei LOW, H ab MID; nicht die Auflösung)
 - `TABS/`: `PERSP01.TAB`, `VIS.TAB`
+
+## Hauptmenü und Optionen
+
+Wie im Original (sein Bildschirm 0, die Seiten: Tabellen aus 16-Byte-Einträgen `[Zeile, id,
+Wert, Höchstwert]` hinter `0x2de4`; OpenScreamer `docs/NOTES.md` Abschnitte 18 und 26), in
+`firmware/menu.c`. Seite 0: NORMAL GAME, CHAMPIONSHIP, SPECIAL MODES, NETWORK GAME, OPTIONS;
+Seite 1: DETAIL (LOW/MID/HI, anfangs HI), Schwierigkeit (ROOKIE/NORMAL/PRO, anfangs NORMAL),
+LAP NUMBER (3/5/10/25, anfangs 3), SPEECH und MUSIC (anfangs ON), VIEW RECORDS; die Wörter
+aus `MENU.TXT` (Zeilen 0–21; eine Option zeigt ihre Zeile + ihren Wert).
+
+**Die Wörter sind Würfel im Menü-Szenenbild, wie im Original** (`0x2b33c`): jeder Buchstabe
+ein Würfel `ALETTER.3DX` aus `MENU.DAT` (516 Einheiten), seine Textur (Material 1 von
+`MENU.MLB`) hat 76 Bilder, eines je Zeichen; der Satz des Würfels hat bei +0x20
+`0x35e·(Zeichen − 32) + 0x226`, ein Viertel davon ist die Textur-Phase der Geometrie-Einheit.
+Vorn die helle obere Hälfte des Bildes, hinten die dunkle untere. Zeile i von n liegt auf
+Reihe `8 − n + 2i`, y = `0x820 − 0x180·Reihe`, die Buchstaben 640 auseinander, zentriert
+(`0x2af30`), auch die Leerzeichen; die Kamera steht bei (0, 0, 4100) und schaut nach −z,
+Linse wie im Rennen (`0x29ea0`). Je Schritt (`0x2b8b8`) dreht sich die gewählte Zeile mit 4π
+rad/s nach vorn, die übrigen nach hinten; jeder Würfel wogt in z um
+`150·sin(2π·fx + π·fy + t·k)` (t mit 3π/s, bei 8π zurück; gewählte Zeile fx = 0,5, k = 1/4).
+Beim Betreten fliegen die Buchstaben in einer Sekunde ein, Start und Schwung aus einer der
+acht Zeilen von `0x2218`, reihum, der Start je Buchstabe um 0,09 rad gedreht. Seitenwechsel
+oder geänderte Option: alle drehen sich weg, ist die gewählte Zeile über die Vierteldrehung,
+steht die neue Seite da und ihre Zeile dreht sich fertig (`0x2b380`). Die Würfel gehen wie
+die Modelle der Strecken- und Autowahl durch die Geometrie-Einheit, der fernste zuerst. Davor
+`MENU1L.PCX` mit seiner Palette, darüber die beiden SCREAMER-Logos (Sprites 15 und 14 aus
+`MENUL.SPR`, bei y 0 und 16), die von links mit 350 und 700 Pixel/s an ihren Platz gleiten
+(`0x2df38`).
+
+**Tasten** (`0x28080`, `0x28ac4`): hoch/runter von Zeile zu Zeile (ohne Umlauf), links/rechts
+ändert eine Option, B oder START auch (das ENTER des Originals zählt hoch, `0x297d4`; erst wenn
+alle Buchstaben gelandet sind). B oder START auf OPTIONS öffnet die Optionen, Y oder SELECT
+führt dort zurück. NORMAL GAME: die Kamera fährt zurück nach z 20.000 (Faktor 1 → 0 mit 0,6/s,
+vierte Potenz) und rollt von −4π an mit π/s, die Buchstaben stehen, das Bild blendet mit 2/s
+aus (`0x293e8`), dann die Streckenwahl; das Original fragt vorher den Namen ab (Bildschirm 4,
+fehlt noch). NETWORK GAME zeigt wie das Original ohne Netzwerk `NETWORK NOT FOUND` (Zeile 55,
+Schrift 0, Farbe 2, y 190, blinkend), CHAMPIONSHIP, SPECIAL MODES und VIEW RECORDS spielen
+vorerst nur ihr Geräusch. Die Seiten blenden mit 0,6/s ein (`0x29ea0`): nach dem Start, nach
+Y oder SELECT in der Streckenwahl und nach jedem Rennen (`0x2a114` → `0x29ea0`).
+
+**Die Optionen wirken** (für die Sitzung; Speichern kommt mit den Rekorden): LAP NUMBER ist
+die Rundenzahl des Rennens (`car_laps` in `car.c`; das Original nimmt `0x21e0` + 1: 3, 5, 10,
+25), Ende des Rennens und „1/3“ der Anzeige folgen ihr. Die Schwierigkeit wählt die Datei
+`MAPnA.DTR`, `MAPnB.DTR` oder `MAPnC.DTR` (`0x13251`; `track_build_difficulty`), aus der der
+Bau der Strecke Gegner und `TRACK_DATA` liest. SPEECH OFF: der Sprecher sagt nichts
+(`speech_on`), MUSIC OFF: keine CD-Musik (`music_on`), anders als im Original sofort, auch im
+Menü (das Original übernimmt beides erst beim Laden des nächsten Rennens, `0x2a264`). DETAIL
+wird nur angezeigt: der Core zeichnet immer den H-Satz ganz.
 
 ## Strecken- und Autowahl
 
@@ -196,7 +245,7 @@ Zeilen 19–21 (PLAY AGAIN?, YES, NO) zentriert in den Zeilen 52, 92 und 122 (Sc
 Frage in Farbe 2, die Antworten in 14, die gewählte blinkt nach 2. Hoch/links YES,
 runter/rechts NO, jeder Druck mit dem Klick (siehe „Menügeräusche“), B oder START nimmt die
 Antwort, Y oder SELECT ist NO (ESC im Original). YES baut das Rennen neu auf (ohne die
-Strecke neu zu bauen), NO führt zur Streckenwahl.
+Strecke neu zu bauen), NO führt ins Hauptmenü.
 
 **Überblendungen** (2026-10-30, aus der EXE): alle über die Palette, jeder Wert mal f zu
 Schwarz hin (`0x27de8`; bei uns `pal_faded` in `main.c`, in die Palette des Puffers, der als
@@ -204,8 +253,7 @@ nächster gezeigt wird). Wird ein Menübildschirm verlassen (Strecke → Auto, A
 Auto → Rennen), ist es sofort schwarz (`0x1d220` = 0: die Palette schwarz im Bild des
 Tastendrucks; `black`), der neue Bildschirm blendet mit 1,5/s ein, in 2/3 s (`0x20374` aus
 `0x2c078` und `0x2bdcc`, `0x29738` in jedem Bild), Modelle und Kamera laufen dabei schon; ebenso
-der Streckenbildschirm nach dem Start und nach einem Rennen (das Original kommt dort aus
-seinem Hauptmenü, das wir nicht haben). Einen Kameraflug gibt es zwischen Strecken- und
+die Seiten des Hauptmenüs, mit 0,6/s (siehe „Hauptmenü und Optionen“). Einen Kameraflug gibt es zwischen Strecken- und
 Autobildschirm nicht (nur beim Verlassen der Menüseiten). Das Ladebild erscheint ohne
 Überblendung (`0x2a264`) und blendet, wenn das Rennen aufgebaut ist, in einer halben Sekunde
 aus, nur das Bild (`0x128dc(1)` → `0x21d8c(0)`; OpenScreamers Notizen übersehen das). Das
@@ -221,13 +269,17 @@ des Spiels `SOUND_FX` aus `MENU.DTR` (GEN.DAT: `smenu1`–`smenu9`, `MENU1.RAW`�
 `0x29e1d`, `0x1f2d0`). Im Strecken- und Autobildschirm spielt nur der Schritt zur nächsten
 Strecke oder zum nächsten Auto etwas, Zeile 6, `smenu7` (`0x2859e`, `0x28617`, `0x2874b`,
 `0x287cd`); Wählen und Zurück sind still (die Zweige `0x28ef6`, `0x28172` und `0x2821e` spielen
-nichts; OpenScreamer spielt dort Zeile 0, nach eigener Lesart). Die neun Samples liest der
+nichts; OpenScreamer spielt dort Zeile 0, nach eigener Lesart). Auf den Seiten: Zeile 1 von
+Zeile zu Zeile (`0x283ca`, `0x284ba`), Zeile 2 für eine geänderte Option (`0x28df0`), Zeile 0
+beim Öffnen einer Seite und bei ESC zurück (`0x28b5f`, `0x280ec`), Zeile 3 für NORMAL GAME
+(`0x28ba2`); NETWORK GAME ist still. Die neun Samples liest der
 Core beim Start an ihren Stellen aus `SOUND.DAT` (88 KB; der ganze Container folgt mit der
 ersten Strecke), die Tabelle setzt er nach jedem Rennen neu (`snd_menu` in `sound.c`). PLAY
 AGAIN? klickt bei jedem Druck von hoch/links oder runter/rechts (`SFXSBASE.DTR` Zeile 6,
 `sclick`; `0x21b0e`, `0x21b47`). Der CD-Spieler der Pause spielt nichts.
 
-Nicht dabei: Hauptmenü, Optionen, Intro, die gespiegelten Strecken, „NEW TRACK AVAILABLE“,
+Nicht dabei: Namenseingabe, Meisterschaft, Spezialmodi, Rekorde, Intro, die gespiegelten
+Strecken, „NEW TRACK AVAILABLE“,
 Wiederholungen als Datei (`REPLAYS\TEMP.RPL`). Die Simulation fährt gleich die Strecke aus `SIM_TRACK` (Slot 28) mit dem
 ersten Auto; mit `SIM_MENU=1` (Slot 27) zeigt sie stattdessen den Streckenbildschirm, mit
 `SIM_MENU=2` den Autobildschirm, und prüft das dritte Bild gegen die C-Modelle (2026-10-30:
@@ -236,7 +288,8 @@ Abgleich des Rennbildes mit den C-Modellen (`track_check`) macht nur die Simulat
 Pocket zeichnete die CPU das Bild dafür eine Sekunde lang nach und hielt das Rennen gleich nach
 „three“ an; dort steht jetzt `track check: simulation only` im Protokoll.
 `TRACK=n`, `CAR=r` und `MENU=1` oder `2` für `tools/render.sh` zeichnen Start mit Auto r,
-Strecken- oder Autobildschirm auf dem PC, `PAUSE=1` oder `2` Pause oder Frage über dem Start.
+Strecken- oder Autobildschirm auf dem PC, `MENU=4` oder `5` Hauptmenü oder Optionen
+(`MENUKEYS="DDDDB"` drückt vorher Tasten), `PAUSE=1` oder `2` Pause oder Frage über dem Start.
 
 Die sechs Startbilder (Simulation, Schnelllauf, nahe Verfolgerkamera, Bild 2; jeweils 0 Pixel
 Unterschied zu den C-Modellen; „Bild“ ist die ganze Zeit von Bild 1, 20 ms = 1,485 M Takte):
