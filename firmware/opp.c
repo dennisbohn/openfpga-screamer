@@ -36,6 +36,7 @@ struct opp {
     float spin, body, dip, prev_yaw;    /* its nose turned into a bend, its body leant and
                                            pitched (0x1df24) */
     float x, y, z, yaw, pitch, roll;
+    float fwd[2];               /* (sin yaw, -cos yaw), with the heading */
     float sh_pitch, sh_roll;    /* its shadow's tilt: the car object's, kept while it crashes */
     float wheel;                /* the wheels' turn */
     int mark_at, mk_count, laps;
@@ -104,11 +105,13 @@ static void place(struct opp *o, int k)
     o->x = pos[0] + o->offx;
     o->y = pos[1] + o->offy;
     o->yaw = atan2f(der[0], -der[1]);                   /* forward = (sin yaw, -cos yaw) */
+    o->fwd[0] = sinf(o->yaw);
+    o->fwd[1] = -cosf(o->yaw);
     float h;
     int on = track_under(o->x, o->y, &h, 0);
     if(on) {
         o->z = h;
-        track_under_tilt(o->yaw, &o->pitch, &o->roll);
+        track_under_tilt(o->fwd[0], o->fwd[1], &o->pitch, &o->roll);
     }
     /* (a face found with its height is found without: only a miss asks again) */
     if(o->speed > 3000.0f && !on && !track_under(o->x, o->y, 0, 0)) o->speed = 0.0f;
@@ -165,12 +168,10 @@ static void place(struct opp *o, int k)
     }
 }
 
-/* its two circles (0x142e8, as the player's), and its forward (sin yaw, -cos yaw) in f */
-static void circles(const struct opp *o, float cx[2], float cy[2], float f[2])
+/* its two circles (0x142e8, as the player's) */
+static void circles(const struct opp *o, float cx[2], float cy[2])
 {
-    float fx = sinf(o->yaw), fy = -cosf(o->yaw);
-    f[0] = fx;
-    f[1] = fy;
+    float fx = o->fwd[0], fy = o->fwd[1];
     cx[0] = o->x + fx * o->nose; cy[0] = o->y + fy * o->nose;
     cx[1] = o->x + fx * o->tail; cy[1] = o->y + fy * o->tail;
 }
@@ -224,9 +225,9 @@ static void collide(void)
     float pcx[2], pcy[2], pr = car_circles(pcx, pcy);
     hitcar = (hitcar - (float)touch) * drive_damp(0x32) + (float)touch;     /* 0x175aa, 0x177f7 */
     touch = 0;
-    /* each one's circles and forward, once: nothing here moves an opponent or turns it */
-    float occ[OPP_MAX][2][2], of[OPP_MAX][2];
-    for(int k = 0; k < nopp; k++) circles(&opp[k], occ[k][0], occ[k][1], of[k]);
+    /* each one's circles, once: nothing here moves an opponent or turns it */
+    float occ[OPP_MAX][2][2];
+    for(int k = 0; k < nopp; k++) circles(&opp[k], occ[k][0], occ[k][1]);
     for(int k = 0; k < nopp; k++) {
         struct opp *o = &opp[k];
         const float *ocx = occ[k][0], *ocy = occ[k][1];
@@ -242,7 +243,7 @@ static void collide(void)
                         break;
                     }
                 }
-        float fx = of[k][0], fy = of[k][1];
+        float fx = o->fwd[0], fy = o->fwd[1];
         float qx = o->x + fx * o->radius * 3.0f, qy = o->y + fy * o->radius * 3.0f;
         if(fabsf(qx - c->x) < 5000.0f && fabsf(qy - c->y) < 5000.0f && c->speed < o->speed &&
            fabsf(c->z - o->z) < 600.0f) {

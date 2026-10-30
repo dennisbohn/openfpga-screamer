@@ -37,8 +37,9 @@ void track_path_point(uint32_t i, float *x, float *y, float *h);
    from the face's normal, the division cut off. */
 int track_under(float x, float y, float *h, int *grass);
 /* after track_under found a height: the tilt that lays a thing heading yaw on that face, as the
-   game stands an opponent (0x1cb9c); pitch + nose up, roll + right side up */
-void track_under_tilt(float yaw, float *pitch, float *roll);
+   game stands an opponent (0x1cb9c), given its forward (fx, fy) = (sin yaw, -cos yaw); pitch +
+   nose up, roll + right side up */
+void track_under_tilt(float fx, float fy, float *pitch, float *roll);
 
 /* MAPn.MRK: the lap's markers. slip is the cornering factor from that marker on (0 on the
    straights), flags 2 the line or a checkpoint */

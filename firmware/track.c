@@ -627,13 +627,12 @@ int track_under(float x, float y, float *h, int *grass)
 /* how the game stands a thing heading yaw on the face track_under found (0x1cb9c, an
    opponent): the face's normal turned into its frame, each level part x pi / 46080 of the
    normal's 16384 units an angle (1.117 x the slope); pitch + nose up, roll + right side up */
-void track_under_tilt(float yaw, float *pitch, float *roll)
+void track_under_tilt(float fx, float fy, float *pitch, float *roll)
 {
     float nx = under_n[0], ny = under_n[1], nz = under_n[2];
     float len = sqrtf(nx * nx + ny * ny + nz * nz);
     if(nz < 0.0f) len = -len;
     if(len != 0.0f) { nx /= len; ny /= len; }
-    float fx = sinf(yaw), fy = -cosf(yaw);
     *pitch = -1.117f * (nx * fx + ny * fy);
     *roll = 1.117f * (nx * -fy + ny * fx);
 }

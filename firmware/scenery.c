@@ -140,7 +140,7 @@ static void prop_block(struct prop *p)
 static void prop_tilt(struct prop *p)
 {
     float pitch, roll;
-    track_under_tilt(p->yaw, &pitch, &roll);
+    track_under_tilt(sinf(p->yaw), -cosf(p->yaw), &pitch, &roll);
     p->pitch = -pitch;
     p->roll = -roll;
 }
