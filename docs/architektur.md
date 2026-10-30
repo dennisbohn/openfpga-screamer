@@ -428,6 +428,23 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Streckentexturen nach der Animationsuhr). Gas liegt auf B (unten), die Bremse auf Y (links),
   wie in den klassischen Rennspielen (Super Mario Kart, Gran Turismo), die Kamera auf X (oben);
   nicht auf dem Steuerkreuz, damit ein Lenken in die Diagonale nicht bremst.
+- **Die Federung** (2026-10-30, aus der EXE: `0x168a4`, gezeichnet von `0x15c0c`): Jedes Rad
+  schwingt um bis zu 18 Einheiten. Die Tempoänderung des Bildes × 0,00175 stößt die Vorderräder
+  in die eine, die Hinterräder dreifach in die andere Richtung; die Drehrate × Tempo² × 1,5e-9
+  die linken gegen die rechten; beides durch die Bildzeit. Ein größerer Stoß startet die
+  Schwingung neu, cos(4π t + π), sie klingt ab (Steifigkeit 61 quer, 71 längs, unter 2 aus).
+  Aus den Ausschlägen wie aus Radhöhen: Nicken `+0x4e0` = atan((VR − HR) / Radstand), Rollen
+  `+0x4e8` = −atan((VL − VR) / Spur) mit der negativen Spur des Spiels, Senken `+0x4c0` =
+  Mittel. Nur die vier Karosserieblöcke (`MV_mauto`, `fauto`, `rauto`, `fai`) nicken um
+  `+0x4e0` × 2 und rollen um `+0x4e8` × 4 und sinken um `+0x4c0`, die Räder bleiben auf der
+  Straße: in der Kurve neigt sich der Aufbau nach außen, beim Bremsen taucht die Nase ein.
+  Stoßstange und Cockpit (`0x1a2ac`) nicken um `+0x4e0`, rollen um 3 × `+0x4e8` und heben sich
+  um `+0x4c0`. Weil der Querstoß zweimal durch die Bildzeit geht und die Schwelle 2 je Bild
+  gilt, läuft die Federung (`suspension_step` in `car.c`) auf den Bildern des Spiels von
+  1/30 s, die Steifigkeiten wie die Tabelle des Spiels bei 30 Bildern/s. Bei 140 km/h und voll
+  eingeschlagen rollt die Karosserie rund 3°, beim Vollbremsen nickt sie rund 3°. Die Gegner
+  (`0x1df24`, unten) rollen um v × 0,02 und nicken um −|v × 0,02|, die Nase also in jeder Kurve
+  nach unten (vorher nickten sie um v × 0,02 wie sie rollen).
 - **Reihenfolge der Objekte wie im Original** (2026-10-27, aus `STARTL.EXE` gelesen: `0x83164`
   baut die Liste aus den Rasterzellen, je Zelle Lauf 1 vor Lauf 0, mit `dist² >> 2`;
   `0x8a6a8` hängt die bewegten Objekte an; `0x8a7b0` macht daraus den Schlüssel

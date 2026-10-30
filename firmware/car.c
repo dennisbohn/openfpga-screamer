@@ -1,7 +1,8 @@
 /*
  * The player's car (car.h), after OpenScreamer's port/src/main.c (GPL-3.0), checked against
  * STARTL.EXE where it says so; the shadow, the smoke and the trackside camera from STARTL.EXE
- * itself. Not yet here: the suspension (the body's lean), the camera's fly-across between views.
+ * itself, the suspension (the body's lean) too. Not yet here: the camera's fly-across between
+ * views.
  */
 #include "car.h"
 #include <math.h>
@@ -85,6 +86,16 @@ static struct { float yaw, roll, pitch, height; int init; } chase;
 
 /* the shadow's tilt: the car object's, but kept while it crashes (state 1, 0x1604c) */
 static float shadow_pitch, shadow_roll;
+
+/* the body on its suspension (0x168a4): each wheel's swing (+0x30 its clock, +0x38 sideways,
+   +0x40 lengthways, +0x34 the deflection, wheel record +0x194 + 0x54 n; front-left, rear-left,
+   front-right, rear-right), and what they make of the four body blocks: pitch +0x4e0, roll
+   +0x4e8 (as the ground's +0x4c8 and +0x4d0 from the wheel heights, the deflections taken as
+   heights) and the drop +0x4c0 (their average); the time since its last frame and the speed
+   then (+0x588) */
+static struct swing { float phase, lat, lng; int defl; } susp[4];
+static struct { float pitch, roll; int drop; } body;
+static float susp_clock, susp_speed;
 
 /* the tyre smoke (0x19818 starts puffs, 0x19970 moves them): 8 slots (+0x308, 0x28 bytes
    each; only the player has them, 0x142e8 gives the opponents none), each an offset from the
@@ -544,6 +555,10 @@ void car_init(int which, int replay)
     walls_prepare();
     pmodel = k;
     spin = steer = 0.0f;
+    for(int j = 0; j < 4; j++) susp[j] = (struct swing){ 0 };
+    body.pitch = body.roll = 0.0f;                      /* (0x13f28: none at the start) */
+    body.drop = 0;
+    susp_clock = susp_speed = 0.0f;
     wall_hits = crashes = 0;
     crash.on = 0;
     replaying = replay;
@@ -644,6 +659,52 @@ int car_replay(void)
     return replaying;
 }
 
+/* 0x168a4, each frame after the drive (0x15b9c): the change of speed since the frame before
+   (+0x50c - +0x588, 0x15bec) x 0.00175 kicks the front wheels one way and the rear ones three
+   times as hard the other, the heading's turn a second x speed^2 x 1.5e-9 the left ones
+   against the right; both over the frame's time, a kick bigger than the swing restarts it (the
+   lengthways one eased in, stiffness 0x3d). A wheel swings as cos(4 pi t + pi) x (both), at
+   most 18 units; the swings die away (stiffness 61 sideways, 71 lengthways), under 2 gone.
+   The sideways kick, over the frame's time twice, and the cut at 2 go with the frame rate:
+   this runs on the game's frames of 1/30 s (as the opponents' lean, opp.c), its stiffnesses
+   pow(0.5 + i x 0.005, 50 / 31) as the game's table has them at 30 frames a second */
+#define GAME_DT     (1.0f / 30.0f)
+static void suspension_step(void)
+{
+    susp_clock += DRIVE_DT;
+    if(susp_clock < GAME_DT) return;
+    susp_clock -= GAME_DT;
+    const float damp61 = 0.70478698f, damp71 = 0.77672615f;
+    float a = (pc.speed - susp_speed) * 0.00175f;
+    float b = pc.speed * pc.speed * 1.5e-9f * (pc.turn / DRIVE_DT);
+    susp_speed = pc.speed;
+    for(int n = 0; n < 4; n++) {
+        struct swing *w = &susp[n];
+        float lng = ((n & 1) ? a * 3.0f : -a) / GAME_DT, lat = ((n & 2) ? b : -b) / GAME_DT;
+        if(fabsf(w->lat) < fabsf(lat)) {
+            w->phase = 0.0f;
+            w->lat = lat;
+        }
+        if(fabsf(w->lng) < fabsf(lng)) {
+            w->phase = 0.0f;
+            w->lng = (w->lng - lng) * damp61 + lng;
+        }
+        int d = (int)(cosf(w->phase * 4.0f * PI + PI) * (w->lat + w->lng));
+        w->defl = d > 18 ? 18 : d < -18 ? -18 : d;
+        w->lat *= damp61;
+        if(fabsf(w->lat) < 2.0f) w->lat = 0.0f;
+        w->lng *= damp71;
+        if(fabsf(w->lng) < 2.0f) w->lng = 0.0f;
+        w->phase += GAME_DT;
+    }
+    /* roll -atan((front-left - front-right) / track), pitch atan((front-right - rear-right) /
+       wheelbase); the game's track (+0x2e4) is -(x front-left - x front-right), the left at +x:
+       negative, so the outer side goes down in a bend and the nose under braking */
+    body.drop = (susp[0].defl + susp[1].defl + susp[2].defl + susp[3].defl) / 4;
+    body.roll = atanf((float)(susp[0].defl - susp[2].defl) / (2.0f * model.half_track));
+    body.pitch = atanf((float)(susp[2].defl - susp[3].defl) / pc.wheelbase);
+}
+
 void car_step(uint32_t keys)
 {
     struct drive_input in;
@@ -669,6 +730,7 @@ void car_step(uint32_t keys)
     int crashed = crash.on;
     crash_step();
     drive_step(&pc, &in);
+    suspension_step();
     whole_step();
     /* 0x17d04's smoke: its branch for locked wheels, taken only out of a crash and while the
        engine pulls (flag 0x40 at 0x18e19, time over), or the body more than 0.23 rad off its
@@ -775,8 +837,9 @@ int car_model_index(const struct car_spec *sp)
 }
 
 /* a car as it is drawn: the cos and sin of the wheels' turn and the front ones' angle, of the
-   object's pitch, roll and heading, of the body's own pitch and roll, and its place */
-struct pose { float sc[4], car[6], body[4]; int lean; float x, y, z; };
+   object's pitch, roll and heading, of the body's own pitch and roll, and its place; how far
+   the body is dropped */
+struct pose { float sc[4], car[6], body[4]; int lean; float x, y, z, drop; };
 
 /* A block's point p (as stored) in the world (block_to_view, tilt, place): a wheel turned
    about its axle and steered, moved to its place on the car, a body block leant on its own,
@@ -795,10 +858,10 @@ static void block_point(const struct cblock *q, const struct pose *ps, const flo
         y = y2;
     }
     x += q->t[0]; y += q->t[1]; z += q->t[2];
-    if(ps->lean && !q->wheel) {                         /* the body's lean (an opponent in a bend) */
+    if(ps->lean && !q->wheel) {     /* the body's lean (the suspension, an opponent in a bend) */
         float yb = y * ps->body[0] - z * ps->body[1], zb = z * ps->body[0] + y * ps->body[1];
         float xb = x * ps->body[2] - yb * ps->body[3];
-        y = yb * ps->body[2] + x * ps->body[3];
+        y = yb * ps->body[2] + x * ps->body[3] - ps->drop;
         x = xb;
         z = zb;
     }
@@ -828,15 +891,16 @@ static void place_block(const struct cblock *q, const struct pose *ps, struct tr
     }
 }
 
-/* m's blocks placed as lk into out in the game's order for the camera: how many */
-static int draw_model(const struct cmodel *m, const struct car_look *lk, const struct track_cam *cam,
+/* m's blocks placed as lk, the body dropped by drop, into out in the game's order for the
+   camera: how many */
+static int draw_model(const struct cmodel *m, const struct car_look *lk, float drop, const struct track_cam *cam,
                       struct track_block *out)
 {
     static struct track_block tb[MAX_BLOCKS];
     struct pose ps = { { cosf(lk->spin), sinf(lk->spin), cosf(lk->steer), sinf(lk->steer) },
                        { cosf(lk->pitch), sinf(lk->pitch), cosf(lk->roll), sinf(lk->roll), cosf(lk->yaw), sinf(lk->yaw) },
                        { cosf(lk->body_pitch), sinf(lk->body_pitch), cosf(lk->body_roll), sinf(lk->body_roll) },
-                       lk->body_pitch != 0.0f || lk->body_roll != 0.0f, lk->x, lk->y, lk->z };
+                       lk->body_pitch != 0.0f || lk->body_roll != 0.0f || drop != 0.0f, lk->x, lk->y, lk->z, drop };
     int ord[MAX_BLOCKS];
     float key[MAX_BLOCKS];
     for(int b = 0; b < m->ncb; b++) {
@@ -861,12 +925,12 @@ static int draw_model(const struct cmodel *m, const struct car_look *lk, const s
     return m->ncb;
 }
 
-int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, struct track_block *out,
-             struct track_object *obj)
+static int draw_car(int model, const struct car_look *lk, float drop, const struct track_cam *cam,
+                    struct track_block *out, struct track_object *obj)
 {
     const struct cmodel *m = cmodel(model);
     if(!m->ncb) return 0;
-    draw_model(m, lk, cam, out);
+    draw_model(m, lk, drop, cam, out);
     obj->x = lk->x;
     obj->y = lk->y;
     obj->h = lk->z;
@@ -876,12 +940,18 @@ int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, 
     return 1;
 }
 
+int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, struct track_block *out,
+             struct track_object *obj)
+{
+    return draw_car(model, lk, 0.0f, cam, out, obj);
+}
+
 int car_mesh_draw(const uint8_t *mesh, const struct car_look *lk, const struct track_cam *cam,
                   struct track_block *out)
 {
     static struct cmodel m;
     cmodel_build(&m, mesh);
-    return draw_model(&m, lk, cam, out);
+    return draw_model(&m, lk, 0.0f, cam, out);
 }
 
 /* the player's car's blocks, when it comes up in the drawing */
@@ -890,13 +960,14 @@ static int car_make(int id, const struct track_cam *cam, struct track_object *ob
     static struct track_block blocks[MAX_BLOCKS];
     (void)id;
     /* the object's angles (player_sync): the car's, negated, and a crash's tumbling on top;
-       the texture frame (0x173a9): paint job | 0x4000 not braking | 0x2000 at 4000 units/s or
-       under, of which the phase is a quarter (record +0x20 >> 2) */
+       the four body blocks (0x15c0c): pitch +0x4e0 x 2, roll +0x4e8 x 4, the height less
+       +0x4c0; the texture frame (0x173a9): paint job | 0x4000 not braking | 0x2000 at 4000
+       units/s or under, of which the phase is a quarter (record +0x20 >> 2) */
     struct car_look lk = { pc.x, pc.y, pc.z + crash.height, pc.yaw + pc.drift, -pc.pitch + crash.pitch,
-                           -pc.roll + crash.roll, 0.0f, 0.0f, spin, steer,
+                           -pc.roll + crash.roll, body.pitch * 2.0f, body.roll * 4.0f, spin, steer,
                            ((uint32_t)pc.spec.livery | (pc.brake == 0.0f ? 0x4000u : 0) |
                             (pc.speed <= 4000.0f ? 0x2000u : 0)) >> 2 };
-    return car_draw(pmodel, &lk, cam, blocks, obj);
+    return draw_car(pmodel, &lk, (float)body.drop, cam, blocks, obj);
 }
 
 int car_object(const struct track_cam *cam, struct track_object *obj)
@@ -932,7 +1003,7 @@ void car_flat_block(const uint8_t *file, float x, float y, float z, float yaw, f
                     struct track_block *out)
 {
     const struct cblock q = { 0 };
-    struct pose ps = { { 1.0f, 0.0f, 1.0f, 0.0f }, { 0 }, { 1.0f, 0.0f, 1.0f, 0.0f }, 0, x, y, z };
+    struct pose ps = { { 1.0f, 0.0f, 1.0f, 0.0f }, { 0 }, { 1.0f, 0.0f, 1.0f, 0.0f }, 0, x, y, z, 0.0f };
     sin_cos(pitch, &ps.car[1], &ps.car[0]);
     sin_cos(roll, &ps.car[3], &ps.car[2]);
     ps.car[4] = cosf(yaw);
@@ -946,7 +1017,7 @@ void car_flat_block(const uint8_t *file, float x, float y, float z, float yaw, f
 int car_mesh_blocks(const uint8_t *file, float x, float y, float z, float yaw, float pitch, float roll,
                     struct track_block *out, int max)
 {
-    struct pose ps = { { 1.0f, 0.0f, 1.0f, 0.0f }, { 0 }, { 1.0f, 0.0f, 1.0f, 0.0f }, 0, x, y, z };
+    struct pose ps = { { 1.0f, 0.0f, 1.0f, 0.0f }, { 0 }, { 1.0f, 0.0f, 1.0f, 0.0f }, 0, x, y, z, 0.0f };
     sin_cos(pitch, &ps.car[1], &ps.car[0]);
     sin_cos(roll, &ps.car[3], &ps.car[2]);
     ps.car[4] = cosf(yaw);
@@ -1131,12 +1202,14 @@ void car_camera(struct track_cam *cam)
         return;
     }
     if(v->incar) {
+        /* 0x1a2ac: with the suspension, pitch + the body's +0x4e0, roll + 3 x its +0x4e8 (the
+           camera's roll is the other way round from the game's), height + its drop */
         cam->x = pc.x;
         cam->y = pc.y;
-        cam->h = pc.z + CAMERA_HI;
+        cam->h = pc.z + CAMERA_HI + (float)body.drop;
         cam->yaw = pc.yaw + pc.drift;
-        cam->pitch = pc.pitch;
-        cam->roll = pc.roll;
+        cam->pitch = pc.pitch + body.pitch;
+        cam->roll = pc.roll - 3.0f * body.roll;
         return;
     }
     float cp = cosf(chase.pitch);

@@ -12,7 +12,8 @@
  *   view: 0 bumper, 1 cockpit, 2 near chase (default), 3 far chase; steps: physics steps on
  *   the grid before the picture (default 2); n: the track's number (default 1); car: the
  *   player's row of CARS.DTR (default 0), the opponents take the others
- *   PAUSE=1 in the environment: the pause's picture over the frame (the race screen left out),
+ *   GAS=1 in the environment: the pedal down for the steps; TURN=k: the last k steering left (-k
+ *   right), BRAKE=k: the last k braking. PAUSE=1: the pause's picture over the frame (the race screen left out),
  *   with the disc's tracks 2-8, 3 playing (GAME.DAT for the CD player in the working directory);
  *   PAUSE=2: PLAY AGAIN? TRACKSIDE=1: the trackside camera after the steps, HUD=1 with the race
  *   screen. REPLAYCHECK=s: the replay's determinism check instead (replay_check()), REPLAYAT=k
@@ -284,8 +285,13 @@ int main(int argc, char **argv)
     car_init(car, 0);
     opp_init(car);
     car_view(view);
+    int turn = getenv("TURN") ? atoi(getenv("TURN")) : 0, brake = getenv("BRAKE") ? atoi(getenv("BRAKE")) : 0;
     for (int k = 0; k < steps; k++) {
-        car_step(getenv("GAS") ? KEY_B : 0);        /* GAS=1: the pedal down */
+        uint32_t keys = getenv("GAS") ? KEY_B : 0;  /* GAS=1: the pedal down */
+        if (k >= steps - abs(turn)) keys |= turn > 0 ? KEY_LEFT : KEY_RIGHT;   /* TURN=k: the last k steps
+                                                                                  left, -k right */
+        if (k >= steps - brake) keys = (keys & ~KEY_B) | KEY_Y;                /* BRAKE=k: braking */
+        car_step(keys);
         opp_step();
         scenery_step();
     }

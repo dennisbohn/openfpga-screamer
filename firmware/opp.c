@@ -32,7 +32,8 @@ struct opp {
     int crash, bounces;
     float vy, up, tip, turn, lean, tip_rate, turn_rate, lean_rate;
     float nose, tail, radius;   /* its two circles: ahead of and behind its origin, their radius */
-    float spin, body, prev_yaw; /* its nose turned into a bend, its body leant (0x1df24) */
+    float spin, body, dip, prev_yaw;    /* its nose turned into a bend, its body leant and
+                                           pitched (0x1df24) */
     float x, y, z, yaw, pitch, roll;
     float sh_pitch, sh_roll;    /* its shadow's tilt: the car object's, kept while it crashes */
     float wheel;                /* the wheels' turn */
@@ -438,7 +439,9 @@ void opp_step(void)
         }
         /* 0x1df24: in a bend the nose turns in and the body leans a little: v = (speed x sband)^2
            x the heading's turn over the step before (a frame of the game's 1/30 s), held to
-           +-2; the heading's offset eases to v / 2, the body to v x 0.02 of pitch and roll */
+           +-2; the heading's offset eases to v / 2 (+0x4c8), the body's roll to v x 0.02
+           (+0x4b8) and its pitch to -|v x 0.02| (+0x4b0): nose down whichever way it turns.
+           (0x1c9c0 gives the first body block the roll as its pitch instead; not copied) */
         float v = o->speed * sp->sband;
         v = v * v * wrap_pi(o->yaw - o->prev_yaw) * (50.0f / 30.0f);
         if(v > 2.0f) v = 2.0f;
@@ -447,6 +450,7 @@ void opp_step(void)
         o->prev_yaw = o->yaw;
         o->spin = (o->spin - v * 0.5f) * drive_damp(0x4f) + v * 0.5f;
         o->body = (o->body - v * 0.02f) * drive_damp(0x4c) + v * 0.02f;
+        o->dip = (o->dip + fabsf(v) * 0.02f) * drive_damp(0x4c) - fabsf(v) * 0.02f;
         /* 0x1d6ac: a collision's push carries on for a moment and fades; three seconds after
            the last one it drifts back to its line */
         if(o->shove > 0.0f) {
@@ -495,7 +499,7 @@ static int opp_make(int k, const struct track_cam *cam, struct track_object *obj
     struct car_look lk = { o->x, o->y, o->z + (o->crash == 1 ? o->up : 0.0f),
                            o->yaw + o->spin + (o->crash ? o->turn : 0.0f),
                            -o->pitch + (o->crash == 1 ? o->tip : 0.0f), -o->roll + (o->crash == 1 ? o->lean : 0.0f),
-                           o->body, o->body, o->wheel, 0.0f,
+                           o->dip, o->body, o->wheel, 0.0f,
                            (o->livery | 0x4000u | (o->speed <= 4000.0f ? 0x2000u : 0)) >> 2 };
     return car_draw(o->model, &lk, cam, blocks[k], obj);
 }
