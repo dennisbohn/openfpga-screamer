@@ -684,17 +684,12 @@ float car_speed_needle(void)
     return needle_speed;
 }
 
-/* model k (AUTOk) */
-static const struct cmodel *cmodel(int k)
+/* a car's mesh as car_draw takes it */
+static void cmodel_build(struct cmodel *m, const uint8_t *mesh)
 {
-    int nm;
-    track_models(&nm);
-    if(k < 0 || k >= nm || k >= MAX_MODELS) k = 0;
-    struct cmodel *m = &cmodels[k];
-    if(m->ready) return m;
     /* the blocks: a name of three letters ending in i (a tyre, the arches' insides) counts
        4000 further off, one ending in x (a hub) 1000, unless it starts with A */
-    m->mesh = track_model_mesh(k);
+    m->mesh = mesh;
     m->ncb = 0;
     for(int b = 0; b < *(const int32_t *)(m->mesh + 0x14) && m->ncb < MAX_BLOCKS; b++) {
         struct cblock *q = &m->cb[m->ncb++];
@@ -712,6 +707,16 @@ static const struct cmodel *cmodel(int k)
         q->steers = q->wheel && q->t[2] < 0.0f;
     }
     m->ready = 1;
+}
+
+/* model k (AUTOk) */
+static const struct cmodel *cmodel(int k)
+{
+    int nm;
+    track_models(&nm);
+    if(k < 0 || k >= nm || k >= MAX_MODELS) k = 0;
+    struct cmodel *m = &cmodels[k];
+    if(!m->ready) cmodel_build(m, track_model_mesh(k));
     return m;
 }
 
@@ -774,12 +779,11 @@ static void place_block(const struct cblock *q, const struct pose *ps, struct tr
     }
 }
 
-int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, struct track_block *out,
-             struct track_object *obj)
+/* m's blocks placed as lk into out in the game's order for the camera: how many */
+static int draw_model(const struct cmodel *m, const struct car_look *lk, const struct track_cam *cam,
+                      struct track_block *out)
 {
     static struct track_block tb[MAX_BLOCKS];
-    const struct cmodel *m = cmodel(model);
-    if(!m->ncb) return 0;
     struct pose ps = { { cosf(lk->spin), sinf(lk->spin), cosf(lk->steer), sinf(lk->steer) },
                        { cosf(lk->pitch), sinf(lk->pitch), cosf(lk->roll), sinf(lk->roll), cosf(lk->yaw), sinf(lk->yaw) },
                        { cosf(lk->body_pitch), sinf(lk->body_pitch), cosf(lk->body_roll), sinf(lk->body_roll) },
@@ -805,6 +809,15 @@ int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, 
         ord[i] = b;
     }
     for(int b = 0; b < m->ncb; b++) out[b] = tb[ord[b]];
+    return m->ncb;
+}
+
+int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, struct track_block *out,
+             struct track_object *obj)
+{
+    const struct cmodel *m = cmodel(model);
+    if(!m->ncb) return 0;
+    draw_model(m, lk, cam, out);
     obj->x = lk->x;
     obj->y = lk->y;
     obj->h = lk->z;
@@ -812,6 +825,14 @@ int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, 
     obj->n = m->ncb;
     obj->b = out;
     return 1;
+}
+
+int car_mesh_draw(const uint8_t *mesh, const struct car_look *lk, const struct track_cam *cam,
+                  struct track_block *out)
+{
+    static struct cmodel m;
+    cmodel_build(&m, mesh);
+    return draw_model(&m, lk, cam, out);
 }
 
 /* the player's car's blocks, when it comes up in the drawing */

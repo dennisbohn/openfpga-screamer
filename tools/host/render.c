@@ -8,12 +8,13 @@
  * at SDRAM_UBASE, the same memory), the registers and frame buffers at 0xF0000000, so its
  * pointers and SDRAM byte addresses work unchanged.
  *
- * Usage: render <track image> <MAPnH.DAT> <MAPn.DAT> <out.rgb> [view [steps [n]]]
+ * Usage: render <track image> <MAPnH.DAT> <MAPn.DAT> <out.rgb> [view [steps [n [car]]]]
  *   view: 0 bumper, 1 cockpit, 2 near chase (default), 3 far chase; steps: physics steps on
- *   the grid before the picture (default 2); n: the track's number (default 1)
- *        render menu <MENU.DAT> <GRAF.DAT> <LOCAL.DAT> <out.rgb> [n [steps]]
- *   the track screen (menu.h) with track n chosen (default 1), steps of 1/50 s after entering
- *   it (default 0)
+ *   the grid before the picture (default 2); n: the track's number (default 1); car: the
+ *   player's row of CARS.DTR (default 0), the opponents take the others
+ *        render menu <MENU.DAT> <GRAF.DAT> <LOCAL.DAT> <GEN.DAT> <out.rgb> [screen [n [steps]]]
+ *   the track screen (screen 1, the default) with track n chosen or the car screen (screen 2)
+ *   with the car of row n - 1 (menu.h; default 1), steps of 1/50 s after entering it (default 0)
  */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -32,6 +33,7 @@
 #define MENU_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x200000))       /* as main.c */
 #define GRAF_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x600000))
 #define MENU_MEM    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0xA00000))
+#define GEN_FILE    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2D40000))
 #define LOCAL_FILE  ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2D50000))
 #define SCRATCH     ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2D60000))
 #define TEX_FILE    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000))      /* as main.c */
@@ -76,15 +78,16 @@ static void write_rgb(const char *path, const uint32_t *pal)
     fclose(f);
 }
 
-/* the track screen: the containers whole (the firmware loads only menu.h's parts of them) */
+/* a screen of the menu: the containers whole (the firmware loads only menu.h's parts of them) */
 static int menu(int argc, char **argv)
 {
-    int n = argc > 6 ? atoi(argv[6]) : 1, steps = argc > 7 ? atoi(argv[7]) : 0;
+    int screen = argc > 7 && atoi(argv[7]) == 2 ? MENU_CAR_SCREEN : MENU_TRACK_SCREEN;
+    int n = argc > 8 ? atoi(argv[8]) : 1, steps = argc > 9 ? atoi(argv[9]) : 0;
     uint32_t menu_size = load(argv[2], MENU_FILE, 0x400000), graf_size = load(argv[3], GRAF_FILE, 0x400000);
-    uint32_t local_size = load(argv[4], LOCAL_FILE, 0x10000);
-    if (!menu_init(MENU_FILE, menu_size, GRAF_FILE, graf_size, LOCAL_FILE, local_size, MENU_MEM, 0x80000, SCRATCH,
-                   0x2A0000)) { fprintf(stderr, "track screen: its files are not all there\n"); return 1; }
-    menu_enter(n);
+    uint32_t local_size = load(argv[4], LOCAL_FILE, 0x10000), gen_size = load(argv[5], GEN_FILE, 0x10000);
+    if (!menu_init(MENU_FILE, menu_size, GRAF_FILE, graf_size, LOCAL_FILE, local_size, GEN_FILE, gen_size, MENU_MEM,
+                   0x80000, SCRATCH, 0x2A0000)) { fprintf(stderr, "menu: its files are not all there\n"); return 1; }
+    menu_enter(screen, n);
     for (int k = 0; k < steps; k++) menu_step(0, 0);
     static struct blit_list l;
     volatile uint8_t *fb = FB(0);
@@ -96,17 +99,17 @@ static int menu(int argc, char **argv)
     blit_start(&l, 0);
     menu_text(&l);
     blit_model(fb, &l);
-    write_rgb(argv[5], menu_palette());
+    write_rgb(argv[6], menu_palette());
     return 0;
 }
 
 int main(int argc, char **argv)
 {
     map();
-    if (argc >= 6 && !strcmp(argv[1], "menu")) return menu(argc, argv);
-    if (argc < 5) { fprintf(stderr, "usage: render <track image> <MAPnH.DAT> <MAPn.DAT> <out.rgb> [view [steps [n]]]\n"); return 2; }
+    if (argc >= 7 && !strcmp(argv[1], "menu")) return menu(argc, argv);
+    if (argc < 5) { fprintf(stderr, "usage: render <track image> <MAPnH.DAT> <MAPn.DAT> <out.rgb> [view [steps [n [car]]]]\n"); return 2; }
     int view = argc > 5 ? atoi(argv[5]) : CAR_VIEW_START, steps = argc > 6 ? atoi(argv[6]) : 2;
-    int n = argc > 7 ? atoi(argv[7]) : 1;
+    int n = argc > 7 ? atoi(argv[7]) : 1, car = argc > 8 ? atoi(argv[8]) : 0;
     MEM_STATUS = MEM_LOCKED | MEM_READY | MEM_WRITES_IDLE;     /* waited for by efx_init */
     load(argv[1], TEX_FILE, 0x700000);
     if (!track_open(TEX_FILE) || !track_init()) { fprintf(stderr, "track image not usable\n"); return 1; }
@@ -116,8 +119,8 @@ int main(int argc, char **argv)
     int props, moving;
     scenery_init(DATA_FILE, data_size, GFX_FILE, gfx_size, n, SCENERY_MEM, 0x10000, &props, &moving);
     printf("scenery: %d props, %d moving\n", props, moving);
-    car_init(0);
-    opp_init(0);
+    car_init(car);
+    opp_init(car);
     car_view(view);
     for (int k = 0; k < steps; k++) {
         car_step(0, 0);

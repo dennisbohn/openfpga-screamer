@@ -46,6 +46,10 @@ struct car_look { float x, y, z, yaw, pitch, roll, body_pitch, body_roll, spin, 
 int car_model_index(const struct car_spec *sp);
 int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, struct track_block *out,
              struct track_object *obj);
+/* The same for a car's mesh that is not the track's (the car screen's AAUTOnn.3DX, menu.h): its
+   blocks into out (CAR_BLOCKS) in the game's order for the camera; how many */
+int car_mesh_draw(const uint8_t *mesh, const struct car_look *lk, const struct track_cam *cam,
+                  struct track_block *out);
 
 /* The first block of a flat mesh (a shadow) placed as a car's body is: at x, y, z, heading yaw,
    tilted by pitch and roll (struct car_look's) */

@@ -6,7 +6,8 @@
 #   does not build it: a few minutes. --full: as on the Pocket, the firmware builds the image,
 #   then the two resets; before a release or when the image build or resets changed.
 #   SIM_TRACK=n: track n (default 1; the simulation has no track screen). SIM_MENU=1: the
-#   track screen instead of the race, its third frame checked (with SIM_TRACK chosen).
+#   track screen instead of the race, its third frame checked (with SIM_TRACK chosen); SIM_MENU=2:
+#   the car screen (the first car chosen).
 #   --save: this run becomes the baseline the summary compares with. The log goes to
 #   build/sim/<name>.log (name default "check"), the sound of the run to build/sim/audio.wav
 #   (SIM_WAV names another file).

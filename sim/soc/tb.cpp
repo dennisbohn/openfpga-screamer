@@ -536,13 +536,14 @@ int main(int argc, char **argv) {
             extra++;
         }
     }
-    // SIM_MENU=1 (tools/sim.sh): slot 27, the track screen instead of the race, its third frame
-    // checked against the C models
+    // SIM_MENU=1 or 2 (tools/sim.sh): slot 27 with that size, the track screen (1) or the car
+    // screen (2) instead of the race, its third frame checked against the C models
     if (const char *m = getenv("SIM_MENU")) {
-        if (*m && *m != '0' && extra < 32) {
+        uint32_t n = uint32_t(strtoul(m, nullptr, 10));
+        if (n && extra < 32) {
             s.bridge_write(0xF8002000u + 8 * uint32_t(extra), 27);
-            s.bridge_write(0xF8002004u + 8 * uint32_t(extra), 1);
-            printf("the track screen (slot 27)\n");
+            s.bridge_write(0xF8002004u + 8 * uint32_t(extra), n);
+            printf("the %s screen (slot 27)\n", n == 2 ? "car" : "track");
         }
     }
     {

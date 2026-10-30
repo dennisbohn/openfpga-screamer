@@ -57,7 +57,8 @@ static uint8_t col_bg = COL_BG, col_text = COL_TEXT, col_dim = COL_DIM, col_aler
 #define RACE_SLOT   29          /* the simulation only: its size, the frames after the green light
                                    (run_track) */
 #define TRACK_SLOT  28          /* the simulation only: its size, the track raced (none: track 1) */
-#define MENU_CHECK_SLOT 27      /* the simulation only: there, the track screen instead (track_screen) */
+#define MENU_CHECK_SLOT 27      /* the simulation only: its size, a screen of the menu instead (1 the
+                                   track screen, 2 the car screen; menu_screen) */
 static const struct game_file { const char *name; uint32_t addr, max; } game_files[5] = {
     { "MAP#H.DAT", SDRAM_BASE + 0x2800000, 0x400000 },     /* # the track's number */
     { "GAME.DAT",  SDRAM_BASE + 0x2C00000, 0x100000 },
@@ -68,10 +69,10 @@ static const struct game_file { const char *name; uint32_t addr, max; } game_fil
 #define BUILD_SCRATCH   (SDRAM_BASE + 0x2D60000)
 static struct track_files game;         /* where they are, as loaded */
 static int track_loaded;                /* the track whose two containers are loaded, 0 none */
-/* The track screen's files (menu.h): of GFX/MENU.DAT and GFX/GRAF.DAT (data slots 19 and 20,
-   core/data.json with the same addresses and limits) only the parts it needs, each at its place
-   in the file; its picture, sprites and fonts after them. Below the sounds, where nothing else
-   writes: loaded once. */
+/* The track and car screens' files (menu.h): of GFX/MENU.DAT and GFX/GRAF.DAT (data slots 19
+   and 20, core/data.json with the same addresses and limits) only the parts they need, each at
+   its place in the file; their pictures, sprites and fonts after them. Below the sounds, where
+   nothing else writes: loaded once. */
 #define MENU_SLOT   19
 #define GRAF_SLOT   20
 #define MENU_FILE   (SDRAM_BASE + 0x200000)
@@ -458,16 +459,16 @@ static int dashboard_init(void);
 
 #define OVER_STEPS  250         /* the race over for 5 s: back to the track screen */
 
-/* The race until SELECT or OVER_STEPS after its end (never in the simulation, which stops
-   after the frame it checks) */
-static void run_track(void)
+/* The race with the car of CARS.DTR row car until SELECT or OVER_STEPS after its end (never in
+   the simulation, which stops after the frame it checks); the opponents take the other rows */
+static void run_track(int car)
 {
     const uint32_t *pal = track_palette();
     uint32_t drawn = 0, keys_before = 0, last_frame = 0, steps = 0, over = 0;
     uint32_t fps = 0, fps_drawn = 0, fps_frame = 0;
     int car_v = CAR_VIEW_START;
-    car_init(0);
-    opp_init(0);
+    car_init(car);
+    opp_init(car);
     car_view(car_v);
     int dash_ok = dashboard_init();
     track_mode = TRACK_HW;
@@ -826,7 +827,8 @@ static uint32_t load_parts(uint32_t id, uint32_t addr, uint32_t max, const struc
     return size;
 }
 
-/* The track screen from GFX/MENU.DAT, GFX/GRAF.DAT and DATA/LOCAL.DAT; 1 if it is there */
+/* The track and car screens from GFX/MENU.DAT, GFX/GRAF.DAT, DATA/LOCAL.DAT and DATA/GEN.DAT; 1
+   if they are there */
 static int menus(void)
 {
     uint32_t t0 = rdcycle();
@@ -834,15 +836,17 @@ static int menus(void)
     uint32_t graf_size = load_parts(GRAF_SLOT, GRAF_FILE, MENU_MAX, menu_graf_parts);
     int ok = menu_size && graf_size &&
              menu_init((const uint8_t *)(uintptr_t)MENU_FILE, menu_size, (const uint8_t *)(uintptr_t)GRAF_FILE,
-                       graf_size, game.local, game.local_size, MENU_MEM, MENU_SIZE, (uint8_t *)BUILD_SCRATCH,
-                       PROG_BASE - BUILD_SCRATCH);
-    while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* the picture in the SDRAM for the blitter */
+                       graf_size, game.local, game.local_size, game.gen, game.gen_size, MENU_MEM, MENU_SIZE,
+                       (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH);
+    while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* the pictures in the SDRAM for the blitter */
         ;
-    dlog_str("track screen: MENU.DAT ");
+    dlog_str("menu: MENU.DAT ");
     dlog_dec((int32_t)menu_size);
     dlog_str(", GRAF.DAT ");
     dlog_dec((int32_t)graf_size);
-    dlog_str(ok ? " bytes, their parts loaded in " : " bytes - not all there (no track screen: track 1), in ");
+    dlog_str(", ");
+    dlog_dec(menu_cars());
+    dlog_str(ok ? " cars, their parts loaded in " : " cars - not all there (no menu: track 1, car 1), in ");
     dlog_dec((int32_t)((rdcycle() - t0) / (CPU_HZ / 1000)));
     dlog_str(" ms\n");
     return ok;
@@ -963,21 +967,24 @@ static int dashboard_init(void)
     return ok;
 }
 
-/* The track screen (menu.h) from track n on until one is taken: its number. The picture by the
-   blitter, the models through the geometry unit while it waits (hw_piece), the texts after them.
-   In the simulation (SIM_MENU) its third frame is checked against the C models and reported. */
-static int track_screen(int n)
+/* The track screen or the car screen (menu.h) from choice n on until one is taken: its number
+   (the track, the car's row + 1), -1 when the car screen goes back to the track screen. The
+   picture by the blitter, the models through the geometry unit while it waits (hw_piece), the
+   texts after them. In the simulation (SIM_MENU) its third frame is checked against the C models
+   and reported. */
+static int menu_screen(int screen, int n)
 {
-    const uint32_t *pal = menu_palette();
     uint32_t drawn = 0, keys_before = IN_KEY, last_frame = 0, sim = SYS_FLAGS & FLAG_SIM;
-    menu_enter(n);
+    menu_enter(screen, n);
+    const uint32_t *pal = menu_palette();
     music_play(0);
     track_mode = TRACK_HW;
     track_hw_piece = hw_piece;
     GU_MLB = (uint32_t)((uintptr_t)menu_mlb() - SDRAM_BASE);
     GU_INVAL = 1;
+    RS_CTRL = 1;                                /* the texture cache: the cars' are MENU.MLB's */
     for (;;) {
-        uint32_t st = wait_swap_done(), keys = IN_KEY;
+        uint32_t st = wait_swap_done(), keys = IN_KEY, t_frame = rdcycle();
         music_frame();
         frames_shown = drawn;
         if (sim && drawn == 3) {
@@ -1013,6 +1020,14 @@ static int track_screen(int n)
         hw_blit(&hud);
         while (RS_DRAW & RS_BUSY)
             ;
+        if (drawn % 250 == 2) {
+            dlog_str(screen == MENU_CAR_SCREEN ? "car screen" : "track screen");
+            dlog_str(" frame ");
+            dlog_dec((int32_t)drawn);
+            dlog_str(": ");
+            dlog_dec((int32_t)(rdcycle() - t_frame));
+            dlog_str(" cycles\n");
+        }
         if (sim && drawn == 2) {
             volatile uint8_t *m = CHECK_BUF;
             uint32_t t0 = rdcycle();
@@ -1029,9 +1044,9 @@ static int track_screen(int n)
 }
 
 /* Track n from its containers: the image built at TEX_FILE (or the testbench's) and used only
-   once all its blocks are as written, the effects and scenery, then the race until it is left;
-   0 if the track could not be set up */
-static int race(int n)
+   once all its blocks are as written, the effects and scenery, then the race with the car of
+   CARS.DTR row car until it is left; 0 if the track could not be set up */
+static int race(int n, int car)
 {
     int placements = 0;
     music_stop();                               /* before the loads: none of its reads running */
@@ -1068,7 +1083,7 @@ static int race(int n)
     scenery(n);
     RS_CTRL = 1;
     music_play(n);
-    run_track();
+    run_track(car);
     AU_STOP = 0xFFFFFFFFu;                      /* the race's sounds end with it */
     return 1;
 }
@@ -1081,16 +1096,23 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     log_head("frames drawn: ", 0);
     dlog_str("program.bin: running in the SDRAM\n");
 
-    /* the game's files that stay (data slots 4, 6, 7, deferload) and the track screen's; then
-       the track screen and the race on the track chosen, for ever. The simulation races the
-       testbench's track at once. */
+    /* the game's files that stay (data slots 4, 6, 7, deferload) and the menu's; then the track
+       screen, the car screen (Y or SELECT there: the track screen again) and the race on the
+       track chosen with the car chosen, for ever. The simulation races the testbench's track
+       with the first car at once, or shows the screen MENU_CHECK_SLOT names. */
     if (load_containers(0, FIXED_FILES)) {
         music_init(game.gen, game.gen_size);
-        int sim = (SYS_FLAGS & FLAG_SIM) != 0, screen = (!sim || slot_size(MENU_CHECK_SLOT)) && menus();
-        int n = sim && slot_size(TRACK_SLOT) ? (int)slot_size(TRACK_SLOT) : 1;
+        int sim = (SYS_FLAGS & FLAG_SIM) != 0, check = sim ? (int)slot_size(MENU_CHECK_SLOT) : 0;
+        int screen = (!sim || check) && menus();
+        int n = sim && slot_size(TRACK_SLOT) ? (int)slot_size(TRACK_SLOT) : 1, car = 0;
         for (;;) {
-            if (screen) n = track_screen(n);
-            if (!race(n) && !screen) break;
+            if (screen) {
+                if (check != 2) n = menu_screen(MENU_TRACK_SCREEN, n);
+                int c = menu_screen(MENU_CAR_SCREEN, car + 1);
+                if (c < 0) continue;
+                car = c - 1;
+            }
+            if (!race(n, car) && !screen) break;
         }
     }
     /* no track: the scene with test patterns, written before the rasterizer reads them */

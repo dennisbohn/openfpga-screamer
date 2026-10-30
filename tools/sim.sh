@@ -18,7 +18,8 @@
 # SIM_QUICK=1 leaves out the two resets after the first run, SIM_IMAGE=<file> offers the
 # finished track image as data slot 30 so the firmware does not build it (tools/simcheck.sh).
 # SIM_TRACK=<n> races track n (data slot 28; default 1); SIM_IMAGE must then be track n's.
-# SIM_MENU=1 shows the track screen instead (data slot 27) and checks its third frame.
+# SIM_MENU=1 shows the track screen instead (data slot 27) and checks its third frame, SIM_MENU=2
+# the car screen.
 # SIM_KEYS=<hex> holds those buttons all the time (cont1_key, firmware/hw.h: 0x20 B the gas,
 # 0x80 Y the brake, 0x40 X one press at the start: the far chase); SIM_RACE_FRAMES=<n> runs
 # the start lights' countdown at once and checks the n-th frame after the green light, written
