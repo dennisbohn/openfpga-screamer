@@ -13,7 +13,8 @@ auf dem Pocket steht aus: Routine 224 (Rauch, Schatten unter allen Autos), das R
 Cockpit-Ansicht, die Startrichtung des Originals und der Ton: ein Mischer mit 32 Stimmen
 (`audio.v`), der die Soundeffekte aus `SOUND.DAT` spielt (Motor, Rutschen, Wand, Crash,
 Requisiten, Berührung mit einem Gegner, die Motoren der Gegner und die Fahrzeuge der Strecke,
-im Stereobild und mit Doppler).
+im Stereobild und mit Doppler). Seit 2026-10-30 gebaut, Test auf dem Pocket steht aus: alle
+sechs Strecken, gewählt im Streckenbildschirm des Originals (siehe „Streckenwahl“).
 Belegung siehe „Belegung“, alles gemessen.
 
 ## Hardware des Pocket (Haupt-FPGA)
@@ -80,11 +81,38 @@ dem PC baute, Byte für Byte dasselbe (`track_build.c`; Simulation: 3,2 s, davon
 Entpacken, der Rest vor allem der Kamerapfad in `double` und die Prüfsummen). Alle Dateien
 wären 33, eine mehr als die 32 Slots; da wir auf HI laufen, fallen die sechs L-Strecken
 weg, und mit der CD-Musik `MUSIC.DAT`, dafür kommen `SCREAM.gog` und `SCREAM.DAT` dazu.
+Seit 2026-10-30 sind es 18 Spieldateien: die Container der Strecken 2 bis 6 (Slots 9 bis 13
+`MAP2H.DAT`–`MAP6H.DAT`, 14 bis 18 `MAP2.DAT`–`MAP6.DAT`, an dieselben Adressen wie die von
+Strecke 1, geladen erst, wenn die Strecke gewählt ist) und für den Streckenbildschirm
+`GFX/MENU.DAT` (Slot 19) und `GFX/GRAF.DAT` (Slot 20). Von diesen beiden liest der Core nur
+das Inhaltsverzeichnis und die Einträge, die er braucht, jeden an seiner Stelle wie in der
+Datei (`load_parts` in `main.c`): 0,7 MB statt 5,9 MB, bei den gemessenen 1,3 MB/s des
+Pocket rund eine halbe statt viereinhalb Sekunden beim Start. `GAME.DAT`, `GEN.DAT`, `LOCAL.DAT` und `SOUND.DAT` lädt er einmal.
 
 - `DATA/`: alle 16 (`GEN`, `LOCAL`, `MUSIC`, `SOUND`, `MAP1`–`MAP6`, `MAP1I`–`MAP6I`)
 - `GFX/`: `GAME`, `GRAF`, `MENU`, `MAP1L`–`MAP6L`, `MAP1H`–`MAP6H` (L und H sind die Sätze der
   Option DETAIL: L bei LOW, H ab MID; nicht die Auflösung)
 - `TABS/`: `PERSP01.TAB`, `VIS.TAB`
+
+## Streckenwahl
+
+Wie im Original (sein Bildschirm 3: `0x2e384`, `0x2c078`, `0x2cb88`, `0x29530`; OpenScreamer
+`docs/NOTES.md` Abschnitte 18 und 26), einfachste Fassung in `firmware/menu.c`: Die sechs
+Modelle `AMAPn.3DX` aus `MENU.DAT` stehen in einer Reihe, 40.000 Einheiten auseinander, und
+drehen sich (π/4 rad/s); die Kamera schaut aus (−40.000·n, 4800, 13.000) 36° hinab und
+gleitet bei links/rechts zum Nachbarn (Faktor 1 → 0 mit 0,95/s, Weg mit der vierten Potenz,
+der nächste Druck zählt erst unter 0,8). Die Modelle gehen durch die Geometrie-Einheit wie
+Objekte im Rennen, mit `MENU.MLB` als Materialdatei (alle ihre Flächen sind einfarbig,
+Routine 128, also reichen die ersten 32 KB); jeder Block an seinem Platz aus dem
+Positionssatz, der fernste zuerst. Davor das Bild `MENU3L.PCX` aus `GRAF.DAT` (seine Palette
+ist die des Bildschirms), darüber Titel (`MENU.TXT` Zeile 45, Schrift 3), Streckenname
+(`TRACKDAT.TXT`, Schrift 2, 2 Schrifthöhen über dem unteren Rand) und die Pfeile (Sprites 0
+und 1 bei x 8 und 238, y 100) aus `MENUL.FNT` und `MENUL.SPR`, alles über den Blitter. B oder
+START startet; danach entpackt und baut der Core die Strecke (auf dem Pocket rund 4,5 s, das
+letzte Bild bleibt so lange stehen). SELECT im Rennen oder 5 s nach seinem Ende führt zurück.
+Nicht dabei: Autowahl, Hauptmenü, Optionen, Intro, Kameraflüge, Menügeräusche, die
+gespiegelten Strecken, „NEW TRACK AVAILABLE“. Die Simulation hat keinen Streckenbildschirm,
+sie fährt die Strecke aus `SIM_TRACK` (Slot 28).
 
 ## Belegung
 
