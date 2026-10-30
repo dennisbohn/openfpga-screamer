@@ -897,9 +897,9 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         float dx = ob->x - cx, dy = ob->y - cy, dh = ob->h - ch, rad = ob->radius;
         float vf = dx * fx + dy * fy + dh * fh + EYE_BACK, vr = dx * rx + dy * ry + dh * rh;
         float vu = dx * ux + dy * uy + dh * uh;
-        if(vf + rad < NEAR || vf - rad > far_eye) continue;
-        if(vr - rad > half_w * (vf + rad) || vr + rad < -half_w * (vf + rad)) continue;
-        if(vu - rad > up * (vf + rad) || vu + rad < -down * (vf + rad)) continue;
+        FP_NOW(vf, vr, vu);
+        if((vf + rad < NEAR) | (vf - rad > far_eye) | (vr - rad > half_w * (vf + rad)) |
+           (vr + rad < -half_w * (vf + rad)) | (vu - rad > up * (vf + rad)) | (vu + rad < -down * (vf + rad))) continue;
         float d2 = dx * dx + dy * dy + dh * dh;
         /* 0x8a8c3: an object counts nearer; 0x8a8d7: its mesh's class */
         vis[nv].k = (KEY(d2) + 800 + ob->key) * 65536 + npieces + k;

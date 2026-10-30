@@ -290,7 +290,8 @@ static void markers(struct opp *o)
     const struct track_marker *mk = track_markers(&n);
     if(n == 0) return;
     for(int d = -1; d <= 1; d++) {
-        int i = ((o->mark_at + d) % n + n) % n;
+        int i = o->mark_at + d;                         /* (mark_at is one of the n) */
+        i = i < 0 ? i + n : i >= n ? i - n : i;
         const struct track_marker *m = &mk[i];
         float dx = o->x - (float)m->x, dy = o->y - (float)m->y, rad = (float)m->radius;
         if(fabsf(dx) >= rad || fabsf(dy) >= rad) continue;
