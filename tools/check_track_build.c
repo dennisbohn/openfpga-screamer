@@ -4,15 +4,15 @@
  * firmware builds it, compared byte for byte with the image tools/make_track.py made from
  * the same files. The output buffer starts out filled with junk, as the SDRAM is.
  *
- * Usage: check_track_build <game folder> <reference image>
+ * Usage: check_track_build <game folder> <reference image> [n]     n: the track, default 1
  */
 #include "../firmware/track_build.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define CAP         (8u << 20)      /* room for the image, as main.c gives it */
-#define SCRATCH     (4u << 20)
+#define CAP         (7u << 20)      /* room for the image, as main.c gives it */
+#define SCRATCH     0x2A0000u       /* and the scratch: BUILD_SCRATCH up to the program */
 
 static uint8_t *slurp(const char *dir, const char *name, uint32_t *size)
 {
@@ -33,11 +33,15 @@ static uint8_t *slurp(const char *dir, const char *name, uint32_t *size)
 
 int main(int argc, char **argv)
 {
-    if(argc != 3) { fprintf(stderr, "usage: %s <game folder> <reference image>\n", argv[0]); return 2; }
+    if(argc != 3 && argc != 4) { fprintf(stderr, "usage: %s <game folder> <reference image> [n]\n", argv[0]); return 2; }
+    int track = argc == 4 ? atoi(argv[3]) : 1;
+    char gfx[32], data[32];
+    snprintf(gfx, sizeof gfx, "GFX/MAP%dH.DAT", track);
+    snprintf(data, sizeof data, "DATA/MAP%d.DAT", track);
     struct track_files f;
-    f.gfx = slurp(argv[1], "GFX/MAP1H.DAT", &f.gfx_size);
+    f.gfx = slurp(argv[1], gfx, &f.gfx_size);
     f.game = slurp(argv[1], "GFX/GAME.DAT", &f.game_size);
-    f.data = slurp(argv[1], "DATA/MAP1.DAT", &f.data_size);
+    f.data = slurp(argv[1], data, &f.data_size);
     f.gen = slurp(argv[1], "DATA/GEN.DAT", &f.gen_size);
     f.local = slurp(argv[1], "DATA/LOCAL.DAT", &f.local_size);
     uint32_t ref_size;
@@ -47,7 +51,7 @@ int main(int argc, char **argv)
     for(uint32_t k = 0; k < CAP; k++) out[k] = (uint8_t)(0xA5 ^ k ^ (k >> 11));
     memset(scratch, 0x5A, SCRATCH);
     struct track_build_info info;
-    uint32_t size = track_build(&f, 1, out, CAP, scratch, SCRATCH, &info);
+    uint32_t size = track_build(&f, track, out, CAP, scratch, SCRATCH, &info);
     if(!size) { printf("FAIL: track_build stopped at \"%s\"\n", info.fail); return 1; }
     printf("built: %u bytes, reference: %u bytes\n", size, ref_size);
 
