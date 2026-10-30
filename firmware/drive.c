@@ -9,8 +9,8 @@
  *   0x15aa8  -> lap markers, body-corner collision, wheel contact, 0x16c90 WALL HIT, ride
  *               height (car.c, apart from the wall hit below)
  *
- * The routines in capitals are here as OpenScreamer has them, line for line; only the
- * Pocket's keys are left: the stick's steering and the trigger's brake paths are out.
+ * The routines in capitals are here as OpenScreamer has them, line for line, with the
+ * joystick paths for a docked controller's stick and triggers (drive_input's axis flags).
  *
  * THE DAMPING TABLE. The game smooths values with v = (v - target) * damp[i] + target, where
  * damp[i] = pow(0.5 + i * 0.005, 50 / (fps + 1)): a stiffness from 0.5 (snappy) to 0.995
@@ -195,8 +195,9 @@ static void pedals(struct car_state *c, const struct drive_input *in)
     else
         c->throttle = 0.0f;
 
-    /* 0x16174: a key brings the brake up to full */
+    /* 0x16174: a joystick axis IS the brake (word / 1023); a key brings it up to full */
     if(in->brake <= 0.0f) c->brake = 0.0f;
+    else if(in->brake_axis) c->brake = in->brake;
     else approach(&c->brake, 1.0f, 0x52);
 
     if(fabsf(c->drift) < 0.1f) {
@@ -220,7 +221,10 @@ static void steering(struct car_state *c, const struct drive_input *in)
     /* 18 degrees of lock at a standstill, falling to 1 degree at top speed */
     c->steer_max = (1.0f - sqrt0(c->speed / c->spec.maxspd)) * 0.296706f + 0.0174533f;
 
-    approach(&c->steer, in->steer * c->steer_max, stiff);
+    /* 0x163bb: a stick's wheel is where the stick is, unless the car is sliding or leaving the
+       line; then it is eased like the keys' */
+    if(in->steer_axis && stiff == 0x50) c->steer = in->steer * c->steer_max;
+    else approach(&c->steer, in->steer * c->steer_max, stiff);
     if(fabsf(c->steer) < 1e-5f) c->steer = 0.0f;
     /* 0x16458: on the grass the wheel is tugged about, less the faster the car goes, one way
        or the other from one spot to the next, and held to the lock */

@@ -562,12 +562,12 @@ static void fade_out(const uint32_t *pal, int sound)
 static void pause_race(uint32_t st, int n)
 {
     int first, last, playing = music_disc(&first, &last);
-    uint32_t keys_before = IN_KEY, last_frame = VID_FRAME(st), ticks = 0;
+    uint32_t keys_before = in_keys(), last_frame = VID_FRAME(st), ticks = 0;
     int32_t fade = 0x8000;
     still(st, 2);
     for (;;) {
         st = wait_swap_done();
-        uint32_t keys = IN_KEY;
+        uint32_t keys = in_keys();
         music_frame();
         if (keys & ~keys_before & KEY_START) break;
         keys_before = keys;
@@ -598,13 +598,13 @@ static void pause_race(uint32_t st, int n)
    are NO (the game's ESC). 1 for YES. */
 static int play_again(uint32_t st)
 {
-    uint32_t keys_before = IN_KEY, last_frame = VID_FRAME(st), ticks = 0;
+    uint32_t keys_before = in_keys(), last_frame = VID_FRAME(st), ticks = 0;
     int no = 0;
     AU_STOP = 0xFFFFFFFFu;
     still(st, 3);
     for (;;) {
         st = wait_swap_done();
-        uint32_t keys = IN_KEY, press = keys & ~keys_before;
+        uint32_t keys = in_keys(), press = keys & ~keys_before;
         music_frame();
         if (press & (KEY_UP | KEY_LEFT | KEY_DOWN | KEY_RIGHT)) snd_play(SND_CLICK);
         if (press & (KEY_UP | KEY_LEFT)) no = 0;
@@ -622,13 +622,13 @@ static int play_again(uint32_t st)
 static int dashboard_init(void);
 
 #define OVER_STEPS  250         /* the end screen for 5 s (0x21048), then the replay or PLAY AGAIN? */
-#define REC_MAX     60000       /* the replay's keys: 20 minutes of steps */
+#define REC_MAX     60000       /* the replay's controls: 20 minutes of steps */
 
 enum { RACE_LEAVE, RACE_AGAIN, RACE_REPLAY };   /* how a race ends: NO, YES, its replay next */
 
-/* The race's keys, one word a step (car_keys(); the game records its controls each frame,
+/* The race's controls, one a step (car_keys(); the game records its controls each frame,
    0x22f34): rec_n of them, rec_full once more did not fit (then there is no replay) */
-static uint16_t rec[REC_MAX];
+static struct car_input rec[REC_MAX];
 static uint32_t rec_n;
 static int rec_full;
 
@@ -675,6 +675,7 @@ static int run_track(int n, int car, int replay)
                                                    simulation; on the Pocket only logged) */
     for (;;) {
         uint32_t st = wait_swap_done(), keys = IN_KEY, t_frame = rdcycle();
+        uint32_t joy = IN_JOY, trig = IN_TRIG;  /* a docked controller's stick and triggers */
         tl_begin(t_frame);
         music_frame();                          /* the ring kept filled (music.h) */
         tl_mark(TL_MUSIC);
@@ -734,15 +735,15 @@ static int run_track(int n, int car, int replay)
         efx_cyc_objects = efx_cyc_radar = 0;
         uint32_t t_phys = rdcycle();
         for (uint32_t k = 0; k < steps_now && (!replay || rec_at < rec_n); k++) {
-            uint32_t w;                         /* the step's keys: recorded, or from the recording */
+            struct car_input w;                 /* the step's controls: recorded, or from the recording */
             if (replay)
                 w = rec[rec_at++];
             else {
-                w = car_keys(keys, keys_before);
-                if (rec_n < REC_MAX) rec[rec_n++] = (uint16_t)w;
+                w = car_keys(keys, keys_before, joy, trig);
+                if (rec_n < REC_MAX) rec[rec_n++] = w;
                 else rec_full = 1;
             }
-            car_step(w);
+            car_step(&w);
             opp_step();
             scenery_step();
             keys_before = keys;
@@ -1256,7 +1257,7 @@ static int dashboard_init(void)
    simulation (SIM_MENU) its third frame is checked against the C models and reported. */
 static int menu_screen(int screen, int n)
 {
-    uint32_t drawn = 0, keys_before = IN_KEY, last_frame = 0, sim = SYS_FLAGS & FLAG_SIM;
+    uint32_t drawn = 0, keys_before = in_keys(), last_frame = 0, sim = SYS_FLAGS & FLAG_SIM;
     int32_t fade = 0, rate = screen == MENU_PAGE_SCREEN ? FADE_PAGES : FADE_MENU;
     int chosen = 0;
     menu_enter(screen, n);
@@ -1270,7 +1271,7 @@ static int menu_screen(int screen, int n)
     GU_INVAL = 1;
     RS_CTRL = 1;                                /* the texture cache: the cars' are MENU.MLB's */
     for (;;) {
-        uint32_t st = wait_swap_done(), keys = IN_KEY, t_frame = rdcycle();
+        uint32_t st = wait_swap_done(), keys = in_keys(), t_frame = rdcycle();
         music_frame();
         frames_shown = drawn;
         if (sim && drawn == 3) {
@@ -1586,7 +1587,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
             dlog_hex(SIM_DONE | results);
             dlog_char('\n');
         }
-        uint32_t keys = IN_KEY;
+        uint32_t keys = in_keys();
         volatile uint8_t *fb = FB(!(st & VID_FRONT));  /* the back buffer */
         draw_frame(fb, "SCREAMER POCKET - TEXTUREN");
         struct rs_vertex pv[3];

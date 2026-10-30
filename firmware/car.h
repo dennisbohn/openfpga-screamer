@@ -24,12 +24,15 @@
 void car_init(int which, int replay);
 int car_replay(void);
 
-/* The keys a step reads, made of the keys (IN_KEY) held now and on the step before: B, Y, left
-   and right as they are held, L and R only on the step they went down. A race recorded as these
-   words, one a step, runs again the same from them (the game records its controls, 0x22f34). */
-uint32_t car_keys(uint32_t keys, uint32_t keys_before);
-/* One step of 1/50 s with the keys word of car_keys() */
-void car_step(uint32_t keys);
+/* The controls a step reads, made of the keys (IN_KEY) held now and on the step before: B, Y,
+   left and right as they are held, L and R only on the step they went down; and of a docked
+   controller's analog parts (IN_JOY, IN_TRIG; hw.h): the left stick across and the two
+   triggers, 0x80, 0, 0 without one. A race recorded as these, one a step, runs again the same
+   from them (the game records its controls, 0x22f34). */
+struct car_input { uint16_t keys; uint8_t stick, brake, gas; };
+struct car_input car_keys(uint32_t keys, uint32_t keys_before, uint32_t joy, uint32_t trig);
+/* One step of 1/50 s with the controls of car_keys() */
+void car_step(const struct car_input *in);
 
 /* Choose the view (0 .. CAR_VIEWS - 1); the camera it gives now. From the race's end on the
    camera is the trackside one (view-table row 3, 0x1a620), the car and its shadow in view. */

@@ -89,9 +89,9 @@ Alle Register sind 32 Bit, Zugriff als Wort.
 | `0xF000_1000` | `VID_STATUS` | R | Bit 0: vorderer Puffer (0/1). Bit 1: Tausch angefordert, noch nicht vollzogen. Bit 31..16: Bildzähler, zählt jedes Videobild (50 Hz) |
 | `0xF000_1004` | `VID_SWAP` | W | beliebiger Wert: Tausch anfordern. Er geschieht in der nächsten Austastlücke; solange er aussteht (Bit 1), werden weitere Anforderungen ignoriert |
 | `0xF000_1400` + 4·i | `VID_PAL[i]` | W | Palette des **hinteren** Puffers, Eintrag i (0..255): `0x00RRGGBB`. Nur solange kein Tausch aussteht (`VID_STATUS` Bit 1 = 0); sonst trifft es den Puffer, der gerade angezeigt wird |
-| `0xF000_2000` | `IN_KEY` | R | Tasten (`cont1_key`): Bit 0 hoch, 1 runter, 2 links, 3 rechts, 4 A, 5 B, 6 X, 7 Y, 8 L, 9 R, 14 Select, 15 Start |
-| `0xF000_2004` | `IN_JOY` | R | Analogsticks (`cont1_joy`) |
-| `0xF000_2008` | `IN_TRIG` | R | Analog-Trigger (`cont1_trig`) |
+| `0xF000_2000` | `IN_KEY` | R | Tasten (`cont1_key`): Bit 0 hoch, 1 runter, 2 links, 3 rechts, 4 A, 5 B, 6 X, 7 Y, 8 L, 9 R, 14 Select, 15 Start; Bit 31..28 Gerätetyp (1 Pocket, 2 Dock-Controller ohne, 3 mit Analogteil) |
+| `0xF000_2004` | `IN_JOY` | R | Analogsticks (`cont1_joy`): Bit 7..0 links x, 15..8 links y, 23..16 rechts x, 31..24 rechts y; vorzeichenlos, Mitte `0x80`, 0 = links/oben. Nur bei Typ 3, sonst 0 |
+| `0xF000_2008` | `IN_TRIG` | R | Analog-Trigger (`cont1_trig`): Bit 7..0 links, 15..8 rechts; 0 = losgelassen |
 | `0xF000_3000`–`3008` | `RS_V0`–`RS_V2` | W | Rasterizer (`raster.v`, dieselben Pixel wie `firmware/raster.c`): Eckpunkt, Bit 15..0 x, Bit 31..16 y, vorzeichenbehaftet in 1/16 Pixel; darf geschrieben werden, während ein Dreieck gezeichnet wird |
 | `0xF000_300C`, `3010` | `RS_CLIP0`, `RS_CLIP1` | W | Clip-Rechteck in Pixeln: x0/y0, x1/y1 (ausschließlich), Bit 15..0 x, Bit 31..16 y |
 | `0xF000_3014` | `RS_DRAW` | R/W | Schreiben: Bit 7..0 Farbe, Bit 8 Puffer, startet das Dreieck; der Schreibzugriff wartet, solange der Rasterizer zeichnet, Framebuffer-Zugriffe der CPU ebenso. Lesen: Bit 0 zeichnet noch |

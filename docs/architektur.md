@@ -387,9 +387,10 @@ sobald der Kommentator alles gesagt hat, was er sich vorgenommen hatte (`0x21048
 Rennen noch einmal; nach Zeitablauf oder SELECT nicht (`0x1fe28`). Das Spiel zeichnet dafür
 nicht die Autos auf, sondern je Bild seine Steuerung (`0x22f34`), baut das Rennen neu auf
 (`0x1fd64`, `0x128dc`) und liest sie statt der Tastatur zurück (`0x22e74`); alles andere
-rechnet es neu. Wir halten je Physikschritt (1/50 s) das Tastenwort fest, das `car_step`
-bekommt (`car_keys`: B, Y, links, rechts gehalten, L und R nur im Schritt des Drückens; 2
-Bytes, bis 20 Minuten), bauen Effekte, Geräusche, Kulisse, Auto, Gegner und Musik wie zum
+rechnet es neu. Wir halten je Physikschritt (1/50 s) die Steuerung fest, die `car_step`
+bekommt (`car_keys`: B, Y, links, rechts gehalten, L und R nur im Schritt des Drückens, dazu
+linker Stick quer und beide Trigger eines Dock-Controllers als Rohbytes; 6 Bytes, bis 20
+Minuten), bauen Effekte, Geräusche, Kulisse, Auto, Gegner und Musik wie zum
 Start neu auf und lassen das Rennen aus den Wörtern laufen, mit so vielen Schritten je Bild
 wie im Rennen auch. In der Wiederholung (`0x22d98` setzt das Flag `0x118e68`): von Anfang an
 die Streckenkamera (`0x12afe`), keine Absturzkamera (`0x1857a`), die Ansichtstaste wirkt nicht
@@ -661,6 +662,16 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Streckentexturen nach der Animationsuhr). Gas liegt auf B (unten), die Bremse auf Y (links),
   wie in den klassischen Rennspielen (Super Mario Kart, Gran Turismo), die Kamera auf X (oben);
   nicht auf dem Steuerkreuz, damit ein Lenken in die Diagonale nicht bremst.
+- **Analoger Controller im Dock (2026-10-30):** Ein Controller mit Analogteil (Typ 3 in
+  `IN_KEY` Bit 31..28, Stick ≠ 0) lenkt mit dem linken Stick, gibt Gas mit dem rechten und
+  bremst mit dem linken Trigger, so wie das Spiel Joystick-Achsen nimmt: `0x24d40` macht aus
+  jeder Achse ein Wort ±`0x3ff`, unter `0x66` zählt nichts (`0x24edc`); Gas = |Wort| / 1023
+  (`0x1611c`); eine Bremsachse IST die Bremse, |Wort| / 1023 (`0x16174`; eine Taste fährt sie
+  dagegen mit Steifigkeit `0x52` auf voll); der Lenkeinschlag will −Wort / 1024 des Anschlags
+  (`0x1633b`) und steht bei normaler Steifigkeit `0x50` sofort dort, beim Rutschen oder Anfahren
+  geglättet (`0x163bb`). Stick und Trigger gelten nur außerhalb der Totzone, sonst die Tasten.
+  In den Menüs wirkt der Stick über die Hälfte hinaus wie das Steuerkreuz (`in_keys`, `hw.h`).
+  Die Core Controls (`input.json`) kennen nur Tasten; Analogwerte kommen ohne Eintrag.
 - **Die Federung** (2026-10-30, aus der EXE: `0x168a4`, gezeichnet von `0x15c0c`): Jedes Rad
   schwingt um bis zu 18 Einheiten. Die Tempoänderung des Bildes × 0,00175 stößt die Vorderräder
   in die eine, die Hinterräder dreifach in die andere Richtung; die Drehrate × Tempo² × 1,5e-9

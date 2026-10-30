@@ -752,10 +752,26 @@ static void sound_step(int skid)
         snd_skid = snd_stop(snd_skid);
 }
 
-uint32_t car_keys(uint32_t keys, uint32_t keys_before)
+struct car_input car_keys(uint32_t keys, uint32_t keys_before, uint32_t joy, uint32_t trig)
 {
-    const uint32_t shift = KEY_L | KEY_R;
-    return (keys & (KEY_B | KEY_Y | KEY_LEFT | KEY_RIGHT)) | (keys & ~keys_before & shift);
+    const uint32_t held = KEY_B | KEY_Y | KEY_LEFT | KEY_RIGHT, shift = KEY_L | KEY_R;
+    struct car_input ci = { (uint16_t)((keys & held) | (keys & ~keys_before & shift)), 0x80, 0, 0 };
+    if(IN_ANALOG(keys, joy)) {
+        ci.stick = (uint8_t)joy;
+        ci.brake = (uint8_t)trig;
+        ci.gas = (uint8_t)(trig >> 8);
+    }
+    return ci;
+}
+
+/* A joystick axis as the game makes its control word (0x24e1c): v of full to +-0x3ff, held
+   there, and nothing under 0x66 (0x24edc) */
+static int axis_word(int v, int full)
+{
+    int w = v * 0x3ff / full;
+    if(w > 0x3ff) w = 0x3ff;
+    if(w < -0x3ff) w = -0x3ff;
+    return w < 0x66 && w > -0x66 ? 0 : w;
 }
 
 int car_replay(void)
@@ -809,9 +825,10 @@ static void suspension_step(void)
     body.pitch = atanf((float)(susp[2].defl - susp[3].defl) / pc.wheelbase);
 }
 
-void car_step(uint32_t keys)
+void car_step(const struct car_input *ci)
 {
     struct drive_input in;
+    uint32_t keys = ci->keys;
     /* gas and brake on the buttons only (on the d-pad a thumb steering into a diagonal
        would brake or lift off by accident), as the classic racing games lay them out: gas
        on the bottom button (B), the brake on the left one (Y); L and R shift on the step they
@@ -820,6 +837,16 @@ void car_step(uint32_t keys)
     in.brake = (keys & KEY_Y) ? 1.0f : 0.0f;
     in.steer = ((keys & KEY_LEFT) ? 1.0f : 0.0f) - ((keys & KEY_RIGHT) ? 1.0f : 0.0f);
     in.shift = (keys & KEY_R) ? 1 : (keys & KEY_L) ? -1 : 0;
+    /* a docked controller's triggers and left stick, out of the dead zone, as the game takes
+       its joystick axes: the pedal |word| / 1023 (0x1611c), the brake the same, taken as it is
+       (0x16174), the wheel -word / 1024 of the lock (0x1633b; the stick's left is negative) */
+    int gas = axis_word(ci->gas, 0xFF), brake = axis_word(ci->brake, 0xFF);
+    int stick = axis_word(ci->stick - 0x80, 0x7F);
+    in.brake_axis = brake != 0;
+    in.steer_axis = stick != 0;
+    if(gas) in.throttle = (float)gas / 1023.0f;
+    if(brake) in.brake = (float)brake / 1023.0f;
+    if(stick) in.steer = (float)-stick * 0.0009765625f;
     /* the start lights: green at 6 s; until then the pedal only revs the engine */
     race.clock += DRIVE_DT;
     race.on = race.clock >= 6.0f;
@@ -828,9 +855,9 @@ void car_step(uint32_t keys)
         in.throttle = 0.0f;
         if(pc.speed < 1.0f) race.game_over = 1;
     }
-    if(race.finished || race.game_over) { in.throttle = 0.0f; in.brake = 0.4f; }
+    if(race.finished || race.game_over) { in.throttle = 0.0f; in.brake = 0.4f; in.brake_axis = 0; }
     if(race.finished || race.game_over) car_trackside();    /* row 3 asked for */
-    if(crash.on) in.throttle = in.steer = 0.0f;          /* no drive in the air */
+    if(crash.on) { in.throttle = in.steer = 0.0f; in.steer_axis = 0; }  /* no drive in the air */
     int crashed = crash.on;
     crash_step();
     drive_step(&pc, &in);

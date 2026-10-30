@@ -23,9 +23,11 @@ struct car_spec {
 
 struct drive_input {
     float throttle;         /* 0..1 */
-    float brake;            /* 0 or 1 (a key) */
+    float brake;            /* 0..1 */
     float steer;            /* -1 = full right .. +1 = full left */
     int   shift;            /* +1 / -1 on the frame a gear key goes down */
+    int   brake_axis;       /* the brake is an axis's, taken as it is (0x16174); else a key's */
+    int   steer_axis;       /* the wheel is an axis's, taken as it is unless sliding (0x163bb) */
 };
 
 struct car_state {

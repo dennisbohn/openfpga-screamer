@@ -46,6 +46,24 @@
 #define KEY_R           (1u << 9)
 #define KEY_SELECT      (1u << 14)
 #define KEY_START       (1u << 15)
+/* IN_JOY: left stick X [7:0], Y [15:8], right stick X [23:16], Y [31:24], unsigned, 0x80 the
+   middle, 0 left / up; IN_TRIG: left trigger [7:0], right [15:8], 0 released. Only a docked
+   controller with sticks (type 3 in IN_KEY [31:28]) has them; its stick reads 0 until it
+   reports. */
+#define IN_ANALOG(keys, joy)    ((keys) >> 28 == 3 && ((joy) & 0xFFFFu) != 0)
+
+/* The keys, and the left stick of such a controller as the d-pad when it is pushed more than
+   half way (for the menus) */
+static inline uint32_t in_keys(void)
+{
+    uint32_t keys = IN_KEY, joy = IN_JOY;
+    if(IN_ANALOG(keys, joy)) {
+        uint32_t x = joy & 0xFF, y = (joy >> 8) & 0xFF;
+        keys |= (x < 0x40 ? KEY_LEFT : 0) | (x >= 0xC0 ? KEY_RIGHT : 0)
+              | (y < 0x40 ? KEY_UP : 0) | (y >= 0xC0 ? KEY_DOWN : 0);
+    }
+    return keys;
+}
 
 /* Debug log: the non-volatile data slot debug.txt (dlog.h) */
 #define DLOG_BASE       0xF0008000u
