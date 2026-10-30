@@ -41,8 +41,9 @@
 #include "champ.h"
 #include "save.h"
 #include "intro.h"
+#include <setjmp.h>
 
-uint32_t frames_shown;             /* read by the trap handler */
+uint32_t frames_shown;            /* read by the trap handler */
 
 #define STACK_FILL  0x57AC57ACu /* marks unused stack, for the high-water mark */
 #define STACK_LOW   0x6000u     /* the stack may grow down to here (link.ld keeps the boot loader below) */
@@ -529,6 +530,28 @@ static void pal_faded(const uint32_t *pal, int32_t f)
     }
 }
 
+static jmp_buf restart;                 /* prog_main's game from its start (next_frame) */
+
+/* The next frame of a loop of the game (the menus, the intro, a race, its pause, PLAY AGAIN?,
+   a fade): the swap before it done, its VID_STATUS. The Pocket menu's Reset Save Data
+   (save_reset) is taken here: the sound stopped, what the boot sets anew as it was, and the
+   game from its beginning (prog_main after save_load), the saves the game's defaults. */
+static uint32_t next_frame(void)
+{
+    uint32_t st = wait_swap_done();
+    if (save_reset()) {
+        AU_STOP = 0xFFFFFFFFu;
+        music_stop();
+        snd_fade(0x8000);
+        music_fade(0x8000);
+        music_on = 1;
+        menu_fresh();
+        dlog_str("the game starts again\n");
+        longjmp(restart, 1);
+    }
+    return st;
+}
+
 /* A cut to black: the other buffer swapped in with an all-black palette (a menu screen left:
    the game's 0x1d220 = 0, the palette black in the frame of the press) */
 static void black(void)
@@ -548,7 +571,7 @@ static void fade_out(const uint32_t *pal, int sound)
     volatile uint32_t *to = (volatile uint32_t *)FB(!(st & VID_FRONT));
     for (int i = 0; i < FB_W * FB_H / 4; i++) to[i] = from[i];
     for (int32_t f = 0x8000; f > 0;) {
-        st = wait_swap_done();
+        st = next_frame();
         music_frame();
         f -= (int32_t)((VID_FRAME(st) - last_frame) & 0xFFFF) * FADE_RACE;
         last_frame = VID_FRAME(st);
@@ -572,7 +595,7 @@ static void pause_race(uint32_t st, int n)
     int32_t fade = 0x8000;
     still(st, 2);
     for (;;) {
-        st = wait_swap_done();
+        st = next_frame();
         uint32_t keys = in_keys();
         music_frame();
         if (keys & ~keys_before & KEY_START) break;
@@ -609,7 +632,7 @@ static int play_again(uint32_t st)
     AU_STOP = 0xFFFFFFFFu;
     still(st, 3);
     for (;;) {
-        st = wait_swap_done();
+        st = next_frame();
         uint32_t keys = in_keys(), press = keys & ~keys_before;
         music_frame();
         if (press & (KEY_UP | KEY_LEFT | KEY_DOWN | KEY_RIGHT)) snd_play(SND_CLICK);
@@ -680,7 +703,7 @@ static int run_track(int n, int car, int replay)
     uint32_t check_at = 2 + sim_race;           /* the frame checked against the C models (in the
                                                    simulation; on the Pocket only logged) */
     for (;;) {
-        uint32_t st = wait_swap_done(), keys = IN_KEY, t_frame = rdcycle();
+        uint32_t st = next_frame(), keys = IN_KEY, t_frame = rdcycle();
         uint32_t joy = IN_JOY, trig = IN_TRIG;  /* a docked controller's stick and triggers */
         tl_begin(t_frame);
         music_frame();                          /* the ring kept filled (music.h) */
@@ -1280,7 +1303,7 @@ static int menu_screen(int screen, int n)
     GU_INVAL = 1;
     RS_CTRL = 1;                                /* the texture cache: the cars' are MENU.MLB's */
     for (;;) {
-        uint32_t st = wait_swap_done(), keys = in_keys(), t_frame = rdcycle();
+        uint32_t st = next_frame(), keys = in_keys(), t_frame = rdcycle();
         music_frame();
         frames_shown = drawn;
         if (sim && drawn == 3) {
@@ -1479,7 +1502,7 @@ static void run_intro(int n)
     GU_MLB = (uint32_t)((uintptr_t)track_mlb() - SDRAM_BASE);
     GU_INVAL = 1;
     for (;;) {
-        uint32_t st = wait_swap_done(), keys = IN_KEY, t_frame = rdcycle();
+        uint32_t st = next_frame(), keys = IN_KEY, t_frame = rdcycle();
         music_frame();
         frames_shown = drawn;
         if (keys & ~keys_before & (KEY_A | KEY_B | KEY_START | KEY_SELECT)) intro_leave();
@@ -1647,6 +1670,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     log_head("frames drawn: ", 0);
     dlog_str("program.bin: running in the SDRAM\n");
     save_load();                    /* first: until then an exit would save the SDRAM as it is */
+    setjmp(restart);                /* from here again after the Pocket menu's save reset (next_frame) */
     menu_options_load();
     int sim = (SYS_FLAGS & FLAG_SIM) != 0;
     const uint32_t *shown = sim ? 0 : first_picture(intro_track());    /* the simulation's race: none */
