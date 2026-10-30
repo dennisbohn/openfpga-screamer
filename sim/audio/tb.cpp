@@ -3,9 +3,11 @@
 // random length and count (none, a few, for ever), steps up to 4 samples a frame, volumes and
 // random bytes (sums of many loud voices clip); between passes random register writes as the
 // CPU makes them: voices started (also again while they play), stopped, steps, volumes and ends
-// changed. Lines come from a model of the SDRAM line port with random delays. Each frame the
-// I2S bits (LRCK, the bit clock, the data) are decoded and compared with the model's frame of
-// the pass before; no pass may be late.
+// changed. The music on top: its ring anywhere, random 16-bit frames, started from the start
+// again, stopped, its volume and ring changed now and then. Lines come from a model of the SDRAM
+// line port with random delays. Each frame the I2S bits (LRCK, the bit clock, the data) are
+// decoded and compared with the model's frame of the pass before, and after each pass the
+// music's place with the model's; no pass may be late.
 //
 // Usage: Vaudio [frames, default 20000] [seed, default 1]
 //   tools/sim.sh audio 20000 1
@@ -133,6 +135,14 @@ static void writes()
         default: reg_wr(0x400, 1u << v); break;                // again, from its first byte
         }
     }
+    if (rr(32) == 0) {                                          // the music
+        switch (rr(8)) {
+        case 0: reg_wr(0x414, rr(4) ? 0 : rnd() & ~1u); break;  // stopped
+        case 1: case 2: reg_wr(0x414, rnd() | 1); break;        // from the ring's start
+        case 3: case 4: case 5: reg_wr(0x410, rr(2) ? rnd() : rr(0x8000)); break;
+        default: reg_wr(0x40C, rnd()); reg_wr(0x414, 1); break; // another ring (set before a start)
+        }
+    }
 }
 
 int main(int argc, char **argv)
@@ -157,11 +167,14 @@ int main(int argc, char **argv)
     for (int i = 0; i < 8; i++) tick();
     top->reset = 0;
     mix_reset(&model);
+    reg_wr(0x40C, rnd());                                       // the music from the start
+    reg_wr(0x410, 0x6000);
+    reg_wr(0x414, 1);
 
     // pass k: the writes after pass k - 1, then the model's frame k; the hardware's pass k
     // starts with the next frame and is heard in the frame after
     std::vector<int16_t> exp_l, exp_r;
-    int fails = 0, played = 0, fetched = 0;
+    int fails = 0, played = 0, fetched = 0, music = 0;
     uint64_t limit = (uint64_t)(frames + 4) * 1600;
     while ((int)exp_l.size() < frames && cycles < limit) {
         writes();
@@ -173,6 +186,7 @@ int main(int argc, char **argv)
         exp_l.push_back(model.out_l);
         exp_r.push_back(model.out_r);
         played += __builtin_popcount(model.playing);
+        music += model.mu_on && !model.mu_fill;
         int p = passes;
         while (passes == p && cycles < limit) {
             fetched += top->mem_valid && top->mem_ready;
@@ -180,6 +194,11 @@ int main(int argc, char **argv)
         }
         if (top->late) {
             printf("FAIL: a pass was late (frame %zu)\n", exp_l.size());
+            return 1;
+        }
+        if (top->music != (model.mu_on << 16 | model.mu_idx)) {
+            printf("FAIL: after pass %zu the music's place is 0x%05x, the model's 0x%05x\n", exp_l.size() - 1,
+                   top->music, model.mu_on << 16 | model.mu_idx);
             return 1;
         }
     }
@@ -198,8 +217,8 @@ int main(int argc, char **argv)
         }
         checked++;
     }
-    printf("%zu frames checked (%zu passes), %d voice frames played, %d lines fetched, %d frames clipped left\n",
-           checked, exp_l.size(), played, fetched, clipped);
+    printf("%zu frames checked (%zu passes), %d voice frames played, %d with the music, %d lines fetched, "
+           "%d frames clipped left\n", checked, exp_l.size(), played, music, fetched, clipped);
     if (fails || checked + 2 < exp_l.size() || exp_l.size() < (size_t)frames) {
         printf("FAIL: %d frames differ\n", fails);
         return 1;
