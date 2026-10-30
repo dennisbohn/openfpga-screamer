@@ -751,13 +751,15 @@ static int32_t vis[MAX_PIECES + MAX_OBJS];
 static void face_eye(const uint8_t *blk, float x, float y, float z, struct gu_piece *g)
 {
     float p[3] = { x + (float)rd16(blk + 4), y + (float)rd16(blk + 6), z + (float)rd16(blk + 8) };
+    /* (all comparisons first, with | and without branches: the FPU answers them side by side,
+       where a branch on each would wait for it) */
     int big = 0;
-    for(int i = 0; i < 3; i++) big |= p[i] * 78643.0f >= 2147483648.0f || p[i] * 78643.0f < -2147483648.0f;
+    for(int i = 0; i < 3; i++) big |= (p[i] * 78643.0f >= 2147483648.0f) | (p[i] * 78643.0f < -2147483648.0f);
     for(int i = 0; i < 3; i++) g->e[i] = (int32_t)((big ? p[i] : p[i] * (78643.0f / 65536.0f)) * 256.0f);
-    int row = p[1] < 0.0f ? 8 : 0;
-    if(p[0] >= 0.0f) row += p[2] >= 0.0f ? (p[2] > p[0] ? 0 : 1) : (-p[2] <= p[0] ? 2 : 3);
-    else             row += p[2] < 0.0f ? (-p[2] > -p[0] ? 4 : 5) : (p[2] <= -p[0] ? 6 : 7);
-    g->row = row;
+    int below = p[1] < 0.0f, xpos = p[0] >= 0.0f, zpos = p[2] >= 0.0f, zneg = p[2] < 0.0f;
+    int c0 = p[2] > p[0], c2 = -p[2] <= p[0], c4 = -p[2] > -p[0], c6 = p[2] <= -p[0];
+    int row = xpos ? (zpos ? !c0 : 2 + !c2) : (zneg ? 4 + !c4 : 6 + !c6);
+    g->row = below * 8 + row;
 }
 
 /* A block placed at o with m (world from local) as a piece for the geometry unit: its place in
