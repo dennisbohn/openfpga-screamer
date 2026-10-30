@@ -170,8 +170,13 @@ static uint32_t span_tex(volatile uint8_t *fb, int r, int x0, int x1, const void
     for(int x = x0; x < x1; x++) {
         float z = 1.0f / q;
         int u = (int)(uq * z), v = (int)(vq * z);
-        u = u < 0 ? 0 : u >= t->width ? t->width - 1 : u;
-        v = v < 0 ? 0 : v >= t->height ? t->height - 1 : v;
+        if(t->routine == 160) {
+            u &= 255;
+            v &= 255;
+        } else {
+            u = u < 0 ? 0 : u >= t->width ? t->width - 1 : u;
+            v = v < 0 ? 0 : v >= t->height ? t->height - 1 : v;
+        }
         n += (uint32_t)put_texel(&row[x], t->data[v * 256 + u], t->routine);
         q += s->q.ax;
         uq += s->uq.ax;
@@ -246,8 +251,8 @@ static uint32_t span_texfx(volatile uint8_t *fb, int r, int x0, int x1, const vo
         va = va < -(1 << 26) ? -(1 << 26) : va > (1 << 26) - 1 ? (1 << 26) - 1 : va;
         int64_t u = ((ua * rc) >> (16 + e)) >> 8;
         int64_t v = ((va * rc) >> (16 + e)) >> 8;
-        int tu = u < 0 ? 0 : u >= t->width ? t->width - 1 : (int)u;
-        int tv = v < 0 ? 0 : v >= t->height ? t->height - 1 : (int)v;
+        int tu = t->routine == 160 ? (int)(u & 255) : u < 0 ? 0 : u >= t->width ? t->width - 1 : (int)u;
+        int tv = t->routine == 160 ? (int)(v & 255) : v < 0 ? 0 : v >= t->height ? t->height - 1 : (int)v;
 #ifdef RS_TRACE                            /* PC only: the texel addresses for a cache study */
         rs_trace(&t->data[tv * 256 + tu]);
 #endif

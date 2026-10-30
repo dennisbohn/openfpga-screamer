@@ -32,8 +32,9 @@
 //         this write back while busy)
 //   6     clears the pixel counter
 //   7     texture: SDRAM byte address of texel (0, 0), rows of 256 bytes
-//   8     texture: [8:0] width, [24:16] height (1..256), [30] blended, [31] texel 0
-//         see-through (left as it is when blended)
+//   8     texture: [8:0] width, [24:16] height (1..256), [29] u, v wrap at 256 instead of
+//         being clamped (routine 160), [30] blended, [31] texel 0 see-through (left as it is
+//         when blended)
 //   9     reference pixel: [15:0] x, [31:16] y
 //   10..12  Q, U, V at the reference pixel's centre (signed)
 //   13..15  their change per pixel in x, 8 fraction bits    16..18  the same in y
@@ -227,6 +228,7 @@ end
     reg  [8:0]  t_w, t_h;
     reg         t_cut;
     reg         t_blend;                        // routine 224
+    reg         t_wrap;                         // routine 160
     reg  [10:0] t_xr, t_yr;
     reg signed [31:0] t_a [0:2];
     reg signed [31:0] t_dx [0:2];
@@ -268,6 +270,7 @@ raster_tex rt (
     .tex_h              ( t_h ),
     .tex_cut            ( t_cut ),
     .tex_blend          ( t_blend ),
+    .tex_wrap           ( t_wrap ),
     .tri_start          ( state == S_ROWS ),
     .fb_q               ( fb_q ),
     .smg_wr             ( wr && wr_addr == 5'd27 ),
@@ -395,6 +398,7 @@ always @(posedge clk) begin
         t_h <= cr_qa[24:16];
         t_cut <= cr_qa[31];
         t_blend <= cr_qa[30] && textured;       // (a triangle of one colour has the usual pixels)
+        t_wrap <= cr_qa[29];
     end
     if(ld == 3'd5) t_base <= cr_qa[25:0];
     if(ld == 3'd6) begin t_xr <= cr_qa[10:0]; t_yr <= cr_qa[26:16]; end
@@ -435,6 +439,7 @@ always @(posedge clk) begin
             t_h <= su_size[24:16];
             t_cut <= su_size[31];
             t_blend <= su_size[30] && su_draw[9];
+            t_wrap <= su_size[29];
             t_xr <= su_ref[10:0];
             t_yr <= su_ref[26:16];
             t_a[0] <= su_a0; t_a[1] <= su_a1; t_a[2] <= su_a2;

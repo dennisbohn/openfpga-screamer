@@ -143,9 +143,15 @@ void track_backdrop_blit(struct blit_list *l, const struct rs_clip *clip, const 
    height; columns: the block's x, y up, z), and its texture phase (geom.h). With make, the
    blocks are made only when the object comes up in the drawing (make(id, cam, object) fills
    n and b): the CPU makes a near car while the geometry unit works on the scenery further
-   off. key: what its mesh's class adds to its key (track_class_key; a shadow -200). */
+   off. key: what its mesh's class adds to its key (track_class_key; a shadow -200).
+   refl: a moving object's reflection state (0: offsets 0, as a static object's), refl_phase
+   its reflection picture (the record's +0x3c, geom.h). */
 struct track_block { const uint8_t *file, *blk; float m[9], o[3]; uint32_t phase; };
 struct track_cam;
+/* the original's record +0x24 .. +0x38: the place when last drawn (whole units: x, y, height)
+   and the three float accumulators of the reflection's offsets along the view's axes (the
+   original's x left, y up, z back) */
+struct track_refl { int32_t prev[3]; float acc[3]; };
 struct track_object {
     float x, y, h, radius;
     int n;
@@ -153,7 +159,14 @@ struct track_object {
     int (*make)(int id, const struct track_cam *cam, struct track_object *o);
     int id;
     int key;
+    struct track_refl *refl;
+    uint32_t refl_phase;
 };
+
+/* How fast the reflections slide (the constant in the game's code at 0xc2428): the offsets
+   grow k a unit an object moves across the view; 0.008 until the player's car sets it
+   (0x1813c: 0.002 in the open, 0.03 in a tunnel) */
+void track_reflection_rate(float k);
 
 /* One block placed as b as a piece for the geometry unit, seen from cam with the race's lens:
    for a model drawn without a track (the menu's, menu.h) */

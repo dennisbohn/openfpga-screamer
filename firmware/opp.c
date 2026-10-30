@@ -43,6 +43,7 @@ struct opp {
     uint32_t livery;
 };
 static struct opp opp[OPP_MAX];
+static struct track_refl refl[OPP_MAX];   /* each car object's reflection state (record +0x24 ..) */
 static int nopp, player_rank;
 static const struct track_spline_node *spl[OPP_MAX];
 static int spl_n[OPP_MAX];
@@ -316,6 +317,7 @@ void opp_init(int player_row)
     for(int k = 0; k < nopp; k++) {
         struct opp *o = &opp[k];
         int start;
+        refl[k] = (struct track_refl){ { 0, 0, 0 }, { 0.0f, 0.0f, 0.0f } };
         spl[k] = track_opp_spline(k, &start, &spl_n[k]);
         *o = (struct opp){ 0 };
         o->node = start >= 0 && start < spl_n[k] ? start : 0;
@@ -506,7 +508,7 @@ int opp_objects(struct track_object *objs, int max)
     const uint8_t *sh = efx_shadow();
     for(int k = 0; k < nopp && n < max; k++) {
         const struct opp *o = &opp[k];
-        objs[n++] = (struct track_object){ o->x, o->y, o->z, 1200.0f, 0, 0, opp_make, k, 0 };
+        objs[n++] = (struct track_object){ o->x, o->y, o->z, 1200.0f, 0, 0, opp_make, k, 0, &refl[k], 0 };
         if(!sh || n >= max) continue;
         /* its shadow (0x1c83c), made at once, all in a row (the code stays in the cache): its
            whole-number place without the player's nudge, 2 under the ground under it (0x1cd34:
@@ -515,7 +517,7 @@ int opp_objects(struct track_object *objs, int max)
         float x = (float)(int32_t)o->x, y = (float)(int32_t)o->y, h = (float)((int32_t)o->z - 2);
         car_flat_block(sh, x, y, h, o->yaw + o->spin + (o->crash ? o->turn : 0.0f), o->sh_pitch, o->sh_roll,
                        &shadows[k]);
-        objs[n++] = (struct track_object){ x, y, h, 900.0f, 1, &shadows[k], 0, k, track_class_key(sh) };
+        objs[n++] = (struct track_object){ x, y, h, 900.0f, 1, &shadows[k], 0, k, track_class_key(sh), 0, 0 };
     }
     efx_cyc_objects += rdcycle() - t0;
     return n;

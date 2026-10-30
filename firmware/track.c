@@ -628,6 +628,7 @@ static void block_piece(const float c[3], const float f[3], const float r[3], co
     face_eye(blk, e[0], e[1], e[2], g);
     g->blk = blk;
     g->mirror = 0;
+    g->refl = 0;
 }
 
 void track_block_piece(const struct track_cam *cam, const struct track_block *b, struct gu_piece *g)
@@ -690,6 +691,38 @@ static int multi_pieces(const float c[3], const float f[3], const float r[3], co
     }
     for(int b = 0; b < n; b++) gs[b] = tmp[ord[b]];
     return n;
+}
+
+static float refl_rate = 0.008f;
+
+void track_reflection_rate(float k)
+{
+    refl_rate = k;
+}
+
+/* The reflection's offsets of an object (0xc1fc0, before the faces of its first block with
+   flag 0x2000): its way since it was last drawn (whole units, as the record keeps its place)
+   turned into the view (the original's axes x left, y up, z back), times the rate, added to
+   its three accumulators; each sum rounded (to nearest) & 0xff, the first and the third the
+   offsets of u and v, as gu_piece.refl's [23:16] and [31:24] */
+static uint32_t refl_offsets(const struct track_object *ob, const float f[3], const float r[3], const float u[3])
+{
+    struct track_refl *s = ob->refl;
+    int32_t p[3] = { (int32_t)ob->x, (int32_t)ob->y, (int32_t)ob->h };
+    float d[3] = { (float)(p[0] - s->prev[0]), (float)(p[1] - s->prev[1]), (float)(p[2] - s->prev[2]) };
+    int32_t n[3];
+    if(d[0] != 0.0f || d[1] != 0.0f || d[2] != 0.0f) {
+        const float w[3] = { -(r[0] * d[0] + r[1] * d[1] + r[2] * d[2]), u[0] * d[0] + u[1] * d[1] + u[2] * d[2],
+                             -(f[0] * d[0] + f[1] * d[1] + f[2] * d[2]) };
+        for(int k = 0; k < 3; k++) {
+            float a = w[k] * refl_rate + s->acc[k];
+            n[k] = (int32_t)lrintf(a);
+            s->acc[k] = a;
+            s->prev[k] = p[k];
+        }
+    } else
+        for(int k = 0; k < 3; k++) n[k] = (int32_t)lrintf(s->acc[k]);
+    return (uint32_t)(n[0] & 255) << 16 | (uint32_t)(n[2] & 255) << 24;
 }
 
 /* The view from the point c along forward f, with right r and up u (unit vectors) */
@@ -784,11 +817,18 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         if(vis[n].i >= npieces) {                   /* an object: its blocks as they come */
             struct track_object *ob = &objs[vis[n].i - npieces];
             if(ob->make) ob->make(ob->id, cam, ob);
+            uint32_t refl = ob->refl_phase & 0xFFFF;
+            for(int b = 0; b < ob->n && ob->refl; b++)
+                if(rd32(ob->b[b].blk + 0x18) & 0x2000) {
+                    refl |= refl_offsets(ob, f, r, u);
+                    break;
+                }
             for(int b = 0; b < ob->n; b++) {
                 struct gu_piece g;
                 block_piece(c, f, r, u, ob->b[b].m, ob->b[b].o, ob->b[b].blk, &g);
                 g.obj = ob->b[b].file;
                 g.phase = ob->b[b].phase;
+                g.refl = refl;
                 st->pieces++;
                 uint32_t t0 = now();
                 if(track_mode == TRACK_HW) track_hw_piece(&g);
@@ -813,6 +853,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         struct gu_piece g;
         g.phase = piece_phase;
         g.mirror = 0;
+        g.refl = 0;
         g.blk = block_of(pc->obj, &g.obj);
         float ca = sin2048((uint32_t)pc->t + 512), sa = sin2048((uint32_t)pc->t);
         float dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch;

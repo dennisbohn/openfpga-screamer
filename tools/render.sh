@@ -8,6 +8,9 @@
 #   MENU=1: the track screen instead, track TRACK chosen, [view] taken as steps of 1/50 s after
 #   entering it (the models turn); MENU=2: the car screen, car CAR chosen. PAUSE=1: the pause's
 #   picture over the race's, PAUSE=2: PLAY AGAIN? (tools/host/render.c).
+#   CAM="x y h yaw pitch roll": the original's camera record; REFL="x y z [phase]": the player's
+#   reflection accumulators and picture from the original's car record (+0x30, +0x3c), the car
+#   standing; GAS=1: the pedal down for the steps (the race starts after 300).
 # The firmware's sources are copied to build/host/ with hw.h's RISC-V instructions made plain C;
 # built and run with the simulation's Docker image (gcc).
 set -e
@@ -52,7 +55,7 @@ else
 fi
 if command -v cygpath >/dev/null 2>&1; then mount=$(cygpath -wa "$root/build"); else mount=$root/build; fi
 out=$(basename "$1")
-MSYS_NO_PATHCONV=1 docker run --rm ${CAM:+-e CAM} ${PAUSE:+-e PAUSE} -v "$mount:/b" --entrypoint sh verilator/verilator:v5.050 -c "
+MSYS_NO_PATHCONV=1 docker run --rm ${CAM:+-e CAM} ${REFL:+-e REFL} ${GAS:+-e GAS} ${PAUSE:+-e PAUSE} -v "$mount:/b" --entrypoint sh verilator/verilator:v5.050 -c "
     cd /b/host/src && gcc -O2 -w ${DUMP:+-DTRACK_DUMP} -o ../render render.c track.c geom.c setup.c raster.c car.c drive.c opp.c \
         efx.c scenery.c sound.c speech.c blit.c dlog.c crc32.c dat.c console.c menu.c tb_hud.c tb_spl.c tb_mmp.c hud.c -lm && cd /b/host && $run $out $args"
 mv "$root/build/host/$out" "$1"

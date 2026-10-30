@@ -36,6 +36,9 @@ int car_cockpit(void);
 /* The car as an object for track_draw_cam(), its blocks made in the game's order for the
    camera when it comes up in the drawing; 0 when the view is from inside it */
 int car_object(const struct track_cam *cam, struct track_object *obj);
+/* the car object's reflection accumulators and picture set (the original's record +0x30 and
+   +0x3c, for tools/render.sh), the car standing where it is */
+void car_reflection(const float acc[3], uint32_t phase);
 
 /* Any car as an object: model AUTOnn (car_model_index of its CARS.DTR row) drawn at place
    x, y, z, heading yaw, the object's pitch and roll (the car's negated), its body's own lean

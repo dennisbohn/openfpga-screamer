@@ -40,6 +40,8 @@ static float progress;                  /* how far round the race (marker_progre
 static float record;                    /* the lap to beat (0x1d268): the game's default, 180 s */
 static float road;                      /* the road's heading where the car last met a wall
                                            (player +0x13c, 0x16c90) */
+static struct track_refl refl;          /* the car object's reflection state (record +0x24 ..) */
+static uint32_t refl_phase;             /* its reflection picture (player +0x7b0, record +0x3c) */
 
 /* the player's sounds (sound.h): the engine from the race's set-up (0x128dc), the skid, the wall */
 static int snd_engine = -1, snd_skid = -1, snd_wall = -1, snd_over;
@@ -540,6 +542,9 @@ void car_init(int which)
     record = 180.0f;
     race = (struct car_race){ 0 };
     race.timer = 15.0f;
+    refl = (struct track_refl){ { 0, 0, 0 }, { 0.0f, 0.0f, 0.0f } };
+    refl_phase = 0;
+    track_reflection_rate(0.008f);
     race.total_laps = 3;                                /* the option's default (0x1d2ac) */
     for(int j = 0; j < 64; j++) mark_seen[j] = 0;
     mark_count = 0;
@@ -571,6 +576,21 @@ void car_init(int which)
     whole.y = (int32_t)pc.y;
     whole.fx = pc.x;
     whole.fy = pc.y;
+}
+
+/* 0x1813c, while the car drives (not in a crash): the reflection picture by the kind of the
+   marker last reached, 0 the sky, 1 (a tunnel) 0x8000, 2 0xff00 (frame n x phase >> 16 of the
+   window material's texture: the tunnel's ceiling), and how fast reflections slide, 0.002 in
+   the open, 0.03 under a roof (the program's 0.008 until then); other kinds leave both */
+static void refl_step(void)
+{
+    int nm;
+    const struct track_marker *mk = track_markers(&nm);
+    if(crash.on || nm == 0) return;
+    int kind = mk[mark_at].kind;
+    if(kind < 0 || kind > 2) return;
+    refl_phase = kind == 0 ? 0 : kind == 1 ? 0x8000 : 0xFF00;
+    track_reflection_rate(kind == 0 ? 0.002f : 0.03f);
 }
 
 /* the engine's note every step (0x19408): pitch rpm x 14 + 32768, automoto, autogall in a tunnel
@@ -634,6 +654,7 @@ void car_step(uint32_t keys, uint32_t keys_before)
     efx_cyc_objects += rdcycle() - t0;
     walls_step();
     markers_step();
+    refl_step();
     contact();
     chase_step();
     t0 = rdcycle();
@@ -854,8 +875,15 @@ int car_object(const struct track_cam *cam, struct track_object *obj)
 {
     (void)cam;
     if(views[view].incar) return 0;
-    *obj = (struct track_object){ pc.x, pc.y, pc.z + crash.height, 1200.0f, 0, 0, car_make, 0, 0 };
+    *obj = (struct track_object){ pc.x, pc.y, pc.z + crash.height, 1200.0f, 0, 0, car_make, 0, 0, &refl, refl_phase };
     return 1;
+}
+
+void car_reflection(const float acc[3], uint32_t phase)
+{
+    refl = (struct track_refl){ { (int32_t)pc.x, (int32_t)pc.y, (int32_t)(pc.z + crash.height) },
+                                { acc[0], acc[1], acc[2] } };
+    refl_phase = phase;
 }
 
 /* sine and cosine; a tilt (under 0.5 rad, nearly always) by their series, to float's precision,
@@ -938,7 +966,7 @@ int car_effects(const struct track_cam *cam, struct track_object *objs, int max)
             car_flat_block(sh, shadow.x, shadow.y, shadow.h, pc.yaw + pc.drift, shadow_pitch, shadow_roll,
                            &shadow_block);
             objs[n++] = (struct track_object){ shadow.x, shadow.y, shadow.h, 900.0f, 1, &shadow_block, 0, 0,
-                                               track_class_key(sh) };
+                                               track_class_key(sh), 0, 0 };
         }
     }
     float f[3], r[3], u[3];
@@ -962,7 +990,7 @@ int car_effects(const struct track_cam *cam, struct track_object *objs, int max)
         t->blk = sm + *(const int32_t *)(sm + 0x18);
         t->phase = (uint32_t)puff[k].phase >> 2;
         objs[n++] = (struct track_object){ puff[k].x, puff[k].y, puff[k].h, 420.0f, 1, t, 0, k,
-                                           track_class_key(sm) };
+                                           track_class_key(sm), 0, 0 };
     }
     efx_cyc_objects += rdcycle() - t0;
     return n;

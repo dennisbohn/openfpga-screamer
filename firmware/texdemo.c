@@ -201,6 +201,7 @@ static uint32_t draw_mesh(volatile uint8_t *fb, const struct rs_clip *clip, floa
     g.row = 0;
     g.mirror = 0;
     g.phase = 0;
+    g.refl = 0;
     g.obj = mesh_obj;
     g.blk = mesh_blk;
     if(texdemo_mode == TEXDEMO_HW) {

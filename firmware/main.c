@@ -243,7 +243,8 @@ static void hw_poly(const struct su_corner *c, int n, const struct rs_texture *t
     if (t) {
         SU_MODE = draw_buf << 8 | RS_TEXTURED | SU_CORNERS(n);
         SU_TEX = (uint32_t)((uintptr_t)t->data - SDRAM_BASE);
-        SU_TEXSIZE = (uint32_t)t->width | (uint32_t)t->height << 16 | (t->routine == 64 ? RS_CUT : 0);
+        SU_TEXSIZE = (uint32_t)t->width | (uint32_t)t->height << 16 | (t->routine == 64 ? RS_CUT : 0) |
+                     (t->routine == 160 ? RS_WRAP : 0);
     } else {
         SU_MODE = colour | draw_buf << 8 | SU_CORNERS(n);
     }
@@ -291,6 +292,7 @@ static void hw_piece(const struct gu_piece *g)
     GU_PUSH = (uint32_t)((uintptr_t)g->blk - SDRAM_BASE);
     GU_PUSH = ((uint32_t)g->row & 7) | (uint32_t)(g->mirror != 0) << 3 | ((uint32_t)g->row & 8) << 1 |
               (g->phase & 0x3FFF) << 16;
+    GU_PUSH = g->refl;
     draw_wait += rdcycle() - t0;
 }
 

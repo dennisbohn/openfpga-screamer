@@ -29,7 +29,9 @@ struct rs_texture {
     const volatile uint8_t *data;               /* rows of 256 bytes */
     int width, height;                          /* u, v are clamped to them */
     int routine;                                /* 16 solid, 64 palette index 0 see-through,
-                                                   224 see-through through rs_smg (below) */
+                                                   224 see-through through rs_smg (below), 160
+                                                   solid with u, v wrapping at 256 instead (the
+                                                   game's reflection, 0xdb59b) */
 };
 
 /*

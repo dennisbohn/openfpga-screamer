@@ -7,6 +7,7 @@
 //   S3  table address m[14:5]                  S4  p = m r0, r0 = floor((2^32-1) / (2^15 + 32 i + 16))
 //   S5  c = r0 (2^32 - p)                      S6  r = r0 + (c >> 32), about 2^32 / m
 //   S7  U r, V r                               S8  u = U r >> (24 + e), v the same, clamped to the texture
+//                                                  (routine 160: their low 8 bits, wrapping)
 //   A   texel address, tag read                T   tag compare, into the queue
 // then a queue of 64 pixels and the back end: texel out of the cache, byte into the
 // framebuffer unless the texel is 0 and the texture see-through.
@@ -59,6 +60,7 @@ module raster_tex (
     input   wire    [8:0]   tex_h,
     input   wire            tex_cut,            // texel 0 is see-through
     input   wire            tex_blend,          // through the see-through table
+    input   wire            tex_wrap,           // u, v wrap at 256 (not clamped)
     input   wire            tri_start,          // a triangle starts: the next pixel is its first
 
     output  wire            busy,
@@ -151,15 +153,16 @@ module raster_tex (
     // S8 -> S9: u = U r >> (24 + e), clamped to [0, w - 1]. A negative U r stays negative;
     // otherwise only the low 9 bits of u matter (w has 9) and whether a bit above them is
     // set. The shift is 8 + o, o = 31 - z = ~z: (U r >> 8) >> o in steps of 16, 8, 4, 2, 1,
-    // each keeping the bits the low 9 can still come from and ORing together those above
-    function [9:0] win9(input [36:0] y, input [4:0] o);    // {a bit above, (y >> o)[8:0]}
+    // each keeping the bits the low 9 can still come from and ORing together those above.
+    // Wrapping, the low 8 bits whatever the sign: the shift fills with s, the sign
+    function [9:0] win9(input [36:0] y, input [4:0] o, input s);    // {a bit above, (y >> o)[8:0]}
         reg [23:0] y4;
         reg [15:0] y3;
         reg [11:0] y2;
         reg [9:0]  y1;
         reg        a;
         begin
-            y4 = o[4] ? {3'd0, y[36:16]} : y[23:0];
+            y4 = o[4] ? {{3{s}}, y[36:16]} : y[23:0];
             a  = !o[4] && |y[36:24];
             y3 = o[3] ? y4[23:8] : y4[15:0];
             a  = a || (!o[3] && |y4[23:16]);
@@ -170,10 +173,10 @@ module raster_tex (
             win9 = {a || (!o[0] && y1[9]), o[0] ? y1[9:1] : y1[8:0]};
         end
     endfunction
-    wire [9:0]  tu_win = win9(up8[44:8], ~z8);
-    wire [9:0]  tv_win = win9(vp8[44:8], ~z8);
-    wire [7:0]  tu_lim = up8[45] ? 8'd0 : tu_win[9] || tu_win[8:0] >= tex_w ? tex_w[7:0] - 8'd1 : tu_win[7:0];
-    wire [7:0]  tv_lim = vp8[45] ? 8'd0 : tv_win[9] || tv_win[8:0] >= tex_h ? tex_h[7:0] - 8'd1 : tv_win[7:0];
+    wire [9:0]  tu_win = win9(up8[44:8], ~z8, tex_wrap && up8[45]);
+    wire [9:0]  tv_win = win9(vp8[44:8], ~z8, tex_wrap && vp8[45]);
+    wire [7:0]  tu_lim = tex_wrap ? tu_win[7:0] : up8[45] ? 8'd0 : tu_win[9] || tu_win[8:0] >= tex_w ? tex_w[7:0] - 8'd1 : tu_win[7:0];
+    wire [7:0]  tv_lim = tex_wrap ? tv_win[7:0] : vp8[45] ? 8'd0 : tv_win[9] || tv_win[8:0] >= tex_h ? tex_h[7:0] - 8'd1 : tv_win[7:0];
 
     assign front_busy = v1 || v2 || v3 || v4 || v5 || v6 || v7 || v8 || v9 || va || vt;
 

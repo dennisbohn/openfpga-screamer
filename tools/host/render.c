@@ -130,7 +130,7 @@ int main(int argc, char **argv)
     opp_init(car);
     car_view(view);
     for (int k = 0; k < steps; k++) {
-        car_step(0, 0);
+        car_step(getenv("GAS") ? KEY_B : 0, 0);    /* GAS=1: the pedal down */
         opp_step();
         scenery_step();
     }
@@ -141,6 +141,11 @@ int main(int argc, char **argv)
     car_camera(&cam);
     const char *set = getenv("CAM");    /* "x y h yaw pitch roll": the original's camera record */
     if (set) sscanf(set, "%f %f %f %f %f %f", &cam.x, &cam.y, &cam.h, &cam.yaw, &cam.pitch, &cam.roll);
+    const char *rf = getenv("REFL");    /* "x y z [phase]": the player's reflection accumulators and
+                                           picture (record +0x30, +0x3c) */
+    float acc[3];
+    unsigned rph = 0;
+    if (rf && sscanf(rf, "%f %f %f %u", &acc[0], &acc[1], &acc[2], &rph) >= 3) car_reflection(acc, rph);
     int nobj = car_object(&cam, &objs[0]);
     nobj += opp_objects(objs + nobj, MAX_OBJECTS - nobj);
     nobj += car_effects(&cam, objs + nobj, MAX_OBJECTS - nobj);

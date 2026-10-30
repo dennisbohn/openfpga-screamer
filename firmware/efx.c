@@ -233,6 +233,7 @@ int efx_radar_piece(const struct su_view *v, struct gu_piece *g)
     g->row = 0;
     g->mirror = 0;
     g->phase = 0;
+    g->refl = 0;
     g->obj = g->blk = radar;
     return 1;
 }

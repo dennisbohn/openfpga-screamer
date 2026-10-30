@@ -375,13 +375,13 @@ int scenery_objects(const struct track_cam *cam, struct track_object *objs, int 
         if(dx * dx + dy * dy > (REACH + MOVING_RADIUS) * (REACH + MOVING_RADIUS)) continue;
         /* its textures play by the clock (0x153e3: the record's phase -1), the rotor's 20 frames */
         for(int b = 0; b < m->nb; b++) m->b[b].phase = track_phase();
-        objs[n++] = (struct track_object){ m->x, m->y, m->h, MOVING_RADIUS, m->nb, m->b, 0, k, m->key };
+        objs[n++] = (struct track_object){ m->x, m->y, m->h, MOVING_RADIUS, m->nb, m->b, 0, k, m->key, 0, 0 };
     }
     for(int k = 0; k < nprops && n < max; k++) {
         const struct prop *p = &props[k];
         float dx = p->x - cam->x, dy = p->y - cam->y;
         if(p->gone || dx * dx + dy * dy > REACH * REACH) continue;
-        objs[n++] = (struct track_object){ p->x, p->y, p->h, PROP_RADIUS, 1, &p->b, 0, k, p->key };
+        objs[n++] = (struct track_object){ p->x, p->y, p->h, PROP_RADIUS, 1, &p->b, 0, k, p->key, 0, 0 };
     }
     return n;
 }
