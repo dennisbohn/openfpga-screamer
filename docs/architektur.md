@@ -14,9 +14,9 @@ Cockpit-Ansicht, die Startrichtung des Originals und der Ton: ein Mischer mit 32
 (`audio.v`), der die Soundeffekte aus `SOUND.DAT` spielt (Motor, Rutschen, Wand, Crash,
 Requisiten, Berührung mit einem Gegner, die Motoren der Gegner und die Fahrzeuge der Strecke,
 im Stereobild und mit Doppler) und den Sprecher. Seit 2026-10-30 gebaut, Test auf dem Pocket
-steht aus: alle sechs Strecken, gewählt im Streckenbildschirm des Originals (siehe
-„Streckenwahl“), und die CD-Musik aus GOGs Abbild der CD, im Streckenbildschirm und im Rennen
-wie im Spiel.
+steht aus: alle sechs Strecken, gewählt im Streckenbildschirm des Originals, danach das Auto
+im Autobildschirm (siehe „Strecken- und Autowahl“), die Pause und „PLAY AGAIN?“, und die
+CD-Musik aus GOGs Abbild der CD, in den Menüs und im Rennen wie im Spiel.
 Belegung siehe „Belegung“, alles gemessen.
 
 ## Hardware des Pocket (Haupt-FPGA)
@@ -85,11 +85,12 @@ wären 33, eine mehr als die 32 Slots; da wir auf HI laufen, fallen die sechs L-
 weg, und mit der CD-Musik `MUSIC.DAT`, dafür kommen `SCREAM.gog` und `SCREAM.DAT` dazu.
 Seit 2026-10-30 sind es 18 Spieldateien: die Container der Strecken 2 bis 6 (Slots 9 bis 13
 `MAP2H.DAT`–`MAP6H.DAT`, 14 bis 18 `MAP2.DAT`–`MAP6.DAT`, an dieselben Adressen wie die von
-Strecke 1, geladen erst, wenn die Strecke gewählt ist) und für den Streckenbildschirm
+Strecke 1, geladen erst, wenn die Strecke gewählt ist) und für Strecken- und Autowahl
 `GFX/MENU.DAT` (Slot 19) und `GFX/GRAF.DAT` (Slot 20). Von diesen beiden liest der Core nur
 das Inhaltsverzeichnis und die Einträge, die er braucht, jeden an seiner Stelle wie in der
-Datei (`load_parts` in `main.c`): 0,7 MB statt 5,9 MB, bei den gemessenen 1,3 MB/s des
-Pocket rund eine halbe statt viereinhalb Sekunden beim Start. `GAME.DAT`, `GEN.DAT`, `LOCAL.DAT` und `SOUND.DAT` lädt er einmal.
+Datei (`load_parts` in `main.c`): 2,4 MB statt 5,9 MB, bei den gemessenen 1,3 MB/s des
+Pocket rund 1,8 statt viereinhalb Sekunden beim Start (davon 1,4 MB `MENU.MLB`, ganz, weil
+die Texturen der Autos über die ganze Datei verteilt liegen; ohne Autowahl waren es 0,7 MB). `GAME.DAT`, `GEN.DAT`, `LOCAL.DAT` und `SOUND.DAT` lädt er einmal.
 Dazu seit 2026-10-30 GOGs Abbild der CD oben im Spielordner: `SCREAM.DAT` (Slot 21, das
 Cue-Sheet) und `SCREAM.gog` (Slot 22, 383 MB); daraus liest der Core nur die Musik, 32 KB auf
 einmal, während er zeichnet (siehe „Die CD-Musik“).
@@ -99,7 +100,7 @@ einmal, während er zeichnet (siehe „Die CD-Musik“).
   Option DETAIL: L bei LOW, H ab MID; nicht die Auflösung)
 - `TABS/`: `PERSP01.TAB`, `VIS.TAB`
 
-## Streckenwahl
+## Strecken- und Autowahl
 
 Wie im Original (sein Bildschirm 3: `0x2e384`, `0x2c078`, `0x2cb88`, `0x29530`; OpenScreamer
 `docs/NOTES.md` Abschnitte 18 und 26), einfachste Fassung in `firmware/menu.c`: Die sechs
@@ -108,19 +109,61 @@ drehen sich (π/4 rad/s); die Kamera schaut aus (−40.000·n, 4800, 13.000) 36�
 gleitet bei links/rechts zum Nachbarn (Faktor 1 → 0 mit 0,95/s, Weg mit der vierten Potenz,
 der nächste Druck zählt erst unter 0,8). Die Modelle gehen durch die Geometrie-Einheit wie
 Objekte im Rennen, mit `MENU.MLB` als Materialdatei (alle ihre Flächen sind einfarbig,
-Routine 128, also reichen die ersten 32 KB); jeder Block an seinem Platz aus dem
+Routine 128); jeder Block an seinem Platz aus dem
 Positionssatz, der fernste zuerst. Davor das Bild `MENU3L.PCX` aus `GRAF.DAT` (seine Palette
 ist die des Bildschirms), darüber Titel (`MENU.TXT` Zeile 45, Schrift 3), Streckenname
 (`TRACKDAT.TXT`, Schrift 2, 2 Schrifthöhen über dem unteren Rand) und die Pfeile (Sprites 0
-und 1 bei x 8 und 238, y 100) aus `MENUL.FNT` und `MENUL.SPR`, alles über den Blitter. B oder
-START startet; danach lädt, entpackt und baut der Core die Strecke (einige Sekunden; Strecke 1
-auf dem Pocket: 1,2 s Laden, 3,2 s Bauen; das letzte Bild bleibt so lange stehen). SELECT im Rennen oder 5 s nach seinem Ende führt zurück.
-Nicht dabei: Autowahl, Hauptmenü, Optionen, Intro, Kameraflüge, Menügeräusche, die
-gespiegelten Strecken, „NEW TRACK AVAILABLE“. Die Simulation fährt gleich die Strecke aus
-`SIM_TRACK` (Slot 28); mit `SIM_MENU=1` (Slot 27) zeigt sie stattdessen den
-Streckenbildschirm und prüft sein drittes Bild gegen die C-Modelle (2026-10-30: 0 Pixel
-Unterschied). `TRACK=n` und `MENU=1` für `tools/render.sh` zeichnen Start oder
-Streckenbildschirm auf dem PC.
+und 1 bei x 8 und 238, y 100, die 2 und 3 leuchten, solange die Kamera in ihre Richtung
+gleitet und ihr Faktor über 0,6 liegt, `0x2e2f0`) aus `MENUL.FNT` und `MENUL.SPR`, alles über
+den Blitter. B oder START nimmt die Strecke.
+
+Danach, wie im Original („track selection, then car selection“), der Autobildschirm (sein
+Bildschirm 2: `0x2bdcc`, `0x2ca10`, `0x2e08c`): für jede Zeile von `CARS.DTR` (GEN.DAT) ein
+Auto, sein Modell `AAUTOnn.3DX` aus `MENU.DAT` in seiner Lackierung (Textur-Phase `0x6000`:
+nicht bremsend, langsam), 4000 Einheiten auseinander bei z 2900, sich drehend mit π/2 rad/s;
+die Kamera aus (−4000·n, 500, 4100), 22,5° hinab, gleitet wie oben. Die Autos zeichnet
+`car_mesh_draw` (`car.c`) wie das Rennen ein Auto, mit der Blockreihenfolge der Engine; ihre
+Texturen liegen über ganz `MENU.MLB` verteilt, deshalb lädt der Core die Datei ganz. Davor
+`MENU4L.PCX` mit seiner Palette, darüber `CAR SELECTION` (Zeile 44), Name (Schrift 0, 3
+Schrifthöhen tief), Getriebe (Zeile 37/38, 5 Höhen über dem Rand), `MAX SPEED` mit „%d KMH“,
+`GRIP` und `ACCELERATION` mit ihren Balken (Sprites 4–8, 9–13), alles aus `CARDAT.TXT`. Jedes
+Auto gibt es zweimal, Automatik in der ersten und Schaltung in der zweiten Lackierung, wie
+die Zeilen von `CARS.DTR`; angeboten sind alle 13 Zeilen, auch der Bullet, wie alle sechs
+Strecken (im Original erst nach Freischalten). Die Seitenansichten 16–28 aus `MENUL.SPR`
+zeichnet `0x2e08c` nicht. B oder START nimmt das Auto, Y oder SELECT führt zurück zur
+Streckenwahl. Die Zeile ist das Auto des Spielers (Modell, Fahrdaten, Getriebe, Armaturenbrett
+im Cockpit), die Gegner nehmen die übrigen Zeilen der Reihe nach (`0x142e8`, wie bisher).
+Danach lädt, entpackt und baut der Core die Strecke (einige Sekunden; Strecke 1 auf dem
+Pocket: 1,2 s Laden, 3,2 s Bauen; das letzte Bild bleibt so lange stehen).
+
+**Pause:** START im Rennen, solange es läuft. Das Original hat dafür den CD-Spieler (P,
+`0x211d0` → `0x21328`): das letzte Bild zweimal abgedunkelt (`0x25cc8`, dieselbe Tabelle wie
+das Radar, 0,75), das Rennen steht, darüber das Autoradio `CDFRONTL.PKC` aus `GAME.DAT`, die
+Audio-Tracks der CD (2–8, Schrift 5, Farbe 9, ab (64, 78) im Abstand 13, der laufende
+blinkt) und der Cursor auf PLAY (Sprite 7 bei (59, 97)). Effekte und Musik blenden mit
+16384/s von 0x6000 aus (1,5 s), dann hält die CD an (`0x26458`). Bei uns genauso, nur ohne
+die Funktionen der Tasten: die CPU dunkelt das gezeigte Bild einmal über die Tabelle ab und
+legt es als Standbild in den SDRAM (`still` in `main.c`), der Blitter kopiert es jedes Bild
+und legt das Radio darüber (`hud_cd`). START noch einmal: Lautstärken zurück, die Musik der
+Strecke (von vorn, wenn sie schon stand), wie PLAY.
+
+**PLAY AGAIN?:** SELECT im Rennen und 5 s nach seinem Ende. Das Original fragt nach jedem
+verlassenen Rennen (`0x1fe86` → `0x219d0`, außer in Meisterschaft und Netzwerk; nach einem
+beendeten Rennen erst nach der Wiederholung, die wir nicht haben): ESC stoppt die Effekte
+(`0x1f8cc`), die Musik läuft weiter, das letzte Bild dreimal abgedunkelt, darüber `GAME.TXT`
+Zeilen 19–21 (PLAY AGAIN?, YES, NO) zentriert in den Zeilen 52, 92 und 122 (Schrift 0), die
+Frage in Farbe 2, die Antworten in 14, die gewählte blinkt nach 2. Hoch/links YES,
+runter/rechts NO, B oder START nimmt die Antwort, Y oder SELECT ist NO (ESC im Original).
+YES baut das Rennen neu auf (ohne die Strecke neu zu bauen), NO führt zur Streckenwahl.
+
+Nicht dabei: Hauptmenü, Optionen, Intro, Kameraflüge und Überblendungen zwischen den
+Bildschirmen, Menügeräusche, die gespiegelten Strecken, „NEW TRACK AVAILABLE“, die
+Wiederholung. Die Simulation fährt gleich die Strecke aus `SIM_TRACK` (Slot 28) mit dem
+ersten Auto; mit `SIM_MENU=1` (Slot 27) zeigt sie stattdessen den Streckenbildschirm, mit
+`SIM_MENU=2` den Autobildschirm, und prüft das dritte Bild gegen die C-Modelle (2026-10-30:
+beide 0 Pixel Unterschied; der Autobildschirm braucht 0,22 M Takte, 3 ms je Bild).
+`TRACK=n`, `CAR=r` und `MENU=1` oder `2` für `tools/render.sh` zeichnen Start mit Auto r,
+Strecken- oder Autobildschirm auf dem PC, `PAUSE=1` oder `2` Pause oder Frage über dem Start.
 
 Die sechs Startbilder (Simulation, Schnelllauf, nahe Verfolgerkamera, Bild 2; jeweils 0 Pixel
 Unterschied zu den C-Modellen; „Bild“ ist die ganze Zeit von Bild 1, 20 ms = 1,485 M Takte):
