@@ -120,6 +120,14 @@ static int ncfaces;
 static int32_t cobj_first[MAX_OBJ];     /* -1: no table (not drivable, or the table was full) */
 static int16_t cobj_count[MAX_OBJ];
 static uint8_t cobj_grass[MAX_OBJ];
+/* and by place: each drivable mesh's box round its boxed faces in CGRID x CGRID cells, each cell
+   with the faces a point in it may be over, in their order: those whose box reaches into the
+   cell and those without a box. Only faces the box test would pass over are left out, so a
+   point finds the same face as through all of them. at[0] -1: no grid (the list was full) */
+#define CGRID       8
+#define MAX_CLIST   65536
+static struct cgrid { float x0, z0, sx, sz; int32_t at[CGRID * CGRID + 1]; } cgrid[MAX_OBJ];
+static uint16_t clist[MAX_CLIST];       /* the cells' faces, from the mesh's first */
 static float sin_q[513];                /* sin(2 pi i / 2048) for i = 0..512 */
 static float under_n[3];                /* track_under's face: its normal in world axes (x, y, up) */
 static float far_z = 43808.0f;          /* the far plane of the DETAIL level */
@@ -157,6 +165,74 @@ static const uint8_t *block_of(int k, const uint8_t **obj)
 {
     *obj = unr_blob + unr_off[k];
     return *obj + rd32(*obj + 0x18);
+}
+
+/* the cell of v along an axis of a grid: never smaller for a larger v, so a face's box from lo
+   to hi reaches into the cells cell(lo) .. cell(hi), and a point between lies in one of those */
+static inline int cgrid_cell(float v, float v0, float s)
+{
+    float f = (v - v0) * s;
+    return f >= (float)(CGRID - 1) ? CGRID - 1 : f > 0.0f ? (int)f : 0;
+}
+
+/* the cells a face reaches into: all for one without a box */
+static void cgrid_cells(const struct cgrid *g, const struct cface *q, int r[4])
+{
+    if(!q->boxed) {
+        r[0] = r[2] = 0;
+        r[1] = r[3] = CGRID - 1;
+        return;
+    }
+    r[0] = cgrid_cell(q->x0, g->x0, g->sx);
+    r[1] = cgrid_cell(q->x1, g->x0, g->sx);
+    r[2] = cgrid_cell(q->z0, g->z0, g->sz);
+    r[3] = cgrid_cell(q->z1, g->z0, g->sz);
+}
+
+static void cgrid_build(void)
+{
+    int n = 0;
+    for(int k = 0; k < unr_count; k++) {
+        struct cgrid *g = &cgrid[k];
+        g->at[0] = -1;
+        if(cobj_first[k] < 0) continue;
+        const struct cface *f0 = &cfaces[cobj_first[k]];
+        int nf = cobj_count[k], any = 0, r[4], cnt[CGRID * CGRID] = { 0 }, total = 0;
+        float x0 = 0.0f, x1 = 0.0f, z0 = 0.0f, z1 = 0.0f;
+        for(int j = 0; j < nf; j++) {
+            const struct cface *q = &f0[j];
+            if(!q->boxed) continue;
+            if(!any || q->x0 < x0) x0 = q->x0;
+            if(!any || q->x1 > x1) x1 = q->x1;
+            if(!any || q->z0 < z0) z0 = q->z0;
+            if(!any || q->z1 > z1) z1 = q->z1;
+            any = 1;
+        }
+        g->x0 = x0;
+        g->z0 = z0;
+        g->sx = x1 > x0 ? (float)CGRID / (x1 - x0) : 0.0f;
+        g->sz = z1 > z0 ? (float)CGRID / (z1 - z0) : 0.0f;
+        for(int j = 0; j < nf; j++) {                   /* a face without corners is never found */
+            if(!f0[j].nc) continue;
+            cgrid_cells(g, &f0[j], r);
+            for(int cz = r[2]; cz <= r[3]; cz++)
+                for(int cx = r[0]; cx <= r[1]; cx++) cnt[cz * CGRID + cx]++;
+            total += (r[1] - r[0] + 1) * (r[3] - r[2] + 1);
+        }
+        if(n + total > MAX_CLIST) continue;
+        int at[CGRID * CGRID];
+        for(int c = 0; c < CGRID * CGRID; c++) {
+            g->at[c] = at[c] = n;
+            n += cnt[c];
+        }
+        g->at[CGRID * CGRID] = n;
+        for(int j = 0; j < nf; j++) {                   /* in the faces' order */
+            if(!f0[j].nc) continue;
+            cgrid_cells(g, &f0[j], r);
+            for(int cz = r[2]; cz <= r[3]; cz++)
+                for(int cx = r[0]; cx <= r[1]; cx++) clist[at[cz * CGRID + cx]++] = (uint16_t)j;
+        }
+    }
 }
 
 int track_open(const volatile uint8_t *file)
@@ -253,6 +329,7 @@ int track_init(void)
         cobj_count[k] = (int16_t)(ncfaces - first);
         cobj_grass[k] = blk[0x6b] == 'e';
     }
+    cgrid_build();
 
     for(int k = 0; k < unr_count; k++) {
         const uint8_t *obj, *blk = block_of(k, &obj);
@@ -461,6 +538,32 @@ void track_start(float *x, float *y, float *yaw)
     *yaw = start->yaw;
 }
 
+/* track_under's test of face q of placement pc at (lx, lz) in its frame (c, s its turn): 1 the
+   point is over it (*h, under_n set if a height is asked for), 0 the next face */
+static inline int under_face(const struct cface *q, const struct piece *pc, float lx, float lz, float c, float s,
+                             float *h, int *grass)
+{
+    if(q->boxed && (lx < q->x0 || lx > q->x1 || lz < q->z0 || lz > q->z1)) return 0;
+    int nc = q->nc, pos = 0, neg = 0;
+    if(!nc) return 0;
+    for(int j = 0; j < nc; j++) {
+        int b = j + 1 < nc ? j + 1 : 0;
+        float ax = q->x[j], az = q->z[j];
+        float cr = (q->x[b] - ax) * (lz - az) - (q->z[b] - az) * (lx - ax);
+        if(cr > 0.0f) pos++; else if(cr < 0.0f) neg++;
+    }
+    if(pos && neg) return 0;
+    if(grass) *grass = cobj_grass[pc->obj];
+    if(!h) return 1;
+    if(q->n[1] == 0) return 0;
+    int num = ((int)lx - q->v[0]) * q->n[0] + ((int)lz - q->v[2]) * q->n[2];
+    *h = (float)pc->h + (float)q->v[1] + (float)(-num / q->n[1]);
+    under_n[0] = (float)q->n[0] * c - (float)q->n[2] * s;
+    under_n[1] = (float)q->n[0] * s + (float)q->n[2] * c;
+    under_n[2] = (float)q->n[1];
+    return 1;
+}
+
 int track_under(float x, float y, float *h, int *grass)
 {
     static const int8_t cell[9][2] = { {0,0}, {1,0}, {-1,0}, {0,1}, {0,-1}, {1,1}, {-1,-1}, {1,-1}, {-1,1} };
@@ -479,28 +582,15 @@ int track_under(float x, float y, float *h, int *grass)
             float c = sin2048((uint32_t)pc->t + 512), s = sin2048((uint32_t)pc->t);
             float lx = dx * c + dy * s, lz = -dx * s + dy * c;  /* into the piece's frame */
             const struct cface *f0 = &cfaces[cobj_first[pc->obj]], *fe = f0 + cobj_count[pc->obj];
+            const struct cgrid *g = &cgrid[pc->obj];
             for(int tries = 0; tries < 3; tries++, lx += 10.0f, lz += 10.0f)
-                for(const struct cface *q = f0; q < fe; q++) {
-                    if(q->boxed && (lx < q->x0 || lx > q->x1 || lz < q->z0 || lz > q->z1)) continue;
-                    int nc = q->nc, pos = 0, neg = 0;
-                    if(!nc) continue;
-                    for(int j = 0; j < nc; j++) {
-                        int b = j + 1 < nc ? j + 1 : 0;
-                        float ax = q->x[j], az = q->z[j];
-                        float cr = (q->x[b] - ax) * (lz - az) - (q->z[b] - az) * (lx - ax);
-                        if(cr > 0.0f) pos++; else if(cr < 0.0f) neg++;
-                    }
-                    if(pos && neg) continue;
-                    if(grass) *grass = cobj_grass[pc->obj];
-                    if(!h) return 1;
-                    if(q->n[1] == 0) continue;
-                    int num = ((int)lx - q->v[0]) * q->n[0] + ((int)lz - q->v[2]) * q->n[2];
-                    *h = (float)pc->h + (float)q->v[1] + (float)(-num / q->n[1]);
-                    under_n[0] = (float)q->n[0] * c - (float)q->n[2] * s;
-                    under_n[1] = (float)q->n[0] * s + (float)q->n[2] * c;
-                    under_n[2] = (float)q->n[1];
-                    return 1;
-                }
+                if(g->at[0] >= 0 && lx == lx && lz == lz) {    /* (not a number: all faces) */
+                    int k = cgrid_cell(lz, g->z0, g->sz) * CGRID + cgrid_cell(lx, g->x0, g->sx);
+                    for(const uint16_t *li = clist + g->at[k], *le = clist + g->at[k + 1]; li < le; li++)
+                        if(under_face(f0 + *li, pc, lx, lz, c, s, h, grass)) return 1;
+                } else
+                    for(const struct cface *q = f0; q < fe; q++)
+                        if(under_face(q, pc, lx, lz, c, s, h, grass)) return 1;
         }
     }
     return 0;
