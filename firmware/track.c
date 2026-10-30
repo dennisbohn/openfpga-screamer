@@ -913,7 +913,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         if(rad < 0.0f) continue;
         float dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch;
         float d2 = dx * dx + dy * dy + dh * dh;
-        nearest = fminf(nearest, d2);           /* (as d2 < nearest: d2 is never -0, a NaN is passed over) */
+        if(d2 < nearest) nearest = d2;
         if(d2 >= REACH2) continue;
         /* behind the eye or past the far plane (more than half of those in reach), then out at a
            side: each one's tests at once (| not ||, one branch: the FPU answers them side by side) */
