@@ -12,8 +12,9 @@
  * moves the output by 128 per 8-bit step. The commentary (speech.h) comes after the effects,
  * the rows of SPFXBASE.DTR and SPFXFULL.DTR, at the same master volume: the game starts the
  * speech's at 0x6000 as well (0x1bc2f), so the voice keeps its loudness beside the effects. A
- * recording peaks at full scale (+-16 300 here); the engines and the voice at their peaks
- * together could pass the 16 bits, the mix of a race does not come near (docs/soc.md).
+ * recording peaks at full scale (+-16 300 here). Like a crash or the wall, the voice on top of
+ * the engines at their peaks could pass the 16 bits; in the simulation the loudest moment, "go"
+ * over the revving grid, peaked at 31 157.
  *
  * Sounds with a place (the opponents' engines, the moving scenery; NOTES.md sections 15 and 17)
  * are heard from the camera, by the 2D distance, and only they are panned: the line to the

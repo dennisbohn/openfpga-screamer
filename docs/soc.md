@@ -189,8 +189,13 @@ ohne `CHOICE.DAT` die 180 s des Spiels), Crash, das Ende (gewonnen, verloren, Ze
 Schritt die Wächter von `0x2425c` mit ihren Zeiten: falsche Richtung (gegen die Straße an der
 letzten Wand, `+0x13c`), Stillstand, Eile, Führung und ihr Verlust, Kurve (Marker-Flag 4),
 Rutschen, Letzter, eine Runde voraus, Berührung mit einem Gegner. Die Stimme steht in der Mitte,
-mit dem Hauptregler der Effekte (`0x4000`; im Spiel beginnen beide bei `0x6000`). Jeder Satz
-geht ins Debug-Log, wenn er zu Ende ist: `say <von>-<bis> <Ereignis> <Aufnahme>` (Rennuhr).
+mit dem Hauptregler der Effekte (`0x4000`; im Spiel beginnen beide bei `0x6000`); die lauteste
+Stelle der Simulation, „go“ über den aufheulenden Motoren am Start, erreicht 31.157 von 32.767.
+Wie ein Crash oder die Wand kann ein Satz über den Motoren an ihren Spitzen übersteuern; sicher
+wäre erst `0x2d00` für beide (−3 dB). Jeder Satz
+geht ins Debug-Log, wenn er zu Ende ist: `say <von>-<bis> <Ereignis> <Aufnahme>` (Rennuhr),
+solange die 4 KB Platz haben; nach dem Bericht des Startbilds und der Zeile alle 250 Bilder
+ist es voll.
 
 ## Framebuffer
 
