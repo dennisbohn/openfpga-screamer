@@ -23,6 +23,13 @@
 
 #define PI          3.14159265f
 
+/* the FPU's answers to comparisons all asked for before any is used: an answer comes back late
+   and a use right after its question waits for it; asked one after the other, they come back
+   side by side and the CPU waits once (as track.c's INT_NOW) */
+#define ASKED2(a, b) __asm__ ("" : "+r"(a), "+r"(b))
+#define ASKED3(a, b, c) __asm__ ("" : "+r"(a), "+r"(b), "+r"(c))
+#define ASKED4(a, b, c, d) __asm__ ("" : "+r"(a), "+r"(b), "+r"(c), "+r"(d))
+
 struct opp {
     int node, half;             /* the piece of its curve it is on */
     float u, speed;             /* 0..1 along that piece; units/s */
@@ -231,7 +238,9 @@ static void collide(void)
     for(int k = 0; k < nopp; k++) {
         struct opp *o = &opp[k];
         const float *ocx = occ[k][0], *ocy = occ[k][1];
-        if(fabsf(c->x - o->x) < 1500.0f && fabsf(c->y - o->y) < 1500.0f && fabsf(c->z - o->z) < 600.0f)
+        int nx = fabsf(c->x - o->x) < 1500.0f, ny = fabsf(c->y - o->y) < 1500.0f, nz = fabsf(c->z - o->z) < 600.0f;
+        ASKED3(nx, ny, nz);
+        if(nx & ny & nz)
             for(int a = 0; a < 2; a++)
                 for(int b = 0; b < 2; b++) {
                     float dx = pcx[a] - ocx[b], dy = pcy[a] - ocy[b];
@@ -245,8 +254,10 @@ static void collide(void)
                 }
         float fx = o->fwd[0], fy = o->fwd[1];
         float qx = o->x + fx * o->radius * 3.0f, qy = o->y + fy * o->radius * 3.0f;
-        if(fabsf(qx - c->x) < 5000.0f && fabsf(qy - c->y) < 5000.0f && c->speed < o->speed &&
-           fabsf(c->z - o->z) < 600.0f) {
+        int ax = fabsf(qx - c->x) < 5000.0f, ay = fabsf(qy - c->y) < 5000.0f, slower = c->speed < o->speed;
+        int az = fabsf(c->z - o->z) < 600.0f;
+        ASKED4(ax, ay, slower, az);
+        if(ax & ay & slower & az) {
             float thr = o->radius * 2.0f + pr;
             for(int a = 0; a < 2; a++) {
                 float dx = qx - pcx[a], dy = qy - pcy[a];
@@ -261,7 +272,9 @@ static void collide(void)
         }
         for(int j = k + 1; j < nopp; j++) {
             struct opp *q = &opp[j];
-            if(fabsf(o->x - q->x) >= 1500.0f || fabsf(o->y - q->y) >= 1500.0f) continue;
+            int fx2 = fabsf(o->x - q->x) >= 1500.0f, fy2 = fabsf(o->y - q->y) >= 1500.0f;
+            ASKED2(fx2, fy2);
+            if(fx2 | fy2) continue;
             const float *qcx = occ[j][0], *qcy = occ[j][1];
             for(int a = 0; a < 2; a++)
                 for(int b = 0; b < 2; b++) {
