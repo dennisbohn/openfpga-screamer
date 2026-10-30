@@ -588,8 +588,8 @@ static void pause_race(uint32_t st, int n)
 
 /* PLAY AGAIN? (0x219d0), as the game asks it when a race is left (0x1fe86): the effects stop
    (0x1f8cc), the music goes on; over the picture on the screen darkened three times (hud.h). Up
-   or left YES, down or right NO, B or START take the answer, Y or SELECT are NO (the game's
-   ESC). 1 for YES. */
+   or left YES, down or right NO, each press with the click (SFXSBASE.DTR's row 6, 0x21b0e,
+   0x21b47), B or START take the answer, Y or SELECT are NO (the game's ESC). 1 for YES. */
 static int play_again(uint32_t st)
 {
     uint32_t keys_before = IN_KEY, last_frame = VID_FRAME(st), ticks = 0;
@@ -600,6 +600,7 @@ static int play_again(uint32_t st)
         st = wait_swap_done();
         uint32_t keys = IN_KEY, press = keys & ~keys_before;
         music_frame();
+        if (press & (KEY_UP | KEY_LEFT | KEY_DOWN | KEY_RIGHT)) snd_play(SND_CLICK);
         if (press & (KEY_UP | KEY_LEFT)) no = 0;
         if (press & (KEY_DOWN | KEY_RIGHT)) no = 1;
         if (press & (KEY_B | KEY_START)) return !no;
@@ -1193,6 +1194,23 @@ static void sounds(void)
     dlog_str(" ms\n");
 }
 
+/* The menu's effects (sound.h snd_menu): MENU.DTR's nine samples of SOUND.DAT, each read at its
+   place once (until the whole container follows with the first track) */
+static void menu_sounds(void)
+{
+    static const struct menu_part parts[] = {
+        { "MENU1.RAW", ~0u }, { "MENU2.RAW", ~0u }, { "MENU3.RAW", ~0u }, { "MENU4.RAW", ~0u },
+        { "MENU5.RAW", ~0u }, { "MENU6.RAW", ~0u }, { "MENU7.RAW", ~0u }, { "MENU8.RAW", ~0u },
+        { "MENU9.RAW", ~0u }, { 0, 0 } };
+    static uint32_t size;
+    if (!sound_size && !size) size = load_parts(SOUND_SLOT, SOUND_MEM, SOUND_MAX, parts);
+    uint32_t have = sound_size ? sound_size : size;
+    int n = have && game.gen_size ? snd_menu((const uint8_t *)(uintptr_t)SOUND_MEM, have, game.gen, game.gen_size) : 0;
+    dlog_str("menu sounds: ");
+    dlog_dec(n);
+    dlog_str(" of MENU.DTR\n");
+}
+
 /* The player's dashboard for the cockpit (hud.h) from the GFX container GAME.DAT and GEN.DAT;
    1 if it is there */
 static int dashboard_init(void)
@@ -1391,6 +1409,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         int sim = (SYS_FLAGS & FLAG_SIM) != 0, check = sim ? (int)slot_size(MENU_CHECK_SLOT) : 0;
         int screen = (!sim || check) && menus();
         int n = sim && slot_size(TRACK_SLOT) ? (int)slot_size(TRACK_SLOT) : 1, car = 0;
+        if (screen) menu_sounds();
         for (;;) {
             if (screen) {
                 if (check != 2) n = menu_screen(MENU_TRACK_SCREEN, n);
@@ -1399,6 +1418,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
                 car = c - 1;
             }
             if (!race(n, car) && !screen) break;
+            if (screen) menu_sounds();          /* the race had its own (sounds()) */
         }
     }
     /* no track: the scene with test patterns, written before the rasterizer reads them */

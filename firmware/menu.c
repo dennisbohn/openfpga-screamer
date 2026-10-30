@@ -11,6 +11,7 @@
 #include "car.h"
 #include "tb_hud.h"
 #include "tb_spl.h"
+#include "sound.h"
 #include <math.h>
 #include <string.h>
 
@@ -274,6 +275,7 @@ int menu_step(uint32_t keys, uint32_t keys_before)
             from_x = cam_x;
             to_x = -r->gap * (float)to;
             slide = 1.0f;
+            snd_play(SND_MENU_MOVE);
         }
     }
     if(press & (KEY_B | KEY_START)) return pick + 1;

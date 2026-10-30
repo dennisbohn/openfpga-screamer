@@ -52,9 +52,10 @@ const uint8_t *menu_mlb(void);
 void menu_enter(int screen, int n);
 
 /* One step of 1/50 s with the keys (IN_KEY) held now and on the step before: left and right
-   choose (a press is taken once the camera is most of the way to the last one), B or START take
-   the choice: its number as menu_enter's n; on the car screen Y or SELECT go back: -1. 0 while
-   none is taken. */
+   choose (a press is taken once the camera is most of the way to the last one; the menu's sound
+   SND_MENU_MOVE with it, sound.h), B or START take the choice: its number as menu_enter's n; on
+   the car screen Y or SELECT go back: -1 (both without a sound, as the game). 0 while none is
+   taken. */
 int menu_step(uint32_t keys, uint32_t keys_before);
 
 /* The frame in the order it is drawn: the picture (for the blitter), the projection and the

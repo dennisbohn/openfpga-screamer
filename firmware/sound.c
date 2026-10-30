@@ -127,12 +127,18 @@ static int gen_list(const uint8_t *gen, uint32_t gen_size, const char *name)
     return list((const char *)text, (const char *)text + size);
 }
 
-int snd_init(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint32_t gen_size)
+/* every voice stopped, the table emptied, SOUND.DAT from now on (no commentary in it yet) */
+static void restart(const uint8_t *sound, uint32_t sound_size)
 {
     AU_STOP = 0xFFFFFFFFu;
-    nfx = 0;
+    nfx = speech_end = 0;
     dat = sound;
     dat_size = sound_size;
+}
+
+int snd_init(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint32_t gen_size)
+{
+    restart(sound, sound_size);
     int n = gen_list(gen, gen_size, "SFXSBASE.DTR");
     if (nfx == SND_SPEECH) {
         n += gen_list(gen, gen_size, "SPFXBASE.DTR");
@@ -140,6 +146,12 @@ int snd_init(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint
     }
     speech_end = nfx;
     return n;
+}
+
+int snd_menu(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint32_t gen_size)
+{
+    restart(sound, sound_size);
+    return gen_list(gen, gen_size, "MENU.DTR");
 }
 
 int snd_add_list(const uint8_t *text, uint32_t size)

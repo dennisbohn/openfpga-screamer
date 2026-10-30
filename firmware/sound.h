@@ -35,6 +35,12 @@ enum { SND_SKID, SND_CRASH, SND_OPP_ENGINE, SND_ENGINE, SND_WALL, SND_HIT, SND_C
    from SOUND.DAT (both whole in memory, SOUND.DAT in the SDRAM where the mixer reads it); every
    voice stopped. Returns how many rows have their sample. */
 int snd_init(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint32_t gen_size);
+/* The menu's effects instead, the table the game loads while a menu is up (0x29e1d, 0x1f2d0):
+   the nine rows smenu1..9 of the first SOUND_FX section of GEN.DAT's MENU.DTR (of SOUND.DAT
+   only their samples need be there, at their places); every voice stopped. Returns how many
+   rows have their sample. */
+#define SND_MENU_MOVE   6       /* smenu7: the camera on to the next track or car (0x2859e, 0x2874b) */
+int snd_menu(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint32_t gen_size);
 /* The rows of the first SOUND_FX section of another DTR text (the track's MAPnDAT.DTR) after
    those: the effect number of its first row, or -1 */
 int snd_add_list(const uint8_t *text, uint32_t size);
