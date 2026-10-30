@@ -42,7 +42,7 @@ def main():
     for p in ("track check:", "game files:", "track image:"):
         l = first(p)
         if l:
-            print(" ", re.sub(r" (MAP1H.DAT|GAME.DAT|MAP1.DAT|GEN.DAT|LOCAL.DAT) \d+", "", l)[:150])
+            print(" ", re.sub(r" (MAP\dH?.DAT|GAME.DAT|GEN.DAT|LOCAL.DAT) \d+", "", l)[:150])
     race = first("track frame 2:")
     now = counts(race) if race else {}
     base = {}

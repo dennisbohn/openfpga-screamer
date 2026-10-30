@@ -8,9 +8,12 @@
  * at SDRAM_UBASE, the same memory), the registers and frame buffers at 0xF0000000, so its
  * pointers and SDRAM byte addresses work unchanged.
  *
- * Usage: render <track image> <MAPnH.DAT> <MAPn.DAT> <out.rgb> [view [steps]]
+ * Usage: render <track image> <MAPnH.DAT> <MAPn.DAT> <out.rgb> [view [steps [n]]]
  *   view: 0 bumper, 1 cockpit, 2 near chase (default), 3 far chase; steps: physics steps on
- *   the grid before the picture (default 2)
+ *   the grid before the picture (default 2); n: the track's number (default 1)
+ *        render menu <MENU.DAT> <GRAF.DAT> <LOCAL.DAT> <out.rgb> [n [steps]]
+ *   the track screen (menu.h) with track n chosen (default 1), steps of 1/50 s after entering
+ *   it (default 0)
  */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -24,7 +27,13 @@
 #include "efx.h"
 #include "scenery.h"
 #include "blit.h"
+#include "menu.h"
 
+#define MENU_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x200000))       /* as main.c */
+#define GRAF_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x600000))
+#define MENU_MEM    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0xA00000))
+#define LOCAL_FILE  ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2D50000))
+#define SCRATCH     ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2D60000))
 #define TEX_FILE    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000))      /* as main.c */
 #define GFX_FILE    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2800000))
 #define EFX_SIZE    0x10000
@@ -54,19 +63,58 @@ static uint32_t load(const char *path, uint8_t *at, uint32_t max)
     return n;
 }
 
+static void write_rgb(const char *path, const uint32_t *pal)
+{
+    volatile uint8_t *fb = FB(0);
+    FILE *f = fopen(path, "wb");
+    if (!f) { perror(path); exit(1); }
+    for (int i = 0; i < FB_W * FB_H; i++) {
+        uint32_t c = pal[fb[i]];
+        uint8_t rgb[3] = { (uint8_t)(c >> 16), (uint8_t)(c >> 8), (uint8_t)c };
+        fwrite(rgb, 1, 3, f);
+    }
+    fclose(f);
+}
+
+/* the track screen: the containers whole (the firmware loads only menu.h's parts of them) */
+static int menu(int argc, char **argv)
+{
+    int n = argc > 6 ? atoi(argv[6]) : 1, steps = argc > 7 ? atoi(argv[7]) : 0;
+    uint32_t menu_size = load(argv[2], MENU_FILE, 0x400000), graf_size = load(argv[3], GRAF_FILE, 0x400000);
+    uint32_t local_size = load(argv[4], LOCAL_FILE, 0x10000);
+    if (!menu_init(MENU_FILE, menu_size, GRAF_FILE, graf_size, LOCAL_FILE, local_size, MENU_MEM, 0x80000, SCRATCH,
+                   0x2A0000)) { fprintf(stderr, "track screen: its files are not all there\n"); return 1; }
+    menu_enter(n);
+    for (int k = 0; k < steps; k++) menu_step(0, 0);
+    static struct blit_list l;
+    volatile uint8_t *fb = FB(0);
+    blit_start(&l, 0);
+    menu_backdrop(&l);
+    blit_model(fb, &l);
+    track_mode = TRACK_MODEL;
+    menu_scene(fb);
+    blit_start(&l, 0);
+    menu_text(&l);
+    blit_model(fb, &l);
+    write_rgb(argv[5], menu_palette());
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
-    if (argc < 5) { fprintf(stderr, "usage: render <track image> <MAPnH.DAT> <MAPn.DAT> <out.rgb> [view [steps]]\n"); return 2; }
-    int view = argc > 5 ? atoi(argv[5]) : CAR_VIEW_START, steps = argc > 6 ? atoi(argv[6]) : 2;
     map();
+    if (argc >= 6 && !strcmp(argv[1], "menu")) return menu(argc, argv);
+    if (argc < 5) { fprintf(stderr, "usage: render <track image> <MAPnH.DAT> <MAPn.DAT> <out.rgb> [view [steps [n]]]\n"); return 2; }
+    int view = argc > 5 ? atoi(argv[5]) : CAR_VIEW_START, steps = argc > 6 ? atoi(argv[6]) : 2;
+    int n = argc > 7 ? atoi(argv[7]) : 1;
     MEM_STATUS = MEM_LOCKED | MEM_READY | MEM_WRITES_IDLE;     /* waited for by efx_init */
     load(argv[1], TEX_FILE, 0x700000);
     if (!track_open(TEX_FILE) || !track_init()) { fprintf(stderr, "track image not usable\n"); return 1; }
     uint32_t gfx_size = load(argv[2], GFX_FILE, 0x400000);
-    efx_init(GFX_FILE, gfx_size, 1, track_mlb(), track_palette(), EFX_MEM, EFX_SIZE);
+    efx_init(GFX_FILE, gfx_size, n, track_mlb(), track_palette(), EFX_MEM, EFX_SIZE);
     uint32_t data_size = load(argv[3], DATA_FILE, 0x40000);
     int props, moving;
-    scenery_init(DATA_FILE, data_size, GFX_FILE, gfx_size, 1, SCENERY_MEM, 0x10000, &props, &moving);
+    scenery_init(DATA_FILE, data_size, GFX_FILE, gfx_size, n, SCENERY_MEM, 0x10000, &props, &moving);
     printf("scenery: %d props, %d moving\n", props, moving);
     car_init(0);
     opp_init(0);
@@ -97,15 +145,7 @@ int main(int argc, char **argv)
     track_mode = TRACK_MODEL;
     track_draw_cam(fb, &clip, &cam, objs, nobj, &ts);
 
-    const uint32_t *pal = track_palette();
-    FILE *f = fopen(argv[4], "wb");
-    if (!f) { perror(argv[4]); return 1; }
-    for (int i = 0; i < FB_W * FB_H; i++) {
-        uint32_t c = pal[fb[i]];
-        uint8_t rgb[3] = { (uint8_t)(c >> 16), (uint8_t)(c >> 8), (uint8_t)c };
-        fwrite(rgb, 1, 3, f);
-    }
-    fclose(f);
+    write_rgb(argv[4], track_palette());
     for (int k = 0; k < opp_count(); k++) {
         float x, y;
         if (opp_where(k, &x, &y)) printf("opponent %d at %.1f %.1f\n", k, x, y);

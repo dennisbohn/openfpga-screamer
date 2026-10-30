@@ -31,7 +31,7 @@
 #include <math.h>
 
 #define BLOCK       0x40000     /* bytes per CRC block (tools/make_track.py) */
-#define MAX_PIECES  2048        /* placements; track 1 has 809 (L set), 1164 (H set) */
+#define MAX_PIECES  2560        /* placements (H set): track 1 has 1164, track 5 the most, 2359 */
 #define MAX_OBJ     512         /* meshes; up to 360 on a track */
 #define MAX_BLOCKS  8           /* blocks of a mesh drawn (track 1: two, the football helmet's) */
 
@@ -623,6 +623,16 @@ static void block_piece(const float c[3], const float f[3], const float r[3], co
     face_eye(blk, e[0], e[1], e[2], g);
     g->blk = blk;
     g->mirror = 0;
+}
+
+void track_block_piece(const struct track_cam *cam, const struct track_block *b, struct gu_piece *g)
+{
+    const float c[3] = { cam->x, cam->y, cam->h };
+    float f[3], r[3], u[3];
+    cam_frame(cam, f, r, u);
+    block_piece(c, f, r, u, b->m, b->o, b->blk, g);
+    g->obj = b->file;
+    g->phase = b->phase;
 }
 
 /* A placement whose mesh has several blocks or moving parts (track 1's football helmet V220:

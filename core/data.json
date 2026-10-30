@@ -99,6 +99,138 @@
                 "extensions": ["dat"],
                 "size_maximum": 2097152,
                 "address": "0x11C00000"
+            },
+            {
+                "name": "MAP2H.DAT",
+                "id": 9,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "GFX/MAP2H.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 4194304,
+                "address": "0x12800000"
+            },
+            {
+                "name": "MAP3H.DAT",
+                "id": 10,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "GFX/MAP3H.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 4194304,
+                "address": "0x12800000"
+            },
+            {
+                "name": "MAP4H.DAT",
+                "id": 11,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "GFX/MAP4H.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 4194304,
+                "address": "0x12800000"
+            },
+            {
+                "name": "MAP5H.DAT",
+                "id": 12,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "GFX/MAP5H.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 4194304,
+                "address": "0x12800000"
+            },
+            {
+                "name": "MAP6H.DAT",
+                "id": 13,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "GFX/MAP6H.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 4194304,
+                "address": "0x12800000"
+            },
+            {
+                "name": "MAP2.DAT",
+                "id": 14,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "DATA/MAP2.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 262144,
+                "address": "0x12D00000"
+            },
+            {
+                "name": "MAP3.DAT",
+                "id": 15,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "DATA/MAP3.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 262144,
+                "address": "0x12D00000"
+            },
+            {
+                "name": "MAP4.DAT",
+                "id": 16,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "DATA/MAP4.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 262144,
+                "address": "0x12D00000"
+            },
+            {
+                "name": "MAP5.DAT",
+                "id": 17,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "DATA/MAP5.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 262144,
+                "address": "0x12D00000"
+            },
+            {
+                "name": "MAP6.DAT",
+                "id": 18,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "DATA/MAP6.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 262144,
+                "address": "0x12D00000"
+            },
+            {
+                "name": "MENU.DAT",
+                "id": 19,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "GFX/MENU.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 4194304,
+                "address": "0x10200000"
+            },
+            {
+                "name": "GRAF.DAT",
+                "id": 20,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "GFX/GRAF.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 4194304,
+                "address": "0x10600000"
             }
         ]
     }

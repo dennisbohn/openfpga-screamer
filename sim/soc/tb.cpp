@@ -435,6 +435,27 @@ int main(int argc, char **argv) {
             s.bridge_write(0xF8002000u + 8 * uint32_t(extra), 29);
             s.bridge_write(0xF8002004u + 8 * uint32_t(extra), n);
             printf("race: the frame %u after the green light (slot 29)\n", n);
+            extra++;
+        }
+    }
+    // SIM_TRACK=n (tools/sim.sh): slot 28 with the size n, the track the firmware races (none:
+    // track 1; the simulation has no track screen)
+    if (const char *t = getenv("SIM_TRACK")) {
+        uint32_t n = uint32_t(strtoul(t, nullptr, 10));
+        if (n && extra < 32) {
+            s.bridge_write(0xF8002000u + 8 * uint32_t(extra), 28);
+            s.bridge_write(0xF8002004u + 8 * uint32_t(extra), n);
+            printf("track %u (slot 28)\n", n);
+            extra++;
+        }
+    }
+    // SIM_MENU=1 (tools/sim.sh): slot 27, the track screen instead of the race, its third frame
+    // checked against the C models
+    if (const char *m = getenv("SIM_MENU")) {
+        if (*m && *m != '0' && extra < 32) {
+            s.bridge_write(0xF8002000u + 8 * uint32_t(extra), 27);
+            s.bridge_write(0xF8002004u + 8 * uint32_t(extra), 1);
+            printf("the track screen (slot 27)\n");
         }
     }
     {

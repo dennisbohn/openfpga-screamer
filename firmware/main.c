@@ -1,9 +1,11 @@
 /*
  * The program (program.bin, data slot 2) in the SDRAM, started by the boot loader with its
- * results (docs/soc.md). With the game's original files in data slots 3-8 it builds track 1
+ * results (docs/soc.md). With the game's original files in data slots 3-20 it shows the track
+ * screen (menu.c: left and right choose, B or START take the track), builds the track chosen
  * from them (track_build.c) and puts the player's car on it (car.c): B accelerates, Y
  * brakes, left and right steer, L and R change gear on a manual car, X changes the view; the CPU picks and sorts the pieces (track.c), the geometry unit, setup unit and
- * rasterizer draw them. Without the files, the texture scene with test patterns, checked
+ * rasterizer draw them. SELECT, or the race over for 5 s, goes back to the track screen.
+ * Without the files, the texture scene with test patterns, checked
  * once a run against the rasterizer's C model (raster.c), and a triangle moved with the
  * d-pad.
  * Every frame into the back buffer: palette, test band, background, the scene, the counts
@@ -28,6 +30,8 @@
 #include "scenery.h"
 #include "geom.h"
 #include "sound.h"
+#include "menu.h"
+#include "dat.h"
 
 uint32_t frames_shown;             /* read by the trap handler */
 
@@ -40,22 +44,40 @@ static uint8_t col_bg = COL_BG, col_text = COL_TEXT, col_dim = COL_DIM, col_aler
 
 #define TEX_FILE    ((const volatile uint8_t *)(SDRAM_BASE + 0x2100000))  /* the track image, up to 7 MB */
 
-/* The game's containers (data slots 3-7, core/data.json with the same addresses and limits)
-   above the track image, in struct track_files' order; the build's scratch after them, up
-   to the program */
+/* The game's containers (core/data.json with the same addresses and limits) above the track
+   image, in struct track_files' order: the track's GFX and DATA containers (data slots 3 and 5
+   for track 1, 9-13 and 14-18 for tracks 2-6), each track's at the same place, and GAME.DAT,
+   GEN.DAT, LOCAL.DAT (slots 4, 6, 7), loaded once; the build's scratch after them, up to the
+   program */
 #define GAME_SLOT   3
+#define TRACK_FILES 5u          /* containers 0 and 2 (bits): the track's */
+#define FIXED_FILES 0x1Au       /* 1, 3, 4: the ones that stay */
 #define IMAGE_SLOT  30          /* the simulation only: the finished track image (load_image) */
 #define RACE_SLOT   29          /* the simulation only: its size, the frames after the green light
                                    (run_track) */
+#define TRACK_SLOT  28          /* the simulation only: its size, the track raced (none: track 1) */
+#define MENU_CHECK_SLOT 27      /* the simulation only: there, the track screen instead (track_screen) */
 static const struct game_file { const char *name; uint32_t addr, max; } game_files[5] = {
-    { "MAP1H.DAT", SDRAM_BASE + 0x2800000, 0x400000 },
+    { "MAP#H.DAT", SDRAM_BASE + 0x2800000, 0x400000 },     /* # the track's number */
     { "GAME.DAT",  SDRAM_BASE + 0x2C00000, 0x100000 },
-    { "MAP1.DAT",  SDRAM_BASE + 0x2D00000, 0x40000 },
+    { "MAP#.DAT",  SDRAM_BASE + 0x2D00000, 0x40000 },
     { "GEN.DAT",   SDRAM_BASE + 0x2D40000, 0x10000 },
     { "LOCAL.DAT", SDRAM_BASE + 0x2D50000, 0x10000 },
 };
 #define BUILD_SCRATCH   (SDRAM_BASE + 0x2D60000)
 static struct track_files game;         /* where they are, as loaded */
+static int track_loaded;                /* the track whose two containers are loaded, 0 none */
+/* The track screen's files (menu.h): of GFX/MENU.DAT and GFX/GRAF.DAT (data slots 19 and 20,
+   core/data.json with the same addresses and limits) only the parts it needs, each at its place
+   in the file; its picture, sprites and fonts after them. Below the sounds, where nothing else
+   writes: loaded once. */
+#define MENU_SLOT   19
+#define GRAF_SLOT   20
+#define MENU_FILE   (SDRAM_BASE + 0x200000)
+#define GRAF_FILE   (SDRAM_BASE + 0x600000)
+#define MENU_MAX    0x400000
+#define MENU_MEM    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0xA00000))
+#define MENU_SIZE   0x80000
 /* the effects through MAPn.SMG (efx.h): 64 KB right under the track image, so that the radar's
    material at its end lies within a face's reach (32 KB) of the image's MLB */
 #define EFX_SIZE    0x10000
@@ -379,28 +401,11 @@ static void hw_blit(const struct blit_list *l)
     }
 }
 
-/* Once per run: the frame just drawn against the C models of the setup unit and the
-   rasterizer, drawn into the SDRAM in the same order (the 3D view in clip, the dashboard ds
-   if there is one, the radar's window, the race screen); the whole screen compared pixel by
-   pixel */
-static void track_check(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam,
-                        struct track_object *objs, int nobj, const struct blit_list *bk,
-                        const struct blit_list *ds, const struct blit_list *bl)
+/* the whole screen fb against the models' picture m, pixel by pixel, into the log (the
+   testbench looks for "track check: ok"); t0 when drawing m began */
+static void compare_log(volatile uint8_t *fb, volatile uint8_t *m, uint32_t t0)
 {
-    volatile uint8_t *m = CHECK_BUF;
-    struct track_stats ts;
-    uint32_t differ = 0, first = 0, t0 = rdcycle();
-    blit_model(m, bk);
-    track_mode = TRACK_MODEL;
-    track_draw_cam(m, clip, cam, objs, nobj, &ts);
-    if (ds) blit_model(m, ds);
-    struct su_view v;
-    struct gu_piece radar;
-    struct gu_stats gst = { 0, 0, 0, 0 };
-    track_view(clip, &v);
-    if (efx_radar_piece(&v, &radar)) gu_draw(m, &track_clip, &v, track_mlb(), &radar, &gst);
-    blit_model(m, bl);
-    track_mode = TRACK_HW;
+    uint32_t differ = 0, first = 0;
     for (int y = track_clip.y0; y < track_clip.y1; y++)
         for (int x = track_clip.x0; x < track_clip.x1; x++)
             if (fb[y * FB_W + x] != m[y * FB_W + x] && differ++ == 0) first = (uint32_t)(y * FB_W + x);
@@ -423,12 +428,41 @@ static void track_check(volatile uint8_t *fb, const struct rs_clip *clip, const 
     dlog_char('\n');
 }
 
+/* Once per run: the frame just drawn against the C models of the setup unit and the
+   rasterizer, drawn into the SDRAM in the same order (the 3D view in clip, the dashboard ds
+   if there is one, the radar's window, the race screen); the whole screen compared pixel by
+   pixel */
+static void track_check(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam,
+                        struct track_object *objs, int nobj, const struct blit_list *bk,
+                        const struct blit_list *ds, const struct blit_list *bl)
+{
+    volatile uint8_t *m = CHECK_BUF;
+    struct track_stats ts;
+    uint32_t t0 = rdcycle();
+    blit_model(m, bk);
+    track_mode = TRACK_MODEL;
+    track_draw_cam(m, clip, cam, objs, nobj, &ts);
+    if (ds) blit_model(m, ds);
+    struct su_view v;
+    struct gu_piece radar;
+    struct gu_stats gst = { 0, 0, 0, 0 };
+    track_view(clip, &v);
+    if (efx_radar_piece(&v, &radar)) gu_draw(m, &track_clip, &v, track_mlb(), &radar, &gst);
+    blit_model(m, bl);
+    track_mode = TRACK_HW;
+    compare_log(fb, m, t0);
+}
+
 static int dashboard_init(void);
 
-static void __attribute__((noreturn)) run_track(void)
+#define OVER_STEPS  250         /* the race over for 5 s: back to the track screen */
+
+/* The race until SELECT or OVER_STEPS after its end (never in the simulation, which stops
+   after the frame it checks) */
+static void run_track(void)
 {
     const uint32_t *pal = track_palette();
-    uint32_t drawn = 0, keys_before = 0, last_frame = 0, steps = 0;
+    uint32_t drawn = 0, keys_before = 0, last_frame = 0, steps = 0, over = 0;
     uint32_t fps = 0, fps_drawn = 0, fps_frame = 0;
     int car_v = CAR_VIEW_START;
     car_init(0);
@@ -475,6 +509,7 @@ static void __attribute__((noreturn)) run_track(void)
         last_frame = VID_FRAME(st);
         if (n > 4) n = 4;
         if ((keys & ~keys_before) & KEY_X) car_view(++car_v);
+        if (((keys & ~keys_before) & KEY_SELECT) || over >= OVER_STEPS) return;
         efx_cyc_objects = efx_cyc_radar = 0;
         uint32_t t_phys = rdcycle();
         for (uint32_t k = 0; k < n; k++) {
@@ -483,6 +518,7 @@ static void __attribute__((noreturn)) run_track(void)
             scenery_step();
             keys_before = keys;
             if (sim_race && !car_race()->on && k == n - 1) n++;    /* the simulation's countdown at once */
+            if (car_race()->finished || car_race()->game_over) over++;
         }
         t_phys = rdcycle() - t_phys;
         tl_mark(TL_PHYS);
@@ -709,41 +745,104 @@ static uint32_t load_file(uint32_t id, uint32_t addr, uint32_t max, int *err)
     return size;
 }
 
-/* The five containers into the SDRAM; 1 if all are there */
-static int load_game_files(void)
+/* name with '#' made track n's number into buf */
+static const char *track_name(const char *name, int n, char buf[16])
 {
-    const uint8_t *at[5];
-    uint32_t size[5], t0 = rdcycle();
-    for (int k = 0; k < 5; k++) {
-        const struct game_file *g = &game_files[k];
-        uint32_t id = GAME_SLOT + (uint32_t)k;
-        int err;
-        size[k] = load_file(id, g->addr, g->max, &err);
-        at[k] = (const uint8_t *)(uintptr_t)g->addr;
-        if (size[k]) continue;
-        dlog_str(g->name);
-        dlog_str(": not loaded (data slot ");
-        dlog_dec((int32_t)id);
-        dlog_str(", size ");
-        dlog_dec((int32_t)slot_size(id));
-        dlog_str(", result ");
-        dlog_dec(err);
-        dlog_str(")\n");
-        return 0;
-    }
-    uint32_t ms = (rdcycle() - t0) / (CPU_HZ / 1000);
-    game = (struct track_files){ at[0], at[1], at[2], at[3], at[4], size[0], size[1], size[2], size[3], size[4] };
+    int i = 0;
+    for (; name[i] && i < 15; i++)
+        buf[i] = name[i] == '#' ? (char)('0' + n) : name[i];
+    buf[i] = 0;
+    return buf;
+}
+
+/* The containers of game_files whose bits are in which into the SDRAM, the track's those of
+   track n (data slots: GAME_SLOT + k, MAP2H..MAP6H 9-13, MAP2..MAP6 14-18); 1 if all are there */
+static int load_containers(int n, uint32_t which)
+{
+    const uint8_t **at[5] = { &game.gfx, &game.game, &game.data, &game.gen, &game.local };
+    uint32_t *size[5] = { &game.gfx_size, &game.game_size, &game.data_size, &game.gen_size, &game.local_size };
+    uint32_t t0 = rdcycle();
+    char name[16];
     dlog_str("game files:");
     for (int k = 0; k < 5; k++) {
+        if (!(which >> k & 1)) continue;
+        const struct game_file *g = &game_files[k];
+        uint32_t id = n > 1 && k == 0 ? 7u + (uint32_t)n : n > 1 && k == 2 ? 12u + (uint32_t)n : GAME_SLOT + (uint32_t)k;
+        int err;
+        *size[k] = load_file(id, g->addr, g->max, &err);
+        *at[k] = (const uint8_t *)(uintptr_t)g->addr;
         dlog_char(' ');
-        dlog_str(game_files[k].name);
+        dlog_str(track_name(g->name, n, name));
+        if (!*size[k]) {
+            dlog_str(" not loaded (data slot ");
+            dlog_dec((int32_t)id);
+            dlog_str(", size ");
+            dlog_dec((int32_t)slot_size(id));
+            dlog_str(", result ");
+            dlog_dec(err);
+            dlog_str(")\n");
+            return 0;
+        }
         dlog_char(' ');
-        dlog_dec((int32_t)size[k]);
+        dlog_dec((int32_t)*size[k]);
     }
     dlog_str(" bytes loaded in ");
-    dlog_dec((int32_t)ms);
+    dlog_dec((int32_t)((rdcycle() - t0) / (CPU_HZ / 1000)));
     dlog_str(" ms\n");
     return 1;
+}
+
+/* Bytes from .. to of data slot id's file (size bytes) to the same offsets from addr: the
+   file's whole words there, then its last 1-3 bytes as the rest of the file if to reaches
+   them. 0 if that worked, else the APF's result. */
+static int load_range(uint32_t id, uint32_t size, uint32_t from, uint32_t to, uint32_t addr)
+{
+    uint32_t body = size & ~3u, a = from & ~3u, b = (to + 3) & ~3u;
+    if (b > body) b = body;
+    int err = a < b ? slot_read(id, a, addr + a, b - a) : 0;
+    if (!err && to > body) err = slot_read(id, body, addr + body, SLOT_REST);
+    return err;
+}
+
+/* Of data slot id's container (at most max bytes) its directory and the parts p names, each
+   at its place from addr as if the whole file were there: its size, 0 if the file or a part is
+   missing or a read failed */
+static uint32_t load_parts(uint32_t id, uint32_t addr, uint32_t max, const struct menu_part *p)
+{
+    const uint8_t *f = (const uint8_t *)(uintptr_t)addr;
+    uint32_t size = slot_size(id);
+    if (size < 8 || size > max || load_range(id, size, size - 4, size, addr)) return 0;
+    const uint8_t *q = f + size - 4;
+    uint32_t dir = q[0] | (uint32_t)q[1] << 8 | (uint32_t)q[2] << 16 | (uint32_t)q[3] << 24;
+    if (dir > size - 4 || load_range(id, size, size - 4 - dir, size - 4, addr)) return 0;
+    for (; p->name; p++) {
+        struct dat_entry e;
+        if (!dat_find(f, size, p->name, &e) || e.offset > size || e.stored > size - e.offset) return 0;
+        if (load_range(id, size, e.offset, e.offset + (e.stored < p->most ? e.stored : p->most), addr)) return 0;
+    }
+    return size;
+}
+
+/* The track screen from GFX/MENU.DAT, GFX/GRAF.DAT and DATA/LOCAL.DAT; 1 if it is there */
+static int menus(void)
+{
+    uint32_t t0 = rdcycle();
+    uint32_t menu_size = load_parts(MENU_SLOT, MENU_FILE, MENU_MAX, menu_dat_parts);
+    uint32_t graf_size = load_parts(GRAF_SLOT, GRAF_FILE, MENU_MAX, menu_graf_parts);
+    int ok = menu_size && graf_size &&
+             menu_init((const uint8_t *)(uintptr_t)MENU_FILE, menu_size, (const uint8_t *)(uintptr_t)GRAF_FILE,
+                       graf_size, game.local, game.local_size, MENU_MEM, MENU_SIZE, (uint8_t *)BUILD_SCRATCH,
+                       PROG_BASE - BUILD_SCRATCH);
+    while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* the picture in the SDRAM for the blitter */
+        ;
+    dlog_str("track screen: MENU.DAT ");
+    dlog_dec((int32_t)menu_size);
+    dlog_str(", GRAF.DAT ");
+    dlog_dec((int32_t)graf_size);
+    dlog_str(ok ? " bytes, their parts loaded in " : " bytes - not all there (no track screen: track 1), in ");
+    dlog_dec((int32_t)((rdcycle() - t0) / (CPU_HZ / 1000)));
+    dlog_str(" ms\n");
+    return ok;
 }
 
 /* The simulation's short cut (tools/simcheck.sh, SIM_IMAGE): the testbench offers the finished
@@ -764,12 +863,12 @@ static int load_image(void)
     return 1;
 }
 
-/* Track 1's image from them at TEX_FILE, its header opened; 1 if that worked */
-static int build_track(void)
+/* Track n's image from them at TEX_FILE, its header opened; 1 if that worked */
+static int build_track(int n)
 {
     struct track_build_info info;
     uint8_t *out = (uint8_t *)(uintptr_t)TEX_FILE;
-    uint32_t size = track_build(&game, 1, out, game_files[0].addr - (uint32_t)(uintptr_t)out,
+    uint32_t size = track_build(&game, n, out, game_files[0].addr - (uint32_t)(uintptr_t)out,
                                 (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH, &info);
     while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* all of it in the SDRAM for the 3D units */
         ;
@@ -792,20 +891,14 @@ static int build_track(void)
     return 1;
 }
 
-/* The effects through MAPn.SMG (efx.h) from the GFX container; after the testbench's image
-   (load_image) that container alone is loaded for them */
-static void effects(int image)
+/* Track n's effects through MAPn.SMG (efx.h) from its GFX container */
+static void effects(int n)
 {
     uint32_t t0 = rdcycle();
-    if (image) {
-        int err;
-        game.gfx = (const uint8_t *)(uintptr_t)game_files[0].addr;
-        game.gfx_size = load_file(GAME_SLOT, game_files[0].addr, game_files[0].max, &err);
-        dcache_invalidate();
-    }
-    int ok = game.gfx_size &&
-             efx_init(game.gfx, game.gfx_size, 1, track_mlb(), track_palette(), EFX_MEM, EFX_SIZE);
-    dlog_str("effects: MAP1.SMG ");
+    char name[16];
+    int ok = efx_init(game.gfx, game.gfx_size, n, track_mlb(), track_palette(), EFX_MEM, EFX_SIZE);
+    dlog_str("effects: ");
+    dlog_str(track_name("MAP#.SMG ", n, name));
     dlog_str(efx_table() ? "ok" : "missing");
     dlog_str(", SHADOW.3DX ");
     dlog_str(efx_shadow() ? "ok" : "missing");
@@ -816,19 +909,12 @@ static void effects(int image)
     dlog_str(" ms\n");
 }
 
-/* The props and moving scenery (scenery.h) from the DATA and GFX containers; after the
-   testbench's image (load_image) the DATA container is loaded for them */
-static void scenery(int image)
+/* Track n's props and moving scenery (scenery.h) from its DATA and GFX containers */
+static void scenery(int n)
 {
     uint32_t t0 = rdcycle();
-    if (image) {
-        int err;
-        game.data = (const uint8_t *)(uintptr_t)game_files[2].addr;
-        game.data_size = load_file(GAME_SLOT + 2, game_files[2].addr, game_files[2].max, &err);
-        dcache_invalidate();
-    }
     int props, moving;
-    scenery_init(game.data, game.data_size, game.gfx, game.gfx_size, 1, SCENERY_MEM, SCENERY_SIZE, &props,
+    scenery_init(game.data, game.data_size, game.gfx, game.gfx_size, n, SCENERY_MEM, SCENERY_SIZE, &props,
                  &moving);
     dlog_str("scenery: ");
     dlog_dec(props);
@@ -839,17 +925,14 @@ static void scenery(int image)
     dlog_str(" ms\n");
 }
 
-/* The sound effects (sound.h): SOUND.DAT whole into the SDRAM, their list from GEN.DAT (after
-   the testbench's image loaded for them) */
+/* The sound effects (sound.h): SOUND.DAT whole into the SDRAM once, their list from GEN.DAT
+   before each race (the scenery adds the track's own after them) */
 static void sounds(void)
 {
+    static uint32_t size;
     uint32_t t0 = rdcycle();
     int err;
-    if (!game.gen_size) {
-        game.gen = (const uint8_t *)(uintptr_t)game_files[3].addr;
-        game.gen_size = load_file(GAME_SLOT + 3, game_files[3].addr, game_files[3].max, &err);
-    }
-    uint32_t size = load_file(SOUND_SLOT, SOUND_MEM, SOUND_MAX, &err);
+    if (!size) size = load_file(SOUND_SLOT, SOUND_MEM, SOUND_MAX, &err);
     dcache_invalidate();
     int n = size && game.gen_size ? snd_init((const uint8_t *)(uintptr_t)SOUND_MEM, size, game.gen, game.gen_size) : 0;
     AU_STATUS = 0;
@@ -861,18 +944,10 @@ static void sounds(void)
 }
 
 /* The player's dashboard for the cockpit (hud.h) from the GFX container GAME.DAT and GEN.DAT;
-   after the testbench's image (load_image) these two are loaded for it. 1 if it is there. */
+   1 if it is there */
 static int dashboard_init(void)
 {
     uint32_t t0 = rdcycle();
-    if (!game.game_size) {
-        int err;
-        game.game = (const uint8_t *)(uintptr_t)game_files[1].addr;
-        game.game_size = load_file(GAME_SLOT + 1, game_files[1].addr, game_files[1].max, &err);
-        game.gen = (const uint8_t *)(uintptr_t)game_files[3].addr;
-        game.gen_size = load_file(GAME_SLOT + 3, game_files[3].addr, game_files[3].max, &err);
-        dcache_invalidate();
-    }
     const struct car_spec *sp = &car_state()->spec;
     int ok = game.game_size && game.gen_size &&
              hud_cockpit_init(game.game, game.game_size, game.gen, game.gen_size, sp, DASH_MEM, DASH_SIZE,
@@ -885,18 +960,81 @@ static int dashboard_init(void)
     return ok;
 }
 
-void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
+/* The track screen (menu.h) from track n on until one is taken: its number. The picture by the
+   blitter, the models through the geometry unit while it waits (hw_piece), the texts after them.
+   In the simulation (SIM_MENU) its third frame is checked against the C models and reported. */
+static int track_screen(int n)
 {
-    results = boot_results;
-    stack_fill();
-    dlog_attach(log_pos, log_cur);
-    log_head("frames drawn: ", 0);
-    dlog_str("program.bin: running in the SDRAM\n");
+    const uint32_t *pal = menu_palette();
+    uint32_t drawn = 0, keys_before = IN_KEY, last_frame = 0, sim = SYS_FLAGS & FLAG_SIM;
+    menu_enter(n);
+    track_mode = TRACK_HW;
+    track_hw_piece = hw_piece;
+    GU_MLB = (uint32_t)((uintptr_t)menu_mlb() - SDRAM_BASE);
+    GU_INVAL = 1;
+    for (;;) {
+        uint32_t st = wait_swap_done(), keys = IN_KEY;
+        frames_shown = drawn;
+        if (sim && drawn == 3) {
+            SYS_SIM = SIM_DONE | results;
+            dlog_str("stack used ");
+            dlog_dec((int32_t)stack_used());
+            dlog_str(" bytes\n");
+        }
+        uint32_t steps = drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
+        last_frame = VID_FRAME(st);
+        if (steps > 4) steps = 4;
+        for (uint32_t k = 0; k < steps; k++) {
+            int chosen = menu_step(keys, keys_before);
+            keys_before = keys;
+            if (chosen) return chosen;
+        }
+        draw_buf = !(st & VID_FRONT);
+        blit_start(&back, (int)draw_buf);
+        menu_backdrop(&back);
+        back_wait = 1;
+        hw_blit(&back);
+        for (int i = 0; i < 256; i++) VID_PAL[i] = pal[i];
+        GU_MODE = draw_buf << 8;
+        RS_CLIP0 = RS_XY(track_clip.x0, track_clip.y0);
+        RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
+        struct su_view view;
+        menu_view(&view);
+        su_view_regs(&view);
+        menu_scene(0);
+        back_wait = 0;
+        blit_start(&hud, (int)draw_buf);
+        menu_text(&hud);
+        hw_blit(&hud);
+        while (RS_DRAW & RS_BUSY)
+            ;
+        if (sim && drawn == 2) {
+            volatile uint8_t *m = CHECK_BUF;
+            uint32_t t0 = rdcycle();
+            blit_model(m, &back);
+            track_mode = TRACK_MODEL;
+            menu_scene(m);
+            track_mode = TRACK_HW;
+            blit_model(m, &hud);
+            compare_log(FB(draw_buf), m, t0);
+        }
+        VID_SWAP = 1;
+        drawn++;
+    }
+}
 
-    /* the game's files (data slots 3-7, deferload) and the track image built from them at
-       TEX_FILE; it is only used once all its blocks are as written */
-    int placements = 0, image = 0;
-    if ((image = load_image()) || (load_game_files() && build_track())) {
+/* Track n from its containers: the image built at TEX_FILE (or the testbench's) and used only
+   once all its blocks are as written, the effects and scenery, then the race until it is left;
+   0 if the track could not be set up */
+static int race(int n)
+{
+    int placements = 0;
+    if (track_loaded != n) {
+        track_loaded = 0;
+        if (!load_containers(n, TRACK_FILES)) return 0;
+        track_loaded = n;
+    }
+    if (load_image() || build_track(n)) {
         dlog_str("track image: CRC of the 256 KB blocks:");
         int bad = 0;
         for (int k = 0; k < track_blocks(); k++) {
@@ -907,22 +1045,46 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         dlog_str(bad ? " - damaged in the SDRAM, not used\n" : " (all ok)\n");
         if (!bad) placements = track_init();
     }
-    if (placements) {
-        const volatile uint32_t *pal = (const volatile uint32_t *)track_palette();
-        col_bg = nearest(pal, 0, 0, 0);
-        col_text = nearest(pal, 255, 255, 255);
-        col_dim = nearest(pal, 120, 200, 120);
-        col_alert = nearest(pal, 230, 25, 178);
-        dlog_str("track: ");
-        dlog_dec(placements);
-        dlog_str(" placements, ");
-        dlog_dec((int32_t)track_path_length());
-        dlog_str(" path points\n");
-        effects(image);
-        sounds();                   /* before the scenery, which adds the track's own sounds */
-        scenery(image);
-        RS_CTRL = 1;
-        run_track();
+    if (!placements) return 0;
+    const volatile uint32_t *pal = (const volatile uint32_t *)track_palette();
+    col_bg = nearest(pal, 0, 0, 0);
+    col_text = nearest(pal, 255, 255, 255);
+    col_dim = nearest(pal, 120, 200, 120);
+    col_alert = nearest(pal, 230, 25, 178);
+    dlog_str("track ");
+    dlog_dec(n);
+    dlog_str(": ");
+    dlog_dec(placements);
+    dlog_str(" placements, ");
+    dlog_dec((int32_t)track_path_length());
+    dlog_str(" path points\n");
+    effects(n);
+    sounds();                   /* before the scenery, which adds the track's own sounds */
+    scenery(n);
+    RS_CTRL = 1;
+    run_track();
+    AU_STOP = 0xFFFFFFFFu;                      /* the race's sounds end with it */
+    return 1;
+}
+
+void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
+{
+    results = boot_results;
+    stack_fill();
+    dlog_attach(log_pos, log_cur);
+    log_head("frames drawn: ", 0);
+    dlog_str("program.bin: running in the SDRAM\n");
+
+    /* the game's files that stay (data slots 4, 6, 7, deferload) and the track screen's; then
+       the track screen and the race on the track chosen, for ever. The simulation races the
+       testbench's track at once. */
+    if (load_containers(0, FIXED_FILES)) {
+        int sim = (SYS_FLAGS & FLAG_SIM) != 0, screen = (!sim || slot_size(MENU_CHECK_SLOT)) && menus();
+        int n = sim && slot_size(TRACK_SLOT) ? (int)slot_size(TRACK_SLOT) : 1;
+        for (;;) {
+            if (screen) n = track_screen(n);
+            if (!race(n) && !screen) break;
+        }
     }
     /* no track: the scene with test patterns, written before the rasterizer reads them */
     texdemo_synth((volatile uint8_t *)TEX_FILE);

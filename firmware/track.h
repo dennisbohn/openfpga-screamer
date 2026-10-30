@@ -153,6 +153,10 @@ struct track_object {
     int key;
 };
 
+/* One block placed as b as a piece for the geometry unit, seen from cam with the race's lens:
+   for a model drawn without a track (the menu's, menu.h) */
+void track_block_piece(const struct track_cam *cam, const struct track_block *b, struct gu_piece *g);
+
 /* The change of the drawing key for a mesh (an object of the UNR or a .3DX file) by its class,
    the header's last word at +0x32c (0x8a8d7): 3 -6000, 1 -1500, 2 -800, 4 -200, else 0 */
 int track_class_key(const uint8_t *obj);
