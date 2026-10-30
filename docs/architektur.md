@@ -99,7 +99,9 @@ acht Bilder der Meisterschaft `CHAMPnL.PCX`, 0,33 MB, rund 0,25 s). `GAME.DAT`,
 die erste Strecke gebaut wird: die Firmware stößt das Lesen nur an (`sound_start` in
 `main.c`), der Pocket schreibt die Datei in den SDRAM, während die CPU baut. Dazu zwei
 nichtflüchtige Slots für die Spielstände, `CHOICE.DAT` (23) und `ATTACK.DAT` (24), im
-Speicherordner des Pocket, nicht bei den Spieldateien (siehe „Meisterschaft“).
+Speicherordner des Pocket, nicht bei den Spieldateien (siehe „Meisterschaft“); das Menü des
+Pocket setzt beide auf die Vorgaben zurück und startet das Spiel neu („Reset Save Data“,
+`docs/soc.md`).
 Dazu seit 2026-10-30 GOGs Abbild der CD oben im Spielordner: `SCREAM.DAT` (Slot 21, das
 Cue-Sheet) und `SCREAM.gog` (Slot 22, 383 MB); daraus liest der Core nur die Musik, 32 KB auf
 einmal, während er zeichnet (siehe „Die CD-Musik“).
