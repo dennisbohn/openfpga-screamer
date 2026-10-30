@@ -320,6 +320,26 @@ void menu_options(struct menu_options *o)
     *o = (struct menu_options){ it[0].value, it[1].value, laps[it[2].value], it[3].value, it[4].value };
 }
 
+/* the options page's values as CHOICE.DAT has them (0x1bbb8 copies them to 0x102de8's
+   items), and back on every change (0x1be5c copies them there) */
+void menu_options_load(void)
+{
+    struct item *it = items[1];
+    const int32_t v[5] = { choice.detail, choice.difficulty, choice.laps, choice.speech, choice.music };
+    it[1].max = choice.difficulties;
+    for(int k = 0; k < 5; k++) it[k].value = v[k] >= 0 && v[k] <= it[k].max ? v[k] : it[k].value;
+}
+
+static void options_store(void)
+{
+    const struct item *it = items[1];
+    choice.detail = it[0].value;
+    choice.difficulty = it[1].value;
+    choice.laps = it[2].value;
+    choice.speech = it[3].value;
+    choice.music = it[4].value;
+}
+
 int menu_mode(void)
 {
     return mode;
@@ -457,7 +477,9 @@ static int page_step(uint32_t press)
         snd_play(SND_MENU_LINE);
     } else if(it->id == OPTION && (press & (KEY_LEFT | KEY_RIGHT | KEY_B | KEY_START))) {
         if(landed()) {                          /* 0x297d4, the game's ENTER: the next value */
+            items[1][1].max = choice.difficulties;      /* AFTERBURNER once the Bullet is won */
             it->value = (it->value + (press & KEY_LEFT ? it->max : 1)) % (it->max + 1);
+            options_store();
             turning = 1;
             snd_play(SND_MENU_OPTION);
         }

@@ -5,9 +5,7 @@
 #include "champ.h"
 #include <string.h>
 
-_Static_assert(sizeof(struct choice) == CHOICE_SIZE, "CHOICE.DAT's layout");
-
-struct choice choice;
+_Static_assert(sizeof(struct choice_dat) == CHOICE_SIZE, "CHOICE.DAT's layout");
 
 static const int points[11] = { 24, 9, 7, 5, 0, 0, 0, 0, 0, 0, 0 };    /* per place (0x21ec) */
 

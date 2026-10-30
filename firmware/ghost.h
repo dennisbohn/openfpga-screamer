@@ -10,7 +10,7 @@
  *
  * Here: a pose every GHOST_STEP physics steps from the set-up on (the game's are one a frame),
  * played back through the original's cubic (0x22724) at the same step, the angles turned
- * between two poses; each track's best for the session, in the layout of the save file.
+ * between two poses; each track's best kept in the save file ATTACK.DAT (save.h).
  */
 #pragma once
 #include <stdint.h>

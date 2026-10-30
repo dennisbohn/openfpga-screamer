@@ -7,11 +7,13 @@
  * (0x28ef6: 0x2a264(2, track, league)); its result (0x29acc) and the standings (0x2ce58 draws,
  * 0x292c8 decides); after the sixth race CONGRATULATIONS! (0x290a5), after the Bullet league's
  * all won (stage 51, 0x29141), or LOSER!! (stage 52). The state is kept as the game's settings
- * file CONFIG\CHOICE.DAT has it (0x460 bytes read to 0x203c0 by 0x1bbb8, written by 0x1be5c):
- * the options, the championship and the records.
+ * file CONFIG\CHOICE.DAT has it (0x460 bytes read to 0x203c0 by 0x1bbb8, written by 0x1be5c
+ * before and after every race and on quitting): the options, the championship and the
+ * records; the core keeps it in the nonvolatile data slot CHOICE.DAT (save.h).
  */
 #pragma once
 #include <stdint.h>
+#include "save.h"
 
 #define CHOICE_SIZE 0x460
 
@@ -20,7 +22,7 @@
 struct choice_rec { float time[5]; char name[5][4]; int32_t flag[5], mode[5]; };
 
 /* CHOICE.DAT as the game reads it to 0x203c0 (little-endian, floats as on the CPU) */
-struct choice {
+struct choice_dat {
     int32_t car, track;                     /* +0x000 the car and track screens' choices */
     char name[4];                           /* +0x008 ENTER YOUR NAME's, "GRA" */
     int32_t detail, difficulty, laps;       /* +0x00c the options page's */
@@ -33,7 +35,8 @@ struct choice {
     int32_t failed;                         /* +0x440 the last race: 1 time over, 2 out of reach */
     int32_t volume[3], unused1, level, level_shown, difficulties;   /* +0x444 .. +0x45c */
 };
-extern struct choice choice;
+/* the copy in the SDRAM that the APF saves on exit (data slot 23, save.h) */
+#define choice (*(struct choice_dat *)(uintptr_t)SAVE_CHOICE_ADDR)
 
 /* The settings as the game has them without the file (0x1bbb8) */
 void choice_defaults(void);

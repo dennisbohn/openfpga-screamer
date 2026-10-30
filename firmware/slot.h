@@ -21,3 +21,7 @@ int slot_result(void);
 /* The size of data slot id's file as the APF put it into the slot table when it loaded
    the core (deferload slots too); 0 if the slot has no file or the table no such slot */
 uint32_t slot_size(uint32_t id);
+
+/* size as data slot id's file size in the APF's slot table: a nonvolatile slot is written
+   back on exit with this size (the saves, save.h) */
+void slot_set_size(uint32_t id, uint32_t size);

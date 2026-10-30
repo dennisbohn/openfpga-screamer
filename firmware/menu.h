@@ -37,12 +37,15 @@
 #define MENU_CHAMP_NEW      27
 #define MENU_CHAMP_RESUME   28
 
-/* The options page's choices (the game's page 1, kept for the session): DETAIL 0 LOW .. 2 HI
+/* The options page's choices (the game's page 1, kept in CHOICE.DAT): DETAIL 0 LOW .. 2 HI
    (shown only: the core always draws the H set whole), the difficulty 0 ROOKIE, 1 NORMAL, 2 PRO
-   (MAPnA..C.DTR, 0x13251), the laps of a race (3, 5, 10 or 25: 0x21e0 + 1), speech and music 1
-   on, 0 off. The game's defaults: HI, NORMAL, 3, on, on. */
+   (MAPnA..C.DTR, 0x13251; 3 AFTERBURNER, MAPnE.DTR), the laps of a race (3, 5, 10 or 25:
+   0x21e0 + 1), speech and music 1 on, 0 off. The game's defaults: HI, NORMAL, 3, on, on. */
 struct menu_options { int detail, difficulty, laps, speech, music; };
 void menu_options(struct menu_options *o);
+/* The options from CHOICE.DAT (champ.h, save.h), at boot; every change goes back there, and the
+   difficulty's highest value is CHOICE.DAT's (3: AFTERBURNER, MAPnE.DTR, once the Bullet is won) */
+void menu_options_load(void);
 /* The game mode of the game menu_step() started last (car.h's CAR_NORMAL ..; the game's word
    0x1d25c) */
 int menu_mode(void);

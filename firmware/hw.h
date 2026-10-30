@@ -93,7 +93,8 @@
 #define DS_ADDR         REG32(0xF0000028u)  /* W: bridge address to load to */
 #define DS_LENGTH       REG32(0xF000002Cu)  /* W: bytes, a multiple of 4, or SLOT_REST */
 #define DS_CTRL         REG32(0xF0000030u)  /* W: DS_START; R: DS_BUSY, DS_SIZING, [6:4] the APF's result, 0 = ok */
-#define DS_SIZE         REG32(0xF0000034u)  /* R: the file size of slot DS_ID from the APF's slot table, 0 if none */
+#define DS_SIZE         REG32(0xF0000034u)  /* R: the file size of slot DS_ID from the APF's slot table, 0 if none;
+                                               W: that size into the table (a nonvolatile slot's for the save on exit) */
 #define DS_START        (1u << 0)
 #define DS_BUSY         (1u << 0)
 #define DS_SIZING       (1u << 1)           /* DS_SIZE is being looked up (after a write of DS_ID) */

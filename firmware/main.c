@@ -39,6 +39,7 @@
 #include "dat.h"
 #include "speech.h"
 #include "champ.h"
+#include "save.h"
 
 uint32_t frames_shown;             /* read by the trap handler */
 
@@ -1442,7 +1443,7 @@ static void championship(int resume, int *car)
         if (k != CHAMP_RACE) continue;
         int c = menu_screen(MENU_CAR_SCREEN, *car + 1);
         if (c < 0) continue;
-        *car = c - 1;
+        *car = choice.car = c - 1;
         struct champ_stage st = champ_at(choice.stage);
         struct menu_options opt;
         menu_options(&opt);
@@ -1472,6 +1473,8 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     dlog_attach(log_pos, log_cur);
     log_head("frames drawn: ", 0);
     dlog_str("program.bin: running in the SDRAM\n");
+    save_load();                    /* first: until then an exit would save the SDRAM as it is */
+    menu_options_load();
 
     /* the game's files that stay (data slots 4, 6, 7, deferload) and the menu's; then the main
        menu, from NORMAL GAME on the track screen (A or SELECT there: the main menu again), the
@@ -1481,12 +1484,12 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
        car at once, or shows the screen MENU_CHECK_SLOT names. */
     if (load_containers(0, FIXED_FILES)) {
         music_init(game.gen, game.gen_size);
-        choice_defaults();                      /* the settings as the game has them without CHOICE.DAT */
         if (!hud_cd_init(game.game, game.game_size, CD_MEM, CD_SIZE, (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH))
             dlog_str("pause: CDFRONTL.PKC missing (the darkened picture alone)\n");
         int sim = (SYS_FLAGS & FLAG_SIM) != 0, check = sim ? (int)slot_size(MENU_CHECK_SLOT) : 0;
         int screen = (!sim || check) && menus();
-        int n = sim && slot_size(TRACK_SLOT) ? (int)slot_size(TRACK_SLOT) : 1, car = 0;
+        int n = sim && slot_size(TRACK_SLOT) ? (int)slot_size(TRACK_SLOT) : choice.track % MENU_TRACKS + 1;
+        int car = choice.car;                   /* the last track and car, as CHOICE.DAT keeps them */
         if (screen) menu_sounds();
         for (int pages = !check;;) {
             if (screen) {
@@ -1500,18 +1503,20 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
                     int t = menu_screen(MENU_TRACK_SCREEN, n);
                     if (t < 0) continue;
                     n = t;
+                    choice.track = n - 1;
                 }
                 int c = menu_screen(MENU_CAR_SCREEN, car + 1);
                 if (c < 0) {
                     pages = 0;
                     continue;
                 }
-                car = c - 1;
+                car = choice.car = c - 1;
                 struct menu_options opt;
                 menu_options(&opt);
                 car_laps = opt.laps;
                 car_mode = menu_mode();
-                track_build_difficulty = opt.difficulty;
+                track_build_difficulty = opt.difficulty == 3 ? 4 : opt.difficulty;  /* AFTERBURNER: E (0x2a131) */
+                opp_bullet = track_build_difficulty > 2;
                 speech_on = opt.speech;
             }
             if (!race(n, car) && !screen) break;

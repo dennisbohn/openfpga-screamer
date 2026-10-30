@@ -1,18 +1,19 @@
 /*
- * Time attack's ghost (ghost.h): the recording, each track's best for the session, the
+ * Time attack's ghost (ghost.h): the recording, each track's best (ATTACK.DAT), the
  * playback and the ghost's car.
  */
 #include "ghost.h"
 #include <math.h>
 #include <string.h>
 #include "car.h"
+#include "save.h"
 
 #define TO_ANGLE    10430.378f          /* 65536 / 2 pi */
 #define PROGRESS    64.0f               /* info's progress, bits 0-12 */
 _Static_assert(sizeof(struct ghost_pose) == 20 && __builtin_offsetof(struct ghost_file, pose) == 16, "save layout");
+_Static_assert(sizeof(struct ghost_file) == SAVE_ATTACK_BLOCK, "a track's block of ATTACK.DAT");
 
 int ghost_resume;
-static struct ghost_file best[GHOST_TRACKS];    /* each track's kept run */
 static struct ghost_file now;                   /* the run being recorded */
 static const struct ghost_file *ghost;          /* the run raced, 0 for none */
 static uint32_t at;                             /* steps since the set-up */
@@ -23,9 +24,10 @@ static uint32_t livery;
 static float progress;
 static struct track_refl refl;
 
+/* each track's kept run lies in ATTACK.DAT's memory (save.h): loaded at boot, saved on exit */
 struct ghost_file *ghost_track(int n)
 {
-    return n >= 1 && n <= GHOST_TRACKS ? &best[n - 1] : 0;
+    return n >= 1 && n <= GHOST_TRACKS ? (struct ghost_file *)SAVE_ATTACK(n) : 0;
 }
 
 static int valid(const struct ghost_file *f)

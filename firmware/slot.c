@@ -30,6 +30,14 @@ int slot_read(uint32_t id, uint32_t offset, uint32_t addr, uint32_t len)
     return slot_result();
 }
 
+void slot_set_size(uint32_t id, uint32_t size)
+{
+    DS_ID = id;
+    DS_SIZE = size;                 /* the look-up writes it into the slot's size word */
+    while (DS_CTRL & DS_SIZING)
+        ;
+}
+
 uint32_t slot_size(uint32_t id)
 {
     DS_ID = id;                     /* starts the look-up in the slot table, a few hundred clocks */

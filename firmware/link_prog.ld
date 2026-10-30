@@ -10,7 +10,7 @@ ENTRY(prog_entry)
 
 MEMORY
 {
-    SDRAM (rwx) : ORIGIN = 0x13000000, LENGTH = 16M - 2K
+    SDRAM (rwx) : ORIGIN = 0x13000000, LENGTH = 15M     /* above: the saves (save.h) */
 }
 
 SECTIONS
