@@ -74,7 +74,7 @@ static const uint8_t *mesh(const uint8_t *gfx, uint32_t size, const char *name, 
    0.75 of its brightness, in the 6-bit values of MAPn.COL (the track file has them times 4),
    squared distances in floats from 22100000 down (0x259ad) as the game; its clamp at 255
    never bites on 6-bit values */
-static void darken(const uint32_t *pal, uint8_t out[256], float f)
+void efx_darken_table(const uint32_t *pal, uint8_t out[256], float f)
 {
     static float v[256][3];
     for(int i = 0; i < 256; i++)
@@ -172,8 +172,8 @@ int efx_init(const uint8_t *gfx, uint32_t gfx_size, int n, const uint8_t *mlb, c
     smg_kept = smg;
     int ok = table = entry(gfx, gfx_size, name, smg, SMG_SIZE) == SMG_SIZE;
     if(ok) {
-        darken(pal, smg + SMG_RADAR * 256, 0.75f);
-        darken(pal, smg + SMG_GLASS * 256, 0.6f);
+        efx_darken_table(pal, smg + SMG_RADAR * 256, 0.75f);
+        efx_darken_table(pal, smg + SMG_GLASS * 256, 0.6f);
         glass(mem + AT_GLASS, mem + AT_GLASS_REC, mlb);
         for(uint32_t a = 0; a < SMG_SIZE; a++)          /* nothing blended is drawn now */
             RS_SMG = a << 8 | smg[a];

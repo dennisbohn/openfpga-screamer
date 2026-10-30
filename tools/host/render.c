@@ -22,9 +22,10 @@
  *        render menu <MENU.DAT> <GRAF.DAT> <LOCAL.DAT> <GEN.DAT> <out.rgb> [screen [n [steps]]]
  *   the track screen (screen 1, the default) with track n chosen or the car screen (screen 2)
  *   with the car of row n - 1 (menu.h; default 1), steps of 1/50 s after entering it (default 0);
- *   screen 3: track n's loading screen; screen 4 the main menu, 5 the options page. MENUKEYS in
- *   the environment: presses before the steps, each for one step, then 30 steps without (U D L R
- *   up, down, left, right; B; Y)
+ *   screen 3: track n's loading screen; screen 4 the main menu, 5 the options page; screen 6 the
+ *   championship's stage CHAMP="s[,failed]" (default 0), races before it with made-up results.
+ *   MENUKEYS in the environment: presses before the steps, each for one step, then 30 steps
+ *   without (U D L R up, down, left, right; B; A)
  */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -40,6 +41,7 @@
 #include "scenery.h"
 #include "blit.h"
 #include "menu.h"
+#include "champ.h"
 #include "hud.h"
 
 #define MENU_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x200000))       /* as main.c */
@@ -240,7 +242,8 @@ static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gf
 static int menu(int argc, char **argv)
 {
     int which = argc > 7 ? atoi(argv[7]) : 1;
-    int screen = which == 2 ? MENU_CAR_SCREEN : which >= 4 ? MENU_PAGE_SCREEN : MENU_TRACK_SCREEN;
+    int screen = which == 2 ? MENU_CAR_SCREEN : which == 6 ? MENU_CHAMP_SCREEN : which >= 4 ? MENU_PAGE_SCREEN
+                                                                                       : MENU_TRACK_SCREEN;
     int n = which >= 4 ? which - 3 : argc > 8 ? atoi(argv[8]) : 1, steps = argc > 9 ? atoi(argv[9]) : 0;
     uint32_t menu_size = load(argv[2], MENU_FILE, 0x400000), graf_size = load(argv[3], GRAF_FILE, 0x400000);
     uint32_t local_size = load(argv[4], LOCAL_FILE, 0x10000), gen_size = load(argv[5], GEN_FILE, 0x10000);
@@ -256,10 +259,24 @@ static int menu(int argc, char **argv)
         write_rgb(argv[6], pal);
         return 0;
     }
+    choice_defaults();
+    if (which == 6) {                   /* the stage, the races before it 1st, 2nd, 3rd in turn */
+        static const int pts[3] = { 9, 7, 5 };
+        const char *c = getenv("CHAMP");
+        int failed = 0;
+        if (c) sscanf(c, "%d,%d", &choice.stage, &failed);
+        struct champ_stage st = champ_at(choice.stage);
+        for (int i = 0; i < 6 && st.kind == CHAMP_STANDINGS && i <= st.race; i++) {
+            choice.pos[i] = i % 3 + 1;
+            choice.time[i] = 151.37f + 9.5f * (float)i;
+            choice.pts[i] = pts[i % 3];
+        }
+        choice.failed = failed;
+    }
     menu_enter(screen, n);
     for (const char *s = getenv("MENUKEYS"); s && *s; s++) {
-        static const char name[] = "UDLRBY";
-        static const uint32_t key[] = { KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_B, KEY_Y };
+        static const char name[] = "UDLRBA";
+        static const uint32_t key[] = { KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_B, KEY_A };
         const char *at = strchr(name, *s);
         if (at) menu_step(key[at - name], 0);
         for (int k = 0; k < 30; k++) menu_step(0, 0);

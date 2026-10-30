@@ -14,6 +14,9 @@
 /* Line them up on the grid (the start nodes of their curves) in their cars: CARS.DTR's rows
    after the player's, which is player_row */
 void opp_init(int player_row);
+/* 1: every opponent drives the Bullet (CARS.DTR row 12) in its own row's paint, as the game's
+   difficulties above PRO (0x14373: the championship's Bullet league) */
+extern int opp_bullet;
 
 /* One step of 1/50 s, after the player's (car_step): held until the green light */
 void opp_step(void);

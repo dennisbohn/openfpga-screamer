@@ -13,6 +13,8 @@
 #include "tb_hud.h"
 #include "tb_spl.h"
 #include "sound.h"
+#include "efx.h"
+#include "champ.h"
 #include <math.h>
 #include <string.h>
 
@@ -57,6 +59,11 @@
 #define LINE_NETWORK 55             /* NETWORK NOT FOUND */
 #define SPR_LOGO    14              /* MENUL.SPR: the logos 14 and 15 (0x2df38) */
 #define FONT_MSG    0
+#define LINE_ENTER  56              /* PRESS ENTER TO CONTINUE */
+#define CHAMP_LINES 66              /* CHAMP.TXT's lines, its '*' lines not counted, */
+#define CHAMP_BLOCKS 20             /* its blocks (each ends with a line with a '#') */
+#define IDLE_STEPS  500             /* 10 s without a key on the championship's screen: ENTER */
+#define ROW_COLOUR  15              /* the standings' table (0x2ce58) */
 
 /* per screen (the tracks, the cars) the row and the camera: the gap between two models along x,
    the camera's height and z, its pitch, the models' turn in rad a second (from a quarter turn
@@ -74,7 +81,9 @@ const struct menu_part menu_dat_parts[] = {
 const struct menu_part menu_graf_parts[] = {
     { "MENU3L.PCX", ~0u }, { "MENU4L.PCX", ~0u }, { "MENU1L.PCX", ~0u }, { "MENUL.FNT", ~0u }, { "MENUL.SPR", ~0u },
     { "LOAD1L.PCX", ~0u }, { "LOAD2L.PCX", ~0u }, { "LOAD3L.PCX", ~0u }, { "LOAD4L.PCX", ~0u },
-    { "LOAD5L.PCX", ~0u }, { "LOAD6L.PCX", ~0u }, { 0, 0 } };
+    { "LOAD5L.PCX", ~0u }, { "LOAD6L.PCX", ~0u }, { "CHAMP0L.PCX", ~0u }, { "CHAMP1L.PCX", ~0u },
+    { "CHAMP2L.PCX", ~0u }, { "CHAMP3L.PCX", ~0u }, { "CHAMP4L.PCX", ~0u }, { "CHAMP5L.PCX", ~0u },
+    { "CHAMP6L.PCX", ~0u }, { "CHAMP7L.PCX", ~0u }, { 0, 0 } };
 
 /* CARDAT.TXT's six lines a car: name, gearbox (0 automatic, 1 manual), km/h, grip and
    acceleration steps (0..4), 0; of its CARS.DTR row the model and the paint job */
@@ -84,21 +93,23 @@ static const struct blit_image *img;
 static const struct blit_font *font;
 static uint32_t nimg, nfont, graf_len, pal[4][256];     /* the tracks', the cars', the pages', loading */
 static char title[2][32], name[MENU_TRACKS][32], gears[2][32], label[3][32], loading[32];
-static char words[WORDS][16], network_text[32];
-static int ncars, cars_on, pages_on, pick, way;
+static char words[WORDS][16], network_text[32], enter_text[32], champ_text[CHAMP_LINES][24];
+static int ncars, cars_on, pages_on, champ_on, pick, way, block[CHAMP_BLOCKS + 1], idle;
 static float turn[2] = { 1.5707964f, 1.5707964f }, cam_x, from_x, to_x, slide;
 
 /* The game's pages (0x2de4, items of 16 bytes: MENU.TXT's line, id, value, highest value; an
    option, id 1234, shows its line + its value), by the game's numbers: 0 the main menu (NORMAL
    GAME 0, CHAMPIONSHIP 1, SPECIAL MODES 2, NETWORK GAME 3, OPTIONS 4), 1 the options with the
    game's values at the start (DETAIL, the difficulty, LAP NUMBER, SPEECH, MUSIC; VIEW RECORDS
-   21), 4 the special modes (TIME ATTACK 28, CONE CARNAGE 29, SLALOM 30) */
+   21), 4 the special modes (TIME ATTACK 28, CONE CARNAGE 29, SLALOM 30), 5 the championship's
+   NEW 26 and RESUME 27 */
 static struct item { int line, id, value, max; } items[PAGES][6] = {
     [0] = { { 0, 0, 0, 0 }, { 1, 1, 0, 0 }, { 2, 2, 0, 0 }, { 3, 3, 0, 0 }, { 4, 4, 0, 0 } },
     [1] = { { 5, OPTION, 2, 2 }, { 8, OPTION, 1, 2 }, { 13, OPTION, 0, 3 }, { 17, OPTION, 1, 1 },
             { 19, OPTION, 1, 1 }, { 21, 21, 0, 0 } },
-    [4] = { { 28, 28, 0, 0 }, { 29, 29, 0, 0 }, { 30, 30, 0, 0 } } };
-static const int page_lines[PAGES] = { [0] = 5, [1] = 6, [4] = 3 };
+    [4] = { { 28, 28, 0, 0 }, { 29, 29, 0, 0 }, { 30, 30, 0, 0 } },
+    [5] = { { 26, 26, 0, 0 }, { 27, 27, 0, 0 } } };
+static const int page_lines[PAGES] = { [0] = 5, [1] = 6, [4] = 3, [5] = 2 };
 static int mode = CAR_NORMAL;           /* the game mode the last game was started in (0x1d25c) */
 static const int laps[4] = { 3, 5, 10, 25 };            /* 0x21e0 + 1 */
 
@@ -253,6 +264,18 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
     ok &= text_line(scratch, tn, LINE_LOADING, loading, sizeof loading);
     for(int k = 0; k < WORDS; k++) ok &= text_line(scratch, tn, k, words[k], sizeof words[k]);
     ok &= text_line(scratch, tn, LINE_NETWORK, network_text, sizeof network_text);
+    ok &= text_line(scratch, tn, LINE_ENTER, enter_text, sizeof enter_text);
+    /* CHAMP.TXT's blocks, as 0x2c698 splits it: each up to a line with a '#' */
+    tn = unpack(local, local_size, "CHAMP.TXT", scratch, scratch_cap);
+    int nb = 0;
+    for(int k = 0; k < CHAMP_LINES && nb < CHAMP_BLOCKS && text_line(scratch, tn, k, champ_text[k], sizeof champ_text[k]); k++)
+        if(strchr(champ_text[k], '#')) block[++nb] = k + 1;
+    ok &= nb == CHAMP_BLOCKS;
+    for(int k = 0; k < 8; k++) {
+        char n[16] = "CHAMP0L.PCX";
+        n[5] = (char)('0' + k);
+        ok &= in_place(graf, graf_size, n, 0, &len) != 0;
+    }
     tn = unpack(local, local_size, "TRACKDAT.TXT", scratch, scratch_cap);
     for(int k = 0; k < MENU_TRACKS; k++) ok &= text_line(scratch, tn, 4 * k, name[k], sizeof name[k]);
     /* the cars: CARS.DTR's rows as the track image has them (tb_spl.h), CARDAT.TXT's lines */
@@ -286,7 +309,7 @@ int menu_cars(void)
 
 const uint32_t *menu_palette(void)
 {
-    return pal[pages_on ? 2 : cars_on];
+    return pal[champ_on ? 3 : pages_on ? 2 : cars_on];
 }
 
 void menu_options(struct menu_options *o)
@@ -341,9 +364,15 @@ static void page_build(int flying)
     style = (style + 1) % 8;
 }
 
+static void stage_enter(void);
+
 void menu_enter(int screen, int n)
 {
     pages_on = screen == MENU_PAGE_SCREEN;
+    if((champ_on = screen == MENU_CHAMP_SCREEN)) {
+        stage_enter();
+        return;
+    }
     if(pages_on) {                              /* 0x29ea0: the logos 400 and 800 left of their places */
         page = n == 2;
         page_build(1);
@@ -431,18 +460,21 @@ static int page_step(uint32_t press)
             snd_play(SND_MENU_OPTION);
         }
     } else if(press & (KEY_B | KEY_START)) {
-        if(it->id == 0 || it->id == 29) {       /* NORMAL GAME (0x28b80), CONE CARNAGE (0x28bb0) */
-            mode = it->id ? CAR_CONES : CAR_NORMAL;
+        if(it->id == 0 || it->id == 29 || it->id == 26 || it->id == 27) {  /* NORMAL GAME (0x28b80),
+                                    CONE CARNAGE (0x28bb0), the championship's NEW and RESUME (0x28c6b,
+                                    0x28c9e) */
+            mode = it->id == 29 ? CAR_CONES : it->id ? CAR_CHAMP : CAR_NORMAL;
             leaving = 1;
             back_f = 1.0f;
             roll = -4.0f * PI;
             snd_play(SND_MENU_GAME);
-            return 1;
+            return mode == CAR_CHAMP ? it->id + 1 : 1;
         }
         if(it->id == 3) network = 1;            /* the game without a network (0x28d78), silent */
         else snd_play(SND_MENU_PAGE);
-        if(it->id == 4 || it->id == 2) {        /* OPTIONS (0x28db2), SPECIAL MODES (0x28eab) */
-            page = it->id == 4 ? 1 : 4;
+        if(it->id == 4 || it->id == 2 || it->id == 1) {     /* OPTIONS (0x28db2), SPECIAL MODES
+                                                               (0x28eab), CHAMPIONSHIP (0x28b3a) */
+            page = it->id == 4 ? 1 : it->id == 2 ? 4 : 5;
             turning = 1;
         }
     } else if((press & (KEY_A | KEY_SELECT)) && page != 0) {    /* the game's ESC (0x280cb) */
@@ -457,6 +489,12 @@ int menu_step(uint32_t keys, uint32_t keys_before)
 {
     const struct row *r = &rows[cars_on];
     uint32_t press = keys & ~keys_before;
+    if(champ_on) {                              /* 0x2d301, 0x2829d */
+        ticks += 2;
+        idle = press ? 0 : idle + 1;
+        if((press & (KEY_B | KEY_START)) || idle > IDLE_STEPS) return 1;
+        return (press & (KEY_A | KEY_SELECT)) && champ_at(choice.stage).kind == CHAMP_TEXT ? -1 : 0;
+    }
     if(pages_on) return page_step(press);
     float *t = &turn[cars_on];
     *t += DT * r->turn;
@@ -481,7 +519,7 @@ int menu_step(uint32_t keys, uint32_t keys_before)
 
 void menu_backdrop(struct blit_list *l)
 {
-    blit_copy(l, pic[pages_on ? 2 : cars_on], PIC_W, PIC_H, PIC_W, 0, 0, BLIT_COPY | BLIT_OPAQUE, 0);
+    blit_copy(l, pic[champ_on ? 3 : pages_on ? 2 : cars_on], PIC_W, PIC_H, PIC_W, 0, 0, BLIT_COPY | BLIT_OPAQUE, 0);
 }
 
 /* the race's lens (track.c: the eye 128 behind the camera, 128 / depth) round the menu's centre,
@@ -586,7 +624,7 @@ void menu_scene(volatile uint8_t *fb)
     const struct track_cam cam = pages_on ? (struct track_cam){ 0.0f, cam_z, 0.0f, 0.0f, 0.0f, roll }
                                           : (struct track_cam){ cam_x, r->cam_z, r->cam_h, 0.0f, r->pitch, 0.0f };
     static struct track_block b[MAX_DRAWN];
-    int n = pages_on ? letter_blocks(&cam, b) : cars_on ? car_blocks(&cam, b) : map_blocks(&cam, b);
+    int n = champ_on ? 0 : pages_on ? letter_blocks(&cam, b) : cars_on ? car_blocks(&cam, b) : map_blocks(&cam, b);
     struct su_view v;
     struct gu_stats st = { 0, 0, 0, 0 };
     menu_view(&v);
@@ -656,9 +694,15 @@ static void car_text(struct blit_list *l, const struct car *c)
 /* The title, the track's name 2 heights of font 2 over the bottom (0x2e384) or the car's data;
    the arrows where there is a neighbour, lit (sprites 2 and 3) while the camera slides that way
    (0x2e2f0, 0x2e33c) */
+static void stage_text(struct blit_list *l);
+
 void menu_text(struct blit_list *l)
 {
     int lit = slide > LIT;
+    if(champ_on) {
+        stage_text(l);
+        return;
+    }
     if(pages_on) {          /* the logos (0x2df38), off the screen not drawn; NETWORK NOT FOUND blinking */
         for(int k = 0; k < 2; k++) {
             const struct blit_image *s = &img[SPR_LOGO + 1 - k];
@@ -688,4 +732,111 @@ const uint32_t *menu_loading(int n, struct blit_list *l)
     int w = blit_text(l, hud, img, &font[FONT_TITLE], 0, 0, loading, 0, 0);
     blit_text(l, hud, img, &font[FONT_TITLE], (PIC_W - w) / 2, LOADING_Y, loading, 0, 1);
     return pal[3];
+}
+
+/* The championship's screen (0x2c698): the stage's picture CHAMPnL.PCX into the loading
+   screen's room, for the standings the box (16, 36, 288 x 136) darkened twice through the
+   picture's palette (0x25cc8 with 0x25870's table, 0.75), as the game darkens it every frame */
+static void stage_enter(void)
+{
+    struct champ_stage st = champ_at(choice.stage);
+    char file[16] = "CHAMP0L.PCX";
+    uint32_t len;
+    file[5] = (char)('0' + st.pic);
+    const uint8_t *p = graf_dat ? in_place(graf_dat, graf_len, file, 0, &len) : 0;
+    uint8_t *px = (uint8_t *)pic[3];
+    if(!p || !pcx(p, len, px, pal[3])) memset(px, 0, PIC_W * PIC_H);
+    if(st.kind == CHAMP_STANDINGS) {
+        uint8_t dark[256];
+        efx_darken_table(pal[3], dark, 0.75f);
+        for(int y = 0x24; y < 0x24 + 0x88; y++)
+            for(int x = 0x10; x < 0x10 + 0x120; x++) px[y * PIC_W + x] = dark[dark[px[y * PIC_W + x]]];
+    }
+    idle = 0;
+}
+
+/* line i of CHAMP.TXT's block b */
+static const char *champ_line(int b, int i)
+{
+    return champ_text[block[b] + i];
+}
+
+/* the standings' table in font 0, colour 15 */
+static int row_text(struct blit_list *l, int x, int y, const char *s, int draw)
+{
+    return blit_text(l, hud, img, &font[FONT_MSG], x, y, s, ROW_COLOUR, draw);
+}
+
+/* v as two digits at p: the end */
+static char *dec2(char *p, int v)
+{
+    *p++ = (char)('0' + v / 10 % 10);
+    *p++ = (char)('0' + v % 10);
+    return p;
+}
+
+/* s, a ':' and the end of s at p (the standings' last two lines) */
+static char *with_colon(char *p, const char *s)
+{
+    size_t n = strlen(s);
+    memcpy(p, s, n);
+    p[n] = ':';
+    return p + n + 1;
+}
+
+/* The stage's texts (0x2ce58). The standings: the league's name centred at row 2 (font 2);
+   the heads TRACK, POS, TIME, SCORE at row 48; a row 14 high from 62 on for each race: -n-,
+   the place, the time (min.s.hundredths) and the points in fixed pitch (byte 1), dashes for
+   a race not run, 10, 00.00.00 and 0 for one out of time; 4 lower TOTAL SCORE:nn ending at
+   x 276, 24 lower QUALIFY:n centred. Else the block's lines centred from row 32, a font height
+   apart (font 3, 2 for the leagues won and the end). PRESS ENTER TO CONTINUE blinks at row 190. */
+static void stage_text(struct blit_list *l)
+{
+    struct champ_stage st = champ_at(choice.stage);
+    char s[40], *e;
+    if(st.kind == CHAMP_STANDINGS) {
+        static const int16_t head_x[4] = { 0x58, 0x1C, 0xAA, 0xF6 };   /* POS, TRACK, TIME, SCORE */
+        centred(l, 2, champ_line(6 + st.league, 0), FONT_NAME);
+        for(int k = 0; k < 4; k++) row_text(l, head_x[k], 0x30, champ_line(k, 0), 1);
+        int y = 0x3E;
+        for(int i = 0; i < 6; i++, y += 0xE) {
+            s[0] = '-';
+            memcpy(dec(s + 1, i + 1), "-", 2);
+            row_text(l, 0x26, y, s, 1);
+            s[0] = 1;
+            if(choice.pos[i] == -1 || (choice.failed == 1 && i == st.race)) {
+                int out = choice.pos[i] != -1;
+                strcpy(s + 1, out ? "10" : "-");
+                row_text(l, 0x58, y, s, 1);
+                strcpy(s + 1, out ? "00.00.00" : "--.--.--");
+                row_text(l, 0x8C, y, s, 1);
+                strcpy(s + 1, out ? "0" : "-");
+                row_text(l, 0x10A, y, s, 1);
+                continue;
+            }
+            *dec(s + 1, choice.pos[i]) = 0;
+            row_text(l, 0x58, y, s, 1);
+            float t = choice.time[i];
+            int whole = (int)t;
+            e = dec2(s + 1, whole / 60);
+            *e++ = '.';
+            e = dec2(e, whole % 60);
+            *e++ = '.';
+            *dec2(e, (int)((t - (float)whole) * 100.0f)) = 0;
+            row_text(l, 0x8C, y, s, 1);
+            *dec(s + 1, choice.pts[i]) = 0;
+            row_text(l, 0x10A, y, s, 1);
+        }
+        e = with_colon(s, champ_line(5, 0));
+        *e++ = 1;
+        *dec2(e, champ_total()) = 0;
+        row_text(l, 0x114 - row_text(l, 0, 0, s, 0), y + 4, s, 1);
+        *dec(with_colon(s, champ_line(4, 0)), st.need) = 0;
+        row_text(l, (PIC_W - row_text(l, 0, 0, s, 0)) / 2, y + 4 + 0x18, s, 1);
+    } else {
+        int y = 0x20;
+        for(int i = block[st.text]; i + 1 < block[st.text + 1]; i++, y += (int)font[st.font].height)
+            centred(l, y, champ_text[i], (uint32_t)st.font);
+    }
+    if((ticks & 0x7F) < 0x48) centred(l, 0xBE, enter_text, FONT_MSG);
 }

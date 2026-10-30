@@ -30,6 +30,9 @@ const uint8_t *efx_smg(void);
 
 /* The radar's darkening (below): per colour the darker one, 256 bytes; 0 without the table */
 const uint8_t *efx_darken(void);
+/* such a table for the palette pal (256 x 0x00RRGGBB) at f of its brightness (0x25870: the
+   game builds one for every picture it darkens, 0.75) */
+void efx_darken_table(const uint32_t *pal, uint8_t out[256], float f);
 
 /* SHADOW.3DX and SMOKE.3DX as objects for the geometry unit, 0 if not loaded */
 const uint8_t *efx_shadow(void);

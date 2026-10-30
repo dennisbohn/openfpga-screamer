@@ -37,6 +37,7 @@
 #include "menu.h"
 #include "dat.h"
 #include "speech.h"
+#include "champ.h"
 
 uint32_t frames_shown;             /* read by the trap handler */
 
@@ -712,6 +713,7 @@ static int run_track(int n, int car, int replay)
             if (press & KEY_SELECT) ask = 1;
             if (over >= OVER_STEPS && !speech_busy()) {
                 if (car_race()->finished && !rec_full && (car_mode & CAR_NORMAL)) return RACE_REPLAY;  /* 0x1fe45 */
+                if (car_race()->finished && car_mode == CAR_CHAMP) return RACE_LEAVE;    /* 0x1fe86 */
                 ask = 1;
             }
         }
@@ -1254,6 +1256,8 @@ static int menu_screen(int screen, int n)
     int32_t fade = 0, rate = screen == MENU_PAGE_SCREEN ? FADE_PAGES : FADE_MENU;
     int chosen = 0;
     menu_enter(screen, n);
+    while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* the championship's picture in the SDRAM */
+        ;
     const uint32_t *pal = menu_palette();
     music_play(0);
     track_mode = TRACK_HW;
@@ -1315,7 +1319,8 @@ static int menu_screen(int screen, int n)
         while (RS_DRAW & RS_BUSY)
             ;
         if (drawn % 250 == 2) {
-            dlog_str(screen == MENU_CAR_SCREEN ? "car screen" : screen == MENU_TRACK_SCREEN ? "track screen" : "pages");
+            dlog_str(screen == MENU_CAR_SCREEN ? "car screen" : screen == MENU_TRACK_SCREEN ? "track screen" :
+                     screen == MENU_CHAMP_SCREEN ? "championship" : "pages");
             dlog_str(" frame ");
             dlog_dec((int32_t)drawn);
             dlog_str(": ");
@@ -1416,6 +1421,46 @@ static int race(int n, int car)
     }
 }
 
+/* The championship (champ.h) from NEW or RESUME on (0x28c6b, 0x28c9e) until it goes back to the
+   main menu: the stage's screen; ENTER on a race's text screen opens the car screen (0x291ae;
+   back from it: the stage's screen again), whose choice starts the race on the stage's track,
+   three laps, the league's opponents (0x28ef6: 0x2a264(2, track, league)); its result goes into
+   the standings (0x29acc), shown next (0x293e8(5)). A race finished goes on by itself after the
+   end screen's 5 s; one out of time or left asks PLAY AGAIN? (0x1fe86), YES races it again. */
+static void championship(int resume, int *car)
+{
+    if (resume) champ_resume();
+    else champ_new();
+    for (;;) {
+        if (menu_screen(MENU_CHAMP_SCREEN, 0) < 0) return;
+        int k = champ_enter();
+        if (k == CHAMP_MENU) return;
+        if (k != CHAMP_RACE) continue;
+        int c = menu_screen(MENU_CAR_SCREEN, *car + 1);
+        if (c < 0) continue;
+        *car = c - 1;
+        struct champ_stage st = champ_at(choice.stage);
+        struct menu_options opt;
+        menu_options(&opt);
+        car_laps = 3;
+        track_build_difficulty = st.league;
+        opp_bullet = st.league > 2;
+        speech_on = opt.speech;
+        car_mode = CAR_CHAMP;
+        int ok = race(st.track, *car);
+        opp_bullet = 0;
+        menu_sounds();
+        if (!ok) return;
+        const struct car_race *r = car_race();
+        champ_result(!r->finished && !r->game_over, !r->finished && r->game_over, opp_player_rank(), r->total);
+        dlog_str("championship: stage ");
+        dlog_dec(choice.stage);
+        dlog_str(", place ");
+        dlog_dec(opp_player_rank());
+        dlog_str(r->finished ? " finished\n" : r->game_over ? " time over\n" : " left\n");
+    }
+}
+
 void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
 {
     results = boot_results;
@@ -1432,6 +1477,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
        car at once, or shows the screen MENU_CHECK_SLOT names. */
     if (load_containers(0, FIXED_FILES)) {
         music_init(game.gen, game.gen_size);
+        choice_defaults();                      /* the settings as the game has them without CHOICE.DAT */
         if (!hud_cd_init(game.game, game.game_size, CD_MEM, CD_SIZE, (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH))
             dlog_str("pause: CDFRONTL.PKC missing (the darkened picture alone)\n");
         int sim = (SYS_FLAGS & FLAG_SIM) != 0, check = sim ? (int)slot_size(MENU_CHECK_SLOT) : 0;
@@ -1440,7 +1486,11 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         if (screen) menu_sounds();
         for (int pages = !check;;) {
             if (screen) {
-                if (pages) menu_screen(MENU_PAGE_SCREEN, 1);
+                int g = pages ? menu_screen(MENU_PAGE_SCREEN, 1) : 0;
+                if (g == MENU_CHAMP_NEW || g == MENU_CHAMP_RESUME) {
+                    championship(g == MENU_CHAMP_RESUME, &car);
+                    continue;
+                }
                 pages = !check;
                 if (check != 2) {
                     int t = menu_screen(MENU_TRACK_SCREEN, n);

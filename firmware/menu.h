@@ -15,7 +15,9 @@
  * MENUL.FNT, the arrows and bars of MENUL.SPR; each screen has its picture's palette. The models
  * go through the geometry unit with MENU.MLB as its material file (the tracks' faces are one
  * colour each, the cars' textured); the rest is the blitter's. Then, while the race is set up,
- * the loading screen (0x2a264): LOADnL.PCX of GRAF.DAT with LOADING (MENU.TXT) over it.
+ * the loading screen (0x2a264): LOADnL.PCX of GRAF.DAT with LOADING (MENU.TXT) over it. The
+ * championship's screen 5 (0x2ce58, champ.h): its stage's CHAMPnL.PCX with the stage's lines of
+ * CHAMP.TXT (LOCAL.DAT) or the standings over it.
  */
 #pragma once
 #include <stdint.h>
@@ -29,6 +31,11 @@
 #define MENU_PAGE_SCREEN    0
 #define MENU_CAR_SCREEN     2
 #define MENU_TRACK_SCREEN   3
+#define MENU_CHAMP_SCREEN   5       /* the championship's stage (champ.h) */
+
+/* what the pages' NEW and RESUME of CHAMPIONSHIP return (the game's items 26 and 27 + 1) */
+#define MENU_CHAMP_NEW      27
+#define MENU_CHAMP_RESUME   28
 
 /* The options page's choices (the game's page 1, kept for the session): DETAIL 0 LOW .. 2 HI
    (shown only: the core always draws the H set whole), the difficulty 0 ROOKIE, 1 NORMAL, 2 PRO
@@ -63,7 +70,8 @@ const uint8_t *menu_mlb(void);
 
 /* Onto screen MENU_TRACK_SCREEN or MENU_CAR_SCREEN with choice n chosen (the track 1 ..
    MENU_TRACKS, the car's row + 1), the camera at it; onto MENU_PAGE_SCREEN at page n - 1 (1
-   the main menu, 2 the options), its words flying in (0x29ea0), each page's line kept */
+   the main menu, 2 the options), its words flying in (0x29ea0), each page's line kept; onto
+   MENU_CHAMP_SCREEN with the championship's stage now (0x2c698, n not used) */
 void menu_enter(int screen, int n);
 
 /* One step of 1/50 s with the keys (IN_KEY) held now and on the step before. Track and car
@@ -72,12 +80,15 @@ void menu_enter(int screen, int n);
    number as menu_enter's n; A or SELECT go back: -1 (both without a sound, as the game). The
    pages (0x28080): up and down go from line to line (SND_MENU_LINE), left and right change an
    option, B or START too, as the game's ENTER (SND_MENU_OPTION; once the words have landed,
-   0x297d4), B or START on OPTIONS or SPECIAL MODES opens its page (SND_MENU_PAGE), A or SELECT
-   go back to the main menu (the same sound); NORMAL GAME and CONE CARNAGE: 1 (SND_MENU_GAME,
-   menu_mode() the game's mode), from then on the camera pulls back and rolls (0x293e8) while the
-   caller fades out at 2 a second, the keys not taken. NETWORK GAME shows the game's NETWORK NOT
-   FOUND; CHAMPIONSHIP, TIME ATTACK, SLALOM and VIEW RECORDS only sound, for now. 0 while none is
-   taken. */
+   0x297d4), B or START on OPTIONS, SPECIAL MODES or CHAMPIONSHIP opens its page (the game's
+   pages 1, 4 and 5; SND_MENU_PAGE), A or SELECT go back to the main menu (the same sound);
+   NORMAL GAME and CONE CARNAGE: 1, the championship's NEW MENU_CHAMP_NEW and RESUME
+   MENU_CHAMP_RESUME (SND_MENU_GAME, menu_mode() the game's mode), from then on the camera pulls
+   back and rolls (0x293e8) while the caller fades out at 2 a second, the keys not taken.
+   NETWORK GAME shows the game's NETWORK NOT FOUND; TIME ATTACK, SLALOM and VIEW RECORDS only
+   sound, for now. The championship's screen: B or START, or 10 s without a key (0x2d301), as
+   ENTER: 1; A or SELECT on a race's text screen as ESC (0x2829d): -1 (both silent). 0 while
+   none is taken. */
 int menu_step(uint32_t keys, uint32_t keys_before);
 
 /* The frame in the order it is drawn: the picture (for the blitter), the projection and the

@@ -46,6 +46,7 @@ struct opp {
 static struct opp opp[OPP_MAX];
 static struct track_refl refl[OPP_MAX];   /* each car object's reflection state (record +0x24 ..) */
 static int nopp, player_rank;
+int opp_bullet;
 static const struct track_spline_node *spl[OPP_MAX];
 static int spl_n[OPP_MAX];
 static const struct track_opp_row *rows;
@@ -328,7 +329,7 @@ void opp_init(int player_row)
         if(row >= ncars) row = 0;
         if(row == player_row) row++;
         if(row >= ncars) row = 0;
-        o->model = car_model_index(&cars[row]);
+        o->model = car_model_index(&cars[opp_bullet && ncars > 12 ? 12 : row]);
         o->livery = (uint32_t)cars[row].livery;
         row++;
         const struct track_model *md = &models[o->model >= 0 && o->model < nm ? o->model : 0];
