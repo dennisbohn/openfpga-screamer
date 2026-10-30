@@ -307,7 +307,9 @@ static void markers(struct opp *o)
         i = i < 0 ? i + n : i >= n ? i - n : i;
         const struct track_marker *m = &mk[i];
         float dx = o->x - (float)m->x, dy = o->y - (float)m->y, rad = (float)m->radius;
-        if(fabsf(dx) >= rad || fabsf(dy) >= rad) continue;
+        int wx = fabsf(dx) >= rad, wy = fabsf(dy) >= rad;
+        ASKED2(wx, wy);
+        if(wx | wy) continue;
         if(sqrtf(dx * dx + dy * dy) > rad) continue;
         o->mark_at = i;
         if(i >= 64) continue;
