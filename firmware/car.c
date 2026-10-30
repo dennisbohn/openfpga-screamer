@@ -1161,9 +1161,9 @@ static int shadow_make(int id, const struct track_cam *cam, struct track_object 
 }
 
 /* The player's shadow and puffs, the puffs' blocks made at once, all in a row (the code stays
-   in the cache). A puff faces the screen (flag 0x8000 of its object, 0x118a4: the engine puts the camera's angles in
-   for its own, 0x8abc7 -> 0x4bca0): its block's axes are the camera's right, up and forward;
-   the texture's frame 6 x (phase >> 2) >> 14 (0xcd906). */
+   in the cache). A puff faces the screen (flag 0x8000 of its object, 0x118a4: the engine puts
+   the camera's angles in for its own, 0x8abc7 -> 0x4bca0): its block's axes are the camera's
+   right, up and forward; the texture's frame 6 x (phase >> 2) >> 14 (0xcd906). */
 int car_effects(const struct track_cam *cam, struct track_object *objs, int max)
 {
     static struct track_block puff_block[PUFFS];
