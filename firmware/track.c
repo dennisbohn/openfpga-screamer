@@ -1031,6 +1031,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
                              fx * ca + fy * sa, fh, fy * ca - fx * sa };
         const float o[3] = { dx * rx + dy * ry + dh * rh, dx * ux + dy * uy + dh * uh,
                              dx * fx + dy * fy + dh * fh + EYE_BACK };
+#pragma GCC unroll 9                            /* (the conversions side by side in the FPU) */
         for(int k = 0; k < 9; k++) g.m[k] = (int32_t)(m[k] * 65536.0f);
         for(int k = 0; k < 3; k++) g.t[k] = (int32_t)(o[k] * 256.0f);
 
