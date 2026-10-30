@@ -60,6 +60,7 @@
 #define OPTION      1234            /* an option's item id (0x4d2) */
 #define WORDS       37              /* MENU.TXT's lines 0 .. 36: the pages' words */
 #define PAGES       7               /* the game's pages (0x2de4) */
+#define LINE_NEW_TRACK 53           /* NEW TRACK AVAILABLE */
 #define LINE_NETWORK 55             /* NETWORK NOT FOUND */
 #define SPR_LOGO    14              /* MENUL.SPR: the logos 14 and 15 (0x2df38) */
 #define FONT_MSG    0
@@ -112,7 +113,7 @@ static const struct blit_font *font;
 static uint32_t nimg, nfont, graf_len, pal[4][256];     /* the tracks', the cars', the pages', loading */
 static char title[2][32], name[MENU_TRACKS][32], gears[2][32], label[3][32], loading[32], best[2][32];
 static char name_title[32];
-static char words[WORDS][16], network_text[32], enter_text[32], champ_text[CHAMP_LINES][24];
+static char words[WORDS][16], network_text[32], enter_text[32], new_track[32], champ_text[CHAMP_LINES][24];
 static int on, ncars, cars_on, pages_on, pick, way, block[CHAMP_BLOCKS + 1], idle;   /* on: the screen */
 static float turn[2] = { 1.5707964f, 1.5707964f }, cam_x, from_x, to_x, slide;
 
@@ -310,6 +311,7 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
     ok &= text_line(scratch, tn, LINE_LOADING, loading, sizeof loading);
     for(int k = 0; k < WORDS; k++) ok &= text_line(scratch, tn, k, words[k], sizeof words[k]);
     ok &= text_line(scratch, tn, LINE_NETWORK, network_text, sizeof network_text);
+    ok &= text_line(scratch, tn, LINE_NEW_TRACK, new_track, sizeof new_track);
     ok &= text_line(scratch, tn, LINE_ENTER, enter_text, sizeof enter_text);
     for(int k = 0; k < 2; k++) ok &= text_line(scratch, tn, LINE_BEST + k, best[k], sizeof best[k]);
     ok &= text_line(scratch, tn, LINE_NAME, name_title, sizeof name_title);
@@ -402,10 +404,15 @@ const uint8_t *menu_mlb(void)
     return mlb;
 }
 
-/* the choices of the screen shown */
+/* the choices of the screen shown, as far as they are unlocked (CHOICE.DAT, champ.h): the cars
+   up to row 11, the Bullet's row 12 once it is won (0x28726: + 0x207ec), the tracks up to the
+   level + 3 (0x287a8: 0x20814 + 2; three at first, one more for each league won, 0x290e8; the
+   level 9 of all won also opens the reversed tracks 7 .. 12, which the core does not have) */
 static int choices(void)
 {
-    return cars_on ? ncars : MENU_TRACKS;
+    int most = cars_on ? 12 + (choice.bullet != 0) : choice.level + 3;
+    int have = cars_on ? ncars : MENU_TRACKS;
+    return most < have ? most : have;
 }
 
 /* The page's letters (0x29838, 0x2af30): each line's centred, a cube a character, the spaces
@@ -682,6 +689,7 @@ int menu_step(uint32_t keys, uint32_t keys_before)
         return (press & (KEY_A | KEY_SELECT)) && champ_at(choice.stage).kind == CHAMP_TEXT ? -1 : 0;
     }
     if(pages_on) return page_step(press);
+    ticks += 2;
     float *t = &turn[cars_on];
     *t += DT * r->turn;
     if(*t >= TWO_PI) *t = 0.0f;
@@ -699,8 +707,9 @@ int menu_step(uint32_t keys, uint32_t keys_before)
             snd_play(SND_MENU_MOVE);
         }
     }
-    if(press & (KEY_B | KEY_START)) return pick + 1;
-    return press & (KEY_A | KEY_SELECT) ? -1 : 0;
+    int c = press & (KEY_B | KEY_START) ? pick + 1 : press & (KEY_A | KEY_SELECT) ? -1 : 0;
+    if(c && !cars_on) choice.level_shown = choice.level;    /* 0x28201, 0x28260: NEW TRACK AVAILABLE seen */
+    return c;
 }
 
 void menu_backdrop(struct blit_list *l)
@@ -887,8 +896,10 @@ static void car_text(struct blit_list *l, const struct car *c)
 }
 
 /* The title, the track's name 2 heights of font 2 over the bottom (0x2e384) or the car's data;
-   the arrows where there is a neighbour, lit (sprites 2 and 3) while the camera slides that way
-   (0x2e2f0, 0x2e33c) */
+   the arrows where there is a neighbour to choose, lit (sprites 2 and 3) while the camera slides
+   that way (0x2e2f0, 0x2e33c; none past the last unlocked, 0x2e32a, 0x2e4a2). On the track
+   screen NEW TRACK AVAILABLE (MENU.TXT) blinks at row 0x20 in font 1 while a league won has
+   opened a track not yet seen there (0x2e424: 0x20818 < 0x20814, 32 of 64 ticks) */
 static void stage_text(struct blit_list *l);
 static void records_text(struct blit_list *l);
 static void name_text(struct blit_list *l);
@@ -912,6 +923,7 @@ void menu_text(struct blit_list *l)
     centred(l, 2, title[cars_on], FONT_TITLE);
     if(cars_on) car_text(l, &car[pick]);
     else centred(l, PIC_H - 2 * (int)font[FONT_NAME].height, name[pick], FONT_NAME);
+    if(!cars_on && choice.level_shown < choice.level && (ticks & 0x3F) < 0x20) centred(l, 0x20, new_track, FONT_DATA);
     if(pick > 0) sprite(l, 8, 100, lit && way < 0 ? 2 : 0);
     if(pick < choices() - 1) sprite(l, 0xEE, 100, lit && way > 0 ? 3 : 1);
 }

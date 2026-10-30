@@ -340,6 +340,8 @@ static int menu(int argc, char **argv)
         return 0;
     }
     choice_defaults();
+    if (getenv("LEVEL")) choice.level = atoi(getenv("LEVEL"));     /* the unlocks: tracks up to level + 3, */
+    if (getenv("BULLET")) choice.bullet = 1;                        /* the Bullet's row */
     if (which == 6) {                   /* the stage, the races before it 1st, 2nd, 3rd in turn */
         static const int pts[3] = { 9, 7, 5 };
         const char *c = getenv("CHAMP");

@@ -77,8 +77,9 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
               const uint8_t *local, uint32_t local_size, const uint8_t *gen, uint32_t gen_size, uint8_t *mem,
               uint32_t cap, uint8_t *scratch, uint32_t scratch_cap);
 
-/* The cars that can be chosen: CARS.DTR's rows that CARDAT.TXT describes (all of them, the
-   Bullet too, as every track is offered) */
+/* The cars of the car screen: CARS.DTR's rows that CARDAT.TXT describes (of them the first 12
+   can be chosen, the Bullet's row 12 too once it is won; the tracks up to CHOICE.DAT's level + 3,
+   menu.c choices()) */
 int menu_cars(void);
 
 /* The screen's palette (256 x 0x00RRGGBB) and the material file for the geometry unit */
@@ -94,9 +95,10 @@ const uint8_t *menu_mlb(void);
 void menu_enter(int screen, int n);
 
 /* One step of 1/50 s with the keys (IN_KEY) held now and on the step before. Track and car
-   screen: left and right choose (a press is taken once the camera is most of the way to the
-   last one; the menu's sound SND_MENU_MOVE with it, sound.h), B or START take the choice: its
-   number as menu_enter's n; A or SELECT go back: -1 (both without a sound, as the game). The
+   screen: left and right choose among the unlocked ones (a press is taken once the camera is
+   most of the way to the last one; the menu's sound SND_MENU_MOVE with it, sound.h), B or START
+   take the choice: its number as menu_enter's n; A or SELECT go back: -1 (both without a sound,
+   as the game; leaving the track screen marks its NEW TRACK AVAILABLE as seen). The
    pages (0x28080): up and down go from line to line (SND_MENU_LINE), left and right change an
    option, B or START too, as the game's ENTER (SND_MENU_OPTION; once the words have landed,
    0x297d4), B or START on OPTIONS, SPECIAL MODES, CHAMPIONSHIP or TIME ATTACK opens its page

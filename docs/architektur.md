@@ -345,10 +345,9 @@ nachgelesen): Regeln in `firmware/champ.c`, der Bildschirm 5 in `menu.c`, der Ab
   einem Rennen, zurück ins Hauptmenü (`0x2829d`). Ohne Geräusch; Einblenden mit 1,5/s,
   Verlassen mit Schnitt nach Schwarz wie die Autowahl.
 - **Nach dem letzten Rennen:** Liga gewonnen → CONGRATULATIONS! → WELCOME TO der nächsten
-  (das Original gibt dabei eine Strecke mehr frei, `0x290a5`; der Core bietet ohnehin alle
-  an); nach der Bullet-Liga YOU'RE THE GREATEST DRIVER EVER … NOW THE BULLET IS YOURS !
-  (`0x29141`: Bullet, gespiegelte Strecken und AFTERBURNER frei) und zurück ins Hauptmenü,
-  ebenso nach LOSER!!.
+  (eine Strecke mehr frei, `0x290a5`, siehe „Freischalten“); nach der Bullet-Liga YOU'RE THE
+  GREATEST DRIVER EVER … NOW THE BULLET IS YOURS ! (`0x29141`: Bullet, die rückwärts
+  gefahrenen Strecken und AFTERBURNER frei) und zurück ins Hauptmenü, ebenso nach LOSER!!.
 - **Der Stand** liegt im Format der Einstellungsdatei des Originals, `CONFIG\CHOICE.DAT`
   (`struct choice_dat` in `champ.h`: 0x460 Byte, gelesen nach `0x203c0` von `0x1bbb8`, geschrieben
   von `0x1be5c` vor und nach jedem Rennen und beim Beenden): Auto, Strecke, Name, Optionen, ab
@@ -383,6 +382,23 @@ und 1 bei x 8 und 238, y 100, die 2 und 3 leuchten, solange die Kamera in ihre R
 gleitet und ihr Faktor über 0,6 liegt, `0x2e2f0`) aus `MENUL.FNT` und `MENUL.SPR`, alles über
 den Blitter. B oder START nimmt die Strecke.
 
+**Freischalten** wie im Original (`CHOICE.DAT` +0x42c Bullet, +0x454 Stufe, +0x458 die schon
+gezeigte Stufe; ein neues Spiel hat alle drei 0): Wählbar sind die Strecken bis Stufe + 3
+(`0x287a8`: rechts nur, solange die Strecke unter `0x20814` + 2 liegt), also drei am Anfang;
+jede gewonnene Liga der Meisterschaft setzt die Stufe auf 1, 2, 3 (`0x290e8`, die Strecken 4
+bis 6), alles gewonnen auf 9 (`0x29141`; im Original dazu die rückwärts gefahrenen Strecken 7
+bis 12, die der Core nicht hat). Autos die Zeilen 0 bis 11, der Bullet (Zeile 12) erst, wenn
+er gewonnen ist (`0x28726`: `0x207ec` + 11); AFTERBURNER als höchste Schwierigkeit ebenso
+(+0x45c). Hinter dem letzten wählbaren fehlt der rechte Pfeil (`0x2e32a`, `0x2e4a2`), die
+gesperrten Modelle kommen nie ins Bild. Solange die Stufe über der gezeigten liegt, blinkt im
+Streckenbildschirm NEW TRACK AVAILABLE (`MENU.TXT` Zeile 53, y 0x20, Schrift 1, Farbe 2, 32
+von 64 Ticks, `0x2e424`); wer den Bildschirm verlässt, hat es gesehen (`0x28201`,
+`0x28260`). Die Cheats des Originals (Wörter aus `MENU.DTR`, auf der Tastatur getippt,
+`0x288dc`: TAZOR Bullet, VTELO Stufe 3, INVER Stufe 9, ABURN AFTERBURNER, MONTY/JOINT
+Hindernisse, CLOCK Uhr steht, MIRRO Bild gespiegelt und Lenkung vertauscht, UPDOW Bild
+kopfüber) gibt es nicht: Der Pocket hat keine Tastatur. `MENU=1 LEVEL=n` und `MENU=2
+BULLET=1` für `tools/render.sh`.
+
 Danach, wie im Original („track selection, then car selection“), der Autobildschirm (sein
 Bildschirm 2: `0x2bdcc`, `0x2ca10`, `0x2e08c`): für jede Zeile von `CARS.DTR` (GEN.DAT) ein
 Auto, sein Modell `AAUTOnn.3DX` aus `MENU.DAT` in seiner Lackierung (Textur-Phase `0x6000`:
@@ -394,8 +410,8 @@ Texturen liegen über ganz `MENU.MLB` verteilt, deshalb lädt der Core die Datei
 Schrifthöhen tief), Getriebe (Zeile 37/38, 5 Höhen über dem Rand), `MAX SPEED` mit „%d KMH“,
 `GRIP` und `ACCELERATION` mit ihren Balken (Sprites 4–8, 9–13), alles aus `CARDAT.TXT`. Jedes
 Auto gibt es zweimal, Automatik in der ersten und Schaltung in der zweiten Lackierung, wie
-die Zeilen von `CARS.DTR`; angeboten sind alle 13 Zeilen, auch der Bullet, wie alle sechs
-Strecken (im Original erst nach Freischalten). Die Seitenansichten 16–28 aus `MENUL.SPR`
+die Zeilen von `CARS.DTR`; wählbar sind die Zeilen 0 bis 11, der Bullet erst nach dem Sieg in
+der Meisterschaft (siehe „Freischalten“). Die Seitenansichten 16–28 aus `MENUL.SPR`
 zeichnet `0x2e08c` nicht. B oder START nimmt das Auto, A oder SELECT führt zurück zur
 Streckenwahl. Die Zeile ist das Auto des Spielers (Modell, Fahrdaten, Getriebe, Armaturenbrett
 im Cockpit), die Gegner nehmen die übrigen Zeilen der Reihe nach (`0x142e8`, wie bisher).
