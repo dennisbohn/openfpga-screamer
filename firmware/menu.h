@@ -77,6 +77,12 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
               const uint8_t *local, uint32_t local_size, const uint8_t *gen, uint32_t gen_size, uint8_t *mem,
               uint32_t cap, uint8_t *scratch, uint32_t scratch_cap);
 
+/* Of menu_init the loading screen's part alone (menu_loading), for the boot's first picture before
+   the rest is loaded: of GRAF.DAT only MENUL.SPR, MENUL.FNT and the LOADnL.PCX to be shown need be
+   there; LOADING from LOCAL.DAT. 1 if they are; menu_init does it again. */
+int menu_loading_init(const uint8_t *graf, uint32_t graf_size, const uint8_t *local, uint32_t local_size,
+                      uint8_t *mem, uint32_t cap, uint8_t *scratch, uint32_t scratch_cap);
+
 /* The cars of the car screen: CARS.DTR's rows that CARDAT.TXT describes (of them the first 12
    can be chosen, the Bullet's row 12 too once it is won; the tracks up to CHOICE.DAT's level + 3,
    menu.c choices()) */

@@ -121,7 +121,13 @@ das Hauptmenü (Seite 0, keine Seite geöffnet) 30 s ohne Taste stand (`0x288bf`
   sofort gestartet, „attract“; Schwierigkeit NORMAL, Optionswort 0), auf Strecke
   `CHOICE.DAT` +0x434 + 1; der Zähler geht nach jedem Intro eins weiter und nach 5 auf 0
   (`0x27f06`). Aufgebaut wie ein Rennen, aber direkt (`0x128dc`, kein Ladebild: der Schirm bleibt
-  schwarz), die Musik des Menüs. Je Bild laufen nur die Gegner, Requisiten und bewegte Szenerie
+  schwarz), die Musik des Menüs. Nur beim Start des Cores steht dabei das Ladebild der
+  Strecke (Abweichung, damit der Start nicht lange schwarz bleibt; `first_picture` in
+  `main.c`): gleich nach `CHOICE.DAT` lädt das Programm `LOCAL.DAT` und aus `GRAF.DAT` nur
+  Inhaltsverzeichnis, `MENUL.SPR`, `MENUL.FNT` und `LOADnL.PCX` (rund 100 KB), zeigt das Bild
+  wie vor einem Rennen und lädt dahinter den Rest der Menüs, baut die Strecke und lädt die
+  Geräusche; dann blendet es aus wie vor einem Rennen. Das Protokoll nennt die Zeit seit dem
+  Start (`first picture: ... ms after the core's start`). Je Bild laufen nur die Gegner, Requisiten und bewegte Szenerie
   und die Kamera (`0x2780c`, die fünf Routinen je Gegner); das Auto des Spielers gibt es nicht
   (bei uns `car_intro`: aus der Welt genommen, sein Motor still, `car_step` läuft nicht). Das
   Bild blendet wie ein Rennen in einer halben Sekunde ein (`0x21e50`), die Autos fahren los,

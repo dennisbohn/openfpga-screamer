@@ -261,6 +261,31 @@ static int pcx(const uint8_t *d, uint32_t n, uint8_t *out, uint32_t *pal)
     return 1;
 }
 
+/* the room for the four pictures (the loading screen's the last), then the sprites and fonts as
+   the race screen's (tb_hud.h, no pictures, no text); LOADING */
+int menu_loading_init(const uint8_t *graf, uint32_t graf_size, const uint8_t *local, uint32_t local_size,
+                      uint8_t *mem, uint32_t cap, uint8_t *scratch, uint32_t scratch_cap)
+{
+    if(cap < 4 * PIC_W * PIC_H) return 0;
+    for(int k = 0; k < 4; k++) pic[k] = mem + k * PIC_W * PIC_H;
+    graf_dat = graf;
+    graf_len = graf_size;
+    uint8_t *at = mem + 4 * PIC_W * PIC_H;
+    uint32_t spr_n = unpack(graf, graf_size, "MENUL.SPR", scratch, scratch_cap);
+    uint32_t used = (spr_n + 3) & ~3u;
+    uint32_t fnt_n = used < scratch_cap ? unpack(graf, graf_size, "MENUL.FNT", scratch + used, scratch_cap - used) : 0;
+    if(!spr_n || !fnt_n ||
+       !tb_hud_build(scratch, spr_n, scratch + used, fnt_n, scratch, 0, scratch, 0, scratch, 0, at,
+                     cap - 4 * PIC_W * PIC_H)) return 0;
+    hud = at;
+    nimg = (uint32_t)rd32(hud);
+    nfont = (uint32_t)rd32(hud + 4);
+    img = (const struct blit_image *)(hud + 8);
+    font = (const struct blit_font *)(hud + 8 + 12 * nimg);
+    uint32_t tn = unpack(local, local_size, "MENU.TXT", scratch, scratch_cap);
+    return text_line(scratch, tn, LINE_LOADING, loading, sizeof loading) && nfont > FONT_TITLE;
+}
+
 int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, uint32_t graf_size,
               const uint8_t *local, uint32_t local_size, const uint8_t *gen, uint32_t gen_size, uint8_t *mem,
               uint32_t cap, uint8_t *scratch, uint32_t scratch_cap)
@@ -279,36 +304,19 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
         n[6] = (char)('0' + k);
         if(!(cars[k] = in_place(menu_dat, menu_size, n, 0x80, &len)) || rd32(cars[k] + 0x14) < 1) return 0;
     }
-    /* the pictures and room for the loading screen's (menu_loading), then the sprites and fonts
-       as the race screen's (tb_hud.h, no pictures, no text) */
+    /* the loading screen's part, then the screens' pictures */
     static const char *const pics[3] = { "MENU3L.PCX", "MENU4L.PCX", "MENU1L.PCX" };
-    if(cap < 4 * PIC_W * PIC_H) return 0;
-    for(int k = 0; k < 4; k++) pic[k] = mem + k * PIC_W * PIC_H;
+    if(!menu_loading_init(graf, graf_size, local, local_size, mem, cap, scratch, scratch_cap)) return 0;
     for(int k = 0; k < 3; k++) {
         const uint8_t *p = in_place(graf, graf_size, pics[k], 0, &len);
         if(!p || !pcx(p, len, (uint8_t *)pic[k], pal[k])) return 0;
     }
-    graf_dat = graf;
-    graf_len = graf_size;
-    uint8_t *at = mem + 4 * PIC_W * PIC_H;
-    uint32_t spr_n = unpack(graf, graf_size, "MENUL.SPR", scratch, scratch_cap);
-    uint32_t used = (spr_n + 3) & ~3u;
-    uint32_t fnt_n = used < scratch_cap ? unpack(graf, graf_size, "MENUL.FNT", scratch + used, scratch_cap - used) : 0;
-    if(!spr_n || !fnt_n ||
-       !tb_hud_build(scratch, spr_n, scratch + used, fnt_n, scratch, 0, scratch, 0, scratch, 0, at,
-                     cap - 4 * PIC_W * PIC_H)) return 0;
-    hud = at;
-    nimg = (uint32_t)rd32(hud);
-    nfont = (uint32_t)rd32(hud + 4);
-    img = (const struct blit_image *)(hud + 8);
-    font = (const struct blit_font *)(hud + 8 + 12 * nimg);
     /* the texts */
     uint32_t tn = unpack(local, local_size, "MENU.TXT", scratch, scratch_cap);
     int ok = text_line(scratch, tn, LINE_TRACKS, title[0], sizeof title[0]) &
              text_line(scratch, tn, LINE_CARS, title[1], sizeof title[1]);
     for(int k = 0; k < 2; k++) ok &= text_line(scratch, tn, LINE_GEARS + k, gears[k], sizeof gears[k]);
     for(int k = 0; k < 3; k++) ok &= text_line(scratch, tn, LINE_LABELS + k, label[k], sizeof label[k]);
-    ok &= text_line(scratch, tn, LINE_LOADING, loading, sizeof loading);
     for(int k = 0; k < WORDS; k++) ok &= text_line(scratch, tn, k, words[k], sizeof words[k]);
     ok &= text_line(scratch, tn, LINE_NETWORK, network_text, sizeof network_text);
     ok &= text_line(scratch, tn, LINE_NEW_TRACK, new_track, sizeof new_track);

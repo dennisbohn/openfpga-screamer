@@ -61,6 +61,7 @@ static uint8_t col_bg = COL_BG, col_text = COL_TEXT, col_dim = COL_DIM, col_aler
 #define GAME_SLOT   3
 #define TRACK_FILES 5u          /* containers 0 and 2 (bits): the track's */
 #define FIXED_FILES 0x1Au       /* 1, 3, 4: the ones that stay */
+#define LOCAL_FILES 0x10u       /* 4: LOCAL.DAT, early for the first picture's LOADING */
 #define IMAGE_SLOT  30          /* the simulation only: the finished track image (load_image) */
 #define RACE_SLOT   29          /* the simulation only: its size, the frames after the green light
                                    (run_track) */
@@ -1538,23 +1539,56 @@ static void run_intro(int n)
     }
 }
 
-/* The intro (intro.h, 0x276a0): its race on track CHOICE.DAT +0x434 + 1 set up as race() sets
-   one up, but straight (0x128dc: no loading screen, the screen black meanwhile), difficulty
-   NORMAL (0x2777f), the menu's song; then the track one on (0x27f06) and every page of the menu
-   at its first line (0x27eb4). */
-static void intro(void)
+/* The intro's track: CHOICE.DAT +0x434 + 1 */
+static int intro_track(void)
 {
-    int n = (int)((uint32_t)choice.intro % MENU_TRACKS) + 1;
-    black();
+    return (int)((uint32_t)choice.intro % MENU_TRACKS) + 1;
+}
+
+/* The first picture of a boot, as early as it can be: the intro's track's loading screen as a
+   race has it (loading()), from LOCAL.DAT's LOADING and of GRAF.DAT only its directory,
+   MENUL.SPR, MENUL.FNT and LOADnL.PCX, each at its place; the rest of the menu's files, the
+   intro's track and the sounds load behind it. Its palette, 0 if the files are not there (the
+   screen stays black until the intro, as it did). */
+static const uint32_t *first_picture(int n)
+{
+    char file[16] = "LOAD1L.PCX";
+    struct menu_part parts[] = { { "MENUL.SPR", ~0u }, { "MENUL.FNT", ~0u }, { file, ~0u }, { 0, 0 } };
+    file[4] = (char)('0' + n);
+    uint32_t size = load_containers(0, LOCAL_FILES) ? load_parts(GRAF_SLOT, GRAF_FILE, MENU_MAX, parts) : 0;
+    const uint32_t *pal = size && menu_loading_init((const uint8_t *)(uintptr_t)GRAF_FILE, size, game.local,
+                                                    game.local_size, MENU_MEM, MENU_SIZE, (uint8_t *)BUILD_SCRATCH,
+                                                    PROG_BASE - BUILD_SCRATCH) ? loading(n) : 0;
+    dlog_str(pal ? "first picture: the loading screen of track " : "first picture: none (GRAF.DAT or LOCAL.DAT missing), track ");
+    dlog_dec(n);
+    dlog_str(", ");
+    dlog_dec((int32_t)(rdcycle() / (CPU_HZ / 1000)));
+    dlog_str(" ms after the core's start\n");
+    return pal;
+}
+
+/* The intro (intro.h, 0x276a0): its race on track intro_track() set up as race() sets one up,
+   but straight (0x128dc: no loading screen, the screen black meanwhile; at the boot the first
+   picture stays up and fades out as a race's loading screen), difficulty NORMAL (0x2777f), the
+   menu's song; then the track one on (0x27f06) and every page of the menu at its first line
+   (0x27eb4). */
+static void intro(const uint32_t *shown)
+{
+    int n = intro_track();
+    if (!shown) black();
     music_stop();
     car_mode = CAR_INTRO;
     track_build_difficulty = 1;
     opp_bullet = 0;
-    if (track_ready(n)) {
+    int ok = track_ready(n);
+    if (ok) {
         effects(n);
         sounds();
         scenery(n);
         RS_CTRL = 1;
+    }
+    if (shown) fade_out(shown, 0);
+    if (ok) {
         music_play(0);
         run_intro(n);
         AU_STOP = 0xFFFFFFFFu;
@@ -1614,6 +1648,8 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     dlog_str("program.bin: running in the SDRAM\n");
     save_load();                    /* first: until then an exit would save the SDRAM as it is */
     menu_options_load();
+    int sim = (SYS_FLAGS & FLAG_SIM) != 0;
+    const uint32_t *shown = sim ? 0 : first_picture(intro_track());    /* the simulation's race: none */
 
     /* the game's files that stay (data slots 4, 6, 7, deferload) and the menu's; then the main
        menu, from a game's line on ENTER YOUR NAME (A or SELECT there: the page again; 0x293e8(4)),
@@ -1625,11 +1661,11 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
        before the main menu at the start and after 30 s there without a key (0x10020: intro, menu,
        intro ...). The simulation races the testbench's track with the first car at once, or
        shows the screen MENU_CHECK_SLOT names. */
-    if (load_containers(0, FIXED_FILES)) {
+    if (load_containers(0, game.local_size ? FIXED_FILES & ~LOCAL_FILES : FIXED_FILES)) {
         music_init(game.gen, game.gen_size);
         if (!hud_cd_init(game.game, game.game_size, CD_MEM, CD_SIZE, (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH))
             dlog_str("pause: CDFRONTL.PKC missing (the darkened picture alone)\n");
-        int sim = (SYS_FLAGS & FLAG_SIM) != 0, check = sim ? (int)slot_size(MENU_CHECK_SLOT) : 0;
+        int check = sim ? (int)slot_size(MENU_CHECK_SLOT) : 0;
         int screen = (!sim || check) && menus();
         int n = sim && slot_size(TRACK_SLOT) ? (int)slot_size(TRACK_SLOT) : choice.track % MENU_TRACKS + 1;
         int car = choice.car;                   /* the last track and car, as CHOICE.DAT keeps them */
@@ -1640,11 +1676,14 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
             if (screen) {
                 if (at == AT_PAGES) {
                     if (show_intro) {
-                        intro();
+                        intro(shown);
                         menu_sounds();          /* the race had its own (sounds()) */
                         show_intro = 0;
                         page = 1;
+                    } else if (shown) {
+                        fade_out(shown, 0);     /* no intro: the first picture goes as a race's */
                     }
+                    shown = 0;
                     g = menu_screen(MENU_PAGE_SCREEN, page);
                     page = 0;                   /* back to it: the page as it was */
                     if (g == MENU_IDLE) {
