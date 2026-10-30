@@ -14,7 +14,9 @@
  *   player's row of CARS.DTR (default 0), the opponents take the others
  *   PAUSE=1 in the environment: the pause's picture over the frame (the race screen left out),
  *   with the disc's tracks 2-8, 3 playing (GAME.DAT for the CD player in the working directory);
- *   PAUSE=2: PLAY AGAIN?
+ *   PAUSE=2: PLAY AGAIN? TRACKSIDE=1: the trackside camera after the steps, HUD=1 with the race
+ *   screen. REPLAYCHECK=s: the replay's determinism check instead (replay_check()), REPLAYAT=k
+ *   its picture at step k of the replay, NOHUD=1 without the race screen.
  *        render menu <MENU.DAT> <GRAF.DAT> <LOCAL.DAT> <GEN.DAT> <out.rgb> [screen [n [steps]]]
  *   the track screen (screen 1, the default) with track n chosen or the car screen (screen 2)
  *   with the car of row n - 1 (menu.h; default 1), steps of 1/50 s after entering it (default 0)
@@ -23,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <math.h>
 #include <sys/mman.h>
 #include "hw.h"
 #include "track.h"
@@ -85,6 +88,147 @@ static void write_rgb(const char *path, const uint32_t *pal)
     fclose(f);
 }
 
+/* The replay's check (REPLAYCHECK=steps): a race driven by a robot at the keys (gas held, the
+   d-pad towards the path 20 points ahead, the brake in sharp turns, R tapped now and then),
+   recorded as main.c records it (car_keys), in frames of 1-4 steps with the objects and the
+   race screen made between them as main.c makes them, every 32nd frame drawn; it stops 250
+   steps after the finish, or after steps. Then everything set up again as main.c's race() does
+   and the race run from the recording on the trackside camera, in other frames; the player's
+   place, heading and speed and the opponents' places compared bit for bit after every step. */
+#define CHECK_MAX   60000
+#define CHECK_VALS  (5 + 2 * 16)
+static uint32_t rec[CHECK_MAX];
+static float vals[CHECK_MAX][CHECK_VALS];
+
+static uint32_t robot(uint32_t step)
+{
+    static uint32_t at;
+    const struct car_state *c = car_state();
+    uint32_t np = track_path_length(), best_i = at;
+    float best = 1e30f, x, y, h;
+    for (int d = -20; d <= 60; d++) {
+        uint32_t i = (at + np + (uint32_t)(d + (int)np)) % np;
+        track_path_point(i, &x, &y, &h);
+        float dd = (x - c->x) * (x - c->x) + (y - c->y) * (y - c->y);
+        if (dd < best) { best = dd; best_i = i; }
+    }
+    at = best_i;
+    track_path_point((at + 20) % np, &x, &y, &h);
+    float err = atan2f(x - c->x, -(y - c->y)) - c->yaw;
+    while (err > 3.14159265f) err -= 6.2831853f;
+    while (err < -3.14159265f) err += 6.2831853f;
+    uint32_t k = KEY_B;
+    if (err > 0.03f) k |= KEY_LEFT;
+    if (err < -0.03f) k |= KEY_RIGHT;
+    if (fabsf(err) > 0.8f && c->speed > 6000.0f) k = (k & ~KEY_B) | KEY_Y;
+    if (step % 700 == 350) k |= KEY_R;
+    return k;
+}
+
+static void check_values(float *v)
+{
+    const struct car_state *c = car_state();
+    v[0] = c->x; v[1] = c->y; v[2] = c->z; v[3] = c->yaw; v[4] = c->speed;
+    for (int k = 0; k < 16; k++) {
+        float x = 0.0f, y = 0.0f;
+        if (k < opp_count()) opp_where(k, &x, &y);
+        v[5 + 2 * k] = x;
+        v[6 + 2 * k] = y;
+    }
+}
+
+static void write_rgb(const char *path, const uint32_t *pal);
+
+/* the objects and the race screen between frames, as main.c makes them; every 32nd frame drawn,
+   and with out the whole picture (backdrop, scene, race screen unless NOHUD=1) into that file,
+   its camera and the car printed */
+static void check_frame(uint32_t frame, uint32_t steps_now, const char *out)
+{
+    static struct track_object objs[MAX_OBJECTS];
+    static struct blit_list l;
+    struct track_cam cam;
+    struct track_stats ts;
+    track_clock(steps_now);
+    car_camera(&cam);
+    int nobj = car_object(&cam, &objs[0]);
+    nobj += opp_objects(objs + nobj, MAX_OBJECTS - nobj);
+    nobj += car_effects(&cam, objs + nobj, MAX_OBJECTS - nobj);
+    nobj += scenery_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
+    if (frame % 32 == 0 || out) {
+        const struct rs_clip clip = { 0, 0, FB_W, FB_H };
+        blit_start(&l, 0);
+        track_backdrop_blit(&l, &clip, &cam);
+        blit_model(FB(0), &l);
+        track_mode = TRACK_MODEL;
+        track_draw_cam(FB(0), &clip, &cam, objs, nobj, &ts);
+    }
+    hud_build(&l, 0, 0, car_overlay());
+    if (out) {
+        printf("picture: camera %.0f %.0f %.0f yaw %.4f pitch %.4f, car %.0f %.0f %.0f\n", cam.x, cam.y, cam.h, cam.yaw,
+               cam.pitch, car_state()->x, car_state()->y, car_state()->z);
+        if (!getenv("NOHUD")) blit_model(FB(0), &l);
+        write_rgb(out, track_palette());
+    }
+}
+
+static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gfx_size, const char *out)
+{
+    int props, moving;
+    uint32_t steps = 0, frames = 0, seed = 1, keys_before = 0, end = 0;
+    if (max > CHECK_MAX) max = CHECK_MAX;
+    car_init(car, 0);
+    opp_init(car);
+    while ((int)steps < max && (!end || steps < end)) {
+        seed = seed * 1103515245u + 12345u;
+        uint32_t now = 1 + (seed >> 16) % 4;
+        for (uint32_t k = 0; k < now && (int)steps < max; k++) {
+            uint32_t keys = robot(steps);
+            rec[steps] = car_keys(keys, keys_before);
+            keys_before = keys;
+            car_step(rec[steps]);
+            opp_step();
+            scenery_step();
+            check_values(vals[steps++]);
+            if (car_race()->finished && !end) end = steps + 250;
+        }
+        check_frame(frames++, now, 0);
+    }
+    const struct car_race *r = car_race();
+    printf("race: %u steps in %u frames, %d laps (progress %.1f), finished %d, time over %d, place %d, walls %u, "
+           "crashes %u\n",
+           steps, frames, r->laps, car_progress(), r->finished, r->game_over, opp_player_rank(), car_wall_hits(),
+           car_crashes());
+    /* again, as race() sets it up: the scenery, then the car on the trackside camera */
+    scenery_init(DATA_FILE, data_size, GFX_FILE, gfx_size, n, SCENERY_MEM, 0x10000, &props, &moving);
+    car_init(car, 1);
+    opp_init(car);
+    uint32_t at = 0, replay_frames = 0, shot = getenv("REPLAYAT") ? (uint32_t)atoi(getenv("REPLAYAT")) : steps;
+    seed = 2;
+    while (at < steps) {
+        seed = seed * 1103515245u + 12345u;
+        uint32_t now = 1 + (seed >> 16) % 4;
+        for (uint32_t k = 0; k < now && at < steps; k++) {
+            car_step(rec[at]);
+            opp_step();
+            scenery_step();
+            float v[CHECK_VALS];
+            check_values(v);
+            if (memcmp(v, vals[at], sizeof v)) {
+                int j = 0;
+                while (v[j] == vals[at][j]) j++;
+                printf("replay: step %u differs, value %d: %.6f, the race had %.6f\n", at, j, v[j], vals[at][j]);
+                return 1;
+            }
+            at++;
+        }
+        check_frame(replay_frames++, now, at >= shot ? out : 0);
+        if (at >= shot) shot = ~0u;
+    }
+    printf("replay: %u steps in %u frames, %d laps, finished %d: every step identical "
+           "(the player and %d opponents)\n", at, replay_frames, car_race()->laps, car_race()->finished, opp_count());
+    return 0;
+}
+
 /* a screen of the menu: the containers whole (the firmware loads only menu.h's parts of them) */
 static int menu(int argc, char **argv)
 {
@@ -127,11 +271,12 @@ int main(int argc, char **argv)
     scenery_init(DATA_FILE, data_size, GFX_FILE, gfx_size, n, SCENERY_MEM, 0x10000, &props, &moving);
     printf("scenery: %d props, %d moving\n", props, moving);
     car_trackside_init(DATA_FILE, data_size, n);
-    car_init(car);
+    if (getenv("REPLAYCHECK")) return replay_check(atoi(getenv("REPLAYCHECK")), car, n, data_size, gfx_size, argv[4]);
+    car_init(car, 0);
     opp_init(car);
     car_view(view);
     for (int k = 0; k < steps; k++) {
-        car_step(getenv("GAS") ? KEY_B : 0, 0);    /* GAS=1: the pedal down */
+        car_step(getenv("GAS") ? KEY_B : 0);        /* GAS=1: the pedal down */
         opp_step();
         scenery_step();
     }

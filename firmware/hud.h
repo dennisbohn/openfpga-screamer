@@ -18,7 +18,8 @@
 
 /* The race screen without the dashboard's parts, by the view's overlay (car_overlay()): 2 the
    labels and the outside views' instruments, 1 (the cockpit) neither, 0 (the trackside camera)
-   the labels alone (0x2367c) */
+   the labels alone (0x2367c). In the replay (car_replay()) only a blinking R, the start lights
+   and the end (0x2346c). */
 void hud_build(struct blit_list *l, int buffer, int fps, int overlay);
 
 /* The cockpit's dashboard for car sp (the car's own, 0x136c8): the picture COCKnn{A,B}L.PKC

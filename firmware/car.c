@@ -38,6 +38,7 @@ static const struct view_def views[CAR_VIEWS + 2] = {
 static int32_t rpl[RPL_MAX][3];
 static int rpl_n;
 static int trackside;
+static int replaying;                   /* the race runs again from its keys (0x118e68) */
 
 static struct car_state pc;
 static struct track_model model;
@@ -526,7 +527,7 @@ static void chase_step(void)
     chase.height = want_h + (chase.height - want_h) * drive_damp(0);
 }
 
-void car_init(int which)
+void car_init(int which, int replay)
 {
     int n, nm;
     const struct car_spec *cars = track_cars(&n);
@@ -545,14 +546,16 @@ void car_init(int which)
     spin = steer = 0.0f;
     wall_hits = crashes = 0;
     crash.on = 0;
+    replaying = replay;
     trackside = 0;
+    if(replay) car_trackside();                         /* row 3 asked for (0x12afe) */
     snd_engine = snd_stop(snd_engine);
     snd_skid = snd_stop(snd_skid);
     snd_wall = -1;
     snd_over = 0;
     snd_engine = snd_play(SND_ENGINE);
     speech_reset();
-    record = 180.0f;
+    if(!replay) record = 180.0f;                        /* a lap the race beat it with stays */
     race = (struct car_race){ 0 };
     race.timer = 15.0f;
     refl = (struct track_refl){ { 0, 0, 0 }, { 0.0f, 0.0f, 0.0f } };
@@ -630,17 +633,28 @@ static void sound_step(int skid)
         snd_skid = snd_stop(snd_skid);
 }
 
-void car_step(uint32_t keys, uint32_t keys_before)
+uint32_t car_keys(uint32_t keys, uint32_t keys_before)
 {
-    uint32_t pressed = keys & ~keys_before;
+    const uint32_t shift = KEY_L | KEY_R;
+    return (keys & (KEY_B | KEY_Y | KEY_LEFT | KEY_RIGHT)) | (keys & ~keys_before & shift);
+}
+
+int car_replay(void)
+{
+    return replaying;
+}
+
+void car_step(uint32_t keys)
+{
     struct drive_input in;
     /* gas and brake on the buttons only (on the d-pad a thumb steering into a diagonal
        would brake or lift off by accident), as the classic racing games lay them out: gas
-       on the bottom button (B), the brake on the left one (Y) */
+       on the bottom button (B), the brake on the left one (Y); L and R shift on the step they
+       went down (car_keys) */
     in.throttle = (keys & KEY_B) ? 1.0f : 0.0f;
     in.brake = (keys & KEY_Y) ? 1.0f : 0.0f;
     in.steer = ((keys & KEY_LEFT) ? 1.0f : 0.0f) - ((keys & KEY_RIGHT) ? 1.0f : 0.0f);
-    in.shift = (pressed & KEY_R) ? 1 : (pressed & KEY_L) ? -1 : 0;
+    in.shift = (keys & KEY_R) ? 1 : (keys & KEY_L) ? -1 : 0;
     /* the start lights: green at 6 s; until then the pedal only revs the engine */
     race.clock += DRIVE_DT;
     race.on = race.clock >= 6.0f;

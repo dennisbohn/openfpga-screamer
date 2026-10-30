@@ -18,11 +18,18 @@
 #define CAR_VIEW_START  2
 #endif
 
-/* Set the car up from the track file: CARS.DTR row which, at the start */
-void car_init(int which);
+/* Set the car up from the track file: CARS.DTR row which, at the start; with replay for the
+   race run again from its keys (the replay, 0x22d98): the trackside camera from the start, and
+   the lap record kept as the race left it (0x20eb8 hands the best lap back) */
+void car_init(int which, int replay);
+int car_replay(void);
 
-/* One step of 1/50 s with the keys (IN_KEY) held now and on the step before */
-void car_step(uint32_t keys, uint32_t keys_before);
+/* The keys a step reads, made of the keys (IN_KEY) held now and on the step before: B, Y, left
+   and right as they are held, L and R only on the step they went down. A race recorded as these
+   words, one a step, runs again the same from them (the game records its controls, 0x22f34). */
+uint32_t car_keys(uint32_t keys, uint32_t keys_before);
+/* One step of 1/50 s with the keys word of car_keys() */
+void car_step(uint32_t keys);
 
 /* Choose the view (0 .. CAR_VIEWS - 1); the camera it gives now. From the race's end on the
    camera is the trackside one (view-table row 3, 0x1a620), the car and its shadow in view. */

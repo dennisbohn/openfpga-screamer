@@ -12,6 +12,9 @@
 #   reflection accumulators and picture from the original's car record (+0x30, +0x3c), the car
 #   standing; GAS=1: the pedal down for the steps (the race starts after 300). TRACKSIDE=1: the
 #   trackside camera of the race's end after the steps (MAPnRPL.SPL); HUD=1: the race screen over it.
+#   REPLAYCHECK=s: the replay's determinism check instead (a robot's race of at most s steps, its
+#   replay compared step by step; CAR=6 finishes track 1); the picture is the replay's at its
+#   end, or at step REPLAYAT, NOHUD=1 without the race screen.
 # The firmware's sources are copied to build/host/ with hw.h's RISC-V instructions made plain C;
 # built and run with the simulation's Docker image (gcc).
 set -e
@@ -57,7 +60,7 @@ fi
 if command -v cygpath >/dev/null 2>&1; then mount=$(cygpath -wa "$root/build"); else mount=$root/build; fi
 out=$(basename "$1")
 MSYS_NO_PATHCONV=1 docker run --rm ${CAM:+-e CAM} ${REFL:+-e REFL} ${GAS:+-e GAS} ${PAUSE:+-e PAUSE} \
-    ${TRACKSIDE:+-e TRACKSIDE} ${HUD:+-e HUD} -v "$mount:/b" --entrypoint sh verilator/verilator:v5.050 -c "
+    ${TRACKSIDE:+-e TRACKSIDE} ${HUD:+-e HUD} ${REPLAYCHECK:+-e REPLAYCHECK} ${REPLAYAT:+-e REPLAYAT} ${NOHUD:+-e NOHUD} -v "$mount:/b" --entrypoint sh verilator/verilator:v5.050 -c "
     cd /b/host/src && gcc -O2 -w ${DUMP:+-DTRACK_DUMP} -o ../render render.c track.c geom.c setup.c raster.c car.c drive.c opp.c \
         efx.c scenery.c sound.c speech.c blit.c dlog.c crc32.c dat.c console.c menu.c tb_hud.c tb_spl.c tb_mmp.c hud.c -lm && cd /b/host && $run $out $args"
 mv "$root/build/host/$out" "$1"

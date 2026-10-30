@@ -5,8 +5,9 @@
  * or SELECT go back from the cars to the tracks), builds the track chosen from them
  * (track_build.c) and puts the player's car on it (car.c): B accelerates, Y
  * brakes, left and right steer, L and R change gear on a manual car, X changes the view; the CPU picks and sorts the pieces (track.c), the geometry unit, setup unit and
- * rasterizer draw them. START pauses the race (the game's CD player), SELECT or the race over
- * for 5 s asks PLAY AGAIN? (YES the race again, NO the track screen).
+ * rasterizer draw them. START pauses the race (the game's CD player); 5 s after a finished
+ * race its replay (B, START or SELECT skip it); SELECT, time over or the replay's end ask PLAY
+ * AGAIN? (YES the race again, NO the track screen).
  * Without the files, the texture scene with test patterns, checked
  * once a run against the rasterizer's C model (raster.c), and a triangle moved with the
  * d-pad.
@@ -568,19 +569,35 @@ static int play_again(uint32_t st)
 
 static int dashboard_init(void);
 
-#define OVER_STEPS  250         /* the end screen for 5 s (0x21048), then PLAY AGAIN? */
+#define OVER_STEPS  250         /* the end screen for 5 s (0x21048), then the replay or PLAY AGAIN? */
+#define REC_MAX     60000       /* the replay's keys: 20 minutes of steps */
+
+enum { RACE_LEAVE, RACE_AGAIN, RACE_REPLAY };   /* how a race ends: NO, YES, its replay next */
+
+/* The race's keys, one word a step (car_keys(); the game records its controls each frame,
+   0x22f34): rec_n of them, rec_full once more did not fit (then there is no replay) */
+static uint16_t rec[REC_MAX];
+static uint32_t rec_n;
+static int rec_full;
 
 /* The race on track n with the car of CARS.DTR row car until SELECT, or OVER_STEPS after its end
    once the commentary has said all it queued (0x21048 asks 0x24740; never in the simulation,
    which stops after the frame it checks); the opponents take the other rows. From its end on
-   the trackside camera (car.h). START pauses it. 1 when PLAY AGAIN? is answered YES. */
-static int run_track(int n, int car)
+   the trackside camera (car.h). START pauses it. A finished race then runs again from its keys
+   (RACE_REPLAY; time over and SELECT have none, 0x1fe28): with replay set, as the game's replay
+   (0x1fd64, 0x22e74) until its keys run out (0x22dd8) or B, START or SELECT skip it (the game's
+   ENTER and ESC). Then PLAY AGAIN?: RACE_AGAIN for YES, RACE_LEAVE for NO. */
+static int run_track(int n, int car, int replay)
 {
     const uint32_t *pal = track_palette();
-    uint32_t drawn = 0, keys_before = 0, last_frame = 0, steps = 0, over = 0;
-    uint32_t fps = 0, fps_drawn = 0, fps_frame = 0;
+    uint32_t drawn = 0, keys_before = replay ? IN_KEY : 0, last_frame = 0, steps = 0, over = 0;
+    uint32_t fps = 0, fps_drawn = 0, fps_frame = 0, rec_at = 0;
     int car_v = CAR_VIEW_START;
-    car_init(car);
+    if (!replay) {
+        rec_n = 0;
+        rec_full = 0;
+    }
+    car_init(car, replay);
     opp_init(car);
     car_view(car_v);
     int dash_ok = dashboard_init();
@@ -622,13 +639,19 @@ static int run_track(int n, int car)
             dlog_char('\n');
         }
         uint32_t press = keys & ~keys_before;
-        if ((press & KEY_START) && drawn && !car_race()->finished && !car_race()->game_over) {
-            pause_race(st, n);
-            keys_before = IN_KEY;
-            last_frame = VID_FRAME(VID_STATUS);
-            continue;
+        if (replay) {
+            if ((press & (KEY_B | KEY_START | KEY_SELECT)) || rec_at >= rec_n) return play_again(st);
+        } else {
+            if ((press & KEY_START) && drawn && !car_race()->finished && !car_race()->game_over) {
+                pause_race(st, n);
+                keys_before = IN_KEY;
+                last_frame = VID_FRAME(VID_STATUS);
+                continue;
+            }
+            if (press & KEY_SELECT) return play_again(st);
+            if (over >= OVER_STEPS && !speech_busy())
+                return car_race()->finished && !rec_full ? RACE_REPLAY : play_again(st);
         }
-        if ((press & KEY_SELECT) || (over >= OVER_STEPS && !speech_busy())) return play_again(st);
         /* the physics at 50 steps a second: one per video frame since the last picture */
         uint32_t steps_now = drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
         last_frame = VID_FRAME(st);
@@ -636,8 +659,16 @@ static int run_track(int n, int car)
         if (press & KEY_X) car_view(++car_v);
         efx_cyc_objects = efx_cyc_radar = 0;
         uint32_t t_phys = rdcycle();
-        for (uint32_t k = 0; k < steps_now; k++) {
-            car_step(keys, keys_before);
+        for (uint32_t k = 0; k < steps_now && (!replay || rec_at < rec_n); k++) {
+            uint32_t w;                         /* the step's keys: recorded, or from the recording */
+            if (replay)
+                w = rec[rec_at++];
+            else {
+                w = car_keys(keys, keys_before);
+                if (rec_n < REC_MAX) rec[rec_n++] = (uint16_t)w;
+                else rec_full = 1;
+            }
+            car_step(w);
             opp_step();
             scenery_step();
             keys_before = keys;
@@ -699,9 +730,9 @@ static int run_track(int n, int car)
            blitter draws it once the scene is done. In the cockpit the dashboard comes before
            the window, which darkens it too: the blitter draws it once the scene is done, the
            CPU makes the race screen's list meanwhile, then waits for both to clip the window
-           to the whole screen */
+           to the whole screen. The replay has no radar (0x2346c). */
         struct gu_piece radar;
-        int has_radar = efx_radar_piece(&view, &radar);
+        int has_radar = !replay && efx_radar_piece(&view, &radar);
         BL_CLOCKS = 0;
         tl_mark(TL_CLEAR);
         if (cockpit) {
@@ -1201,17 +1232,18 @@ static int race(int n, int car)
     dlog_str(" placements, ");
     dlog_dec((int32_t)track_path_length());
     dlog_str(" path points\n");
-    for (;;) {
+    for (int replay = 0;;) {    /* everything set up as at the start: the replay runs the same */
         effects(n);
         sounds();               /* before the scenery, which adds the track's own sounds */
         scenery(n);
         RS_CTRL = 1;
         music_play(n);
-        int again = run_track(n, car);
+        int end = run_track(n, car, replay);
         AU_STOP = 0xFFFFFFFFu;                  /* the race's sounds end with it */
-        if (!again) return 1;
-        music_stop();                           /* PLAY AGAIN? YES: the race set up again (0x128dc),
-                                                   its song from the start */
+        if (end == RACE_LEAVE) return 1;
+        music_stop();                           /* PLAY AGAIN? YES or the replay: the race set up
+                                                   again (0x128dc), its song from the start */
+        replay = end == RACE_REPLAY;
     }
 }
 

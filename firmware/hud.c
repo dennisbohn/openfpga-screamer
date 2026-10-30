@@ -243,9 +243,10 @@ static void fps_mark(struct blit_list *l, int fps)
     text(l, 12, 190, buf, 3, 2);
 }
 
-void hud_build(struct blit_list *l, int buffer, int fps, int overlay)
+/* the race screen proper (0x234a5 on): the labels and the overlay's instruments (0x2367c), the
+   countdown, lap, position, the clocks, the radar */
+static void race_screen(struct blit_list *l, int overlay, int rank)
 {
-    begin(l, buffer);
     const struct car_state *c = car_state();
     const struct car_race *r = car_race();
     char buf[16];
@@ -269,7 +270,6 @@ void hud_build(struct blit_list *l, int buffer, int fps, int overlay)
     int w = text(l, 8, 0x0B, buf, 1, 5);
     put_dec(buf, (uint32_t)r->total_laps, 1);
     text(l, w + 5, 0x14, buf, 4, 5);
-    int rank = opp_player_rank();
     put_dec(buf, (uint32_t)rank, 1);                    /* the position in the running order */
     text(l, 0x114, 0x0B, buf, 1, 5);
     clock_text(buf, r->total);
@@ -281,6 +281,21 @@ void hud_build(struct blit_list *l, int buffer, int fps, int overlay)
     uint32_t t0 = rdcycle();
     radar(l);
     efx_cyc_radar = rdcycle() - t0;
+}
+
+void hud_build(struct blit_list *l, int buffer, int fps, int overlay)
+{
+    begin(l, buffer);
+    const struct car_race *r = car_race();
+    char buf[16], *p;
+    int rank = opp_player_rank();
+
+    /* the replay (0x2346c): of the race screen only an R at (8, 170), font 0 colour 6, while
+       bit 7 of the game's 100 Hz tick (0x107fd) is set; the start lights and the end as ever */
+    if(car_replay()) {
+        if((int)(r->clock * 100.0f) & 0x80) text(l, 8, 0xAA, "R", 0, 6);
+    } else
+        race_screen(l, overlay, rank);
 
     if(r->clock < 8.0f) sprite(l, 0x78, 0x36, (int)r->clock / 2);     /* the start lights */
 

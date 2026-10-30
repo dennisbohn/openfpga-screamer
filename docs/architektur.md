@@ -147,11 +147,34 @@ legt es als Standbild in den SDRAM (`still` in `main.c`), der Blitter kopiert es
 und legt das Radio darüber (`hud_cd`). START noch einmal: Lautstärken zurück, die Musik der
 Strecke (von vorn, wenn sie schon stand), wie PLAY.
 
-**PLAY AGAIN?:** SELECT im Rennen und 5 s nach seinem Ende, sobald der Kommentator alles
-gesagt hat, was er sich vorgenommen hatte (`0x21048` fragt `0x24740`); bis dahin der
-Endbildschirm über der Streckenkamera (siehe unten). Das Original fragt nach jedem
+**Die Wiederholung** (2026-10-30, aus der EXE): 5 s nach dem Ende eines beendeten Rennens,
+sobald der Kommentator alles gesagt hat, was er sich vorgenommen hatte (`0x21048` fragt
+`0x24740`; bis dahin der Endbildschirm über der Streckenkamera, siehe unten), läuft das
+Rennen noch einmal; nach Zeitablauf oder SELECT nicht (`0x1fe28`). Das Spiel zeichnet dafür
+nicht die Autos auf, sondern je Bild seine Steuerung (`0x22f34`), baut das Rennen neu auf
+(`0x1fd64`, `0x128dc`) und liest sie statt der Tastatur zurück (`0x22e74`); alles andere
+rechnet es neu. Wir halten je Physikschritt (1/50 s) das Tastenwort fest, das `car_step`
+bekommt (`car_keys`: B, Y, links, rechts gehalten, L und R nur im Schritt des Drückens; 2
+Bytes, bis 20 Minuten), bauen Effekte, Geräusche, Kulisse, Auto, Gegner und Musik wie zum
+Start neu auf und lassen das Rennen aus den Wörtern laufen, mit so vielen Schritten je Bild
+wie im Rennen auch. In der Wiederholung (`0x22d98` setzt das Flag `0x118e68`): von Anfang an
+die Streckenkamera (`0x12afe`), keine Absturzkamera (`0x1857a`), die Ansichtstaste wirkt nicht
+(`0x19b53`); von der Rennanzeige nur ein „R“ bei (8, 170), Schrift 0, Farbe 6, solange Bit 7
+des 100-Hz-Zählers gesetzt ist (`0x2346c`; Beschriftungen, Countdown, Runde, Platz, Uhren
+und Radar entfallen, OpenScreamers Notizen irren hier), dazu Startampel (`0x20d10`) und
+Endbildschirm (`0x21048`) wie im Rennen. Kommentar und Geräusche kommen wie im Rennen (das
+Spiel fragt das Flag dort nicht ab); der Rundenrekord bleibt, wie ihn das Rennen hinterließ,
+deshalb kein zweites „new lap record“. Sind die Wörter aufgebraucht, endet die Wiederholung
+(`0x22dd8`), B, START oder SELECT überspringen sie (ENTER und ESC im Original); dann PLAY
+AGAIN?. Geprüft auf dem PC (`REPLAYCHECK` für `tools/render.sh`): ein ganzes Rennen eines
+Fahrroboters auf Strecke 1 (Auto 6, 8391 Schritte, drei Runden) und seine Wiederholung, in
+anderen Bildtakten und auf der Streckenkamera, sind in jedem Schritt bitgleich (Spieler und
+neun Gegner).
+
+**PLAY AGAIN?:** SELECT im Rennen, nach Zeitablauf (5 s nach dem Ende, wie oben) und nach der
+Wiederholung. Das Original fragt nach jedem
 verlassenen Rennen (`0x1fe86` → `0x219d0`, außer in Meisterschaft und Netzwerk; nach einem
-beendeten Rennen erst nach der Wiederholung, die wir nicht haben): ESC stoppt die Effekte
+beendeten Rennen erst nach der Wiederholung): ESC stoppt die Effekte
 (`0x1f8cc`), die Musik läuft weiter, das letzte Bild dreimal abgedunkelt, darüber `GAME.TXT`
 Zeilen 19–21 (PLAY AGAIN?, YES, NO) zentriert in den Zeilen 52, 92 und 122 (Schrift 0), die
 Frage in Farbe 2, die Antworten in 14, die gewählte blinkt nach 2. Hoch/links YES,
@@ -159,8 +182,8 @@ runter/rechts NO, B oder START nimmt die Antwort, Y oder SELECT ist NO (ESC im O
 YES baut das Rennen neu auf (ohne die Strecke neu zu bauen), NO führt zur Streckenwahl.
 
 Nicht dabei: Hauptmenü, Optionen, Intro, Kameraflüge und Überblendungen zwischen den
-Bildschirmen, Menügeräusche, die gespiegelten Strecken, „NEW TRACK AVAILABLE“, die
-Wiederholung. Die Simulation fährt gleich die Strecke aus `SIM_TRACK` (Slot 28) mit dem
+Bildschirmen, Menügeräusche, die gespiegelten Strecken, „NEW TRACK AVAILABLE“, Wiederholungen
+als Datei (`REPLAYS\TEMP.RPL`). Die Simulation fährt gleich die Strecke aus `SIM_TRACK` (Slot 28) mit dem
 ersten Auto; mit `SIM_MENU=1` (Slot 27) zeigt sie stattdessen den Streckenbildschirm, mit
 `SIM_MENU=2` den Autobildschirm, und prüft das dritte Bild gegen die C-Modelle (2026-10-30:
 beide 0 Pixel Unterschied; der Autobildschirm braucht 0,22 M Takte, 3 ms je Bild).
