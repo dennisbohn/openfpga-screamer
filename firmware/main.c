@@ -587,9 +587,11 @@ static void pause_race(uint32_t st, int n)
 }
 
 /* PLAY AGAIN? (0x219d0), as the game asks it when a race is left (0x1fe86): the effects stop
-   (0x1f8cc), the music goes on; over the picture on the screen darkened three times (hud.h). Up
-   or left YES, down or right NO, each press with the click (SFXSBASE.DTR's row 6, 0x21b0e,
-   0x21b47), B or START take the answer, Y or SELECT are NO (the game's ESC). 1 for YES. */
+   (0x1f8cc), the music goes on; over the picture on the screen darkened three times (hud.h),
+   which run_track has drawn without the race screen and the end's texts (0x219d0 draws the
+   scene anew, 0x81870, and nothing over it). Up or left YES, down or right NO, each press with
+   the click (SFXSBASE.DTR's row 6, 0x21b0e, 0x21b47), B or START take the answer, Y or SELECT
+   are NO (the game's ESC). 1 for YES. */
 static int play_again(uint32_t st)
 {
     uint32_t keys_before = IN_KEY, last_frame = VID_FRAME(st), ticks = 0;
@@ -632,8 +634,9 @@ static int rec_full;
    the trackside camera (car.h). START pauses it. A finished race then runs again from its keys
    (RACE_REPLAY; time over and SELECT have none, 0x1fe28): with replay set, as the game's replay
    (0x1fd64, 0x22e74) until its keys run out (0x22dd8) or B, START or SELECT skip it (the game's
-   ENTER and ESC). Then PLAY AGAIN?: RACE_AGAIN for YES, RACE_LEAVE for NO. It fades in from
-   black, the picture and the sound, in half a second (0x21e50 each frame). */
+   ENTER and ESC). Then PLAY AGAIN?, over one more picture of the scene alone, the whole screen
+   (ask): RACE_AGAIN for YES, RACE_LEAVE for NO. It fades in from black, the picture and the
+   sound, in half a second (0x21e50 each frame). */
 static int run_track(int n, int car, int replay)
 {
     const uint32_t *pal = track_palette();
@@ -641,6 +644,7 @@ static int run_track(int n, int car, int replay)
     snd_fade(0);
     music_fade(0);
     uint32_t drawn = 0, keys_before = replay ? IN_KEY : 0, last_frame = 0, steps = 0, over = 0;
+    int ask = 0;
     uint32_t fps = 0, fps_drawn = 0, fps_frame = 0, rec_at = 0;
     int car_v = CAR_VIEW_START;
     if (!replay) {
@@ -694,8 +698,9 @@ static int run_track(int n, int car, int replay)
             dlog_char('\n');
         }
         uint32_t press = keys & ~keys_before;
+        if (ask) return play_again(st);
         if (replay) {
-            if ((press & (KEY_B | KEY_START | KEY_SELECT)) || rec_at >= rec_n) return play_again(st);
+            if ((press & (KEY_B | KEY_START | KEY_SELECT)) || rec_at >= rec_n) ask = 1;
         } else {
             if ((press & KEY_START) && drawn && !car_race()->finished && !car_race()->game_over) {
                 pause_race(st, n);
@@ -703,12 +708,15 @@ static int run_track(int n, int car, int replay)
                 last_frame = VID_FRAME(VID_STATUS);
                 continue;
             }
-            if (press & KEY_SELECT) return play_again(st);
-            if (over >= OVER_STEPS && !speech_busy())
-                return car_race()->finished && !rec_full ? RACE_REPLAY : play_again(st);
+            if (press & KEY_SELECT) ask = 1;
+            if (over >= OVER_STEPS && !speech_busy()) {
+                if (car_race()->finished && !rec_full) return RACE_REPLAY;
+                ask = 1;
+            }
         }
-        /* the physics at 50 steps a second: one per video frame since the last picture */
-        uint32_t steps_now = drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
+        /* the physics at 50 steps a second: one per video frame since the last picture (none
+           for the question's picture) */
+        uint32_t steps_now = ask ? 0 : drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
         last_frame = VID_FRAME(st);
         if (steps_now > 4) steps_now = 4;
         if (fade < 0x8000) {
@@ -748,8 +756,9 @@ static int run_track(int n, int car, int replay)
         nobj += car_effects(&cam, objs + nobj, MAX_OBJECTS - nobj);
         nobj += scenery_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
         /* the 3D view: the whole screen, or in the cockpit its first 132 lines, the eye line
-           85 down (track_view), the dashboard over the rest (without one the whole screen) */
-        int cockpit = dash_ok && car_cockpit();
+           85 down (track_view), the dashboard over the rest (without one, or for the
+           question, 0x219d0's 320 x 200, the whole screen) */
+        int cockpit = dash_ok && car_cockpit() && !ask;
         const struct rs_clip clip = { 0, 0, FB_W, cockpit ? car_view_lines() : FB_H };
         struct su_view view;
         track_view(&clip, &view);
@@ -792,7 +801,7 @@ static int run_track(int n, int car, int replay)
            CPU makes the race screen's list meanwhile, then waits for both to clip the window
            to the whole screen. The replay has no radar (0x2346c). */
         struct gu_piece radar;
-        int has_radar = !replay && efx_radar_piece(&view, &radar);
+        int has_radar = !replay && !ask && efx_radar_piece(&view, &radar);
         BL_CLOCKS = 0;
         tl_mark(TL_CLEAR);
         if (cockpit) {
@@ -805,7 +814,8 @@ static int run_track(int n, int car, int replay)
             if (has_radar) hw_piece(&radar);
         } else {
             if (has_radar) hw_piece(&radar);
-            hud_build(&hud, (int)draw_buf, (int)fps, car_overlay() ? 2 : 0);   /* no dashboard: the instruments */
+            if (ask) blit_start(&hud, (int)draw_buf);                           /* the question's: nothing */
+            else hud_build(&hud, (int)draw_buf, (int)fps, car_overlay() ? 2 : 0);   /* no dashboard: the instruments */
         }
         hw_blit(&hud);
         tl_mark(TL_HUD);

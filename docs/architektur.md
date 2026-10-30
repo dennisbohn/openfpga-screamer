@@ -187,7 +187,11 @@ neun Gegner).
 Wiederholung. Das Original fragt nach jedem
 verlassenen Rennen (`0x1fe86` → `0x219d0`, außer in Meisterschaft und Netzwerk; nach einem
 beendeten Rennen erst nach der Wiederholung): ESC stoppt die Effekte
-(`0x1f8cc`), die Musik läuft weiter, das letzte Bild dreimal abgedunkelt, darüber `GAME.TXT`
+(`0x1f8cc`), die Musik läuft weiter; `0x219d0` zeichnet die Szene selbst noch einmal (`0x81870`,
+320 × 200, auch aus dem Cockpit) ohne Rennanzeige und Endbildschirm, also ohne Platz, Gesamtzeit,
+TIME OVER und das „R“ der Wiederholung. Wir zeichnen dafür ein letztes Bild ohne Physikschritt
+und ohne Rennanzeige, Radar und Armaturenbrett (`ask` in `run_track`), in allen Fällen gleich:
+SELECT, Zeitablauf und nach der Wiederholung. Dieses Bild dreimal abgedunkelt, darüber `GAME.TXT`
 Zeilen 19–21 (PLAY AGAIN?, YES, NO) zentriert in den Zeilen 52, 92 und 122 (Schrift 0), die
 Frage in Farbe 2, die Antworten in 14, die gewählte blinkt nach 2. Hoch/links YES,
 runter/rechts NO, jeder Druck mit dem Klick (siehe „Menügeräusche“), B oder START nimmt die
