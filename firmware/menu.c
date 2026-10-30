@@ -101,17 +101,18 @@ static float turn[2] = { 1.5707964f, 1.5707964f }, cam_x, from_x, to_x, slide;
 /* The game's pages (0x2de4, items of 16 bytes: MENU.TXT's line, id, value, highest value; an
    option, id 1234, shows its line + its value), by the game's numbers: 0 the main menu (NORMAL
    GAME 0, CHAMPIONSHIP 1, SPECIAL MODES 2, NETWORK GAME 3, OPTIONS 4), 1 the options with the
-   game's values at the start (DETAIL, the difficulty, LAP NUMBER, SPEECH, MUSIC; VIEW RECORDS
-   21), 3 time attack's NEW 24 and RESUME 25, 4 the special modes (TIME ATTACK 28, CONE CARNAGE
+   game's values at the start (the difficulty, LAP NUMBER, SPEECH, MUSIC; VIEW RECORDS 21). The
+   game's first option, DETAIL, is left out: the core always draws everything, as far as HI
+   reaches; CHOICE.DAT keeps it at HI (2). 3 time attack's NEW 24 and RESUME 25, 4 the special modes (TIME ATTACK 28, CONE CARNAGE
    29, SLALOM 30), 5 the championship's NEW 26 and RESUME 27 */
 static struct item { int line, id, value, max; } items[PAGES][6] = {
     [0] = { { 0, 0, 0, 0 }, { 1, 1, 0, 0 }, { 2, 2, 0, 0 }, { 3, 3, 0, 0 }, { 4, 4, 0, 0 } },
-    [1] = { { 5, OPTION, 2, 2 }, { 8, OPTION, 1, 2 }, { 13, OPTION, 0, 3 }, { 17, OPTION, 1, 1 },
-            { 19, OPTION, 1, 1 }, { 21, 21, 0, 0 } },
+    [1] = { { 8, OPTION, 1, 2 }, { 13, OPTION, 0, 3 }, { 17, OPTION, 1, 1 }, { 19, OPTION, 1, 1 },
+            { 21, 21, 0, 0 } },
     [3] = { { 24, 24, 0, 0 }, { 25, 25, 0, 0 } },
     [4] = { { 28, 28, 0, 0 }, { 29, 29, 0, 0 }, { 30, 30, 0, 0 } },
     [5] = { { 26, 26, 0, 0 }, { 27, 27, 0, 0 } } };
-static const int page_lines[PAGES] = { [0] = 5, [1] = 6, [3] = 2, [4] = 3, [5] = 2 };
+static const int page_lines[PAGES] = { [0] = 5, [1] = 5, [3] = 2, [4] = 3, [5] = 2 };
 static int mode = CAR_NORMAL;           /* the game mode the last game was started in (0x1d25c) */
 static const int laps[4] = { 3, 5, 10, 25 };            /* 0x21e0 + 1 */
 
@@ -317,7 +318,7 @@ const uint32_t *menu_palette(void)
 void menu_options(struct menu_options *o)
 {
     const struct item *it = items[1];
-    *o = (struct menu_options){ it[0].value, it[1].value, laps[it[2].value], it[3].value, it[4].value };
+    *o = (struct menu_options){ 2, it[0].value, laps[it[1].value], it[2].value, it[3].value };
 }
 
 /* the options page's values as CHOICE.DAT has them (0x1bbb8 copies them to 0x102de8's
@@ -325,19 +326,19 @@ void menu_options(struct menu_options *o)
 void menu_options_load(void)
 {
     struct item *it = items[1];
-    const int32_t v[5] = { choice.detail, choice.difficulty, choice.laps, choice.speech, choice.music };
-    it[1].max = choice.difficulties;
-    for(int k = 0; k < 5; k++) it[k].value = v[k] >= 0 && v[k] <= it[k].max ? v[k] : it[k].value;
+    const int32_t v[4] = { choice.difficulty, choice.laps, choice.speech, choice.music };
+    it[0].max = choice.difficulties;
+    for(int k = 0; k < 4; k++) it[k].value = v[k] >= 0 && v[k] <= it[k].max ? v[k] : it[k].value;
 }
 
 static void options_store(void)
 {
     const struct item *it = items[1];
-    choice.detail = it[0].value;
-    choice.difficulty = it[1].value;
-    choice.laps = it[2].value;
-    choice.speech = it[3].value;
-    choice.music = it[4].value;
+    choice.detail = 2;                          /* HI: what the core draws */
+    choice.difficulty = it[0].value;
+    choice.laps = it[1].value;
+    choice.speech = it[2].value;
+    choice.music = it[3].value;
 }
 
 int menu_mode(void)
@@ -477,7 +478,7 @@ static int page_step(uint32_t press)
         snd_play(SND_MENU_LINE);
     } else if(it->id == OPTION && (press & (KEY_LEFT | KEY_RIGHT | KEY_B | KEY_START))) {
         if(landed()) {                          /* 0x297d4, the game's ENTER: the next value */
-            items[1][1].max = choice.difficulties;      /* AFTERBURNER once the Bullet is won */
+            items[1][0].max = choice.difficulties;      /* AFTERBURNER once the Bullet is won */
             it->value = (it->value + (press & KEY_LEFT ? it->max : 1)) % (it->max + 1);
             options_store();
             turning = 1;
