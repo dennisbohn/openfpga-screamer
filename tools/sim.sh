@@ -6,7 +6,8 @@
 # drives them; all paths (also in args) are relative to the repository root.
 # SIM_DEFINES adds Verilator options, e.g. a fault in a memory model for a negative test:
 #   SIM_DEFINES="-DSDRAM_FAULT_DQM_SWAP=1" tools/sim.sh soc ...
-# Each set of options gets its own build directory.
+# Each set of options gets its own build directory; runs started at the same time take turns
+# building it (flock), then simulate side by side.
 # SIM_GAME names a folder inside the repository with the game's original files (all the ones
 # core/data.json names: GFX/MAP1H.DAT .. MAP6H.DAT, GAME.DAT, MENU.DAT, GRAF.DAT, DATA/MAP1.DAT
 # .. MAP6.DAT, GEN.DAT, LOCAL.DAT, SOUND.DAT, in their folders; build/ is ignored by git, game
@@ -48,7 +49,7 @@ fi
 mkdir -p "$root/build/sim"
 
 MSYS_NO_PATHCONV=1 docker run --rm -e SIM_GAME -e SIM_QUICK -e SIM_IMAGE -e SIM_KEYS -e SIM_RACE_FRAMES -e SIM_TRACK -e SIM_MENU -e SIM_WAV -v "$mount:/work" -w /work --entrypoint sh "$image" -c "
-    verilator --cc --exe --build -j 0 -O3 --timescale 1ns/1ps -Wall -Wno-UNUSEDSIGNAL -Wno-DECLFILENAME \
+    flock build/sim/$obj.lock verilator --cc --exe --build -j 0 -O3 --timescale 1ns/1ps -Wall -Wno-UNUSEDSIGNAL -Wno-DECLFILENAME \
         $defines --Mdir build/sim/$obj -f sim/$tb/files.f sim/$tb/tb.cpp \
         > build/sim/$obj.build.log 2>&1 || { cat build/sim/$obj.build.log; exit 1; }
     build/sim/$obj/V$top $*
