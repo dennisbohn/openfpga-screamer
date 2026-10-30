@@ -440,10 +440,11 @@ static void compare_log(volatile uint8_t *fb, volatile uint8_t *m, uint32_t t0)
     dlog_char('\n');
 }
 
-/* Once per run: the frame just drawn against the C models of the setup unit and the
-   rasterizer, drawn into the SDRAM in the same order (the 3D view in clip, the dashboard ds
-   if there is one, the radar's window, the race screen); the whole screen compared pixel by
-   pixel */
+/* Once per race in the simulation: the frame just drawn against the C models of the setup
+   unit and the rasterizer, drawn into the SDRAM in the same order (the 3D view in clip, the
+   dashboard ds if there is one, the radar's window, the race screen); the whole screen compared
+   pixel by pixel. Not on the Pocket: the CPU's redraw stood the race for a second after the
+   countdown's "three". */
 static void track_check(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam,
                         struct track_object *objs, int nobj, const struct blit_list *bk,
                         const struct blit_list *ds, const struct blit_list *bl)
@@ -610,8 +611,10 @@ static int run_track(int n, int car, int replay)
        testbench gives data slot RACE_SLOT, which core/data.json does not have, the size n; the
        start lights' countdown then runs at once before the first picture, and the n-th frame
        after the green light is checked and reported instead of the third. 0: as on the Pocket. */
-    uint32_t sim_race = (SYS_FLAGS & FLAG_SIM) ? slot_size(RACE_SLOT) : 0;
-    uint32_t check_at = 2 + sim_race;           /* the frame checked against the C models */
+    const uint32_t sim = SYS_FLAGS & FLAG_SIM;
+    uint32_t sim_race = sim ? slot_size(RACE_SLOT) : 0;
+    uint32_t check_at = 2 + sim_race;           /* the frame checked against the C models (in the
+                                                   simulation; on the Pocket only logged) */
     for (;;) {
         uint32_t st = wait_swap_done(), keys = IN_KEY, t_frame = rdcycle();
         tl_begin(t_frame);
@@ -619,10 +622,13 @@ static int run_track(int n, int car, int replay)
         tl_mark(TL_MUSIC);
         frames_shown = drawn;
         if (drawn == check_at + 1) {
-            SYS_SIM = SIM_DONE | results;
             dlog_str("stack used ");
             dlog_dec((int32_t)stack_used());
-            dlog_str(" bytes\nSYS_SIM=");
+            dlog_str(" bytes\n");
+        }
+        if (sim && drawn == check_at + 1) {
+            SYS_SIM = SIM_DONE | results;
+            dlog_str("SYS_SIM=");
             dlog_hex(SIM_DONE | results);
             /* the checked frame's camera and car, to set against the original's
                (tools/dosram.py cam): places in units, angles in 1/10000 rad */
@@ -759,7 +765,10 @@ static int run_track(int n, int car, int replay)
         uint32_t r_drain = RS_DRAIN_CLOCKS, r_starved = RS_STARVED;
         ts.faces = GU_FACES;
         uint32_t efx_objects = efx_cyc_objects, efx_radar = efx_cyc_radar;    /* (the check adds) */
-        if (drawn == check_at) track_check(fb, &clip, &cam, objs, nobj, &back, cockpit ? &dashboard : 0, &hud);
+        if (drawn == check_at) {
+            if (sim) track_check(fb, &clip, &cam, objs, nobj, &back, cockpit ? &dashboard : 0, &hud);
+            else dlog_str("track check: simulation only\n");
+        }
 
         if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
             fps = drawn - fps_drawn;
@@ -1211,12 +1220,15 @@ static int race(int n, int car)
     }
     if (load_image() || build_track(n)) {
         int bad = 0;
+        uint32_t t0 = rdcycle();
         for (int k = 0; k < track_blocks(); k++)
             bad += !track_block_ok(k);
         dlog_str("track image: CRC of the 256 KB blocks:");
         for (int k = 0; bad && k < track_blocks(); k++)     /* each, if one is damaged (the log has 4 KB) */
             dlog_str(track_block_ok(k) ? " ok" : " BAD");
-        dlog_str(bad ? " - damaged in the SDRAM, not used\n" : " all ok\n");
+        dlog_str(bad ? " - damaged in the SDRAM, not used (" : " all ok (");
+        dlog_dec((int32_t)((rdcycle() - t0) / (CPU_HZ / 1000)));
+        dlog_str(" ms)\n");
         if (!bad) placements = track_init();
     }
     if (!placements) return 0;
