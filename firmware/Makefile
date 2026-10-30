@@ -28,7 +28,7 @@ CFLAGS  += -DFAULT_$(FAULT)
 endif
 
 BOOT_SRCS = start.S boot.c selftest.c console.c dlog.c trap.c memtest.c screen.c crc32.c slot.c
-PROG_SRCS = start_prog.S main.c console.c dlog.c trap.c screen.c raster.c texdemo.c track.c crc32.c slot.c setup.c geom.c drive.c car.c opp.c ghost.c blit.c hud.c efx.c scenery.c sound.c speech.c music.c menu.c champ.c save.c \
+PROG_SRCS = start_prog.S main.c console.c dlog.c trap.c screen.c raster.c texdemo.c track.c crc32.c slot.c setup.c geom.c drive.c car.c opp.c ghost.c blit.c hud.c efx.c scenery.c sound.c speech.c music.c menu.c champ.c save.c intro.c \
             track_build.c dat.c tb_mmp.c tb_spl.c tb_gfx.c tb_hud.c
 BOOT_OBJS = $(patsubst %,$(OUT)/obj/%.o,$(basename $(BOOT_SRCS)))
 PROG_OBJS = $(patsubst %,$(OUT)/obj/%.o,$(basename $(PROG_SRCS)))

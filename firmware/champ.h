@@ -31,7 +31,8 @@ struct choice_dat {
     float time[6];                          /* +0x024 per race the total time, */
     int32_t pos[6], pts[6];                 /* +0x03c the place (-1: not raced) and the points */
     struct choice_rec lap[6], race[6];      /* +0x06c, +0x24c the records */
-    int32_t bullet, view, unused0, speech, music;   /* +0x42c the Bullet won, the start view, */
+    int32_t bullet, view, intro, speech, music;     /* +0x42c the Bullet won, the start view, the
+                                               intro's track - 1 (one on after each, 0x27f06), */
     int32_t failed;                         /* +0x440 the last race: 1 time over, 2 out of reach */
     int32_t volume[3], unused1, level, level_shown, difficulties;   /* +0x444 .. +0x45c */
 };

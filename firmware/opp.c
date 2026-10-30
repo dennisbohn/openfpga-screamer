@@ -562,11 +562,12 @@ int opp_objects(struct track_object *objs, int max)
     return n;
 }
 
-int opp_where(int k, float *x, float *y)
+int opp_where(int k, float *x, float *y, float *z)
 {
     if(k < 0 || k >= nopp) return 0;
     *x = opp[k].x;
     *y = opp[k].y;
+    if(z) *z = opp[k].z;
     return 1;
 }
 

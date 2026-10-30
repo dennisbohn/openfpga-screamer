@@ -109,6 +109,45 @@ einmal, während er zeichnet (siehe „Die CD-Musik“).
   Option DETAIL: L bei LOW, H ab MID; nicht die Auflösung)
 - `TABS/`: `PERSP01.TAB`, `VIS.TAB`
 
+## Intro
+
+Wie im Original (`0x276a0`, OpenScreamer `docs/NOTES.md` Abschnitte 26 und 30), in
+`firmware/intro.c` und `run_intro`/`intro` in `main.c`. Das Hauptprogramm des Originals
+(`0x10020`) wechselt Intro und Menü ab: das Intro beim Start vor dem Hauptmenü und wieder, wenn
+das Hauptmenü (Seite 0, keine Seite geöffnet) 30 s ohne Taste stand (`0x288bf` zählt,
+`0x2802f` mit `0x100edc` = 30,0; `MENU_IDLE`).
+
+- **Das Rennen:** ein echtes Rennen ohne Spieler (`0x27710`: Modus `0x100`, Merker `0x2001`:
+  sofort gestartet, „attract“; Schwierigkeit NORMAL, Optionswort 0), auf Strecke
+  `CHOICE.DAT` +0x434 + 1; der Zähler geht nach jedem Intro eins weiter und nach 5 auf 0
+  (`0x27f06`). Aufgebaut wie ein Rennen, aber direkt (`0x128dc`, kein Ladebild: der Schirm bleibt
+  schwarz), die Musik des Menüs. Je Bild laufen nur die Gegner, Requisiten und bewegte Szenerie
+  und die Kamera (`0x2780c`, die fünf Routinen je Gegner); das Auto des Spielers gibt es nicht
+  (bei uns `car_intro`: aus der Welt genommen, sein Motor still, `car_step` läuft nicht). Das
+  Bild blendet wie ein Rennen in einer halben Sekunde ein (`0x21e50`), die Autos fahren los,
+  sobald es ganz da ist.
+- **Die Kamera** (Zeile 4 der Ansichtstabelle, Routine 8: `0x1aeb4`): jeder Gegner hat seine
+  eigene (`0x1a920`, Satz +0x4f8): der Pfosten aus `MAPnCAM.SPL` (14–29 Knoten), der ihm auf dem
+  Boden am nächsten ist, auf ihn gerichtet wie die Kamera am Streckenrand; `|Höhe| % 10` des
+  Pfostens ist ein Code: Bit 1 immer, Bit 2 solange sich das Auto entfernt, Bit 4 solange es
+  kommt, rückt die Kamera bis auf 1500 an das Auto heran (an einem neuen Pfosten zählt die
+  Entfernung vom Ort des Autos einen Schritt vorher). Ändert sich das am selben Pfosten, fliegt
+  sie hinüber (`0x19ad8`, `0x19ef0`: der Abstand klingt mit damp[90] bzw. 0x19 je Schritt ab),
+  ein neuer Pfosten ist ein Schnitt. Gezeigt wird ein Auto (`0x110a14`, anfangs das erste); alle
+  10 s (`0x27e64`, 1000 Ticks) stellt `0x19d82` das nächste an einem anderen Pfosten bereit,
+  es übernimmt beim nächsten Pfostenwechsel des gezeigten (`0x1aef3`). Die Geräusche (Motoren
+  der Gegner, Szenerie) hört man von dieser Kamera.
+- **Logos und Abspann** (`0x279d4`): die Blöcke von `ATTR.TXT` (`LOCAL.DAT`, durch `#`
+  getrennt, 19 Stück), Schrift 0 aus `ATTRL.FNT`, Farbe 2, Zeile i bei y = 20·i, jede von +350
+  zur Mitte geglitten (Steifigkeit 0x5a, ganze Pixel, `0x27b64`); nach 4 s gehen sie nach −400
+  hinaus, ist eine über −360, kommt der nächste Block. Dazu die Logos aus `LOGOL.SPR`
+  (`0x279fc`): beim ersten Block Sprite 0 (y 4), beim zweiten Sprite 1 (y 28), von −320
+  hereingeglitten (0x50) und mit dem Block hinaus; ab dem dritten Sprite 2 (y 4), herein mit
+  0x5a, beim letzten Block (18) hinaus nach −340. Alles in der Palette der Strecke.
+- **Ende:** B, A, START oder SELECT (`0x211d0`: ENTER, ESC, Leertaste, Joystick-Knopf) oder das
+  Ende des Abspanns (Zustand 3) blenden Bild und Ton in einer Sekunde aus (`0x27d28`), dann das
+  Hauptmenü, jede Seite auf ihrer ersten Zeile (`0x27eb4`).
+
 ## Hauptmenü und Optionen
 
 Wie im Original (sein Bildschirm 0, die Seiten: Tabellen aus 16-Byte-Einträgen `[Zeile, id,
@@ -145,7 +184,7 @@ vierte Potenz) und rollt von −4π an mit π/s, die Buchstaben stehen, das Bild
 aus (`0x293e8`), dann ENTER YOUR NAME (siehe unten) und die Streckenwahl. NETWORK GAME zeigt
 wie das Original ohne Netzwerk `NETWORK NOT FOUND` (Zeile 55, Schrift 0, Farbe 2, y 190,
 blinkend), SPECIAL MODES siehe „Spezialmodi“, CHAMPIONSHIP siehe „Meisterschaft“, VIEW RECORDS
-siehe „Rekorde“. Die Seiten blenden mit 0,6/s ein (`0x29ea0`): nach dem Start, nach A oder
+siehe „Rekorde“. Die Seiten blenden mit 0,6/s ein (`0x29ea0`): nach dem Intro, nach A oder
 SELECT auf dem Namen, den Rekorden einer Strecke und nach jedem Rennen (`0x2a114` → `0x29ea0`;
 zurück vom Namen oder den Rekorden die Seite, auf der man war, `0x28a7c`).
 

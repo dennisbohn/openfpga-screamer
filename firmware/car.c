@@ -1314,6 +1314,13 @@ float car_lap_record(void)
     return record;
 }
 
+void car_intro(void)
+{
+    race.on = 1;
+    pc.x += 1.0e7f;
+    snd_engine = snd_stop(snd_engine);
+}
+
 void car_trackside_init(const uint8_t *dat, uint32_t dat_size, int n)
 {
     static int32_t spl[2 + 14 * RPL_MAX];       /* count, start, nodes of 14 words */

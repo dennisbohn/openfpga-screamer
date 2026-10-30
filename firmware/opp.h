@@ -25,8 +25,9 @@ void opp_step(void);
    (SHADOW.3DX, efx.h, if loaded), their blocks made when they come up in the drawing */
 int opp_objects(struct track_object *objs, int max);
 
-/* Where opponent k is (0 .. opp_count() - 1): 1 and its place on the ground */
-int opp_where(int k, float *x, float *y);
+/* Where opponent k is (0 .. opp_count() - 1): 1 and its place on the ground, and its height
+   (z, if given) */
+int opp_where(int k, float *x, float *y, float *z);
 
 /* How many there are; the player's place in the running order (1 = leading) */
 int opp_count(void);

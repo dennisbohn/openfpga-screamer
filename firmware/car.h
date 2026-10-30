@@ -123,8 +123,13 @@ extern int car_laps;
 #define CAR_NETWORK 0x10
 #define CAR_CONES   0x20
 #define CAR_SLALOM  0x40
+#define CAR_INTRO   0x100       /* the intro's race without a player (intro.h, 0x277d5) */
 #define CAR_ALONE   (CAR_ATTACK | CAR_CONES | CAR_SLALOM)
 extern int car_mode;
+/* The intro's race (intro.h), after car_init(): on at once (flags 0x2001, no start lights), the
+   player's car out of the world, as the intro has none (0x2780c steps only the opponents), and
+   its engine silent; car_step() is not called */
+void car_intro(void);
 /* The mode's numbers of track n from its DATA container dat: the carnage time of TRACK_DATA in
    the difficulty's MAPn?.DTR (0 ROOKIE = A, as track_build.h), slalom's gates; before car_init() */
 void car_mode_init(const uint8_t *dat, uint32_t dat_size, int n, int difficulty);

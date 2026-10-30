@@ -67,6 +67,7 @@
 #define CHAMP_LINES 66              /* CHAMP.TXT's lines, its '*' lines not counted, */
 #define CHAMP_BLOCKS 20             /* its blocks (each ends with a line with a '#') */
 #define IDLE_STEPS  500             /* 10 s without a key on the championship's screen: ENTER */
+#define IDLE_INTRO  1500            /* 30 s on the main menu: the intro (0x2802f, 0x100edc) */
 #define ROW_COLOUR  15              /* the standings' table (0x2ce58) */
 #define FONT_ROW    1               /* the records' rows (0x2d348) */
 #define RING        26              /* the name screen's cubes A .. Z in a ring (0x2c320): radius */
@@ -99,7 +100,8 @@ const struct menu_part menu_graf_parts[] = {
     { "LOAD1L.PCX", ~0u }, { "LOAD2L.PCX", ~0u }, { "LOAD3L.PCX", ~0u }, { "LOAD4L.PCX", ~0u },
     { "LOAD5L.PCX", ~0u }, { "LOAD6L.PCX", ~0u }, { "CHAMP0L.PCX", ~0u }, { "CHAMP1L.PCX", ~0u },
     { "CHAMP2L.PCX", ~0u }, { "CHAMP3L.PCX", ~0u }, { "CHAMP4L.PCX", ~0u }, { "CHAMP5L.PCX", ~0u },
-    { "CHAMP6L.PCX", ~0u }, { "CHAMP7L.PCX", ~0u }, { "MENU2L.PCX", ~0u }, { 0, 0 } };
+    { "CHAMP6L.PCX", ~0u }, { "CHAMP7L.PCX", ~0u }, { "MENU2L.PCX", ~0u }, { "LOGOL.SPR", ~0u },
+    { "ATTRL.FNT", ~0u }, { 0, 0 } };
 
 /* CARDAT.TXT's six lines a car: name, gearbox (0 automatic, 1 manual), km/h, grip and
    acceleration steps (0..4), 0; of its CARS.DTR row the model and the paint job */
@@ -152,6 +154,7 @@ static int nlet, page, shown, sel[PAGES], style, turning, leaving, network;    /
 static float wave, logo[2], cam_z = PAGE_CAM_Z, back_f, roll;
 static uint32_t ticks;                                  /* 100 a second, for the blinking */
 static int rec_track, rec_sel;          /* VIEW RECORDS: the track (0x20988), the total chosen (0x2098c) */
+static int page_idle, idle_out;         /* steps on the main menu without a key (0x1d248); gone */
 /* the name screen's cubes (records of 0x1db74 too): the wait before it drops, its fall's
    progress p (the height top + p^2 (rest - top)), the height it drops from, falling 1, rising 0,
    at rest -1, its tilt; the alphabet's place (0x1d238, all three letters'), the letter being
@@ -389,6 +392,11 @@ int menu_mode(void)
     return mode;
 }
 
+void menu_fresh(void)
+{
+    memset(sel, 0, sizeof sel);
+}
+
 const uint8_t *menu_mlb(void)
 {
     return mlb;
@@ -443,7 +451,7 @@ void menu_enter(int screen, int n)
     if(pages_on) {                              /* 0x29ea0: the logos 400 and 800 left of their places */
         if(n >= 1 && n <= PAGES && page_lines[n - 1]) page = n - 1;
         page_build(1);
-        turning = leaving = network = 0;
+        turning = leaving = network = page_idle = idle_out = 0;
         cam_z = PAGE_CAM_Z;
         roll = 0.0f;
         logo[0] = (float)((PIC_W - (int)img[SPR_LOGO + 1].w) / 2 - 400);
@@ -512,6 +520,11 @@ static int page_step(uint32_t press)
         roll += DT * PI;
         return 0;
     }
+    /* 0x288bf: the time without a key counts on the main menu alone (screen 0, no page
+       opened); over 30 s the menu is left for the intro (0x2802f) */
+    page_idle = press ? 0 : page_idle + (page == 0);
+    if(page_idle > IDLE_INTRO) idle_out = 1;
+    if(idle_out) return MENU_IDLE;
     if((press & KEY_UP) && sel[page] > 0) {     /* no wrap (0x2848e) */
         sel[page]--;
         network = 0;

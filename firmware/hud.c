@@ -169,7 +169,7 @@ static void radar(struct blit_list *l)
     }
     float fc = cosf(c->yaw), fs = sinf(c->yaw), k = (float)RADAR_ZOOM * 3.0517578125e-05f;    /* ds:0xe40 */
     float ox, oy;
-    for(int j = 0; opp_where(j, &ox, &oy); j++) {
+    for(int j = 0; opp_where(j, &ox, &oy, 0); j++) {
         float dx = (float)((int32_t)ox - px), dz = (float)((int32_t)oy - pz);
         int32_t rx = (int32_t)(dx * fc + dz * fs), rz = (int32_t)(dz * fc - dx * fs);
         sprite_cut(l, (int)(39.0f - (float)rx * k), (int)((float)rz * k + 159.0f), 5,

@@ -22,7 +22,8 @@
 #   frames into build/host/f (tools/host/render.c), to compare two versions with cmp. MODE=m: the
 #   game mode (car.h, 4 time attack, 0x20 cone carnage, 0x40 slalom) instead of the normal game;
 #   with GHOST=1 and MODE=4 REPLAYCHECK runs two robot races, the second against the first one's
-#   ghost.
+#   ghost. INTRO=1: the intro's picture after the steps (the third argument), the logos and
+#   credits over it (main.c run_intro).
 # The firmware's sources are copied to build/host/ with hw.h's RISC-V instructions made plain C;
 # built and run with the simulation's Docker image (gcc).
 set -e
@@ -61,6 +62,7 @@ else
     fi
     cp "$root/build/check/track$n.bin" "$root/build/host/track$n.bin"
     [ -n "$PAUSE" ] && cp "$game/GFX/GAME.DAT" "$root/build/host/"
+    [ -n "$INTRO" ] && cp "$game/GFX/GRAF.DAT" "$game/DATA/LOCAL.DAT" "$root/build/host/"
     cp "$game/GFX/MAP${n}H.DAT" "$game/DATA/MAP$n.DAT" "$root/build/host/"
     run="./render track$n.bin MAP${n}H.DAT MAP$n.DAT"
     args="${2:-2} ${3:-2} $n ${CAR:-0}"
@@ -68,7 +70,7 @@ fi
 if command -v cygpath >/dev/null 2>&1; then mount=$(cygpath -wa "$root/build"); else mount=$root/build; fi
 out=$(basename "$1")
 MSYS_NO_PATHCONV=1 docker run --rm ${CAM:+-e CAM} ${REFL:+-e REFL} ${GAS:+-e GAS} ${TURN:+-e TURN} ${BRAKE:+-e BRAKE} ${PAUSE:+-e PAUSE} ${MENUKEYS:+-e MENUKEYS} ${CHAMP:+-e CHAMP} \
-    ${TRACKSIDE:+-e TRACKSIDE} ${HUD:+-e HUD} ${REPLAYCHECK:+-e REPLAYCHECK} ${REPLAYAT:+-e REPLAYAT} ${NOHUD:+-e NOHUD} ${REPLAYDUMP:+-e REPLAYDUMP} ${MODE:+-e MODE} ${GHOST:+-e GHOST} -v "$mount:/b" --entrypoint sh verilator/verilator:v5.050 -c "
+    ${TRACKSIDE:+-e TRACKSIDE} ${HUD:+-e HUD} ${REPLAYCHECK:+-e REPLAYCHECK} ${REPLAYAT:+-e REPLAYAT} ${NOHUD:+-e NOHUD} ${REPLAYDUMP:+-e REPLAYDUMP} ${MODE:+-e MODE} ${GHOST:+-e GHOST} ${INTRO:+-e INTRO} -v "$mount:/b" --entrypoint sh verilator/verilator:v5.050 -c "
     cd /b/host/src && gcc -O2 -w ${DUMP:+-DTRACK_DUMP} -o ../render render.c track.c geom.c setup.c raster.c car.c drive.c opp.c ghost.c \
-        efx.c scenery.c sound.c speech.c blit.c dlog.c crc32.c dat.c console.c menu.c champ.c tb_hud.c tb_spl.c tb_mmp.c hud.c -lm && cd /b/host && $run $out $args"
+        efx.c scenery.c sound.c speech.c blit.c dlog.c crc32.c dat.c console.c menu.c champ.c intro.c tb_hud.c tb_spl.c tb_mmp.c hud.c -lm && cd /b/host && $run $out $args"
 mv "$root/build/host/$out" "$1"

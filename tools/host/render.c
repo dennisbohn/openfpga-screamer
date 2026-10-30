@@ -50,6 +50,7 @@
 #include "champ.h"
 #include "hud.h"
 #include "crc32.h"
+#include "intro.h"
 
 #define MENU_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x200000))       /* as main.c */
 #define GRAF_FILE   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x600000))
@@ -146,7 +147,7 @@ static void check_values(float *v)
     v[0] = c->x; v[1] = c->y; v[2] = c->z; v[3] = c->yaw; v[4] = c->speed;
     for (int k = 0; k < 16; k++) {
         float x = 0.0f, y = 0.0f;
-        if (k < opp_count()) opp_where(k, &x, &y);
+        if (k < opp_count()) opp_where(k, &x, &y, 0);
         v[5 + 2 * k] = x;
         v[6 + 2 * k] = y;
     }
@@ -378,6 +379,49 @@ static int menu(int argc, char **argv)
     return 0;
 }
 
+/* INTRO=1: the intro's picture after steps steps of its race (main.c's run_intro), the logos
+   and credits over it (GRAF.DAT and LOCAL.DAT in the working directory) */
+static int intro_frame(int steps, int car, int n, uint32_t data_size, const char *out)
+{
+    uint32_t graf_size = load("GRAF.DAT", GRAF_FILE, 0x400000), local_size = load("LOCAL.DAT", LOCAL_FILE, 0x10000);
+    if (!intro_init(GRAF_FILE, graf_size, LOCAL_FILE, local_size, MENU_MEM, 0x40000, SCRATCH, 0x2A0000)) {
+        fprintf(stderr, "intro: its files are not all there\n");
+        return 1;
+    }
+    car_mode = CAR_INTRO;
+    car_init(car, 0);
+    opp_init(car);
+    car_intro();
+    intro_start(DATA_FILE, data_size, n);
+    for (int k = 0; k < steps; k++) {
+        opp_step();
+        scenery_step();
+        intro_step();
+    }
+    track_clock((uint32_t)steps);
+    struct track_cam cam;
+    static struct track_object objs[MAX_OBJECTS];
+    intro_camera(&cam);
+    int nobj = opp_objects(objs, MAX_OBJECTS);
+    nobj += scenery_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
+    const struct rs_clip clip = { 0, 0, FB_W, FB_H };
+    volatile uint8_t *fb = FB(0);
+    static struct blit_list l;
+    blit_start(&l, 0);
+    track_backdrop_blit(&l, &clip, &cam);
+    blit_model(fb, &l);
+    struct track_stats ts;
+    track_mode = TRACK_MODEL;
+    track_draw_cam(fb, &clip, &cam, objs, nobj, &ts);
+    blit_start(&l, 0);
+    intro_text(&l);
+    blit_model(fb, &l);
+    write_rgb(out, track_palette());
+    printf("camera %.0f %.0f %.0f yaw %.4f pitch %.4f; %d pieces, %d faces, %d objects\n",
+           cam.x, cam.y, cam.h, cam.yaw, cam.pitch, ts.pieces, ts.faces, nobj);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     map();
@@ -400,6 +444,7 @@ int main(int argc, char **argv)
     if (getenv("REPLAYCHECK") && getenv("GHOST"))
         return ghost_check(atoi(getenv("REPLAYCHECK")), car, n, data_size, gfx_size, argv[4]);
     if (getenv("REPLAYCHECK")) return replay_check(atoi(getenv("REPLAYCHECK")), car, n, data_size, gfx_size, argv[4]);
+    if (getenv("INTRO")) return intro_frame(steps, car, n, data_size, argv[4]);
     car_init(car, 0);
     opp_init(car);
     car_view(view);
@@ -467,7 +512,7 @@ int main(int argc, char **argv)
     write_rgb(argv[4], track_palette());
     for (int k = 0; k < opp_count(); k++) {
         float x, y;
-        if (opp_where(k, &x, &y)) printf("opponent %d at %.1f %.1f\n", k, x, y);
+        if (opp_where(k, &x, &y, 0)) printf("opponent %d at %.1f %.1f\n", k, x, y);
     }
     printf("camera %.0f %.0f %.0f yaw %.4f pitch %.4f; %d pieces, %d faces, %d objects\n",
            cam.x, cam.y, cam.h, cam.yaw, cam.pitch, ts.pieces, ts.faces, nobj);

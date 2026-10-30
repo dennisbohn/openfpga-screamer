@@ -45,6 +45,8 @@
 #define MENU_CHAMP_RESUME   28
 /* and a track's line on VIEW RECORDS' page: this + the track (1 .. MENU_TRACKS) */
 #define MENU_RECORDS        40
+/* and 30 s on the main menu without a key: the intro (intro.h) */
+#define MENU_IDLE           50
 
 /* The options page's choices (the game's page 1, kept in CHOICE.DAT): DETAIL 0 LOW .. 2 HI
    (shown only: the core always draws the H set whole), the difficulty 0 ROOKIE, 1 NORMAL, 2 PRO
@@ -58,6 +60,8 @@ void menu_options_load(void);
 /* The game mode of the game menu_step() started last (car.h's CAR_NORMAL ..; the game's word
    0x1d25c) */
 int menu_mode(void);
+/* The menu as the intro leaves it (0x27eb4): each page at its first line */
+void menu_fresh(void);
 
 /* What menu_init() reads of the two containers: these entries, MENU.MLB whole (the cars'
    textures lie all over it); a NULL name ends the list */
@@ -102,7 +106,8 @@ void menu_enter(int screen, int n);
    the game's mode), from then on the camera pulls back and rolls (0x293e8) while the caller fades
    out at 2 a second, the keys not taken. NETWORK GAME shows the game's NETWORK NOT FOUND; VIEW
    RECORDS opens the page of the six tracks (SND_MENU_PAGE; A or SELECT there back to the
-   options), a track there leaves as a game does: MENU_RECORDS + the track. The championship's
+   options), a track there leaves as a game does: MENU_RECORDS + the track. 30 s on the main
+   menu without a key: MENU_IDLE, the caller fades out (the intro next). The championship's
    screen: B or START, or 10 s without a key (0x2d301), as ENTER: 1; A or SELECT on a race's text
    screen as ESC (0x2829d): -1 (both silent). A track's records: up and down choose a total
    (SND_MENU_RECORD), A or SELECT: -1. The name: up and down the letter being set

@@ -40,6 +40,7 @@
 #include "speech.h"
 #include "champ.h"
 #include "save.h"
+#include "intro.h"
 
 uint32_t frames_shown;             /* read by the trap handler */
 
@@ -87,6 +88,10 @@ static int track_loaded;                /* the track whose two containers are lo
 #define MENU_MAX    0x400000
 #define MENU_MEM    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0xA00000))
 #define MENU_SIZE   0x80000
+/* the intro's logos and font (intro.h), after the menu's */
+#define INTRO_MEM   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0xA80000))
+#define INTRO_SIZE  0x40000
+static int intro_ok;
 /* the effects through MAPn.SMG (efx.h): 64 KB right under the track image, so that the radar's
    material at its end lies within a face's reach (32 KB) of the image's MLB */
 #define EFX_SIZE    0x10000
@@ -1070,8 +1075,11 @@ static int menus(void)
              menu_init((const uint8_t *)(uintptr_t)MENU_FILE, menu_size, (const uint8_t *)(uintptr_t)GRAF_FILE,
                        graf_size, game.local, game.local_size, game.gen, game.gen_size, MENU_MEM, MENU_SIZE,
                        (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH);
+    intro_ok = ok && intro_init((const uint8_t *)(uintptr_t)GRAF_FILE, graf_size, game.local, game.local_size, INTRO_MEM,
+                                INTRO_SIZE, (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH);
     while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* the pictures in the SDRAM for the blitter */
         ;
+    if (!intro_ok) dlog_str("intro: LOGOL.SPR, ATTRL.FNT or ATTR.TXT missing (no intro)\n");
     dlog_str("menu: MENU.DAT ");
     dlog_dec((int32_t)menu_size);
     dlog_str(", GRAF.DAT ");
@@ -1374,13 +1382,11 @@ static const uint32_t *loading(int n)
    (0x2a264), PLAY AGAIN's from the race before (0x20eb8).
    Once all is set up the loading screen fades out, the picture alone (0x128dc(1): 0x21d8c(0));
    a race left, or to be set up again, fades out with its sound (0x21d8c(1): 0x1feed, 0x128dc(0)). */
-static int race(int n, int car)
+/* Track n's containers loaded (unless they are) and its image built and checked: its
+   placements, 0 if it could not be set up */
+static int track_ready(int n)
 {
     int placements = 0;
-    music_stop();                               /* before the loads: none of its reads running; the
-                                                   menu's song ends as the loading screen goes up */
-    const uint32_t *shown = loading(n);
-    car_lap_to_beat = choice.lap[(n - 1) % MENU_TRACKS].time[0];
     if (track_loaded != n) {
         track_loaded = 0;
         if (!load_containers(n, TRACK_FILES)) return 0;
@@ -1399,6 +1405,16 @@ static int race(int n, int car)
         dlog_str(" ms)\n");
         if (!bad) placements = track_init();
     }
+    return placements;
+}
+
+static int race(int n, int car)
+{
+    music_stop();                               /* before the loads: none of its reads running; the
+                                                   menu's song ends as the loading screen goes up */
+    const uint32_t *shown = loading(n);
+    car_lap_to_beat = choice.lap[(n - 1) % MENU_TRACKS].time[0];
+    int placements = track_ready(n);
     if (!placements) return 0;
     const volatile uint32_t *pal = (const volatile uint32_t *)track_palette();
     col_bg = nearest(pal, 0, 0, 0);
@@ -1436,6 +1452,117 @@ static int race(int n, int car)
         if (end == RACE_LEAVE) return 1;
         replay = end == RACE_REPLAY;
     }
+}
+
+/* The intro's race on track n, set up (intro.h): each frame the opponents, the scenery and the
+   intro's camera (0x2780c), the logos and credits over the picture (0x279d4). It fades in from
+   black as a race does (0x21e50), the cars go once it is all there (as the original looks);
+   B, A, START or SELECT (0x211d0: ENTER, ESC, SPACE, the
+   joystick's buttons), or the credits' end, fade picture and sound out in a second (0x27d28),
+   which ends it. */
+static void run_intro(int n)
+{
+    static struct track_object objs[MAX_OBJECTS];
+    const uint32_t *pal = track_palette();
+    const struct rs_clip clip = { 0, 0, FB_W, FB_H };
+    int32_t fade = 0;
+    uint32_t drawn = 0, keys_before = IN_KEY, last_frame = 0;
+    snd_fade(0);
+    music_fade(0);
+    car_init(choice.car, 0);                    /* the race's state; its car taken away: */
+    opp_init(choice.car);
+    car_intro();
+    intro_start(game.data, game.data_size, n);
+    track_mode = TRACK_HW;
+    track_hw_piece = hw_piece;
+    GU_MLB = (uint32_t)((uintptr_t)track_mlb() - SDRAM_BASE);
+    GU_INVAL = 1;
+    for (;;) {
+        uint32_t st = wait_swap_done(), keys = IN_KEY, t_frame = rdcycle();
+        music_frame();
+        frames_shown = drawn;
+        if (keys & ~keys_before & (KEY_A | KEY_B | KEY_START | KEY_SELECT)) intro_leave();
+        keys_before = keys;
+        uint32_t steps = drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
+        last_frame = VID_FRAME(st);
+        if (steps > 4) steps = 4;
+        if (fade < 0x8000 && (fade += (int32_t)steps * FADE_RACE) > 0x8000) fade = 0x8000;
+        int over = 0;
+        for (uint32_t k = 0; k < steps; k++) {
+            if (fade == 0x8000) {
+                opp_step();
+                scenery_step();
+            }
+            over |= intro_step();
+        }
+        int32_t level = (int32_t)((int64_t)fade * intro_level() >> 15);
+        snd_fade(level);
+        music_fade(level);
+        if (over) return;
+        track_clock(steps);
+        struct track_cam cam;
+        intro_camera(&cam);
+        int nobj = opp_objects(objs, MAX_OBJECTS);
+        nobj += scenery_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
+        struct su_view view;
+        track_view(&clip, &view);
+        draw_buf = !(st & VID_FRONT);
+        blit_start(&back, (int)draw_buf);
+        track_backdrop_blit(&back, &clip, &cam);
+        back_wait = 1;
+        hw_blit(&back);
+        pal_faded(pal, level);
+        GU_MODE = draw_buf << 8;
+        RS_CLIP0 = RS_XY(clip.x0, clip.y0);
+        RS_CLIP1 = RS_XY(clip.x1, clip.y1);
+        su_view_regs(&view);
+        struct track_stats ts;
+        track_draw_cam(0, &clip, &cam, objs, nobj, &ts);
+        back_wait = 0;
+        blit_start(&hud, (int)draw_buf);
+        intro_text(&hud);
+        hw_blit(&hud);
+        while (RS_DRAW & RS_BUSY)
+            ;
+        if (drawn % 500 == 2) {
+            dlog_str("intro frame ");
+            dlog_dec((int32_t)drawn);
+            dlog_str(": ");
+            dlog_dec((int32_t)ts.pieces);
+            dlog_str(" pieces, ");
+            dlog_dec((int32_t)(rdcycle() - t_frame));
+            dlog_str(" cycles\n");
+        }
+        VID_SWAP = 1;
+        drawn++;
+    }
+}
+
+/* The intro (intro.h, 0x276a0): its race on track CHOICE.DAT +0x434 + 1 set up as race() sets
+   one up, but straight (0x128dc: no loading screen, the screen black meanwhile), difficulty
+   NORMAL (0x2777f), the menu's song; then the track one on (0x27f06) and every page of the menu
+   at its first line (0x27eb4). */
+static void intro(void)
+{
+    int n = (int)((uint32_t)choice.intro % MENU_TRACKS) + 1;
+    black();
+    music_stop();
+    car_mode = CAR_INTRO;
+    track_build_difficulty = 1;
+    opp_bullet = 0;
+    if (track_ready(n)) {
+        effects(n);
+        sounds();
+        scenery(n);
+        RS_CTRL = 1;
+        music_play(0);
+        run_intro(n);
+        AU_STOP = 0xFFFFFFFFu;
+        music_stop();
+        snd_fade(0x8000);
+    }
+    choice.intro = (int32_t)((uint32_t)n % MENU_TRACKS);
+    menu_fresh();
 }
 
 /* The championship (champ.h) from NEW or RESUME on (0x28c6b, 0x28c9e) until it goes back to the
@@ -1494,9 +1621,10 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
        SELECT: the track screen again) and the race on the track chosen with the car chosen and
        the options page's laps, difficulty and speech, then the main menu again (0x2a114 ->
        0x29ea0), for ever; the championship after the name (champ.h). A track of VIEW RECORDS'
-       page shows its records, A or SELECT there goes back to the page (0x28a7c). The simulation
-       races the testbench's track with the first car at once, or shows the screen
-       MENU_CHECK_SLOT names. */
+       page shows its records, A or SELECT there goes back to the page (0x28a7c). The intro
+       before the main menu at the start and after 30 s there without a key (0x10020: intro, menu,
+       intro ...). The simulation races the testbench's track with the first car at once, or
+       shows the screen MENU_CHECK_SLOT names. */
     if (load_containers(0, FIXED_FILES)) {
         music_init(game.gen, game.gen_size);
         if (!hud_cd_init(game.game, game.game_size, CD_MEM, CD_SIZE, (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH))
@@ -1508,11 +1636,21 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         if (screen) menu_sounds();
         enum { AT_PAGES, AT_NAME, AT_TRACKS, AT_CARS };     /* the screen to go on with */
         const int first = !check ? AT_PAGES : check == 2 ? AT_CARS : AT_TRACKS;
-        for (int at = first, page = 1, g = 0;;) {
+        for (int at = first, page = 1, g = 0, show_intro = intro_ok && !check;;) {
             if (screen) {
                 if (at == AT_PAGES) {
+                    if (show_intro) {
+                        intro();
+                        menu_sounds();          /* the race had its own (sounds()) */
+                        show_intro = 0;
+                        page = 1;
+                    }
                     g = menu_screen(MENU_PAGE_SCREEN, page);
                     page = 0;                   /* back to it: the page as it was */
+                    if (g == MENU_IDLE) {
+                        show_intro = 1;
+                        continue;
+                    }
                     if (g > MENU_RECORDS) {
                         menu_screen(MENU_RECORDS_SCREEN, g - MENU_RECORDS);
                         continue;
