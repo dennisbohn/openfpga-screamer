@@ -568,13 +568,37 @@ v  = fistp(127 * r.z) + 127 - offz;                /* r.z, nicht r.y */
 REFL[off] = (v << 16) | (u & 0xffff);              /* 0xc3bd4, Index = Vertex-Byteoffset */
 ```
 
-`offx`, `offz` = `& 0xff` zweier Float-Akkumulatoren im Objekt (rec+0x30, +0x38), die pro Bild um
-0,002 × (Weg seit dem letzten Bild, mit B_cam gedreht) wachsen; nur bei bewegten Objekten,
-sonst 0. Das Setup 0xdb310 nimmt `u = REFL.u << 3` (ohne Materialgröße), der Nah-Clipper 0xda500
-dagegen `(REFL.u * mat[+8]) >> 5` — ein Unterschied im Original. Die x87-Zwischenwerte laufen in
-80 Bit mit einzelnen float32-Speicherungen; bitgenau ganzzahlig nachbauen geht nicht ohne
-Float-Nachbildung. Gelesen, **nicht am RAM geprüft**; dass v aus r.z kommt, steht so im Code
-(NOTES sagt „seitlich, oben“).
+`offx`, `offz` = `& 0xff` zweier Float-Akkumulatoren im Objekt: 0xc1fc0 nimmt, nur bei einem
+bewegten Objekt (Zeiger `[0x7427c]` mit Bit 30), den Weg seit dem letzten Zeichnen (Lage −
+rec+0x24, ganze Einheiten, anfangs 0) als float, dreht ihn mit 0x8aab0, mal dem Faktor an
+**0xc2428** (eine Konstante im Code), und addiert ihn auf rec+0x30, +0x34, +0x38; `fist` (auf
+nächste ganze Zahl) `& 0xff` der ersten und dritten Summe sind die Versätze; sonst 0. Der Faktor
+steht im Programm auf 0,008; **0x1813c** (Fahrphysik des Spielerautos, nur im Zustand +0x148 = 0,
+also nicht im Unfall) setzt ihn jedes Bild nach der Art des zuletzt erreichten Markers
+(Auto +0x66c = `MAPn.MRK` +4, geschrieben von 0x1820c): Art 0 → 0,002 (`0x3b03126f`), Art 1
+und 2 → 0,03 (`0x3cf5c28f`), andere lassen ihn. Er gilt für alle Objekte.
+
+**Das Reflexionsbild:** 0x1813c setzt im selben Zug Auto +0x7b0 = 0 / 0x8000 / 0xff00 für Art
+0 / 1 / 2; 0x1607c kopiert es jedes Bild in den Objektsatz (rec+0x3c), 0x8aafc nach [0x84288],
+und der Füller nimmt Bild `(frames × [0x84288]) >> 16` des Texturdatensatzes (0xdb8c8). Auf
+Strecke 1 hat die Textur des 160-Materials drei Bilder (254 × 254): 0 der Himmel, 1 (Art 1,
+die Marker 3 und 4: der Tunnel) die Lichter der Tunneldecke, 2 ein drittes. Gegner rufen
+0x1813c nicht auf (ihr +0x7b0 bleibt 0 aus 0x14095): nur das Spielerauto spiegelt den Tunnel.
+
+Das Setup 0xdb310 nimmt `u = REFL.u << 3` (ohne Materialgröße), der Nah-Clipper 0xda500
+dagegen `(REFL.u * mat[+8]) >> 5` — ein Unterschied im Original. Die Texeladresse wird
+`& 0xffff` genommen (0xdb59b): u, v laufen über 256 hinaus herum. Die x87-Zwischenwerte laufen
+in 80 Bit mit einzelnen float32-Speicherungen. Dass v aus r.z kommt, steht so im Code (NOTES
+sagt „seitlich, oben“).
+
+**Am RAM geprüft (2026-10-30, DOSBox, Startaufstellung Strecke 1, nahe Verfolgerkamera):**
+Objektsatz des Spielers (Mesh 229) mit rec+0x24 = (2600, 0, −18500), Akkumulatoren (−5,086755,
+−0,209960, 37,013203), also offx = 251, offz = 37; rec+0x3c = 0; Faktor an 0xc2428 = 0,002 (die
+Fahrphysik läuft schon in der Startaufstellung). Die Tabelle 0xc3bd4 (6 Byte je Vertex, der
+Index ist der Vertex-Byteoffset) hält danach die 128 Werte der Karosserie des Spielers; unsere
+Geometrie-Einheit mit denselben Akkumulatoren: 95 von 128 Vertices gleich, die übrigen um eins
+(35 von 256 Werten), die Gleitkomma-Form ebenso — der Rest kommt aus den Eingängen
+(Gleitkomma-Kamera und Sichtraum mit 8 Nachkommabits statt der ganzzahligen VIEW).
 
 ## 9. Reihenfolge in einem Bild (0x81870)
 
@@ -624,8 +648,10 @@ des Halbauflösungstests aus 3; kein VIS.TAB-Test; Schnittpunkte am Clipper ande
 - Ob die VIS.TAB-Verwerfung (6.3) je sichtbare Flächen trifft, und eine Formel für VIS.TAB.
 - Routinen 192/208 (cae84): was sie tun, und ob sie auf einer Strecke vorkommen.
 - Die Clipper der Familien flach, Reflexion, 192 im Einzelnen (7, letzter Absatz).
-- Der Reflexionspfad (8.5) ist nur gelesen; die Akkumulatoren (0xc1fc0, Konstanten 0xc2428 =
-  0,002, 0xc242c, 0xc2430) und der Tunnelfaktor 0,03 sind nicht verfolgt.
+- Der Reflexionspfad (8.5): woher die Akkumulatoren eines Autos in der Startaufstellung ihren
+  Stand haben (das erste Zeichnen addiert die ganze Lage, gedreht mit der Kamera dieses
+  Augenblicks, während des Kameraschwenks), ist ohne die Vorgeschichte nicht nachzurechnen. Die
+  Konstanten 0xc242c (9,99) und 0xc2430 (1024, ein toter Vergleich) sind unbenutzt.
 - P+0x1f0 (gerundeter Abstand des Blockursprungs, in float32 summiert, 0x83487) wird geschrieben,
   ein Leser ist nicht gefunden; ebenso ds:0x8b554 = 0x17700000 pro Block.
 - Die Sichteinstellungen (0x8a510..0x8a53c) für andere Ansichten als die 200 Zeilen hohe (Cockpit:

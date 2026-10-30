@@ -183,9 +183,13 @@ Fahrbahn (offen, am Original zu prüfen).
 
 ## Belegung
 
-Gemessen am 2026-10-30 (Quartus-Build mit der CD-Musik, Timing hält bei 74,25 MHz: Setup
-+0,94 ns, Hold +0,06 ns; Bauzeit 12 min): 10.278 von 18.480 ALMs (56 %), 281 von 308 M10K
-(91 %, davon 16 die Tabelle der Routine 224), 31 von 66 DSP (47 %). Der Mischer mit der Musik:
+Gemessen am 2026-10-30 (Quartus-Build mit den Spiegelungen der Routine 160, Timing hält bei
+74,25 MHz: Setup +0,85 ns, Hold +0,01 ns; Bauzeit 6 min): 11.046 von 18.480 ALMs (60 %), 282
+von 308 M10K (92 %, davon 16 die Tabelle der Routine 224), 31 von 66 DSP (47 %). Die
+Spiegelungen kosten 727 ALMs und 1 M10K in der Geometrie-Einheit (678 → 1.405 ALMs: die
+Auswahl vor ihren drei Multiplizierern, jetzt 18 Bit breit, der Normierer des Eckpunkts, die
+Umrechnung der Normale, Summen und Register der Rechnung, die Tabelle), keinen DSP. Davor
+(mit der CD-Musik): 10.278 ALMs, 281 M10K, Setup +0,94 ns, Hold +0,06 ns. Der Mischer mit der Musik:
 565 ALMs, 1 M10K, 1 DSP; die Musik kostet 149 ALMs (ihre zwei Zeilen im MLAB, Register,
 Interpolation), kein M10K und kein DSP (sie rechnet auf dem Multiplizierer der Stimmen). Vorher
 (2026-10-29, nur die Effekte): 10.114 ALMs, Mischer 416, Setup +0,28 ns, Hold +0,10 ns; davor
@@ -216,7 +220,7 @@ Block-RAM spart er 190 ALMs, kostet aber 19 M10K, die knappere Ressource). Setup
 3.041 → 1.512, Geometrie-Einheit 2.288 → 648, Rasterizer mit Texturen 2.539 → 1.895 ALMs; dafür
 11 M10K mehr und 5 DSP weniger. Geschätzt ist nur, was noch fehlt.
 
-![Platzbudget im FPGA: Logik 56 %, Block-RAM 91 %, DSP 47 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik 60 %, Block-RAM 92 %, DSP 47 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py`: die gemessenen Zeilen aus dem Fitter-Report
 (`core/src/fpga/output_files/ap_core.fit.rpt`, Tabelle „Resource Utilization by Entity“), die
@@ -225,22 +229,22 @@ diese Tabelle.
 
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
-| Analogue-Rahmen (Bridge, PLLs) | 420 | 2 | – |
-| Framebuffer ×2 + Video | 121 | 130 | – |
-| VexRiscv + 2× 8 KB Cache | 1.276 | 19 | 4 |
-| FPU (RV32F) | 1.459 | 5 | 4 |
+| Analogue-Rahmen (Bridge, PLLs) | 417 | 2 | – |
+| Framebuffer ×2 + Video | 120 | 130 | – |
+| VexRiscv + 2× 8 KB Cache | 1.258 | 19 | 4 |
+| FPU (RV32F) | 1.458 | 5 | 4 |
 | CFU (16.16-Multiplikation) | 9 | – | 3 |
 | Boot-RAM 32 KB + Protokoll | – | 36 | – |
-| Geometrie-Einheit | 678 | 22 | 4 |
-| Clipper | 952 | 6 | 2 |
-| Setup-Einheit | 1.499 | 7 | 4 |
-| Rasterizer | 1.281 | 2 | 5 |
-| Texturen: Pipeline + Cache | 678 | 47 | 4 |
-| Blitter (Hintergrund, HUD) | 510 | 2 | – |
-| SDRAM-Controller + Ports | 307 | 2 | – |
-| Audio: Mischer 32 Stimmen + Musik, I²S | 567 | 1 | 1 |
-| Bus, Register, Arbiter | 548 | – | – |
-| **gebaut** | **10.305 (56 %)** | **281 (91 %)** | **31 (47 %)** |
+| Geometrie-Einheit | 1.405 | 23 | 4 |
+| Clipper | 956 | 6 | 2 |
+| Setup-Einheit | 1.521 | 7 | 4 |
+| Rasterizer | 1.301 | 2 | 5 |
+| Texturen: Pipeline + Cache | 683 | 47 | 4 |
+| Blitter (Hintergrund, HUD) | 492 | 2 | – |
+| SDRAM-Controller + Ports | 304 | 2 | – |
+| Audio: Mischer 32 Stimmen + Musik, I²S | 568 | 1 | 1 |
+| Bus, Register, Arbiter | 555 | – | – |
+| **gebaut** | **11.047 (60 %)** | **282 (92 %)** | **31 (47 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es
@@ -469,6 +473,32 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Viereck nach der Szene, darauf die Wände (MMP-Feld 3) als Blitter-Linien in Farbe 255, mit
   der Nase nach oben um (40, 160) gedreht, Gegner als Sprite 5, der Spieler als Sprite 4 bei
   (38, 158), ein Pixel 32768 / 24 Einheiten (Voreinstellung des Spiels, `0x1bc3e`).
+- **Spiegelungen auf den Autos, Routine 160** (2026-10-30, aus der EXE, am Speicher des
+  Originals geprüft): Die Scheiben zeigen ein Spiegelbild, das mit Fahrt und Blick wandert.
+  Das Original rechnet für jeden Eckpunkt eines Blocks mit Flag 0x2000 (die Karosserie, 84–128
+  Eckpunkte mit Normale) auf dem x87 die Spiegelung r = 2 (e·n) n − e der Blickrichtung e an
+  der Normale n (`0xc2230`) und nimmt u = round(127 r.x) + 127 − offx, v = round(127 r.z) +
+  127 − offz als Texel, ohne Materialgröße, bei 256 herumlaufend. Bei uns die
+  Geometrie-Einheit nach den Eckpunkten des Blocks, ganzzahlig (`firmware/geom.h`): die
+  Normale aus den Float-Bits auf Q14, mit der Matrix in den Sichtraum (derselbe Schritt wie
+  für die Eckpunkte), der Eckpunkt auf 17 Bit normiert, 1/|p| über eine Tabelle von 128 und
+  einen Newton-Schritt auf ihren drei Multiplizierern (jetzt 18 × 18), rund 26 Takte je
+  Eckpunkt; u, v in einem RAM von 512 (1 M10K), aus dem die Flächen der Routine 160 ihre
+  Texel nehmen, der Rasterizer lässt sie bei 256 herumlaufen (Größe Bit 29). Gegen die
+  Gleitkomma-Form ist rund 1 % der Werte um eins anders. Was das Original je Objekt rechnet,
+  bleibt auf der CPU (`track.c`): die Versätze offx, offz aus drei Akkumulatoren je Objekt
+  (`0xc1fc0`: der Weg seit dem letzten Zeichnen, in die Sicht gedreht, mal dem Faktor an
+  `0xc2428`) und das Bild: `0x1813c` setzt für das Spielerauto nach der Art des zuletzt
+  erreichten Markers Auto +0x7b0 = 0 / 0x8000 / 0xff00 (Art 0 / 1 / 2) und den Faktor 0,002
+  bzw. 0,03, `0x1607c` kopiert es in den Objektsatz (+0x3c), gezeichnet wird Bild n × Phase
+  >> 16. Im Tunnel von Strecke 1 (Marker 3 und 4, Art 1) ist das Bild 1 der Textur, die
+  Lichter der Tunneldecke, statt des Himmels; die Gegner behalten Bild 0 (sie rufen `0x1813c`
+  nicht auf). Gemessen am Original (DOSBox, Startaufstellung, nahe Verfolgerkamera;
+  `tools/render.sh` mit `CAM` und den Akkumulatoren aus seinem Speicher, `REFL`): von den 128
+  Eckpunkten der Karosserie 95 gleich, die übrigen um eins; in der Heckscheibe 65 von 125
+  Pixeln gleich (84 % gleich einem Nachbarn), mit den gespeicherten u, v vorher 9. Kosten in
+  der Simulation: Geometrie-Einheit +36.000 Takte, Startbild 1.338.092 Takte = 18,0 ms
+  (vorher 17,6 ms; die Tabelle der sechs Startbilder oben ist nicht neu gemessen).
 - **Der Ton: ein Mischer in Hardware** (2026-10-29, nach OpenScreamers Notes Abschnitt 17 und
   der EXE): Der Treiber des Spiels läuft mit 11025 Hz und nimmt das gespeicherte Sample ohne
   Glätten (Index += Tonhöhe 16.16). `audio.v` macht dasselbe mit 48 kHz am Ausgang: je Ausgabewert

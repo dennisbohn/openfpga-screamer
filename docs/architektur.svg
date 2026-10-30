@@ -96,7 +96,7 @@
   <text x="715" y="299" class="b c">Mesh lesen, Eckpunkte</text>
   <text x="715" y="314" class="b c">umrechnen, Rückseiten,</text>
   <text x="715" y="329" class="b c">Material, Texturbild,</text>
-  <text x="715" y="344" class="b c">Puffer, Cache</text>
+  <text x="715" y="344" class="b c">Spiegelung, Cache</text>
 
   <rect x="840" y="260" width="150" height="100" rx="8" class="built"/>
   <text x="915" y="282" class="t c">Clipper + Setup</text>
@@ -233,7 +233,7 @@
   <text x="270" y="427" class="l c">I²S</text>
 
   <!-- notes -->
-  <text x="40" y="798" class="l">Pro Bild: Die CPU wählt die Bauteile in Reichweite, sortiert sie von hinten nach vorn (Maler-Algorithmus) und schreibt sie in den Puffer der Geometrie-Einheit (113 Bauteile); dahinter arbeiten Geometrie, Setup und Rasterizer gleichzeitig.</text>
+  <text x="40" y="798" class="l">Pro Bild: Die CPU wählt die Bauteile in Reichweite, sortiert sie von hinten nach vorn (Maler-Algorithmus) und schreibt sie in den Puffer der Geometrie-Einheit (107 Bauteile); dahinter arbeiten Geometrie, Setup und Rasterizer gleichzeitig.</text>
   <text x="40" y="816" class="l">Gezeigt wird nur ein fertiges Bild (Doppelpufferung, Tausch in der Austastlücke, höchstens 50 Bilder pro Sekunde). Geplant: Bild N+1 und N überlappen.</text>
-  <text x="40" y="834" class="l">Start mit allen zehn Autos: 50 fps (Startbild 1,31 Mio. Takte, 88 % eines Bildes). Belegung: 10.278 von 18.480 ALMs (56 %), 281 von 308 M10K (91 %), 31 von 66 DSP (47 %); Timing hält bei 74,25 MHz.</text>
+  <text x="40" y="834" class="l">Start mit allen zehn Autos: 50 fps (Startbild 1,34 Mio. Takte, 90 % eines Bildes). Belegung: 11.046 von 18.480 ALMs (60 %), 282 von 308 M10K (92 %), 31 von 66 DSP (47 %); Timing hält bei 74,25 MHz.</text>
 </svg>
