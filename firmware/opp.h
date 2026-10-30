@@ -28,3 +28,9 @@ int opp_where(int k, float *x, float *y);
 /* How many there are; the player's place in the running order (1 = leading) */
 int opp_count(void);
 int opp_player_rank(void);
+
+/* For the commentary (speech.h): the player is a lap up on one of them, more laps and further
+   round this one or two laps more (0x24464); the player's contact with them, easing to 1 while
+   touching one and to 0 when not (+0x7c4, stiffness 0x32: 0x175aa, 0x177f7) */
+int opp_lapped(void);
+float opp_hitcar(void);

@@ -49,6 +49,8 @@ static int spl_n[OPP_MAX];
 static const struct track_opp_row *rows;
 static int engine[OPP_MAX];             /* the engines' voices (sound.h) and their distance from */
 static float engine_last[OPP_MAX];      /* the ear a step before */
+static int touch;                       /* the player touched one in this step's contact */
+static float hitcar;                    /* the player's +0x7c4 (opp_hitcar) */
 
 static float wrap_pi(float a)
 {
@@ -176,6 +178,7 @@ static void player_hits(struct opp *o, float nx, float ny, float pen)
     static float snd_at = -1.0f;
     const struct car_state *c = car_state();
     float px = nx * pen, py = ny * pen, now = car_race()->clock;
+    touch = 1;
     if(now < snd_at || now - snd_at >= 1.0f / 30.0f) {
         snd_play(SND_CRASH);
         snd_at = now;
@@ -211,6 +214,8 @@ static void collide(void)
 {
     const struct car_state *c = car_state();
     float pcx[2], pcy[2], pr = car_circles(pcx, pcy);
+    hitcar = (hitcar - (float)touch) * drive_damp(0x32) + (float)touch;     /* 0x175aa, 0x177f7 */
+    touch = 0;
     for(int k = 0; k < nopp; k++) {
         struct opp *o = &opp[k];
         float ocx[2], ocy[2];
@@ -333,6 +338,24 @@ void opp_init(int player_row)
     }
     player_rank = nopp + 1;                             /* 0x12c24: the player starts last */
     for(int k = 0; k < OPP_MAX; k++) engine[k] = snd_stop(engine[k]);
+    touch = 0;
+    hitcar = 0.0f;
+}
+
+int opp_lapped(void)
+{
+    int laps = car_race()->laps;
+    float p = car_progress() - (float)(laps * 100);
+    for(int k = 0; k < nopp; k++) {
+        const struct opp *o = &opp[k];
+        if((o->laps < laps && o->progress - (float)(o->laps * 100) < p) || laps - o->laps > 1) return 1;
+    }
+    return 0;
+}
+
+float opp_hitcar(void)
+{
+    return hitcar;
 }
 
 /* 0x1dffc: the engines, heard from the camera (car_step set the ear). Only cars within 35000

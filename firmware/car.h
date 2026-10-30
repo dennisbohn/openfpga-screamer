@@ -88,6 +88,9 @@ void car_rammed(float nx, float ny, int left);
    next (0x1820c), for the player and for any car at (x, y) */
 float car_progress(void);
 float car_marker_progress(int at, int laps, float x, float y);
+/* the car heads within 45 degrees of the road reversed, the road's heading where it last met a
+   wall (0x2425c, the commentator's "back"; the start's heading until then) */
+int car_backwards(void);
 /* the rev counter's needle: rpm / maxrpm x pi on the outside views' instrument, x 3.613 on
    the cockpit's dashboard; the dashboard's speed needle, speed / maxspd x 4.084; both eased
    (dash_step) */

@@ -8,6 +8,7 @@
 #include "hw.h"
 #include "efx.h"
 #include "sound.h"
+#include "speech.h"
 
 #define PI          3.14159265f
 /* the bumper cam's height over the car: camera_hi in TRACK_DATA of MAPnA.DTR */
@@ -36,6 +37,9 @@ static uint8_t mark_seen[64];
 static int mark_count;
 static float needle, needle_speed;
 static float progress;                  /* how far round the race (marker_progress) */
+static float record;                    /* the lap to beat (0x1d268): the game's default, 180 s */
+static float road;                      /* the road's heading where the car last met a wall
+                                           (player +0x13c, 0x16c90) */
 
 /* the player's sounds (sound.h): the engine from the race's set-up (0x128dc), the skid, the wall */
 static int snd_engine = -1, snd_skid = -1, snd_wall = -1, snd_over;
@@ -224,6 +228,7 @@ static void walls_step(void)
        game checks that, OpenScreamer does not); the wall response comes all the same (the
        crash only stops the wall's sound there) */
     const struct track_dir *d = nearest_dir(pc.x, pc.y);
+    if(d) road = d->angle;
     float off = d ? fabsf(pc.yaw - d->angle) : 0.0f;
     while(off > PI) off -= PI;
     if(off > PI / 2.0f) off = PI - off;
@@ -235,6 +240,7 @@ static void walls_step(void)
     if(!crashing) snd_wall = snd_play_once(SND_WALL, snd_wall);    /* unless it still sounds (0x16f0b) */
     if(crashing) {
         snd_play(SND_DENT);                             /* 0x18540 */
+        speech_say(SAY_CRASH, 3, 0.5f);
         /* the crash's start (0x18518 state 2): speed x 0.6, heading the road's, thrown up at
            3000 units/s, turning 12 rad/s in pitch and in roll, the crash view */
         crash.on = 1;
@@ -397,12 +403,24 @@ static void markers_step(void)
             race.clock_on = 1;
             race.lap = 0.0f;
             race.timer = race.timer / 5.0f + bonus;
+            speech_rearm(SAY_HURRY);
         } else if(i == 0 && mark_count >= n - 1) {        /* across the line */
             if(race.laps + 1 >= race.total_laps) race.finished = 1;
-            else if(!race.finished) race.timer = race.timer / 5.0f + bonus;
+            else if(!race.finished) {
+                race.timer = race.timer / 5.0f + bonus;
+                speech_rearm(SAY_HURRY);
+            }
             race.laps++;
             race.last = race.lap;
-            if(race.best == 0.0f || race.last < race.best) race.best = race.last;
+            /* 0x196ea: a lap under the record is the new one, "new lap record"; 0x19668: the lap
+               call, recording 2 into the last lap, 1 after the race's best lap, else 0 */
+            int best = race.best == 0.0f || race.last < race.best;
+            if(race.last < record) {
+                record = race.last;
+                speech_say(SAY_NEWLAP, 3, 0.2f);
+            }
+            if(!race.finished) speech_say(SAY_LAP, race.laps + 1 == race.total_laps ? 2 : best, 0.0f);
+            if(best) race.best = race.last;
             for(int j = 0; j < n && j < 64; j++) mark_seen[j] = 0;
             mark_count = 0;
             race.lap = 0.0f;
@@ -410,7 +428,13 @@ static void markers_step(void)
         if(i != 0 && i < 64 && !mark_seen[i]) {
             mark_seen[i] = 1;
             mark_count++;
-            if((m->flags & 2) && race.clock_on && !race.finished) race.timer = race.timer / 5.0f + bonus;
+            if((m->flags & 2) && race.clock_on && !race.finished) {
+                /* 0x19490: the checkpoint call by the time left: under 3 s recording 2, up to
+                   15 s recording 0, more recording 1 */
+                speech_say(SAY_CHECK, race.timer < 3.0f ? 2 : race.timer <= 15.0f ? 0 : 1, 0.0f);
+                race.timer = race.timer / 5.0f + bonus;
+                speech_rearm(SAY_HURRY);
+            }
         }
     }
     progress = car_marker_progress(mark_at, race.laps, pc.x, pc.y);
@@ -433,6 +457,11 @@ float car_marker_progress(int at, int laps, float x, float y)
 float car_progress(void)
 {
     return progress;
+}
+
+int car_backwards(void)
+{
+    return fabsf(wrap_pi(pc.yaw - road - PI)) < PI / 4.0f;
 }
 
 float car_circles(float cx[2], float cy[2])
@@ -507,6 +536,8 @@ void car_init(int which)
     snd_wall = -1;
     snd_over = 0;
     snd_engine = snd_play(SND_ENGINE);
+    speech_reset();
+    record = 180.0f;
     race = (struct car_race){ 0 };
     race.timer = 15.0f;
     race.total_laps = 3;                                /* the option's default (0x1d2ac) */
@@ -520,6 +551,7 @@ void car_init(int which)
        skidding until a marker */
     float px, py, ph;
     track_start(&pc.x, &pc.y, &pc.yaw);
+    road = pc.yaw;
     track_path_point(2, &px, &py, &ph);
     pc.z = ph;
     pc.surface = 0.0f;
@@ -613,7 +645,8 @@ void car_step(uint32_t keys, uint32_t keys_before)
     }
     efx_cyc_objects += rdcycle() - t0;
     sound_step(skid || wheelspin);
-    struct track_cam ear;                               /* the sounds with a place are heard from */
+    speech_step();
+    struct track_cam ear;                              /* the sounds with a place are heard from */
     car_camera(&ear);                                   /* the camera (0x1dffc, 0x21b80) */
     snd_ear(&ear);
 
