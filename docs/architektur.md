@@ -97,7 +97,9 @@ seit 2026-10-30 dazu die sechs Ladebilder `LOADnL.PCX`, 0,28 MB, rund 0,2 s, und
 acht Bilder der Meisterschaft `CHAMPnL.PCX`, 0,33 MB, rund 0,25 s). `GAME.DAT`,
 `GEN.DAT`, `LOCAL.DAT` und `SOUND.DAT` lädt er einmal, `SOUND.DAT` (1,9 MB, 1,3 s) während
 die erste Strecke gebaut wird: die Firmware stößt das Lesen nur an (`sound_start` in
-`main.c`), der Pocket schreibt die Datei in den SDRAM, während die CPU baut.
+`main.c`), der Pocket schreibt die Datei in den SDRAM, während die CPU baut. Dazu zwei
+nichtflüchtige Slots für die Spielstände, `CHOICE.DAT` (23) und `ATTACK.DAT` (24), im
+Speicherordner des Pocket, nicht bei den Spieldateien (siehe „Meisterschaft“).
 Dazu seit 2026-10-30 GOGs Abbild der CD oben im Spielordner: `SCREAM.DAT` (Slot 21, das
 Cue-Sheet) und `SCREAM.gog` (Slot 22, 383 MB); daraus liest der Core nur die Musik, 32 KB auf
 einmal, während er zeichnet (siehe „Die CD-Musik“).
@@ -262,11 +264,19 @@ nachgelesen): Regeln in `firmware/champ.c`, der Bildschirm 5 in `menu.c`, der Ab
   (`0x29141`: Bullet, gespiegelte Strecken und AFTERBURNER frei) und zurück ins Hauptmenü,
   ebenso nach LOSER!!.
 - **Der Stand** liegt im Format der Einstellungsdatei des Originals, `CONFIG\CHOICE.DAT`
-  (`struct choice` in `champ.h`: 0x460 Byte, gelesen nach `0x203c0` von `0x1bbb8`, geschrieben
+  (`struct choice_dat` in `champ.h`: 0x460 Byte, gelesen nach `0x203c0` von `0x1bbb8`, geschrieben
   von `0x1be5c` vor und nach jedem Rennen und beim Beenden): Auto, Strecke, Name, Optionen, ab
   +0x18 die Meisterschaft (Stufe, Stufe für RESUME, Punktzahl, je Rennen Zeit, Platz, Punkte),
   ab +0x6c die Rekorde (je Strecke fünf beste Runden und Gesamtzeiten), ab +0x42c
-  Freischaltungen. Speichern auf der SD-Karte: folgt.
+  Freischaltungen. Der Core hält genau diese Datei als nichtflüchtigen Data-Slot
+  `CHOICE.DAT` (id 23) im SDRAM: beim Start geladen, ohne Datei die Vorgaben des Originals
+  (`0x1bbb8`); jede Änderung (Stufe, Ergebnis, Optionen, zuletzt gewählte Strecke und Auto)
+  schreibt die CPU gleich dorthin, und der Pocket speichert sie beim Beenden wie
+  `debug.txt` (`docs/soc.md`, „Protokoll auf die SD-Karte“). Eine `CHOICE.DAT` aus dem
+  DOS-Spiel geht auch. Die Rekorde stehen schon darin, für VIEW RECORDS später. Für das
+  Zeitfahren (`REPLAYS\MAPn.ATK` des Originals: 36 Byte Kopf mit der Bestzeit bei +0x1c,
+  dann je gezeichnetem Bild ein Satz von 40 Byte mit Ort, Lage und Uhr, `0x1b964`,
+  `0x1ba3c`, `0x231d0`) gibt es den Slot `ATTACK.DAT` (id 24), je Strecke 60 KB.
 
 ## Strecken- und Autowahl
 

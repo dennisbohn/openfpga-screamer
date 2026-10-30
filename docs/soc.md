@@ -46,7 +46,7 @@ etwas daran ändert, ändert beide Seiten und dieses Dokument.
 | Adresse | Größe | Inhalt | Cache |
 |---|---|---|---|
 | `0x0000_0000` | 32 KB | Boot-RAM: der Lader, darüber der Stack des Programms. Reset-Vektor `0x0000_0000`, `mtvec` nach Reset `0x0000_0020` | ja |
-| `0x1000_0000` | 64 MB | SDRAM: die Teile von `MENU.DAT` ab `0x1020_0000` und `GRAF.DAT` ab `0x1060_0000` (Slots 19, 20, jeder an seiner Stelle wie in der Datei) und Bilder, Sprites und Schriften der Menüseiten, der Strecken- und Autowahl und das entpackte Ladebild ab `0x10A0_0000`, das Standbild der Pause und von „PLAY AGAIN?“ ab `0x1011_0000`, die Front des CD-Spielers ab `0x1012_0000`, die Soundeffekte `SOUND.DAT` ab `0x11C0_0000` (Slot 8, bis 2 MB; der Mischer spielt sie von dort; die neun Samples der Menüs schon beim Start, jedes an seiner Stelle), der Ring der Musik ab `0x11E0_0000` (256 KB, aus `SCREAM.gog`, Slot 22), das Abbild der Strecke ab `0x1210_0000` (von der Firmware gebaut), die Spieldateien ab `0x1280_0000` (`MAPnH.DAT` `0x1280_0000` (Slot 3, 9–13), `GAME.DAT` `0x12C0_0000` (4), `MAPn.DAT` `0x12D0_0000` (5, 14–18), `GEN.DAT` `0x12D4_0000` (6), `LOCAL.DAT` `0x12D5_0000` (7)), Arbeitsspeicher des Aufbaus ab `0x12D6_0000`, das Programm ab `0x1300_0000` (Slot 2) | ja |
+| `0x1000_0000` | 64 MB | SDRAM: die Teile von `MENU.DAT` ab `0x1020_0000` und `GRAF.DAT` ab `0x1060_0000` (Slots 19, 20, jeder an seiner Stelle wie in der Datei) und Bilder, Sprites und Schriften der Menüseiten, der Strecken- und Autowahl und das entpackte Ladebild ab `0x10A0_0000`, das Standbild der Pause und von „PLAY AGAIN?“ ab `0x1011_0000`, die Front des CD-Spielers ab `0x1012_0000`, die Soundeffekte `SOUND.DAT` ab `0x11C0_0000` (Slot 8, bis 2 MB; der Mischer spielt sie von dort; die neun Samples der Menüs schon beim Start, jedes an seiner Stelle), der Ring der Musik ab `0x11E0_0000` (256 KB, aus `SCREAM.gog`, Slot 22), das Abbild der Strecke ab `0x1210_0000` (von der Firmware gebaut), die Spieldateien ab `0x1280_0000` (`MAPnH.DAT` `0x1280_0000` (Slot 3, 9–13), `GAME.DAT` `0x12C0_0000` (4), `MAPn.DAT` `0x12D0_0000` (5, 14–18), `GEN.DAT` `0x12D4_0000` (6), `LOCAL.DAT` `0x12D5_0000` (7)), Arbeitsspeicher des Aufbaus ab `0x12D6_0000`, das Programm ab `0x1300_0000` (Slot 2, höchstens 15 MB), die Spielstände `CHOICE.DAT` ab `0x13F0_0000` und `ATTACK.DAT` ab `0x13F1_0000` (Slots 23, 24, nichtflüchtig) | ja |
 | `0xF000_0000` | 4 KB | System- und Speicher-Register | nein |
 | `0xF000_1000` | 4 KB | Video-Register und Palette | nein |
 | `0xF000_2000` | 4 KB | Eingabe | nein |
@@ -85,7 +85,7 @@ Alle Register sind 32 Bit, Zugriff als Wort.
 | `0xF000_0028` | `DS_ADDR` | W | Bridge-Adresse, an die geladen wird (im SDRAM gleich der CPU-Adresse) |
 | `0xF000_002C` | `DS_LENGTH` | W | Bytes, ein Vielfaches von 4, oder `0xFFFF_FFFF` für den Rest der Datei (der Pocket bemisst ihn; so liest die Firmware die letzten 1 bis 3 Bytes) |
 | `0xF000_0030` | `DS_CTRL` | R/W | Schreiben: Bit 0 = anfordern. Lesen: Bit 0 läuft noch, Bit 1 `DS_SIZE` wird noch gesucht, Bit 6..4 Ergebnis des Pocket (0 = gut, 2 z. B. keine Datei im Slot) |
-| `0xF000_0034` | `DS_SIZE` | R | die Dateigröße von Slot `DS_ID` aus der Slot-Tabelle des Pocket, 0 wenn er dort fehlt; nach jedem Schreiben von `DS_ID` neu gesucht |
+| `0xF000_0034` | `DS_SIZE` | R/W | Lesen: die Dateigröße von Slot `DS_ID` aus der Slot-Tabelle des Pocket, 0 wenn er dort fehlt; nach jedem Schreiben von `DS_ID` neu gesucht. Schreiben: der Wert wird die Größe von Slot `DS_ID` in der Tabelle (die Spielstände, siehe unten; Bit 1 von `DS_CTRL`, bis er eingetragen ist) |
 | `0xF000_1000` | `VID_STATUS` | R | Bit 0: vorderer Puffer (0/1). Bit 1: Tausch angefordert, noch nicht vollzogen. Bit 31..16: Bildzähler, zählt jedes Videobild (50 Hz) |
 | `0xF000_1004` | `VID_SWAP` | W | beliebiger Wert: Tausch anfordern. Er geschieht in der nächsten Austastlücke; solange er aussteht (Bit 1), werden weitere Anforderungen ignoriert |
 | `0xF000_1400` + 4·i | `VID_PAL[i]` | W | Palette des **hinteren** Puffers, Eintrag i (0..255): `0x00RRGGBB`. Nur solange kein Tausch aussteht (`VID_STATUS` Bit 1 = 0); sonst trifft es den Puffer, der gerade angezeigt wird |
@@ -225,6 +225,20 @@ den Bereich; `soc.v` ignoriert das. Nach dem Laden des Cores steht dort also `0`
 Firmware schreibt; läuft die CPU gar nicht los, besteht die gespeicherte Datei aus Nullen
 statt aus dem alten Protokoll. Ein Neuladen der Firmware aus dem Menü ist nur ein Reset: Bis
 die neue Firmware den Bereich löscht, steht dort noch das Protokoll des vorigen Laufs.
+
+**Spielstände** gehen denselben Weg, liegen aber im SDRAM: die nichtflüchtigen Data-Slots
+`CHOICE.DAT` (id 23, `0x13F0_0000`, 1120 Byte: die Einstellungsdatei des Originals mit
+Optionen, Meisterschaft, Rekorden und Freischaltungen) und `ATTACK.DAT` (id 24, `0x13F1_0000`,
+6 × 60 KB für die Bestzeiten und Geister des Zeitfahrens). Beide sind `deferload`: Die
+Firmware liest sie gleich nach dem Start (`save_load` in `save.c`), ohne Datei oder bei einem
+`CHOICE.DAT`, das nicht wie das des Originals aussieht, nimmt sie die Vorgaben des Originals
+(`0x1bbb8`), und trägt dann mit `DS_SIZE` die volle Größe in die Slot-Tabelle ein, damit der
+Pocket sie beim Beenden speichert. Von da an ist jedes Schreiben der CPU dorthin (`choice`
+in `champ.h`) schon der Spielstand; der Pocket liest ihn beim Beenden über die Bridge aus
+dem SDRAM (`sdram_port.v`: ein Lesewort der Bridge geht gleich nach dem Schreibpuffer der
+Bridge an den Controller und hat bis zum nächsten Bridge-Wort, mindestens 88 Takte, Zeit).
+Beendet man den Core, bevor `save_load` gelaufen ist (in der ersten Sekunde), speichert der
+Pocket, was dort im SDRAM steht.
 
 Die Firmware löscht den Bereich beim Start, schreibt eine Kopfzeile, die Ergebnisse der
 Selbsttests und Messwerte; der Trap-Handler schreibt Ursache und Adresse eines Absturzes

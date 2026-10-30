@@ -176,6 +176,10 @@
   <text x="322" y="486" class="l r">program.bin,</text>
   <text x="322" y="500" class="l r">Spieldateien</text>
   <text x="322" y="514" class="l r">(~1,4 MB/s)</text>
+  <path d="M418,589 H342 V362" class="wf" marker-end="url(#built)"/>
+  <text x="322" y="536" class="l r">Spielstände</text>
+  <text x="322" y="550" class="l r">zurück beim</text>
+  <text x="322" y="564" class="l r">Beenden</text>
 
 
   <path d="M990,310 H1038" class="wb" marker-end="url(#built)"/>

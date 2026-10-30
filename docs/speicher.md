@@ -215,7 +215,11 @@ kann (`soc.v` bindet es unverändert ein):
 ### Bridge und Data-Slots
 
 Bridge-Adressen `0x1000_0000`–`0x13FF_FFFF` schreiben ins SDRAM, Byte-Reihenfolge wie beim
-Boot-RAM gedreht. Lesen über die Bridge gibt es noch nicht. Der Pocket fragt vor jedem Slot
+Boot-RAM gedreht. Lesen über die Bridge geht seit 2026-10-30 auch (der Pocket speichert so
+die Spielstände, `docs/soc.md`): Der Arbiter nimmt ein Lesewort der Bridge gleich nach dem
+Schreibpuffer, vor dem dBus; die Antwort steht bereit, sobald das Wort zurück ist, und der
+Pocket holt sie erst mit dem nächsten Bridge-Wort ab (`io_bridge_peripheral.v`: frühestens
+88 Takte später), also reicht ein laufender Zeilen-Burst oder ein Refresh davor. Der Pocket fragt vor jedem Slot
 mit „Data slot request write" (0x0082) an; die Quittung kommt, sobald das SDRAM bereit ist,
 spätestens aber nach 2²¹ Takten (28 ms) Warten, damit ein SDRAM-Fehler den Start nicht
 blockiert (dann werden Bridge-Schreibzugriffe ins SDRAM verworfen und ein Fehlerbit gesetzt).
