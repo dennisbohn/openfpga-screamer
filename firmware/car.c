@@ -526,6 +526,8 @@ void car_init(int which)
     mark_at = 0;
     progress = 0.0f;
     ct.ready = 0;
+    for(int k = 0; k < MAX_MODELS; k++)         /* each track's image has its own car models */
+        cmodels[k].ready = 0;
     contact();
     chase.init = 0;
     chase_step();
