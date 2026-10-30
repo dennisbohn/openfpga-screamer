@@ -170,8 +170,16 @@ static int text_line(const uint8_t *t, uint32_t n, int k, char *out, int max)
             e++;
         if(t[i] != '*' && k-- == 0) {
             int m = 0;
-            while(i < e && m < max - 1)
+            while(i < e && m < max - 1) {
+                /* the Pocket's button for the PC's key: "PRESS ENTER" -> "PRESS START" (START
+                   takes a menu's choice, as ENTER does) */
+                if(e - i >= 11 && !memcmp(t + i, "PRESS ENTER", 11)) {
+                    for(const char *r = "PRESS START"; *r && m < max - 1; r++) out[m++] = *r;
+                    i += 11;
+                    continue;
+                }
                 out[m++] = (char)t[i++];
+            }
             out[m] = 0;
             return 1;
         }

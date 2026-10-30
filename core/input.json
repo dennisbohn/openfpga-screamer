@@ -5,9 +5,14 @@
             {
                 "type": "default",
                 "mappings": [
-                    { "id": 0, "name": "Accelerate", "key": "pad_btn_b" },
+                    { "id": 0, "name": "Accelerate / OK", "key": "pad_btn_b" },
                     { "id": 1, "name": "Brake", "key": "pad_btn_y" },
-                    { "id": 2, "name": "Camera", "key": "pad_btn_x" }
+                    { "id": 2, "name": "Camera", "key": "pad_btn_x" },
+                    { "id": 3, "name": "Back", "key": "pad_btn_a" },
+                    { "id": 4, "name": "Gear Up", "key": "pad_trig_r" },
+                    { "id": 5, "name": "Gear Down", "key": "pad_trig_l" },
+                    { "id": 6, "name": "Pause", "key": "pad_btn_start" },
+                    { "id": 7, "name": "Quit Race", "key": "pad_btn_select" }
                 ]
             }
         ]
