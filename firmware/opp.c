@@ -510,9 +510,23 @@ static int opp_make(int k, const struct track_cam *cam, struct track_object *obj
     return car_draw(o->model, &lk, cam, blocks[k], obj);
 }
 
-int opp_objects(struct track_object *objs, int max)
+/* opponent k's shadow (0x1c83c), made when it is drawn (the CPU's time before the first piece
+   is the frame's; once the pieces go, the geometry unit's work is): heading the car object's,
+   tilted as its car unless that crashes */
+static int shadow_make(int k, const struct track_cam *cam, struct track_object *obj)
 {
     static struct track_block shadows[OPP_MAX];
+    const struct opp *o = &opp[k];
+    (void)cam;
+    car_flat_block(efx_shadow(), obj->x, obj->y, obj->h, o->yaw + o->spin + (o->crash ? o->turn : 0.0f), o->sh_pitch,
+                   o->sh_roll, &shadows[k]);
+    obj->n = 1;
+    obj->b = &shadows[k];
+    return 1;
+}
+
+int opp_objects(struct track_object *objs, int max)
+{
     uint32_t t0 = rdcycle();
     int n = 0;
     const uint8_t *sh = efx_shadow();
@@ -520,14 +534,10 @@ int opp_objects(struct track_object *objs, int max)
         const struct opp *o = &opp[k];
         objs[n++] = (struct track_object){ o->x, o->y, o->z, 1200.0f, 0, 0, opp_make, k, 0, &refl[k], 0 };
         if(!sh || n >= max) continue;
-        /* its shadow (0x1c83c), made at once, all in a row (the code stays in the cache): its
-           whole-number place without the player's nudge, 2 under the ground under it (0x1cd34:
-           +0x238, which it stands on unless thrown up), heading the car object's, tilted as its
-           car unless that crashes */
+        /* its shadow: its whole-number place without the player's nudge, 2 under the ground under
+           it (0x1cd34: +0x238, which it stands on unless thrown up) */
         float x = (float)(int32_t)o->x, y = (float)(int32_t)o->y, h = (float)((int32_t)o->z - 2);
-        car_flat_block(sh, x, y, h, o->yaw + o->spin + (o->crash ? o->turn : 0.0f), o->sh_pitch, o->sh_roll,
-                       &shadows[k]);
-        objs[n++] = (struct track_object){ x, y, h, 900.0f, 1, &shadows[k], 0, k, track_class_key(sh), 0, 0 };
+        objs[n++] = (struct track_object){ x, y, h, 900.0f, 0, 0, shadow_make, k, track_class_key(sh), 0, 0 };
     }
     efx_cyc_objects += rdcycle() - t0;
     return n;
