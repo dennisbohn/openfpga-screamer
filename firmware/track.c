@@ -768,7 +768,9 @@ static void block_piece(const float c[3], const float f[3], const float r[3], co
                         const float m[9], const float o[3], const uint8_t *blk, struct gu_piece *g)
 {
     const float *basis[3] = { r, u, f };
+#pragma GCC unroll 3                            /* (the conversions side by side in the FPU) */
     for(int k = 0; k < 3; k++) {
+#pragma GCC unroll 3
         for(int j = 0; j < 3; j++)
             g->m[3 * k + j] = (int32_t)((basis[k][0] * m[j] + basis[k][1] * m[3 + j] + basis[k][2] * m[6 + j]) * 65536.0f);
         g->t[k] = (int32_t)((basis[k][0] * (o[0] - c[0]) + basis[k][1] * (o[1] - c[1]) + basis[k][2] * (o[2] - c[2])
