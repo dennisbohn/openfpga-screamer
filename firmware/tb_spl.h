@@ -42,7 +42,7 @@ uint32_t tb_markers(const uint8_t *mrk, uint32_t size, uint8_t *out, uint32_t ca
 uint32_t tb_cars(const uint8_t *dtr, uint32_t size, uint8_t *out, uint32_t cap);
 
 /* TRACK_DATA of the difficulty's .DTR, 12 bytes: int32 bonus_time, camera_hi (the header's
-   0x70, 0x74), uint32 colour (0x7C) */
+   0x70, 0x74), uint32 colour (0x7C); with room for 16 the carnage after them (car.h) */
 uint32_t tb_track_data(const uint8_t *dtr, uint32_t size, uint8_t *out, uint32_t cap);
 
 /* The opponents section (its size is the bytes written): u32 splines, u32 rows; rows x

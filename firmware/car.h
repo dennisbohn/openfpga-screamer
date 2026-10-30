@@ -94,10 +94,29 @@ int car_shadow_at(float *x, float *y, float *h);
 struct car_race {
     float clock, timer, total, lap, best, last;
     int laps, total_laps, on, clock_on, time_out, finished, game_over;
+    int perfect;                /* cone carnage at the finish: every prop down (0x23fbc, flag 0x80) */
 };
 const struct car_race *car_race(void);
 /* the laps of a race: the options page's LAP NUMBER (menu.h, 0x1d2ac + 1), 3 at first */
 extern int car_laps;
+
+/* The game mode, the game's word 0x1d25c as the menu's items set it (0x28b80 ..). In the special
+   modes (CAR_ALONE) the player races alone (0x1311c, ...: no opponents), one lap (0x2a216), from
+   the last opponent's place on the grid (0x13ded) and with no lap to beat (0x2a264: 0). In cone
+   carnage and slalom the line and the checkpoints give TRACK_DATA's fourth number, the carnage
+   time, instead of the bonus (0x195fc); cone carnage's props come from MAPnCNG.SPL (scenery.h)
+   and each step in which more of them went down than before adds 1 s (0x18b50). */
+#define CAR_NORMAL  1
+#define CAR_CHAMP   2
+#define CAR_ATTACK  4
+#define CAR_NETWORK 0x10
+#define CAR_CONES   0x20
+#define CAR_SLALOM  0x40
+#define CAR_ALONE   (CAR_ATTACK | CAR_CONES | CAR_SLALOM)
+extern int car_mode;
+/* The mode's numbers of track n from its DATA container dat: the carnage time of TRACK_DATA in
+   the difficulty's MAPn?.DTR (0 ROOKIE = A, as track_build.h); before car_init() */
+void car_mode_init(const uint8_t *dat, uint32_t dat_size, int n, int difficulty);
 /* Contact with the opponents (opp.c, the game's 0x17818): the car's two circles (0x136c8:
    the body from 250 ahead of the front wheels to 150 behind the rear ones, length L, each
    circle L/4 in from its end and L/4 round; returns the radius); moved out of an opponent's

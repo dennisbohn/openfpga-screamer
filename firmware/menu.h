@@ -36,6 +36,8 @@
    on, 0 off. The game's defaults: HI, NORMAL, 3, on, on. */
 struct menu_options { int detail, difficulty, laps, speech, music; };
 void menu_options(struct menu_options *o);
+/* The game mode of the game menu_step() started last (car.h's CAR_NORMAL, CAR_CONES; 0x1d25c) */
+int menu_mode(void);
 
 /* What menu_init() reads of the two containers: these entries, MENU.MLB whole (the cars'
    textures lie all over it); a NULL name ends the list */
@@ -70,11 +72,12 @@ void menu_enter(int screen, int n);
    number as menu_enter's n; A or SELECT go back: -1 (both without a sound, as the game). The
    pages (0x28080): up and down go from line to line (SND_MENU_LINE), left and right change an
    option, B or START too, as the game's ENTER (SND_MENU_OPTION; once the words have landed,
-   0x297d4), B or START on OPTIONS opens its page (SND_MENU_PAGE), A or SELECT go back to the
-   main menu (the same sound); NORMAL GAME: 1 (SND_MENU_GAME), from then on the camera pulls back
-   and rolls (0x293e8) while the caller fades out at 2 a second, the keys not taken. NETWORK
-   GAME shows the game's NETWORK NOT FOUND; CHAMPIONSHIP, SPECIAL MODES and VIEW RECORDS only
-   sound, for now. 0 while none is taken. */
+   0x297d4), B or START on OPTIONS or SPECIAL MODES opens its page (SND_MENU_PAGE), A or SELECT
+   go back to the main menu (the same sound); NORMAL GAME and CONE CARNAGE: 1 (SND_MENU_GAME,
+   menu_mode() the game's mode), from then on the camera pulls back and rolls (0x293e8) while the
+   caller fades out at 2 a second, the keys not taken. NETWORK GAME shows the game's NETWORK NOT
+   FOUND; CHAMPIONSHIP, TIME ATTACK, SLALOM and VIEW RECORDS only sound, for now. 0 while none is
+   taken. */
 int menu_step(uint32_t keys, uint32_t keys_before);
 
 /* The frame in the order it is drawn: the picture (for the blitter), the projection and the

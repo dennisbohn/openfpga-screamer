@@ -9,8 +9,10 @@
 #include "dat.h"
 #include "hw.h"
 #include "efx.h"
+#include "scenery.h"
 #include "sound.h"
 #include "speech.h"
+#include "tb_spl.h"
 
 #define PI          3.14159265f
 /* the bumper cam's height over the car: camera_hi in TRACK_DATA of MAPnA.DTR */
@@ -48,6 +50,9 @@ static int mark_at;                     /* the marker last reached */
 static uint32_t wall_hits, crashes;
 static struct car_race race;
 int car_laps = 3;                       /* the option's default (0x1d2ac + 1) */
+int car_mode = CAR_NORMAL;
+static int carnage;                     /* TRACK_DATA's carnage time (0xcf4c) */
+static int props_paid;                  /* the props down the last 1 s was given for (+0x7bc) */
 static uint8_t mark_seen[64];
 static int mark_count;
 static float needle, needle_speed;
@@ -418,7 +423,14 @@ static void markers_step(void)
     int n;
     const struct track_marker *mk = track_markers(&n);
     if(n == 0) return;
-    float bonus = (float)track_bonus_time();
+    float bonus = (float)(car_mode & (CAR_CONES | CAR_SLALOM) ? carnage : track_bonus_time());  /* 0x195fc */
+    if(car_mode == CAR_CONES) {                         /* 0x18b50: more props down than paid for */
+        int down = scenery_hits(0);
+        if(down > props_paid) {
+            race.timer += 1.0f;
+            props_paid = down;
+        }
+    }
     for(int k = -1; k <= 1; k++) {
         int i = ((mark_at + k) % n + n) % n;
         const struct track_marker *m = &mk[i];
@@ -433,8 +445,13 @@ static void markers_step(void)
             race.timer = race.timer / 5.0f + bonus;
             speech_rearm(SAY_HURRY);
         } else if(i == 0 && mark_count >= n - 1) {        /* across the line */
-            if(race.laps + 1 >= race.total_laps) race.finished = 1;
-            else if(!race.finished) {
+            if(race.laps + 1 >= race.total_laps) {
+                race.finished = 1;
+                if(car_mode == CAR_CONES) {             /* 0x23fbc: PERFECT! with every prop down */
+                    int all, down = scenery_hits(&all);
+                    race.perfect = down == all;
+                }
+            } else if(!race.finished) {
                 race.timer = race.timer / 5.0f + bonus;
                 speech_rearm(SAY_HURRY);
             }
@@ -572,13 +589,14 @@ void car_init(int which, int replay)
     snd_over = 0;
     snd_engine = snd_play(SND_ENGINE);
     speech_reset();
-    if(!replay) record = 180.0f;                        /* a lap the race beat it with stays */
+    if(!replay) record = car_mode & CAR_ALONE ? 0.0f : 180.0f;  /* a lap the race beat it with stays */
     race = (struct car_race){ 0 };
     race.timer = 15.0f;
     refl = (struct track_refl){ { 0, 0, 0 }, { 0.0f, 0.0f, 0.0f } };
     refl_phase = 0;
     track_reflection_rate(0.008f);
-    race.total_laps = car_laps;
+    race.total_laps = car_mode & CAR_ALONE ? 1 : car_laps;
+    props_paid = 0;
     for(int j = 0; j < 64; j++) mark_seen[j] = 0;
     mark_count = 0;
     needle = needle_speed = 0.0f;
@@ -589,6 +607,16 @@ void car_init(int which, int replay)
        skidding until a marker */
     float px, py, ph;
     track_start(&pc.x, &pc.y, &pc.yaw);
+    if(car_mode & CAR_ALONE) {                          /* 0x13ded: the last opponent's place */
+        int rows, ns = track_opp_count(&rows), last = (ns - 1 < rows ? ns - 1 : rows) - 1, start = 0, nn = 0;
+        const struct track_spline_node *s = last >= 0 ? track_opp_spline(last, &start, &nn) : 0;
+        const struct track_dir *d = s && start >= 0 && start < nn ? nearest_dir((float)s[start].x, (float)s[start].y) : 0;
+        if(d) {                                         /* the road's heading there, as the grid's */
+            pc.x = (float)s[start].x;
+            pc.y = (float)s[start].y;
+            pc.yaw = d->angle;
+        }
+    }
     road = pc.yaw;
     track_path_point(2, &px, &py, &ph);
     pc.z = ph;
@@ -1125,6 +1153,21 @@ int car_overlay(void)
 int car_cockpit(void)
 {
     return car_overlay() == 1;
+}
+
+void car_mode_init(const uint8_t *dat, uint32_t dat_size, int n, int difficulty)
+{
+    static uint8_t dtr[0x800];
+    char name[16] = "MAPnA.DTR";                        /* the difficulty's letter (0x13251) */
+    struct dat_entry e;
+    uint8_t td[16];
+    name[3] = (char)('0' + n);
+    name[4] = (char)('A' + difficulty);
+    carnage = 0;
+    uint32_t len = dat && dat_find(dat, dat_size, name, &e) && e.size <= sizeof dtr ?
+                   dat_extract(dat, dat_size, &e, dtr, sizeof dtr) : 0;
+    if(len && tb_track_data(dtr, len, td, sizeof td) == sizeof td)
+        carnage = (int)(td[12] | (uint32_t)td[13] << 8 | (uint32_t)td[14] << 16 | (uint32_t)td[15] << 24);
 }
 
 void car_trackside_init(const uint8_t *dat, uint32_t dat_size, int n)

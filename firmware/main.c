@@ -633,9 +633,9 @@ static int rec_full;
    once the commentary has said all it queued (0x21048 asks 0x24740; never in the simulation,
    which stops after the frame it checks); the opponents take the other rows. From its end on
    the trackside camera (car.h). START pauses it. A finished race then runs again from its keys
-   (RACE_REPLAY; time over and SELECT have none, 0x1fe28): with replay set, as the game's replay
-   (0x1fd64, 0x22e74) until its keys run out (0x22dd8) or B, START or SELECT skip it (the game's
-   ENTER and ESC). Then PLAY AGAIN?, over one more picture of the scene alone, the whole screen
+   (RACE_REPLAY; the normal game only, 0x1fe45; time over and SELECT have none, 0x1fe28): with
+   replay set, as the game's replay (0x1fd64, 0x22e74) until its keys run out (0x22dd8) or B,
+   START or SELECT skip it (the game's ENTER and ESC). Then PLAY AGAIN?, over one more picture of the scene alone, the whole screen
    (ask): RACE_AGAIN for YES, RACE_LEAVE for NO. It fades in from black, the picture and the
    sound, in half a second (0x21e50 each frame). */
 static int run_track(int n, int car, int replay)
@@ -711,7 +711,7 @@ static int run_track(int n, int car, int replay)
             }
             if (press & KEY_SELECT) ask = 1;
             if (over >= OVER_STEPS && !speech_busy()) {
-                if (car_race()->finished && !rec_full) return RACE_REPLAY;
+                if (car_race()->finished && !rec_full && (car_mode & CAR_NORMAL)) return RACE_REPLAY;  /* 0x1fe45 */
                 ask = 1;
             }
         }
@@ -1177,6 +1177,7 @@ static void scenery(int n)
     scenery_init(game.data, game.data_size, game.gfx, game.gfx_size, n, SCENERY_MEM, SCENERY_SIZE, &props,
                  &moving);
     car_trackside_init(game.data, game.data_size, n);
+    car_mode_init(game.data, game.data_size, n, track_build_difficulty);
     dlog_str("scenery: ");
     dlog_dec(props);
     dlog_str(" props, ");
@@ -1455,6 +1456,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
                 struct menu_options opt;
                 menu_options(&opt);
                 car_laps = opt.laps;
+                car_mode = menu_mode();
                 track_build_difficulty = opt.difficulty;
                 speech_on = opt.speech;
             }

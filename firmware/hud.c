@@ -300,8 +300,12 @@ void hud_build(struct blit_list *l, int buffer, int fps, int overlay)
     if(r->clock < 8.0f) sprite(l, 0x78, 0x36, (int)r->clock / 2);     /* the start lights */
 
     /* the end (0x21048): GREAT! for the winner, the position (1ST .. 10TH POSITION), the total
-       time; or TIME OVER */
-    if(r->finished) {
+       time; or TIME OVER. Cone carnage (0x24204): YOU MADE IT!, PERFECT! under it with every
+       prop down. */
+    if(r->finished && car_mode == CAR_CONES) {
+        centred(l, 0x5A, track_hud_text(14), 0, 2);
+        if(r->perfect) centred(l, 0x78, track_hud_text(15), 0, 2);
+    } else if(r->finished) {
         if(rank == 1) centred(l, 0x3E, track_hud_text(11), 0, 2);
         p = buf;
         const char *t = track_hud_text(rank >= 1 && rank <= 10 ? rank : 10), *pos = track_hud_text(0);

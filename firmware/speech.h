@@ -12,7 +12,7 @@
 #pragma once
 
 /* the events (0x1fb0); 6 and 18 have no recordings, beat and well no trigger in the game,
-   cones and all belong to modes the core does not have */
+   cones and all belong to the special modes (cone carnage: past the line, every prop down) */
 enum { SAY_THREE, SAY_TWO, SAY_ONE, SAY_GO, SAY_CHECK, SAY_LAP, SAY_NEWLAP = 7, SAY_BEAT, SAY_CRASH,
        SAY_SKID, SAY_WIN, SAY_LOSE, SAY_BAD, SAY_WELL, SAY_HITCAR, SAY_BACK, SAY_STOP, SAY_CONES = 19,
        SAY_BEND, SAY_LEAD, SAY_HURRY, SAY_LAPPED, SAY_LOSLEA, SAY_NOTIME, SAY_ALL, SAY_EVENTS };

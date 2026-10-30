@@ -52,7 +52,8 @@
 #define TURN_RATE   12.566371f      /* a letter turns at 4 pi rad a second (0x2b8b8) */
 #define WAVE_RATE   9.424778f       /* the ripple's clock: 3 pi a second, round at 8 pi */
 #define OPTION      1234            /* an option's item id (0x4d2) */
-#define WORDS       22              /* MENU.TXT's lines 0 .. 21: the two pages' words */
+#define WORDS       31              /* MENU.TXT's lines 0 .. 30: the pages' words */
+#define PAGES       7               /* the game's pages (0x2de4) */
 #define LINE_NETWORK 55             /* NETWORK NOT FOUND */
 #define SPR_LOGO    14              /* MENUL.SPR: the logos 14 and 15 (0x2df38) */
 #define FONT_MSG    0
@@ -87,15 +88,18 @@ static char words[WORDS][16], network_text[32];
 static int ncars, cars_on, pages_on, pick, way;
 static float turn[2] = { 1.5707964f, 1.5707964f }, cam_x, from_x, to_x, slide;
 
-/* The game's pages 0 and 1 (0x2de4, items of 16 bytes: MENU.TXT's line, id, value, highest
-   value; an option, id 1234, shows its line + its value): the main menu (NORMAL GAME 0,
-   CHAMPIONSHIP 1, SPECIAL MODES 2, NETWORK GAME 3, OPTIONS 4) and the options with the game's
-   values at the start (DETAIL, the difficulty, LAP NUMBER, SPEECH, MUSIC; VIEW RECORDS 21) */
-static struct item { int line, id, value, max; } items[2][6] = {
-    { { 0, 0, 0, 0 }, { 1, 1, 0, 0 }, { 2, 2, 0, 0 }, { 3, 3, 0, 0 }, { 4, 4, 0, 0 } },
-    { { 5, OPTION, 2, 2 }, { 8, OPTION, 1, 2 }, { 13, OPTION, 0, 3 }, { 17, OPTION, 1, 1 }, { 19, OPTION, 1, 1 },
-      { 21, 21, 0, 0 } } };
-static const int page_lines[2] = { 5, 6 };
+/* The game's pages (0x2de4, items of 16 bytes: MENU.TXT's line, id, value, highest value; an
+   option, id 1234, shows its line + its value), by the game's numbers: 0 the main menu (NORMAL
+   GAME 0, CHAMPIONSHIP 1, SPECIAL MODES 2, NETWORK GAME 3, OPTIONS 4), 1 the options with the
+   game's values at the start (DETAIL, the difficulty, LAP NUMBER, SPEECH, MUSIC; VIEW RECORDS
+   21), 4 the special modes (TIME ATTACK 28, CONE CARNAGE 29, SLALOM 30) */
+static struct item { int line, id, value, max; } items[PAGES][6] = {
+    [0] = { { 0, 0, 0, 0 }, { 1, 1, 0, 0 }, { 2, 2, 0, 0 }, { 3, 3, 0, 0 }, { 4, 4, 0, 0 } },
+    [1] = { { 5, OPTION, 2, 2 }, { 8, OPTION, 1, 2 }, { 13, OPTION, 0, 3 }, { 17, OPTION, 1, 1 },
+            { 19, OPTION, 1, 1 }, { 21, 21, 0, 0 } },
+    [4] = { { 28, 28, 0, 0 }, { 29, 29, 0, 0 }, { 30, 30, 0, 0 } } };
+static const int page_lines[PAGES] = { [0] = 5, [1] = 6, [4] = 3 };
+static int mode = CAR_NORMAL;           /* the game mode the last game was started in (0x1d25c) */
 static const int laps[4] = { 3, 5, 10, 25 };            /* 0x21e0 + 1 */
 
 /* where a page's words fly in from (x, y, z; an x or y of 0: from where the letter lands) and
@@ -110,7 +114,7 @@ static const int16_t fly[8][5] = {
    second, its turn about x (0 the front to the camera, the letter bright; pi the back, dim)
    and its place now (x left, y up, z to the camera, as the game's) */
 static struct letter { int line, code; float t[3], s[3], ax, ay, p, a, pos[3]; } let[LETTERS];
-static int nlet, page, shown, sel[2], style, turning, leaving, network;    /* shown: the letters' page */
+static int nlet, page, shown, sel[PAGES], style, turning, leaving, network;    /* shown: the letters' page */
 static float wave, logo[2], cam_z = PAGE_CAM_Z, back_f, roll;
 static uint32_t ticks;                                  /* 100 a second, for the blinking */
 
@@ -291,6 +295,11 @@ void menu_options(struct menu_options *o)
     *o = (struct menu_options){ it[0].value, it[1].value, laps[it[2].value], it[3].value, it[4].value };
 }
 
+int menu_mode(void)
+{
+    return mode;
+}
+
 const uint8_t *menu_mlb(void)
 {
     return mlb;
@@ -422,7 +431,8 @@ static int page_step(uint32_t press)
             snd_play(SND_MENU_OPTION);
         }
     } else if(press & (KEY_B | KEY_START)) {
-        if(it->id == 0) {                       /* NORMAL GAME (0x28b80) */
+        if(it->id == 0 || it->id == 29) {       /* NORMAL GAME (0x28b80), CONE CARNAGE (0x28bb0) */
+            mode = it->id ? CAR_CONES : CAR_NORMAL;
             leaving = 1;
             back_f = 1.0f;
             roll = -4.0f * PI;
@@ -431,11 +441,11 @@ static int page_step(uint32_t press)
         }
         if(it->id == 3) network = 1;            /* the game without a network (0x28d78), silent */
         else snd_play(SND_MENU_PAGE);
-        if(it->id == 4) {                       /* OPTIONS (0x28db2) */
-            page = 1;
+        if(it->id == 4 || it->id == 2) {        /* OPTIONS (0x28db2), SPECIAL MODES (0x28eab) */
+            page = it->id == 4 ? 1 : 4;
             turning = 1;
         }
-    } else if((press & (KEY_A | KEY_SELECT)) && page == 1) {    /* the game's ESC (0x280cb) */
+    } else if((press & (KEY_A | KEY_SELECT)) && page != 0) {    /* the game's ESC (0x280cb) */
         page = 0;
         turning = 1;
         snd_play(SND_MENU_PAGE);

@@ -313,7 +313,7 @@ void opp_init(int player_row)
     nopp = ns - 1;                                      /* the last curve is the player's */
     if(nopp > nrows) nopp = nrows;
     if(nopp > OPP_MAX) nopp = OPP_MAX;
-    if(nopp < 0) nopp = 0;
+    if(nopp < 0 || (car_mode & CAR_ALONE)) nopp = 0;    /* the special modes: alone (0x1311c, ...) */
     int row = 0;
     for(int k = 0; k < nopp; k++) {
         struct opp *o = &opp[k];

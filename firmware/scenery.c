@@ -12,7 +12,7 @@
 #include "hw.h"
 #include "sound.h"
 
-#define PROPS_MAX   64          /* track 1 has 45 */
+#define PROPS_MAX   100         /* track 1 has 45, track 5 99 for cone carnage */
 #define KINDS       8           /* rows of OSTACLES (track 1 has 3) */
 #define MOVING_MAX  8           /* rows of ANIMATIONS (track 1 has 5) */
 #define SCRATCH     0x2000      /* MAPnDAT.DTR, then MAPnOST.SPL, at the end of mem */
@@ -27,7 +27,7 @@
 struct prop {
     float x, y, h, yaw, pitch, roll;    /* pitch and roll as car_flat_block() takes them */
     float dx, dy, v, vz;                /* thrown: direction, speed, upward speed */
-    int flying, gone, key;
+    int flying, gone, key, hit;         /* hit: knocked over once, counted (+0x3c) */
     const uint8_t *mesh;
     struct track_block b;
 };
@@ -42,7 +42,7 @@ struct moving {
 };
 static struct prop props[PROPS_MAX];
 static struct moving moving[MOVING_MAX];
-static int nprops, nmoving;
+static int nprops, nmoving, hits;
 static uint8_t *at, *end;               /* mem handed out up to at: the meshes, MAPnANM.SPL */
 
 static int32_t rd32(const uint8_t *p)
@@ -183,7 +183,7 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
                   uint8_t *mem, uint32_t cap, int *nprop, int *nmove)
 {
     static char cell[KINDS > MOVING_MAX ? KINDS : MOVING_MAX][4][16];
-    nprops = nmoving = 0;
+    nprops = nmoving = hits = 0;
     *nprop = *nmove = 0;
     if(!dat || !gfx || cap < 2 * SCRATCH || !track_path_length()) return;
     uint8_t *scratch = mem + cap - SCRATCH;
@@ -232,8 +232,9 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
         m->nb = car_mesh_blocks(m->mesh, m->x, m->y, m->h, m->yaw, 0.0f, 0.0f, m->b, MOVING_BLOCKS);
     }
 
-    /* the props' places: MAPnOST.SPL's one spline, each node a prop */
-    memcpy(name + 4, "OST.SPL", 8);
+    /* the props' places: one spline, each node a prop; MAPnOST.SPL, in cone carnage MAPnCNG.SPL
+       (0x14fb4) */
+    memcpy(name + 4, car_mode == CAR_CONES ? "CNG.SPL" : "OST.SPL", 8);
     uint32_t len = entry(dat, dat_size, name, scratch, SCRATCH);
     int32_t count = len >= 8 ? rd32(scratch) : 0;
     for(int32_t i = 0; i < count && nprops < PROPS_MAX && 8 + 56 * (uint32_t)(i + 1) <= len; i++) {
@@ -278,6 +279,8 @@ static void props_step(void)
                 p->vz = c->speed * 0.02f;
                 p->v = c->speed * 1.4f;
                 p->flying = 1;
+                hits += !p->hit;                /* the first time only (0x126a4) */
+                p->hit = 1;
                 snd_play(SND_HIT);
             }
         if(!p->flying) continue;
@@ -357,6 +360,12 @@ static void moving_sound(void)
         struct moving *m = &moving[k];
         if(m->sound >= 0) m->voice = snd_at(m->voice, m->sound, m->x, m->y, 40000.0f, 32767.0f, 65536.0f, &m->last);
     }
+}
+
+int scenery_hits(int *total)
+{
+    if(total) *total = nprops;
+    return hits;
 }
 
 void scenery_step(void)

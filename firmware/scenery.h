@@ -2,7 +2,8 @@
  * The scenery that is not the track's (openscreamer docs/NOTES.md section 14):
  *
  * Props (the game's 0x15178 places them, 0x124c0 hits one, 0x205b4 moves it): one per node of
- * the track's MAPnOST.SPL, the node's height field its kind, a row of OSTACLES in MAPnDAT.DTR
+ * the track's MAPnOST.SPL (in cone carnage MAPnCNG.SPL, 0x14fb4), the node's height field its
+ * kind, a row of OSTACLES in MAPnDAT.DTR
  * whose first column names the mesh (track 1: cone, trestle barrier, sign). Each stands on the
  * drivable surface under it, tilted to it, heading along the nearest point of the path. When
  * one of the player's two circles comes within its radius + 200 it is thrown the way the car
@@ -32,6 +33,10 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
 /* One step of 1/50 s, after the player's car_step(): the player against the props, the props in
    the air, the moving scenery */
 void scenery_step(void);
+
+/* How many props the player has knocked over since scenery_init(), each counted once (the
+   player's +0x7b8, for cone carnage, car.h); how many there are into *total (if given) */
+int scenery_hits(int *total);
 
 /* The props and moving scenery within the far plane's distance of cam as objects for
    track_draw_cam(), up to max */

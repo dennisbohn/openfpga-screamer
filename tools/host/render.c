@@ -17,7 +17,8 @@
  *   with the disc's tracks 2-8, 3 playing (GAME.DAT for the CD player in the working directory);
  *   PAUSE=2: PLAY AGAIN? TRACKSIDE=1: the trackside camera after the steps, HUD=1 with the race
  *   screen. REPLAYCHECK=s: the replay's determinism check instead (replay_check()), REPLAYAT=k
- *   its picture at step k of the replay, NOHUD=1 without the race screen.
+ *   its picture at step k of the replay, NOHUD=1 without the race screen. MODE=m: the game
+ *   mode (car.h, 0x20 cone carnage), its props, rules and race screen.
  *        render menu <MENU.DAT> <GRAF.DAT> <LOCAL.DAT> <GEN.DAT> <out.rgb> [screen [n [steps]]]
  *   the track screen (screen 1, the default) with track n chosen or the car screen (screen 2)
  *   with the car of row n - 1 (menu.h; default 1), steps of 1/50 s after entering it (default 0);
@@ -202,6 +203,8 @@ static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gf
            "crashes %u\n",
            steps, frames, r->laps, car_progress(), r->finished, r->game_over, opp_player_rank(), car_wall_hits(),
            car_crashes());
+    int all, down = scenery_hits(&all);
+    printf("mode 0x%x: props down %d of %d, countdown %.2f, perfect %d\n", car_mode, down, all, r->timer, r->perfect);
     /* again, as race() sets it up: the scenery, then the car on the trackside camera */
     scenery_init(DATA_FILE, data_size, GFX_FILE, gfx_size, n, SCENERY_MEM, 0x10000, &props, &moving);
     car_init(car, 1);
@@ -288,9 +291,11 @@ int main(int argc, char **argv)
     efx_init(GFX_FILE, gfx_size, n, track_mlb(), track_palette(), EFX_MEM, EFX_SIZE);
     uint32_t data_size = load(argv[3], DATA_FILE, 0x40000);
     int props, moving;
+    if (getenv("MODE")) car_mode = (int)strtol(getenv("MODE"), 0, 0);    /* MODE=0x20: cone carnage */
     scenery_init(DATA_FILE, data_size, GFX_FILE, gfx_size, n, SCENERY_MEM, 0x10000, &props, &moving);
     printf("scenery: %d props, %d moving\n", props, moving);
     car_trackside_init(DATA_FILE, data_size, n);
+    car_mode_init(DATA_FILE, data_size, n, 1);         /* NORMAL, as make_track.py */
     if (getenv("REPLAYCHECK")) return replay_check(atoi(getenv("REPLAYCHECK")), car, n, data_size, gfx_size, argv[4]);
     car_init(car, 0);
     opp_init(car);

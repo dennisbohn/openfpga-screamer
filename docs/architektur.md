@@ -113,7 +113,7 @@ Wert, Höchstwert]` hinter `0x2de4`; OpenScreamer `docs/NOTES.md` Abschnitte 18 
 `firmware/menu.c`. Seite 0: NORMAL GAME, CHAMPIONSHIP, SPECIAL MODES, NETWORK GAME, OPTIONS;
 Seite 1: DETAIL (LOW/MID/HI, anfangs HI), Schwierigkeit (ROOKIE/NORMAL/PRO, anfangs NORMAL),
 LAP NUMBER (3/5/10/25, anfangs 3), SPEECH und MUSIC (anfangs ON), VIEW RECORDS; die Wörter
-aus `MENU.TXT` (Zeilen 0–21; eine Option zeigt ihre Zeile + ihren Wert).
+aus `MENU.TXT` (Zeilen 0–30; eine Option zeigt ihre Zeile + ihren Wert).
 
 **Die Wörter sind Würfel im Menü-Szenenbild, wie im Original** (`0x2b33c`): jeder Buchstabe
 ein Würfel `ALETTER.3DX` aus `MENU.DAT` (516 Einheiten), seine Textur (Material 1 von
@@ -141,7 +141,7 @@ führt dort zurück. NORMAL GAME: die Kamera fährt zurück nach z 20.000 (Fakto
 vierte Potenz) und rollt von −4π an mit π/s, die Buchstaben stehen, das Bild blendet mit 2/s
 aus (`0x293e8`), dann die Streckenwahl; das Original fragt vorher den Namen ab (Bildschirm 4,
 fehlt noch). NETWORK GAME zeigt wie das Original ohne Netzwerk `NETWORK NOT FOUND` (Zeile 55,
-Schrift 0, Farbe 2, y 190, blinkend), CHAMPIONSHIP, SPECIAL MODES und VIEW RECORDS spielen
+Schrift 0, Farbe 2, y 190, blinkend), SPECIAL MODES siehe „Spezialmodi“, CHAMPIONSHIP und VIEW RECORDS spielen
 vorerst nur ihr Geräusch. Die Seiten blenden mit 0,6/s ein (`0x29ea0`): nach dem Start, nach
 A oder SELECT in der Streckenwahl und nach jedem Rennen (`0x2a114` → `0x29ea0`).
 
@@ -153,6 +153,33 @@ Bau der Strecke Gegner und `TRACK_DATA` liest. SPEECH OFF: der Sprecher sagt nic
 (`speech_on`), MUSIC OFF: keine CD-Musik (`music_on`), anders als im Original sofort, auch im
 Menü (das Original übernimmt beides erst beim Laden des nächsten Rennens, `0x2a264`). DETAIL
 wird nur angezeigt: der Core zeichnet immer den H-Satz ganz.
+
+## Spezialmodi
+
+SPECIAL MODES öffnet Seite 4 des Originals (`0x28eab`): TIME ATTACK, CONE CARNAGE, SLALOM
+(`MENU.TXT` Zeilen 28–30, ids 28–30), A oder SELECT führt zurück. Die Wahl setzt das
+Modus-Wort des Originals (`0x1d25c`: 1 normal, 2 Meisterschaft, 4 Zeitfahren, `0x10` Netzwerk,
+`0x20` Cone Carnage, `0x40` Slalom; bei uns `car_mode` in `car.c`, aus `menu_mode()`), dann
+wie NORMAL GAME Strecken- und Autowahl (`0x28bb0`; das Original fragt vorher den Namen ab).
+Seite 3 (NEW/RESUME, ids 24/25) gehört dem Zeitfahren, Seite 5 (ids 26/27) der Meisterschaft.
+
+In allen drei Modi (Maske `0x64`): allein auf der Strecke (`0x1311c`, `0x1309c`, `0x12e14`
+legen keine Gegner an), eine Runde (`0x2a216`), vom Startplatz des letzten Gegners (`0x13ded`:
+Spline Gegnerzahl − 1 statt des eigenen, Richtung die der Straße dort), keine Rundenbestzeit zu
+schlagen (`0x2a264`: 0); nach dem Ziel keine Wiederholung (nur im normalen Spiel, `0x1fe45`),
+gleich PLAY AGAIN?. Der Sprecher sagt dort kein „lead“ (Maske `0x13`, `0x24308`), in Cone
+Carnage und Slalom auch kein „hurry“ (Maske `0x17`, `0x242dc`). Rekorde trägt das Original nur
+für normales Spiel und Meisterschaft ein (`0x2e5e4`).
+
+**CONE CARNAGE** (`0x20`): die Hindernisse aus `MAPnCNG.SPL` statt `MAPnOST.SPL` (`0x14fb4`;
+Strecke 1: 36 Hütchen, Strecke 5: 99). Ziellinie und Checkpoints geben statt der Bonuszeit die
+vierte Zahl von `TRACK_DATA`, `carnage` (`0x195fc`; Strecke 1 NORMAL 15 s statt 40), viel zu
+wenig für eine Runde: jeder Schritt, in dem mehr Hütchen umgefahren sind als zuvor, gibt 1 s
+(`0x18b50`; jedes zählt einmal, `+0x3c`, `0x126a4`). Im Ziel `YOU MADE IT!` (`GAME.TXT` 14,
+y 90), mit allen Hütchen dazu `PERFECT!` (15, y 120; `0x23fbc`, `0x24204`), sonst wie immer
+`TIME OVER`. Der Sprecher: „cones“ (Ereignis 19) einmal nach der Linie, „all“ (26) sobald alle
+umgefahren sind (`0x24570`, `0x24386`), im Ziel „win“. `MODE=0x20` für `tools/render.sh`
+zeichnet und fährt (`REPLAYCHECK`) den Modus auf dem PC.
 
 ## Strecken- und Autowahl
 
@@ -278,7 +305,7 @@ ersten Strecke), die Tabelle setzt er nach jedem Rennen neu (`snd_menu` in `soun
 AGAIN? klickt bei jedem Druck von hoch/links oder runter/rechts (`SFXSBASE.DTR` Zeile 6,
 `sclick`; `0x21b0e`, `0x21b47`). Der CD-Spieler der Pause spielt nichts.
 
-Nicht dabei: Namenseingabe, Meisterschaft, Spezialmodi, Rekorde, Intro, die gespiegelten
+Nicht dabei: Namenseingabe, Meisterschaft, Zeitfahren und Slalom, Rekorde, Intro, die gespiegelten
 Strecken, „NEW TRACK AVAILABLE“,
 Wiederholungen als Datei (`REPLAYS\TEMP.RPL`). Die Simulation fährt gleich die Strecke aus `SIM_TRACK` (Slot 28) mit dem
 ersten Auto; mit `SIM_MENU=1` (Slot 27) zeigt sie stattdessen den Streckenbildschirm, mit

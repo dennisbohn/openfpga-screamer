@@ -3,6 +3,7 @@
 #include "dlog.h"
 #include "hw.h"
 #include "opp.h"
+#include "scenery.h"
 #include "sound.h"
 #include "track.h"
 
@@ -110,7 +111,9 @@ static void once(int ev, int mode)
    5 s or under; lead: first for 5 s; loslea: after that second or worse for 5 s; bend: on a
    marker with flag 4; skid: sliding for the car's grip x 2.9 s; bad: last (behind
    max(2, opponents) others) for 8 s; lapped: a lap up on an opponent for 2 s; hitcar: whenever
-   the contact (opp.h) is over 0.8 */
+   the contact (opp.h) is over 0.8. By the game mode (car.h): hurry not in cone carnage and
+   slalom (mask 0x17), lead not in the special modes (0x13); cone carnage says cones once past
+   the line, all once every prop is down. */
 static void notice(const struct car_race *rc)
 {
     const struct car_state *c = car_state();
@@ -118,14 +121,19 @@ static void notice(const struct car_race *rc)
     const struct track_marker *mk = track_markers(&nm);
     repeat(back, SAY_BACK, 5.0f);
     repeat(c->speed < 1000.0f, SAY_STOP, 8.0f);
-    if (rc->timer <= 5.0f) once(SAY_HURRY, 3);
-    if (hold(rank == 1, SAY_LEAD, 5.0f)) had_lead = 1;
+    if ((car_mode & (CAR_NORMAL | CAR_CHAMP | CAR_ATTACK | CAR_NETWORK)) && rc->timer <= 5.0f) once(SAY_HURRY, 3);
+    if ((car_mode & (CAR_NORMAL | CAR_CHAMP | CAR_NETWORK)) && hold(rank == 1, SAY_LEAD, 5.0f)) had_lead = 1;
     if (hold(had_lead && rank >= 2, SAY_LOSLEA, 5.0f)) had_lead = 0;
     if (!back) hold(nm && (mk[car_marker()].flags & 4), SAY_BEND, 0.0f);
     hold(c->slide_want != 0.0f, SAY_SKID, c->spec.grip * 2.9f);
     hold((nopp < 2 ? 2 : nopp) < rank, SAY_BAD, 8.0f);
     hold(opp_lapped(), SAY_LAPPED, 2.0f);
     repeat(opp_hitcar() > 0.8f, SAY_HITCAR, 0.0f);
+    if (car_mode == CAR_CONES) {
+        int all, down = scenery_hits(&all);
+        if (down == all) once(SAY_ALL, 3);              /* 0x24386: every prop down */
+        if (rc->clock_on) once(SAY_CONES, 3);           /* 0x24570: past the line */
+    }
 }
 
 /* 0x24a24 / 0x24ae8: which of the event's recordings (0..2): the mode's, or in mode 3 the next

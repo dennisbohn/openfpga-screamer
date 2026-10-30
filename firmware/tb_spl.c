@@ -401,8 +401,8 @@ uint32_t tb_track_data(const uint8_t *dtr, uint32_t size, uint8_t *out, uint32_t
         int nf = 0;
         while (nf < 4 && next_tok(dtr, end, &p, &f[nf])) nf++;
         if (nf == 0 || dtr[f[0].at] == '*') continue;
-        /* the first other line: color, camera_hi, bonus_time, carnage (only read) */
-        int64_t v[4];
+        /* the first other line: color, camera_hi, bonus_time, carnage */
+        int64_t v[4] = { 0 };
         if (nf < 4) return 0;
         for (int j = 0; j < 4; j++) {
             int ok = parse_int(dtr + f[j].at + 1, f[j].len - 1, 10, &v[j]);
@@ -413,7 +413,9 @@ uint32_t tb_track_data(const uint8_t *dtr, uint32_t size, uint8_t *out, uint32_t
         wr32(out, (uint32_t)v[2]);
         wr32(out + 4, (uint32_t)v[1]);
         wr32(out + 8, (uint32_t)v[0]);
-        return 12;
+        if (cap < 16) return 12;
+        wr32(out + 12, v[3] < 0 || v[3] > INT32_MAX ? 0u : (uint32_t)v[3]);    /* carnage */
+        return 16;
     }
     return 0;
 }
