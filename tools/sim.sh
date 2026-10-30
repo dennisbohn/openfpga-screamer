@@ -46,7 +46,7 @@ fi
 mkdir -p "$root/build/sim"
 
 MSYS_NO_PATHCONV=1 docker run --rm -e SIM_GAME -e SIM_QUICK -e SIM_IMAGE -e SIM_KEYS -e SIM_RACE_FRAMES -e SIM_WAV -v "$mount:/work" -w /work --entrypoint sh "$image" -c "
-    verilator --cc --exe --build -O3 --timescale 1ns/1ps -Wall -Wno-UNUSEDSIGNAL -Wno-DECLFILENAME \
+    verilator --cc --exe --build -j 0 -O3 --timescale 1ns/1ps -Wall -Wno-UNUSEDSIGNAL -Wno-DECLFILENAME \
         $defines --Mdir build/sim/$obj -f sim/$tb/files.f sim/$tb/tb.cpp \
         > build/sim/$obj.build.log 2>&1 || { cat build/sim/$obj.build.log; exit 1; }
     build/sim/$obj/V$top $*
