@@ -243,15 +243,15 @@ static void fps_mark(struct blit_list *l, int fps)
     text(l, 12, 190, buf, 3, 2);
 }
 
-void hud_build(struct blit_list *l, int buffer, int fps, int cockpit)
+void hud_build(struct blit_list *l, int buffer, int fps, int overlay)
 {
     begin(l, buffer);
     const struct car_state *c = car_state();
     const struct car_race *r = car_race();
     char buf[16];
 
-    if(!cockpit) {                                      /* overlay 2 (0x237fc) */
-        picture(l, 0);                                  /* IMPLET_L: LAP, POSITION, the clocks */
+    if(overlay != 1) picture(l, 0);                     /* IMPLET_L: LAP, POSITION, the clocks */
+    if(overlay == 2) {                                  /* overlay 2 (0x237fc) */
         picture(l, 1);                                  /* IMPRES_L: the rev counter */
         buf[0] = 1;                                     /* fixed pitch */
         put_dec(buf + 1, (uint32_t)(c->speed * 0.017f), 3);

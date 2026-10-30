@@ -147,7 +147,9 @@ legt es als Standbild in den SDRAM (`still` in `main.c`), der Blitter kopiert es
 und legt das Radio darüber (`hud_cd`). START noch einmal: Lautstärken zurück, die Musik der
 Strecke (von vorn, wenn sie schon stand), wie PLAY.
 
-**PLAY AGAIN?:** SELECT im Rennen und 5 s nach seinem Ende. Das Original fragt nach jedem
+**PLAY AGAIN?:** SELECT im Rennen und 5 s nach seinem Ende, sobald der Kommentator alles
+gesagt hat, was er sich vorgenommen hatte (`0x21048` fragt `0x24740`); bis dahin der
+Endbildschirm über der Streckenkamera (siehe unten). Das Original fragt nach jedem
 verlassenen Rennen (`0x1fe86` → `0x219d0`, außer in Meisterschaft und Netzwerk; nach einem
 beendeten Rennen erst nach der Wiederholung, die wir nicht haben): ESC stoppt die Effekte
 (`0x1f8cc`), die Musik läuft weiter, das letzte Bild dreimal abgedunkelt, darüber `GAME.TXT`
@@ -455,6 +457,20 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Tempo- und Gangziffern entfallen dort. Die Startrichtung ist die des nächsten Straßenpunkts im
   Kartenraster (`0x120c0`, Aufruf `0x13ea1`), nicht die Richtung der Spline-Griffe (bis dahin
   1,6° daneben).
+- **Die Streckenkamera am Rennende** (2026-10-30, aus der EXE, Zeile 3 der Tabelle,
+  `0x1a620`): Ist das Rennen beendet (Flag 8 bei `0x18e14`) oder die Zeit um und das Auto
+  steht (0x10), schaltet das Spiel auf sie um. Ihre Plätze sind die Knoten von `MAPnRPL.SPL`
+  (der Lader `0x14fb4` legt die Datei bei `0xf90c` ab; wir lesen sie beim Rennaufbau aus
+  `DATA/MAPn.DAT`, `car_trackside_init`). Genommen wird der Knoten, der dem Auto am Boden am
+  nächsten liegt (ganze Einheiten, Abstand abgeschnitten, ein Knoten genau über dem Auto
+  zählt nicht); von dort schaut sie geradewegs auf das Auto, um den Höhenwinkel hinab
+  (`2π − acos(flach/Abstand)`, auch wenn der Knoten tiefer liegt), ohne Neigung. Ist das Auto
+  weiter als 1500 weg, rückt sie auf ihrer Blicklinie heran, bis es 1500 sind (jede
+  Koordinate abgeschnitten). Auto und Schatten werden gezeichnet; Overlay 0: von der
+  Rennanzeige bleiben die Beschriftungen (`IMPLET_L`), Countdown, Runde, Platz, Uhren und
+  Radar, Drehzahlbild, Tempo und Gang entfallen (`0x2367c`). Der Wechsel schneidet (wir haben
+  noch keine Kameraflüge). `TRACKSIDE=1` (mit `HUD=1` samt Rennanzeige) für
+  `tools/render.sh` zeigt sie nach den Schritten.
 - **Routine 224, Rauch, Schatten, Radar** (2026-10-29, aus der EXE): Der Füller des Spiels
   (`0xcd9d0`) macht aus jedem Pixel `SMG[Texel × 256 + Pixel]`, ohne Licht oder Tiefe; das ist
   die einzige SMG-Abfrage im Programm. Benutzt wird sie vom Rauch (nur der Spieler, `0x19818`,

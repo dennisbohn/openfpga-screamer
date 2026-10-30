@@ -24,14 +24,22 @@ void car_init(int which);
 /* One step of 1/50 s with the keys (IN_KEY) held now and on the step before */
 void car_step(uint32_t keys, uint32_t keys_before);
 
-/* Choose the view (0 .. CAR_VIEWS - 1); the camera it gives now */
+/* Choose the view (0 .. CAR_VIEWS - 1); the camera it gives now. From the race's end on the
+   camera is the trackside one (view-table row 3, 0x1a620), the car and its shadow in view. */
 void car_view(int view);
 void car_camera(struct track_cam *cam);
 /* The view's 3D picture: its lines from the top (the table's third column: 132 in the cockpit,
-   200 else; 0x19cbe sets the view up as 0x4c610(320, lines, lines x 0.65)), and 1 if the
-   dashboard goes over the rest (overlay 1, hud.h) */
+   200 else; 0x19cbe sets the view up as 0x4c610(320, lines, lines x 0.65)); its overlay (the
+   fourth column, hud.h: 1 the dashboard over the rest, 2 the outside views' instruments, 0
+   neither: the trackside camera), and 1 if it is the dashboard */
 int car_view_lines(void);
+int car_overlay(void);
 int car_cockpit(void);
+/* The trackside cameras' places: the nodes of MAPnRPL.SPL from track n's DATA container dat
+   (as the data slot loaded it); without them the race's end keeps its view */
+void car_trackside_init(const uint8_t *dat, uint32_t dat_size, int n);
+/* The trackside camera from now on, as the race's end asks for it (car_step) */
+void car_trackside(void);
 
 /* The car as an object for track_draw_cam(), its blocks made in the game's order for the
    camera when it comes up in the drawing; 0 when the view is from inside it */

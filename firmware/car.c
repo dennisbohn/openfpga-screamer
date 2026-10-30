@@ -1,10 +1,11 @@
 /*
  * The player's car (car.h), after OpenScreamer's port/src/main.c (GPL-3.0), checked against
- * STARTL.EXE where it says so; the shadow and the smoke from STARTL.EXE itself. Not yet here:
- * the suspension (the body's lean), the camera's fly-across between views.
+ * STARTL.EXE where it says so; the shadow, the smoke and the trackside camera from STARTL.EXE
+ * itself. Not yet here: the suspension (the body's lean), the camera's fly-across between views.
  */
 #include "car.h"
 #include <math.h>
+#include "dat.h"
 #include "hw.h"
 #include "efx.h"
 #include "sound.h"
@@ -16,16 +17,27 @@
 
 /* the game's views (OpenScreamer's g_views; the table at 0x1da0: key, camera routine, lines of
    the 3D view, overlay): how far behind, how high, looking down how much; from the car (camera
-   routine 0); the 3D view's lines from the top; the dashboard over the rest (overlay 1) */
-struct view_def { float behind, above, down; int incar, lines, cockpit; };
-static const struct view_def views[CAR_VIEWS + 1] = {
-    {    0.0f,   0.0f, 0.0f,    1, 200, 0 },    /* row 0: bumper cam */
+   routine 0); the 3D view's lines from the top; the overlay (hud.h: 1 the dashboard over the
+   rest, 2 the outside views' instruments, 0 neither) */
+struct view_def { float behind, above, down; int incar, lines, overlay; };
+static const struct view_def views[CAR_VIEWS + 2] = {
+    {    0.0f,   0.0f, 0.0f,    1, 200, 2 },    /* row 0: bumper cam */
     {    0.0f,   0.0f, 0.0f,    1, 132, 1 },    /* row 1: cockpit */
-    { 1300.0f, 300.0f, 0.1885f, 0, 200, 0 },    /* row 2: near chase */
-    { 1700.0f, 300.0f, 0.1257f, 0, 200, 0 },    /* row 6: far chase */
-    { 1400.0f, 100.0f, 0.1257f, 0, 200, 0 },    /* row 5: the crash's, not the player's to choose */
+    { 1300.0f, 300.0f, 0.1885f, 0, 200, 2 },    /* row 2: near chase */
+    { 1700.0f, 300.0f, 0.1257f, 0, 200, 2 },    /* row 6: far chase */
+    { 1400.0f, 100.0f, 0.1257f, 0, 200, 2 },    /* row 5: the crash's, not the player's to choose */
+    {    0.0f,   0.0f, 0.0f,    0, 200, 0 },    /* row 3: trackside (trackside_camera) */
 };
 #define CRASH_VIEW  CAR_VIEWS
+#define TRACKSIDE_VIEW (CAR_VIEWS + 1)
+
+/* the trackside cameras' places (view-table row 3): the nodes of MAPnRPL.SPL's first spline
+   (the loader 0x14fb4 keeps it at 0xf90c, the routine 0x1a620 reads it), whole units: x, y,
+   height; and whether the camera is on: from the race's end (0x20eb8, 0x20f88 ask for row 3) */
+#define RPL_MAX     64
+static int32_t rpl[RPL_MAX][3];
+static int rpl_n;
+static int trackside;
 
 static struct car_state pc;
 static struct track_model model;
@@ -533,6 +545,7 @@ void car_init(int which)
     spin = steer = 0.0f;
     wall_hits = crashes = 0;
     crash.on = 0;
+    trackside = 0;
     snd_engine = snd_stop(snd_engine);
     snd_skid = snd_stop(snd_skid);
     snd_wall = -1;
@@ -637,6 +650,7 @@ void car_step(uint32_t keys, uint32_t keys_before)
         if(pc.speed < 1.0f) race.game_over = 1;
     }
     if(race.finished || race.game_over) { in.throttle = 0.0f; in.brake = 0.4f; }
+    if(race.finished || race.game_over) car_trackside();    /* row 3 asked for */
     if(crash.on) in.throttle = in.steer = 0.0f;          /* no drive in the air */
     int crashed = crash.on;
     crash_step();
@@ -680,7 +694,7 @@ void car_step(uint32_t keys, uint32_t keys_before)
        counter's needle to rpm / maxrpm x pi on the outside views' instrument, x 3.613 on the
        dashboard (0x23739), no further; the dashboard's speed needle, only while it is shown, to
        speed / maxspd x 4.084 (0x236ec), unbounded */
-    int dash = views[view].cockpit;
+    int dash = views[view].overlay == 1;
     float full = dash ? 3.6128317f : PI, want = pc.rpm / pc.spec.maxrpm * full;
     if(want > full) want = full;
     needle = want + (needle - want) * drive_damp(0x5a);
@@ -874,7 +888,7 @@ static int car_make(int id, const struct track_cam *cam, struct track_object *ob
 int car_object(const struct track_cam *cam, struct track_object *obj)
 {
     (void)cam;
-    if(views[view].incar) return 0;
+    if(views[view].incar && !trackside) return 0;
     *obj = (struct track_object){ pc.x, pc.y, pc.z + crash.height, 1200.0f, 0, 0, car_make, 0, 0, &refl, refl_phase };
     return 1;
 }
@@ -951,7 +965,7 @@ int car_effects(const struct track_cam *cam, struct track_object *objs, int max)
     int n = 0;
     const uint8_t *sh = efx_shadow(), *sm = efx_smoke();
     shadow.on = 0;
-    if(sh && !views[view].incar && n < max) {
+    if(sh && (!views[view].incar || trackside) && n < max) {
         /* 0x18cbc: the car's whole-number x and z moved 20 units (ds:0x854) away from the
            camera along the ground; 0x16043: 2 under the ground below the wheels, without the
            grass's jolts (+0x4ec, 0x1675f: their sum / 4) */
@@ -1013,12 +1027,70 @@ int car_shadow_at(float *x, float *y, float *h)
 
 int car_view_lines(void)
 {
-    return views[view].lines;
+    return views[trackside ? TRACKSIDE_VIEW : view].lines;
+}
+
+int car_overlay(void)
+{
+    return views[trackside ? TRACKSIDE_VIEW : view].overlay;
 }
 
 int car_cockpit(void)
 {
-    return views[view].cockpit;
+    return car_overlay() == 1;
+}
+
+void car_trackside_init(const uint8_t *dat, uint32_t dat_size, int n)
+{
+    static int32_t spl[2 + 14 * RPL_MAX];       /* count, start, nodes of 14 words */
+    char name[16] = "MAPnRPL.SPL";
+    struct dat_entry e;
+    name[3] = (char)('0' + n);
+    rpl_n = 0;
+    uint32_t len = dat && dat_find(dat, dat_size, name, &e) && e.size <= sizeof spl ?
+                   dat_extract(dat, dat_size, &e, (uint8_t *)spl, sizeof spl) : 0;
+    int32_t count = len >= 8 ? spl[0] : 0;
+    for(int32_t k = 0; k < count && k < RPL_MAX && 8 + 56 * (uint32_t)(k + 1) <= len; k++) {
+        const int32_t *nd = spl + 2 + 14 * k;  /* ?, x, y, height, ... */
+        rpl[k][0] = nd[1];
+        rpl[k][1] = nd[2];
+        rpl[k][2] = nd[3];
+        rpl_n = k + 1;
+    }
+}
+
+/* The trackside camera (0x1a620): the node nearest the car on the ground, the car's
+   whole-number place (+0x4b0, +0x4b8) against the node's, the distance cut (a node at the
+   car's very place is passed over, the first of equals kept); from there straight at the car,
+   heading the way (forward = sin yaw, -cos yaw), pitch 2 pi - acos(flat / distance): down by
+   the angle the height between them gives, whichever is the higher; no lean. More than 1500
+   units from the car it moves on along its heading and pitch until it is 1500 away, each
+   coordinate cut to a whole unit. */
+static void trackside_camera(struct track_cam *cam)
+{
+    int32_t cx = whole.x, cy = whole.y, ch = (int32_t)pc.z, near = 0x7FFFFFFF;
+    int at = 0;
+    for(int k = 0; k < rpl_n; k++) {
+        float dx = (float)(rpl[k][0] - cx), dy = (float)(rpl[k][1] - cy), d = sqrtf(dx * dx + dy * dy);
+        if(d != 0.0f && (float)near > d) {
+            near = (int32_t)d;
+            at = k;
+        }
+    }
+    float dx = (float)(rpl[at][0] - cx), dy = (float)(rpl[at][1] - cy), dh = (float)(rpl[at][2] - ch);
+    float flat = sqrtf(dx * dx + dy * dy), dist = sqrtf(dx * dx + dy * dy + dh * dh);
+    cam->x = (float)rpl[at][0];
+    cam->y = (float)rpl[at][1];
+    cam->h = (float)rpl[at][2];
+    cam->yaw = atan2f(-dx, dy);
+    cam->pitch = -atan2f(fabsf(dh), flat);
+    cam->roll = 0.0f;
+    int32_t move = (int32_t)(dist - 1500.0f);
+    if(move > 0 && dist > 0.0f) {
+        cam->x = (float)(int32_t)(cam->x - dx / dist * (float)move);
+        cam->y = (float)(int32_t)(cam->y - dy / dist * (float)move);
+        cam->h = (float)(int32_t)(cam->h - fabsf(dh) / dist * (float)move);
+    }
 }
 
 void car_view(int v)
@@ -1029,10 +1101,19 @@ void car_view(int v)
     chase_step();
 }
 
+void car_trackside(void)
+{
+    trackside = rpl_n > 0;
+}
+
 /* view_pose */
 void car_camera(struct track_cam *cam)
 {
     const struct view_def *v = &views[view];
+    if(trackside) {
+        trackside_camera(cam);
+        return;
+    }
     if(v->incar) {
         cam->x = pc.x;
         cam->y = pc.y;

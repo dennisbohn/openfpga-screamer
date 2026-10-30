@@ -211,3 +211,8 @@ void speech_step(void)
     if (rc->on && !over) notice(rc);
     play();
 }
+
+int speech_busy(void)
+{
+    return queued > 0;
+}

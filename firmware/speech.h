@@ -26,3 +26,5 @@ void speech_rearm(int ev);
 /* One step of 1/50 s, after the player's: the countdown with the start lights (0x20d45), the
    end (0x23e78, 0x20f88), what the commentator notices (0x2425c), the queue (0x24820) */
 void speech_step(void);
+/* 1 while a line is queued or being spoken (0x24740: the queue's first event, -1 when empty) */
+int speech_busy(void);

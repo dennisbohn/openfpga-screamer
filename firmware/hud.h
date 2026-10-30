@@ -16,9 +16,10 @@
 #include "blit.h"
 #include "drive.h"
 
-/* The race screen without the dashboard's parts: with cockpit, without the labels and the
-   outside views' instruments */
-void hud_build(struct blit_list *l, int buffer, int fps, int cockpit);
+/* The race screen without the dashboard's parts, by the view's overlay (car_overlay()): 2 the
+   labels and the outside views' instruments, 1 (the cockpit) neither, 0 (the trackside camera)
+   the labels alone (0x2367c) */
+void hud_build(struct blit_list *l, int buffer, int fps, int overlay);
 
 /* The cockpit's dashboard for car sp (the car's own, 0x136c8): the picture COCKnn{A,B}L.PKC
    of the GFX container GAME.DAT (nn the model of "AUTOnn", B for the second paint job; 0x1b22c

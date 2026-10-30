@@ -35,6 +35,7 @@
 #include "music.h"
 #include "menu.h"
 #include "dat.h"
+#include "speech.h"
 
 uint32_t frames_shown;             /* read by the trap handler */
 
@@ -567,11 +568,12 @@ static int play_again(uint32_t st)
 
 static int dashboard_init(void);
 
-#define OVER_STEPS  250         /* the race over for 5 s: PLAY AGAIN? */
+#define OVER_STEPS  250         /* the end screen for 5 s (0x21048), then PLAY AGAIN? */
 
-/* The race on track n with the car of CARS.DTR row car until SELECT or OVER_STEPS after its end
-   (never in the simulation, which stops after the frame it checks); the opponents take the other
-   rows. START pauses it. 1 when PLAY AGAIN? is answered YES. */
+/* The race on track n with the car of CARS.DTR row car until SELECT, or OVER_STEPS after its end
+   once the commentary has said all it queued (0x21048 asks 0x24740; never in the simulation,
+   which stops after the frame it checks); the opponents take the other rows. From its end on
+   the trackside camera (car.h). START pauses it. 1 when PLAY AGAIN? is answered YES. */
 static int run_track(int n, int car)
 {
     const uint32_t *pal = track_palette();
@@ -626,7 +628,7 @@ static int run_track(int n, int car)
             last_frame = VID_FRAME(VID_STATUS);
             continue;
         }
-        if ((press & KEY_SELECT) || over >= OVER_STEPS) return play_again(st);
+        if ((press & KEY_SELECT) || (over >= OVER_STEPS && !speech_busy())) return play_again(st);
         /* the physics at 50 steps a second: one per video frame since the last picture */
         uint32_t steps_now = drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
         last_frame = VID_FRAME(st);
@@ -712,7 +714,7 @@ static int run_track(int n, int car)
             if (has_radar) hw_piece(&radar);
         } else {
             if (has_radar) hw_piece(&radar);
-            hud_build(&hud, (int)draw_buf, (int)fps, 0);
+            hud_build(&hud, (int)draw_buf, (int)fps, car_overlay() ? 2 : 0);   /* no dashboard: the instruments */
         }
         hw_blit(&hud);
         tl_mark(TL_HUD);
@@ -1034,13 +1036,15 @@ static void effects(int n)
     dlog_str(" ms\n");
 }
 
-/* Track n's props and moving scenery (scenery.h) from its DATA and GFX containers */
+/* Track n's props and moving scenery (scenery.h) from its DATA and GFX containers, and the
+   trackside cameras' places (car.h) from the DATA container */
 static void scenery(int n)
 {
     uint32_t t0 = rdcycle();
     int props, moving;
     scenery_init(game.data, game.data_size, game.gfx, game.gfx_size, n, SCENERY_MEM, SCENERY_SIZE, &props,
                  &moving);
+    car_trackside_init(game.data, game.data_size, n);
     dlog_str("scenery: ");
     dlog_dec(props);
     dlog_str(" props, ");

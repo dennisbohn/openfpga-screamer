@@ -126,6 +126,7 @@ int main(int argc, char **argv)
     int props, moving;
     scenery_init(DATA_FILE, data_size, GFX_FILE, gfx_size, n, SCENERY_MEM, 0x10000, &props, &moving);
     printf("scenery: %d props, %d moving\n", props, moving);
+    car_trackside_init(DATA_FILE, data_size, n);
     car_init(car);
     opp_init(car);
     car_view(view);
@@ -135,6 +136,7 @@ int main(int argc, char **argv)
         scenery_step();
     }
     track_clock((uint32_t)steps);
+    if (getenv("TRACKSIDE")) car_trackside();       /* TRACKSIDE=1: the race's end's camera */
 
     struct track_cam cam;
     static struct track_object objs[MAX_OBJECTS];
@@ -159,6 +161,11 @@ int main(int argc, char **argv)
     struct track_stats ts;
     track_mode = TRACK_MODEL;
     track_draw_cam(fb, &clip, &cam, objs, nobj, &ts);
+    if (getenv("HUD")) {                                /* HUD=1: the race screen over it */
+        static struct blit_list l;
+        hud_build(&l, 0, 0, car_overlay());
+        blit_model(fb, &l);
+    }
     const char *pause = getenv("PAUSE");
     if (pause && *pause != '0') {                       /* main.c's still(), pause_race(), play_again() */
         int ask = atoi(pause) == 2;
