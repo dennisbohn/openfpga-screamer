@@ -25,6 +25,7 @@ static const char *const event_name[SAY_EVENTS] = {
 /* the queue (0x11907c): every event at most once, so it never holds more than all of them */
 static struct { int ev, mode; float delay; } queue[SAY_EVENTS];
 static int queued;
+int speech_on = 1;
 static int voice = -1;                  /* the line being spoken (0x11906c) */
 static int said;                        /* its recording (0..2) */
 static float said_at;                   /* the race clock when it began */
@@ -52,6 +53,7 @@ void speech_reset(void)
 
 void speech_say(int ev, int mode, float delay)
 {
+    if (!speech_on) return;
     for (int i = 0; i < queued; i++)
         if (queue[i].ev == ev) return;
     queue[queued].ev = ev;

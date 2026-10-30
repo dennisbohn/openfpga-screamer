@@ -47,6 +47,7 @@ static int view;
 static int mark_at;                     /* the marker last reached */
 static uint32_t wall_hits, crashes;
 static struct car_race race;
+int car_laps = 3;                       /* the option's default (0x1d2ac + 1) */
 static uint8_t mark_seen[64];
 static int mark_count;
 static float needle, needle_speed;
@@ -577,7 +578,7 @@ void car_init(int which, int replay)
     refl = (struct track_refl){ { 0, 0, 0 }, { 0.0f, 0.0f, 0.0f } };
     refl_phase = 0;
     track_reflection_rate(0.008f);
-    race.total_laps = 3;                                /* the option's default (0x1d2ac) */
+    race.total_laps = car_laps;
     for(int j = 0; j < 64; j++) mark_seen[j] = 0;
     mark_count = 0;
     needle = needle_speed = 0.0f;

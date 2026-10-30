@@ -21,9 +21,11 @@
 /* The cue sheet from its data slot and the song numbers from GEN.DAT (whole in memory; without
    MENU.DTR the game's own values): the CD's audio tracks, 0 without the image */
 int music_init(const uint8_t *gen, uint32_t gen_size);
-/* Song k: 0 the track screen's, 1-6 the race tracks'. Unless it plays already, the music before
-   stops, the ring is filled (224 KB, 1.3 s of music; waiting, about 170 ms) and the song starts;
-   no read is left running. */
+/* The options page's MUSIC (menu.h): 0 off, music_play only stops the music */
+extern int music_on;
+/* Song k: 0 the menu's, 1-6 the race tracks'. Unless it plays already, the music before stops,
+   the ring is filled (224 KB, 1.3 s of music; waiting, about 170 ms) and the song starts; no
+   read is left running. */
 void music_play(int k);
 /* Once a frame while a song plays: a read done is taken, the next one started if the ring
    has room */

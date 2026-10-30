@@ -17,6 +17,8 @@ enum { SAY_THREE, SAY_TWO, SAY_ONE, SAY_GO, SAY_CHECK, SAY_LAP, SAY_NEWLAP = 7, 
        SAY_SKID, SAY_WIN, SAY_LOSE, SAY_BAD, SAY_WELL, SAY_HITCAR, SAY_BACK, SAY_STOP, SAY_CONES = 19,
        SAY_BEND, SAY_LEAD, SAY_HURRY, SAY_LAPPED, SAY_LOSLEA, SAY_NOTIME, SAY_ALL, SAY_EVENTS };
 
+/* The options page's SPEECH (menu.h): 0 off, nothing is said (0x2425c, 0x245ab) */
+extern int speech_on;
 /* A new race (0x246bc): the queue empty, the voice stopped, every trigger's timer at 0 */
 void speech_reset(void);
 /* Queue event ev with mode (0..3) and delay in seconds, unless it is queued already (0x2479c) */

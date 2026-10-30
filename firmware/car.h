@@ -89,13 +89,15 @@ int car_shadow_at(float *x, float *y, float *h);
 /* The race (0x18a04, 0x1820c, 0x19490, 0x20d45; OpenScreamer's markers_step): the clock
    since the start, whose start lights go green at 6 s; the countdown from 15 s, which at the
    line and at each checkpoint becomes what is left / 5 + TRACK_DATA's bonus; the total and
-   lap time from the first crossing of the line; three laps; time over once the countdown is
+   lap time from the first crossing of the line; car_laps laps; time over once the countdown is
    out and the car has stopped */
 struct car_race {
     float clock, timer, total, lap, best, last;
     int laps, total_laps, on, clock_on, time_out, finished, game_over;
 };
 const struct car_race *car_race(void);
+/* the laps of a race: the options page's LAP NUMBER (menu.h, 0x1d2ac + 1), 3 at first */
+extern int car_laps;
 /* Contact with the opponents (opp.c, the game's 0x17818): the car's two circles (0x136c8:
    the body from 250 ahead of the front wheels to 150 behind the rear ones, length L, each
    circle L/4 in from its end and L/4 round; returns the radius); moved out of an opponent's

@@ -1,6 +1,10 @@
 /*
- * The track and car screens of the game's menu (its screens 3 and 2; openscreamer docs/NOTES.md
- * sections 18 and 26, port/src/main.c menu_frame and ms_*): the models stand in a row, each
+ * The game's menu: its pages (screen 0), the track and car screens (its screens 3 and 2;
+ * openscreamer docs/NOTES.md sections 18 and 26, port/src/main.c menu_frame and ms_*). The
+ * pages: the main menu and the options (0x2de4), each word spelt in cubes of ALETTER.3DX of
+ * GFX/MENU.DAT (0x2b33c), one a letter, its face the letter's frame of the cube's texture,
+ * before the picture MENU1L.PCX, the two SCREAMER logos of MENUL.SPR sliding in over them
+ * (0x2df38). On the other two screens the models stand in a row, each
  * turning on the spot, the camera looks down at the chosen one and slides to its neighbour on
  * left or right (0x29530). The track screen: the six tracks' AMAPn.3DX of GFX/MENU.DAT, 40000
  * units apart (0x2c078, 0x2cb88), behind them the picture MENU3L.PCX of GFX/GRAF.DAT, over them
@@ -21,9 +25,17 @@
 #define MENU_TRACKS 6
 #define MENU_CARS   14          /* CARDAT.TXT's entries (the game's 14 records at 0x1d54c) */
 
-/* the game's numbers of the two screens (0x1fac0) */
+/* the game's numbers of the screens (0x1fac0) */
+#define MENU_PAGE_SCREEN    0
 #define MENU_CAR_SCREEN     2
 #define MENU_TRACK_SCREEN   3
+
+/* The options page's choices (the game's page 1, kept for the session): DETAIL 0 LOW .. 2 HI
+   (shown only: the core always draws the H set whole), the difficulty 0 ROOKIE, 1 NORMAL, 2 PRO
+   (MAPnA..C.DTR, 0x13251), the laps of a race (3, 5, 10 or 25: 0x21e0 + 1), speech and music 1
+   on, 0 off. The game's defaults: HI, NORMAL, 3, on, on. */
+struct menu_options { int detail, difficulty, laps, speech, music; };
+void menu_options(struct menu_options *o);
 
 /* What menu_init() reads of the two containers: these entries, MENU.MLB whole (the cars'
    textures lie all over it); a NULL name ends the list */
@@ -48,19 +60,26 @@ const uint32_t *menu_palette(void);
 const uint8_t *menu_mlb(void);
 
 /* Onto screen MENU_TRACK_SCREEN or MENU_CAR_SCREEN with choice n chosen (the track 1 ..
-   MENU_TRACKS, the car's row + 1), the camera at it */
+   MENU_TRACKS, the car's row + 1), the camera at it; onto MENU_PAGE_SCREEN at page n - 1 (1
+   the main menu, 2 the options), its words flying in (0x29ea0), each page's line kept */
 void menu_enter(int screen, int n);
 
-/* One step of 1/50 s with the keys (IN_KEY) held now and on the step before: left and right
-   choose (a press is taken once the camera is most of the way to the last one; the menu's sound
-   SND_MENU_MOVE with it, sound.h), B or START take the choice: its number as menu_enter's n; on
-   the car screen Y or SELECT go back: -1 (both without a sound, as the game). 0 while none is
-   taken. */
+/* One step of 1/50 s with the keys (IN_KEY) held now and on the step before. Track and car
+   screen: left and right choose (a press is taken once the camera is most of the way to the
+   last one; the menu's sound SND_MENU_MOVE with it, sound.h), B or START take the choice: its
+   number as menu_enter's n; Y or SELECT go back: -1 (both without a sound, as the game). The
+   pages (0x28080): up and down go from line to line (SND_MENU_LINE), left and right change an
+   option, B or START too, as the game's ENTER (SND_MENU_OPTION; once the words have landed,
+   0x297d4), B or START on OPTIONS opens its page (SND_MENU_PAGE), Y or SELECT go back to the
+   main menu (the same sound); NORMAL GAME: 1 (SND_MENU_GAME), from then on the camera pulls back
+   and rolls (0x293e8) while the caller fades out at 2 a second, the keys not taken. NETWORK
+   GAME shows the game's NETWORK NOT FOUND; CHAMPIONSHIP, SPECIAL MODES and VIEW RECORDS only
+   sound, for now. 0 while none is taken. */
 int menu_step(uint32_t keys, uint32_t keys_before);
 
 /* The frame in the order it is drawn: the picture (for the blitter), the projection and the
-   models (through track_hw_piece in TRACK_HW, else the C models into fb, track.h), the texts,
-   bars and arrows (for the blitter) */
+   models or cubes (through track_hw_piece in TRACK_HW, else the C models into fb, track.h), the
+   texts, bars, arrows and logos (for the blitter) */
 void menu_backdrop(struct blit_list *l);
 void menu_view(struct su_view *v);
 void menu_scene(volatile uint8_t *fb);

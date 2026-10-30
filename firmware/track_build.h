@@ -14,6 +14,10 @@ struct track_files {
     uint32_t gfx_size, game_size, data_size, gen_size, local_size;
 };
 
+/* The game's difficulty, 0 ROOKIE, 1 NORMAL (the default), 2 PRO: the opponents and TRACK_DATA
+   come from MAPnA.DTR, MAPnB.DTR or MAPnC.DTR (0x13251) */
+extern int track_build_difficulty;
+
 /* What a build did: the entry or section it stopped at ("" when it got through), and the
    CPU cycles of the whole build and of the unpacking in it (0 on the PC) */
 struct track_build_info {

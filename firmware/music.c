@@ -21,6 +21,7 @@ static uint32_t sectors;                    /* the image's */
 static int songs[8] = { 1, 2, 5, 3, 4, 6, 7, 1 };
 
 static int playing;                         /* the CD track playing, 0 none */
+int music_on = 1;
 static uint32_t from, to, at;               /* its bytes in the image; the next byte to read */
 static uint32_t written, played, place;     /* frames into the ring, frames played, the mixer's place */
 static uint32_t reading;                    /* bytes of the read running, 0 none */
@@ -166,7 +167,7 @@ void music_play(int k)
     int n = k >= 0 && k <= 6 ? songs[k + 1] + 1 : 0, m = n + 1;
     if (n == playing) return;
     music_stop();
-    if (n < 1 || n > MAX_TRACKS || !audio[n] || first[n] < 0 || (uint32_t)first[n] >= sectors) return;
+    if (!music_on || n < 1 || n > MAX_TRACKS || !audio[n] || first[n] < 0 || (uint32_t)first[n] >= sectors) return;
     while (m <= MAX_TRACKS && first[m] < 0)
         m++;
     uint32_t last = m <= MAX_TRACKS && (uint32_t)first[m] < sectors ? (uint32_t)first[m] : sectors;

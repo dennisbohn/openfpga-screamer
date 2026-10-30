@@ -1,8 +1,9 @@
 /*
- * The track and car screens (menu.h). The numbers are the game's as openscreamer read them
- * (NOTES.md sections 18 and 26) and STARTL.EXE has them: the rows and cameras of 0x2bdcc,
- * 0x2c078, 0x2ca10 and 0x2cb88, the slide of 0x29530 and its keys 0x2859e .. 0x287cd, the 2D
- * layouts of 0x2e08c and 0x2e384.
+ * The pages, the track and car screens (menu.h). The numbers are the game's as openscreamer
+ * read them (NOTES.md sections 18 and 26) and STARTL.EXE has them: the pages of 0x2de4, their
+ * letters laid out by 0x2af30 and moved by 0x2b8b8, their keys 0x28080 .. 0x28df0, the pull-back
+ * of 0x293e8; the rows and cameras of 0x2bdcc, 0x2c078, 0x2ca10 and 0x2cb88, the slide of
+ * 0x29530 and its keys 0x2859e .. 0x287cd, the 2D layouts of 0x2df38, 0x2e08c and 0x2e384.
  */
 #include "menu.h"
 #include "hw.h"
@@ -21,10 +22,12 @@
 #define TAKE        0.8f            /* place by its fourth power; a press is taken under 0.8 */
 #define LIT         0.6f            /* the arrow of the slide's way is lit above this (0x12e3) */
 #define DT          0.02f           /* a step */
+#define PI          3.1415927f
 #define TWO_PI      6.2831853f
-#define PIC_W       320             /* MENU3L.PCX, MENU4L.PCX */
+#define PIC_W       320             /* MENU1L.PCX, MENU3L.PCX, MENU4L.PCX */
 #define PIC_H       200
 #define MAX_PARTS   (3 * CAR_BLOCKS)    /* blocks drawn: three models (the chosen one and its neighbours) */
+#define MAX_DRAWN   (LETTERS > MAX_PARTS ? LETTERS : MAX_PARTS)     /* or a page's cubes */
 #define FONT_TITLE  3               /* MENUL.FNT's fonts: 3 is 30 high, 2 is 19, 1 is 9, 0 is 11 */
 #define FONT_NAME   2
 #define FONT_CAR    0
@@ -39,6 +42,20 @@
 #define SPR_GRIP    4               /* MENUL.SPR: the grip bar's five steps, the acceleration's */
 #define SPR_ACCEL   9
 #define CAR_MODELS  7               /* AAUTO00 .. AAUTO06 */
+#define LETTERS     80              /* the game's letter cubes (records of 100 bytes at 0x1db74) */
+#define CUBE_GAP    0x280           /* a page's letters 640 apart along x, its rows 384 along y, */
+#define ROW_GAP     0x180           /* line i of n on row 8 - n + 2i, row 0 at y 0x820 (0x2af30) */
+#define PAGE_CAM_Z  4100.0f         /* the pages' camera at (0, 0, 4100) looking along -z (0x29ea0); */
+#define BACK_Z      20000.0f        /* leaving them it pulls back to z 20000, its factor from 1 to 0 */
+#define BACK_RATE   0.6f            /* at this a second, the place by its fourth power, while it rolls
+                                       from -4 pi on at pi a second (0x293e8, 0x294ab) */
+#define TURN_RATE   12.566371f      /* a letter turns at 4 pi rad a second (0x2b8b8) */
+#define WAVE_RATE   9.424778f       /* the ripple's clock: 3 pi a second, round at 8 pi */
+#define OPTION      1234            /* an option's item id (0x4d2) */
+#define WORDS       22              /* MENU.TXT's lines 0 .. 21: the two pages' words */
+#define LINE_NETWORK 55             /* NETWORK NOT FOUND */
+#define SPR_LOGO    14              /* MENUL.SPR: the logos 14 and 15 (0x2df38) */
+#define FONT_MSG    0
 
 /* per screen (the tracks, the cars) the row and the camera: the gap between two models along x,
    the camera's height and z, its pitch, the models' turn in rad a second (from a quarter turn
@@ -49,25 +66,53 @@ static const struct row { float gap, cam_h, cam_z, pitch, turn; } rows[2] = {
 };
 
 const struct menu_part menu_dat_parts[] = {
-    { "MENU.MLB", ~0u }, { "AMAP1.3DX", ~0u }, { "AMAP2.3DX", ~0u }, { "AMAP3.3DX", ~0u },
+    { "MENU.MLB", ~0u }, { "ALETTER.3DX", ~0u }, { "AMAP1.3DX", ~0u }, { "AMAP2.3DX", ~0u }, { "AMAP3.3DX", ~0u },
     { "AMAP4.3DX", ~0u }, { "AMAP5.3DX", ~0u }, { "AMAP6.3DX", ~0u }, { "AAUTO00.3DX", ~0u },
     { "AAUTO01.3DX", ~0u }, { "AAUTO02.3DX", ~0u }, { "AAUTO03.3DX", ~0u }, { "AAUTO04.3DX", ~0u },
     { "AAUTO05.3DX", ~0u }, { "AAUTO06.3DX", ~0u }, { 0, 0 } };
 const struct menu_part menu_graf_parts[] = {
-    { "MENU3L.PCX", ~0u }, { "MENU4L.PCX", ~0u }, { "MENUL.FNT", ~0u }, { "MENUL.SPR", ~0u },
+    { "MENU3L.PCX", ~0u }, { "MENU4L.PCX", ~0u }, { "MENU1L.PCX", ~0u }, { "MENUL.FNT", ~0u }, { "MENUL.SPR", ~0u },
     { "LOAD1L.PCX", ~0u }, { "LOAD2L.PCX", ~0u }, { "LOAD3L.PCX", ~0u }, { "LOAD4L.PCX", ~0u },
     { "LOAD5L.PCX", ~0u }, { "LOAD6L.PCX", ~0u }, { 0, 0 } };
 
 /* CARDAT.TXT's six lines a car: name, gearbox (0 automatic, 1 manual), km/h, grip and
    acceleration steps (0..4), 0; of its CARS.DTR row the model and the paint job */
 static struct car { char name[28]; int gears, kmh, grip, accel; const uint8_t *mesh; uint32_t livery; } car[MENU_CARS];
-static const uint8_t *mlb, *model[MENU_TRACKS], *pic[3], *hud, *graf_dat;
+static const uint8_t *mlb, *model[MENU_TRACKS], *cube, *pic[4], *hud, *graf_dat;
 static const struct blit_image *img;
 static const struct blit_font *font;
-static uint32_t nimg, nfont, graf_len, pal[3][256];
+static uint32_t nimg, nfont, graf_len, pal[4][256];     /* the tracks', the cars', the pages', loading */
 static char title[2][32], name[MENU_TRACKS][32], gears[2][32], label[3][32], loading[32];
-static int ncars, cars_on, pick, way;
+static char words[WORDS][16], network_text[32];
+static int ncars, cars_on, pages_on, pick, way;
 static float turn[2] = { 1.5707964f, 1.5707964f }, cam_x, from_x, to_x, slide;
+
+/* The game's pages 0 and 1 (0x2de4, items of 16 bytes: MENU.TXT's line, id, value, highest
+   value; an option, id 1234, shows its line + its value): the main menu (NORMAL GAME 0,
+   CHAMPIONSHIP 1, SPECIAL MODES 2, NETWORK GAME 3, OPTIONS 4) and the options with the game's
+   values at the start (DETAIL, the difficulty, LAP NUMBER, SPEECH, MUSIC; VIEW RECORDS 21) */
+static struct item { int line, id, value, max; } items[2][6] = {
+    { { 0, 0, 0, 0 }, { 1, 1, 0, 0 }, { 2, 2, 0, 0 }, { 3, 3, 0, 0 }, { 4, 4, 0, 0 } },
+    { { 5, OPTION, 2, 2 }, { 8, OPTION, 1, 2 }, { 13, OPTION, 0, 3 }, { 17, OPTION, 1, 1 }, { 19, OPTION, 1, 1 },
+      { 21, 21, 0, 0 } } };
+static const int page_lines[2] = { 5, 6 };
+static const int laps[4] = { 3, 5, 10, 25 };            /* 0x21e0 + 1 */
+
+/* where a page's words fly in from (x, y, z; an x or y of 0: from where the letter lands) and
+   their swing in x and y, a row a page in turn (0x2218) */
+static const int16_t fly[8][5] = {
+    { 200, 200, -4500, 1000, 1000 }, { 3000, -3000, 1500, 200, 800 }, { 1000, 1000, -8000, 3000, 3000 },
+    { 3000, 0, 5000, 0, 0 }, { 2000, 50, 4500, 0, 0 }, { 0, 0, -10500, 500, 800 },
+    { -2000, 2000, 3500, 0, 0 }, { 50, 5000, 4500, 3000, 3000 } };
+
+/* A letter's cube (0x1db74): its line, its character - 32 (the frame of the cube's texture),
+   where it lands, where it flies in from and its swing, the fly's progress from 1 to 0 in a
+   second, its turn about x (0 the front to the camera, the letter bright; pi the back, dim)
+   and its place now (x left, y up, z to the camera, as the game's) */
+static struct letter { int line, code; float t[3], s[3], ax, ay, p, a, pos[3]; } let[LETTERS];
+static int nlet, page, shown, sel[2], style, turning, leaving, network;    /* shown: the letters' page */
+static float wave, logo[2], cam_z = PAGE_CAM_Z, back_f, roll;
+static uint32_t ticks;                                  /* 100 a second, for the blinking */
 
 static uint32_t rd16(const uint8_t *p)
 {
@@ -161,6 +206,7 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
     uint32_t len;
     const uint8_t *cars[CAR_MODELS];
     if(!(mlb = in_place(menu_dat, menu_size, "MENU.MLB", 0x8000, &len))) return 0;
+    if(!(cube = in_place(menu_dat, menu_size, "ALETTER.3DX", 0x80, &len)) || rd32(cube + 0x14) < 1) return 0;
     for(int k = 0; k < MENU_TRACKS; k++) {
         char n[16] = "AMAP1.3DX";
         n[4] = (char)('1' + k);
@@ -173,22 +219,22 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
     }
     /* the pictures and room for the loading screen's (menu_loading), then the sprites and fonts
        as the race screen's (tb_hud.h, no pictures, no text) */
-    const uint8_t *p = in_place(graf, graf_size, "MENU3L.PCX", 0, &len);
-    if(cap < 3 * PIC_W * PIC_H || !p || !pcx(p, len, mem, pal[0])) return 0;
-    p = in_place(graf, graf_size, "MENU4L.PCX", 0, &len);
-    if(!p || !pcx(p, len, mem + PIC_W * PIC_H, pal[1])) return 0;
-    pic[0] = mem;
-    pic[1] = mem + PIC_W * PIC_H;
-    pic[2] = mem + 2 * PIC_W * PIC_H;
+    static const char *const pics[3] = { "MENU3L.PCX", "MENU4L.PCX", "MENU1L.PCX" };
+    if(cap < 4 * PIC_W * PIC_H) return 0;
+    for(int k = 0; k < 4; k++) pic[k] = mem + k * PIC_W * PIC_H;
+    for(int k = 0; k < 3; k++) {
+        const uint8_t *p = in_place(graf, graf_size, pics[k], 0, &len);
+        if(!p || !pcx(p, len, (uint8_t *)pic[k], pal[k])) return 0;
+    }
     graf_dat = graf;
     graf_len = graf_size;
-    uint8_t *at = mem + 3 * PIC_W * PIC_H;
+    uint8_t *at = mem + 4 * PIC_W * PIC_H;
     uint32_t spr_n = unpack(graf, graf_size, "MENUL.SPR", scratch, scratch_cap);
     uint32_t used = (spr_n + 3) & ~3u;
     uint32_t fnt_n = used < scratch_cap ? unpack(graf, graf_size, "MENUL.FNT", scratch + used, scratch_cap - used) : 0;
     if(!spr_n || !fnt_n ||
        !tb_hud_build(scratch, spr_n, scratch + used, fnt_n, scratch, 0, scratch, 0, scratch, 0, at,
-                     cap - 3 * PIC_W * PIC_H)) return 0;
+                     cap - 4 * PIC_W * PIC_H)) return 0;
     hud = at;
     nimg = (uint32_t)rd32(hud);
     nfont = (uint32_t)rd32(hud + 4);
@@ -201,6 +247,8 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
     for(int k = 0; k < 2; k++) ok &= text_line(scratch, tn, LINE_GEARS + k, gears[k], sizeof gears[k]);
     for(int k = 0; k < 3; k++) ok &= text_line(scratch, tn, LINE_LABELS + k, label[k], sizeof label[k]);
     ok &= text_line(scratch, tn, LINE_LOADING, loading, sizeof loading);
+    for(int k = 0; k < WORDS; k++) ok &= text_line(scratch, tn, k, words[k], sizeof words[k]);
+    ok &= text_line(scratch, tn, LINE_NETWORK, network_text, sizeof network_text);
     tn = unpack(local, local_size, "TRACKDAT.TXT", scratch, scratch_cap);
     for(int k = 0; k < MENU_TRACKS; k++) ok &= text_line(scratch, tn, 4 * k, name[k], sizeof name[k]);
     /* the cars: CARS.DTR's rows as the track image has them (tb_spl.h), CARDAT.TXT's lines */
@@ -224,7 +272,7 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
         c->grip = text_number(scratch, tn, 6 * k + 3) % 5;
         c->accel = text_number(scratch, tn, 6 * k + 4) % 5;
     }
-    return ok && ncars > 0 && nimg > SPR_ACCEL + 4 && nfont > FONT_TITLE;
+    return ok && ncars > 0 && nimg > SPR_LOGO + 1 && nfont > FONT_TITLE;
 }
 
 int menu_cars(void)
@@ -234,7 +282,13 @@ int menu_cars(void)
 
 const uint32_t *menu_palette(void)
 {
-    return pal[cars_on];
+    return pal[pages_on ? 2 : cars_on];
+}
+
+void menu_options(struct menu_options *o)
+{
+    const struct item *it = items[1];
+    *o = (struct menu_options){ it[0].value, it[1].value, laps[it[2].value], it[3].value, it[4].value };
 }
 
 const uint8_t *menu_mlb(void)
@@ -248,8 +302,49 @@ static int choices(void)
     return cars_on ? ncars : MENU_TRACKS;
 }
 
+/* The page's letters (0x29838, 0x2af30): each line's centred, a cube a character, the spaces
+   too; flying in (the page entered) from the next row of fly, the start turned 0.09 rad (in
+   whole units) a letter, the chosen line's front to the camera, the others' backs; else (a page
+   turned to, 0x2b380) simply there, the chosen line a quarter turned, to finish the turn */
+static void page_build(int flying)
+{
+    const struct item *it = items[page];
+    const int16_t *f = fly[style];
+    const float c = cosf(0.09f), s = sinf(0.09f);
+    float sx = f[0], sy = f[1];
+    nlet = 0;
+    shown = page;
+    for(int i = 0; i < page_lines[page]; i++) {
+        const char *w = words[it[i].line + (it[i].id == OPTION ? it[i].value : 0)];
+        int len = (int)strlen(w);
+        float x = (float)(CUBE_GAP / 2 * (len - 1)), y = (float)(0x820 - ROW_GAP * (8 - page_lines[page] + 2 * i));
+        for(int k = 0; k < len && nlet < LETTERS; k++, x -= CUBE_GAP) {
+            struct letter *l = &let[nlet++];
+            int ch = (unsigned char)w[k];
+            *l = (struct letter){ i, ch < 32 || ch > 107 ? 0 : ch - 32, { x, y, 0.0f }, { sx != 0.0f ? sx : x,
+                                  sy != 0.0f ? sy : y, f[2] }, f[3], f[4], flying ? 1.0f : 0.0f,
+                                  i != sel[page] ? PI : flying ? 0.0f : 0.5f * PI, { x, y, 0.0f } };
+            float ox = sx;
+            sx = (float)(int)(ox * c + sy * s);
+            sy = (float)(int)(sy * c - ox * s);
+        }
+    }
+    style = (style + 1) % 8;
+}
+
 void menu_enter(int screen, int n)
 {
+    pages_on = screen == MENU_PAGE_SCREEN;
+    if(pages_on) {                              /* 0x29ea0: the logos 400 and 800 left of their places */
+        page = n == 2;
+        page_build(1);
+        turning = leaving = network = 0;
+        cam_z = PAGE_CAM_Z;
+        roll = 0.0f;
+        logo[0] = (float)((PIC_W - (int)img[SPR_LOGO + 1].w) / 2 - 400);
+        logo[1] = (float)((PIC_W - (int)img[SPR_LOGO].w) / 2 - 800);
+        return;
+    }
     cars_on = screen == MENU_CAR_SCREEN;
     pick = n < 1 ? 0 : n > choices() ? choices() - 1 : n - 1;
     cam_x = from_x = to_x = -rows[cars_on].gap * (float)pick;
@@ -257,10 +352,102 @@ void menu_enter(int screen, int n)
     way = 0;
 }
 
+/* One step of the page's letters (0x2b8b8): each on its way in (the swing round its path,
+   1 - cos of the progress towards where it lands), rippling in z by 150 sin(2 pi fx + pi fy + the
+   clock k) (the chosen line fx 0.5, k 1/4); the chosen line turning to its front, the others to
+   their backs, at 4 pi a second. While the page is turned (another page, an option changed) all
+   turn away, and once the chosen line is past a quarter turn the new page is there. */
+static void letters_step(void)
+{
+    float least = PI;
+    if((wave += DT * WAVE_RATE) > 4.0f * TWO_PI) wave = 0.0f;
+    for(int i = 0; i < nlet; i++) {
+        struct letter *l = &let[i];
+        int chosen = l->line == sel[shown];
+        float e = 1.0f - cosf(0.5f * PI * l->p), w = TWO_PI * l->p;
+        l->pos[0] = cosf(w) * l->ax * l->p + l->t[0] + e * (l->s[0] - l->t[0]);
+        l->pos[1] = sinf(w) * l->ay * l->p + l->t[1] + e * (l->s[1] - l->t[1]);
+        float fx = chosen ? 0.5f : (l->pos[0] + 4608.0f) / 9216.0f, fy = (l->pos[1] + 2080.0f) / 4160.0f;
+        l->pos[2] = l->t[2] + e * (l->s[2] - l->t[2]) + 150.0f * sinf(TWO_PI * fx + PI * fy + wave * (chosen ? 0.25f : 1.0f));
+        if(l->p > 0.0f && (l->p -= DT) < 0.0f) l->p = 0.0f;
+        if(chosen && !turning) {
+            if((l->a -= DT * TURN_RATE) < 0.0f) l->a = 0.0f;
+        } else if((l->a += DT * TURN_RATE) > PI) l->a = PI;
+        if(chosen && l->a < least) least = l->a;
+    }
+    if(turning && least > 0.5f * PI) {
+        page_build(0);
+        turning = 0;
+    }
+}
+
+/* whether every letter has landed (0x2b2d0: their progress adds up to 0) */
+static int landed(void)
+{
+    for(int i = 0; i < nlet; i++)
+        if(let[i].p > 0.0f) return 0;
+    return 1;
+}
+
+/* A step of the pages (menu_step): the letters, the logos sliding in (0x2df38), the camera
+   pulling back once a game is chosen; then the keys (0x28080, 0x28ac4) */
+static int page_step(uint32_t press)
+{
+    struct item *it = &items[page][sel[page]];
+    if(!leaving) letters_step();                /* leaving, the letters stand (0x294ab) */
+    ticks += 2;
+    for(int k = 0; k < 2; k++) {
+        float to = (float)((PIC_W - (int)img[SPR_LOGO + 1 - k].w) / 2);
+        if((logo[k] += DT * (k ? 700.0f : 350.0f)) > to) logo[k] = to;
+    }
+    if(leaving) {
+        float f2 = back_f * back_f;
+        cam_z = BACK_Z + (PAGE_CAM_Z - BACK_Z) * f2 * f2;
+        if((back_f -= DT * BACK_RATE) < 0.0f) back_f = 0.0f;
+        roll += DT * PI;
+        return 0;
+    }
+    if((press & KEY_UP) && sel[page] > 0) {     /* no wrap (0x2848e) */
+        sel[page]--;
+        network = 0;
+        snd_play(SND_MENU_LINE);
+    } else if((press & KEY_DOWN) && sel[page] < page_lines[page] - 1) {
+        sel[page]++;
+        network = 0;
+        snd_play(SND_MENU_LINE);
+    } else if(it->id == OPTION && (press & (KEY_LEFT | KEY_RIGHT | KEY_B | KEY_START))) {
+        if(landed()) {                          /* 0x297d4, the game's ENTER: the next value */
+            it->value = (it->value + (press & KEY_LEFT ? it->max : 1)) % (it->max + 1);
+            turning = 1;
+            snd_play(SND_MENU_OPTION);
+        }
+    } else if(press & (KEY_B | KEY_START)) {
+        if(it->id == 0) {                       /* NORMAL GAME (0x28b80) */
+            leaving = 1;
+            back_f = 1.0f;
+            roll = -4.0f * PI;
+            snd_play(SND_MENU_GAME);
+            return 1;
+        }
+        if(it->id == 3) network = 1;            /* the game without a network (0x28d78), silent */
+        else snd_play(SND_MENU_PAGE);
+        if(it->id == 4) {                       /* OPTIONS (0x28db2) */
+            page = 1;
+            turning = 1;
+        }
+    } else if((press & (KEY_Y | KEY_SELECT)) && page == 1) {    /* the game's ESC (0x280cb) */
+        page = 0;
+        turning = 1;
+        snd_play(SND_MENU_PAGE);
+    }
+    return 0;
+}
+
 int menu_step(uint32_t keys, uint32_t keys_before)
 {
     const struct row *r = &rows[cars_on];
     uint32_t press = keys & ~keys_before;
+    if(pages_on) return page_step(press);
     float *t = &turn[cars_on];
     *t += DT * r->turn;
     if(*t >= TWO_PI) *t = 0.0f;
@@ -279,12 +466,12 @@ int menu_step(uint32_t keys, uint32_t keys_before)
         }
     }
     if(press & (KEY_B | KEY_START)) return pick + 1;
-    return cars_on && (press & (KEY_Y | KEY_SELECT)) ? -1 : 0;
+    return press & (KEY_Y | KEY_SELECT) ? -1 : 0;
 }
 
 void menu_backdrop(struct blit_list *l)
 {
-    blit_copy(l, pic[cars_on], PIC_W, PIC_H, PIC_W, 0, 0, BLIT_COPY | BLIT_OPAQUE, 0);
+    blit_copy(l, pic[pages_on ? 2 : cars_on], PIC_W, PIC_H, PIC_W, 0, 0, BLIT_COPY | BLIT_OPAQUE, 0);
 }
 
 /* the race's lens (track.c: the eye 128 behind the camera, 128 / depth) round the menu's centre,
@@ -356,13 +543,40 @@ static int car_blocks(const struct track_cam *cam, struct track_block *b)
     return n;
 }
 
+/* The page's cubes, the furthest first (by the distance from the camera to the cube's middle),
+   each turned about x by its turn (y up towards z), its face the frame of its character: the
+   record's +0x20 0x35e (character - 32) + 0x226, of which the phase is a quarter (geom.h) */
+static int letter_blocks(const struct track_cam *cam, struct track_block *b)
+{
+    float key[LETTERS];
+    const uint8_t *blk = cube + rd32(cube + 0x18);
+    int n = 0;
+    for(int k = 0; k < nlet; k++) {
+        const struct letter *l = &let[k];
+        const float c = cosf(l->a), s = sinf(l->a);
+        /* the world's x, y and height are the game's x, z and y */
+        struct track_block t = { cube, blk, { 1.0f, 0.0f, 0.0f, 0.0f, s, c, 0.0f, c, -s }, { l->pos[0], l->pos[2], l->pos[1] },
+                                 (0x35Eu * (uint32_t)l->code + 0x226u) >> 2 };
+        float dx = t.o[0] - cam->x, dy = t.o[1] - cam->y, dh = t.o[2] - cam->h, d = dx * dx + dy * dy + dh * dh;
+        int i = n++;
+        for(; i > 0 && key[i - 1] < d; i--) {
+            b[i] = b[i - 1];
+            key[i] = key[i - 1];
+        }
+        b[i] = t;
+        key[i] = d;
+    }
+    return n;
+}
+
 void menu_scene(volatile uint8_t *fb)
 {
     static const struct rs_clip clip = { 0, 0, PIC_W, PIC_H };
     const struct row *r = &rows[cars_on];
-    const struct track_cam cam = { cam_x, r->cam_z, r->cam_h, 0.0f, r->pitch, 0.0f };
-    static struct track_block b[MAX_PARTS];
-    int n = cars_on ? car_blocks(&cam, b) : map_blocks(&cam, b);
+    const struct track_cam cam = pages_on ? (struct track_cam){ 0.0f, cam_z, 0.0f, 0.0f, 0.0f, roll }
+                                          : (struct track_cam){ cam_x, r->cam_z, r->cam_h, 0.0f, r->pitch, 0.0f };
+    static struct track_block b[MAX_DRAWN];
+    int n = pages_on ? letter_blocks(&cam, b) : cars_on ? car_blocks(&cam, b) : map_blocks(&cam, b);
     struct su_view v;
     struct gu_stats st = { 0, 0, 0, 0 };
     menu_view(&v);
@@ -435,6 +649,15 @@ static void car_text(struct blit_list *l, const struct car *c)
 void menu_text(struct blit_list *l)
 {
     int lit = slide > LIT;
+    if(pages_on) {          /* the logos (0x2df38), off the screen not drawn; NETWORK NOT FOUND blinking */
+        for(int k = 0; k < 2; k++) {
+            const struct blit_image *s = &img[SPR_LOGO + 1 - k];
+            int x = (int)(logo[k] + (k ? 0.0f : 4.0f));
+            if(x + s->x + (int)s->w > 0) sprite(l, x, k ? 0x10 : 0, SPR_LOGO + 1 - (uint32_t)k);
+        }
+        if(network && (ticks & 0x7F) < 0x48) centred(l, 0xBE, network_text, FONT_MSG);
+        return;
+    }
     centred(l, 2, title[cars_on], FONT_TITLE);
     if(cars_on) car_text(l, &car[pick]);
     else centred(l, PIC_H - 2 * (int)font[FONT_NAME].height, name[pick], FONT_NAME);
@@ -450,9 +673,9 @@ const uint32_t *menu_loading(int n, struct blit_list *l)
     uint32_t len;
     file[4] = (char)('0' + n);
     const uint8_t *p = graf_dat && n >= 1 && n <= MENU_TRACKS ? in_place(graf_dat, graf_len, file, 0, &len) : 0;
-    if(!p || !pcx(p, len, (uint8_t *)pic[2], pal[2])) return 0;
-    blit_copy(l, pic[2], PIC_W, PIC_H, PIC_W, 0, 0, BLIT_COPY | BLIT_OPAQUE, 0);
+    if(!p || !pcx(p, len, (uint8_t *)pic[3], pal[3])) return 0;
+    blit_copy(l, pic[3], PIC_W, PIC_H, PIC_W, 0, 0, BLIT_COPY | BLIT_OPAQUE, 0);
     int w = blit_text(l, hud, img, &font[FONT_TITLE], 0, 0, loading, 0, 0);
     blit_text(l, hud, img, &font[FONT_TITLE], (PIC_W - w) / 2, LOADING_Y, loading, 0, 1);
-    return pal[2];
+    return pal[3];
 }

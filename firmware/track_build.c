@@ -12,12 +12,13 @@
 #include "crc32.h"
 #include <string.h>
 
+int track_build_difficulty = 1;         /* NORMAL, as make_track.py */
+
 #define FIRST       0x100       /* the first section, after the header */
 #define BLOCK       0x40000     /* bytes per CRC block */
 #define MAX_BLOCKS  28          /* the CRCs that fit into the header (0x90 .. 0x100) */
 #define SECTIONS    14
 #define MODELS      7           /* AUTO00.3DX .. AUTO06.3DX */
-#define DIFFICULTY  "B"         /* NORMAL, as make_track.py */
 
 #ifdef __riscv
 static inline uint32_t now(void)
@@ -188,7 +189,9 @@ uint32_t track_build(const struct track_files *f, int n, uint8_t *out, uint32_t 
     if(!section(&b, len, len, "race screen")) return 0;
     if(!(bck = unpack(&b, f->gfx, f->gfx_size, name(&b, ".BCK", buf), &bck_n)) ||
        !section(&b, tb_backdrop(bck, bck_n, at(&b), room(&b)), 0, "backdrop")) return 0;
-    if(!(dtr = unpack(&b, f->data, f->data_size, name(&b, DIFFICULTY ".DTR", buf), &dtr_n))) return 0;
+    char dtr_end[8] = "A.DTR";                  /* MAPn + 'A' + the difficulty + .DTR (0x13251) */
+    dtr_end[0] = (char)('A' + track_build_difficulty);
+    if(!(dtr = unpack(&b, f->data, f->data_size, name(&b, dtr_end, buf), &dtr_n))) return 0;
     len = tb_opponents(spl, spl_n, dtr, dtr_n, at(&b), room(&b));
     if(!section(&b, len, len, "opponents")) return 0;
     if(tb_grid_pose(spl, spl_n, mmp, mmp_n, out + 0x5C, 12) != 12) return (uint32_t)fail(&b, "grid pose");

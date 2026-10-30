@@ -21,7 +21,9 @@
  *        render menu <MENU.DAT> <GRAF.DAT> <LOCAL.DAT> <GEN.DAT> <out.rgb> [screen [n [steps]]]
  *   the track screen (screen 1, the default) with track n chosen or the car screen (screen 2)
  *   with the car of row n - 1 (menu.h; default 1), steps of 1/50 s after entering it (default 0);
- *   screen 3: track n's loading screen
+ *   screen 3: track n's loading screen; screen 4 the main menu, 5 the options page. MENUKEYS in
+ *   the environment: presses before the steps, each for one step, then 30 steps without (U D L R
+ *   up, down, left, right; B; Y)
  */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -234,8 +236,9 @@ static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gf
 /* a screen of the menu: the containers whole (the firmware loads only menu.h's parts of them) */
 static int menu(int argc, char **argv)
 {
-    int which = argc > 7 ? atoi(argv[7]) : 1, screen = which == 2 ? MENU_CAR_SCREEN : MENU_TRACK_SCREEN;
-    int n = argc > 8 ? atoi(argv[8]) : 1, steps = argc > 9 ? atoi(argv[9]) : 0;
+    int which = argc > 7 ? atoi(argv[7]) : 1;
+    int screen = which == 2 ? MENU_CAR_SCREEN : which >= 4 ? MENU_PAGE_SCREEN : MENU_TRACK_SCREEN;
+    int n = which >= 4 ? which - 3 : argc > 8 ? atoi(argv[8]) : 1, steps = argc > 9 ? atoi(argv[9]) : 0;
     uint32_t menu_size = load(argv[2], MENU_FILE, 0x400000), graf_size = load(argv[3], GRAF_FILE, 0x400000);
     uint32_t local_size = load(argv[4], LOCAL_FILE, 0x10000), gen_size = load(argv[5], GEN_FILE, 0x10000);
     if (!menu_init(MENU_FILE, menu_size, GRAF_FILE, graf_size, LOCAL_FILE, local_size, GEN_FILE, gen_size, MENU_MEM,
@@ -251,6 +254,13 @@ static int menu(int argc, char **argv)
         return 0;
     }
     menu_enter(screen, n);
+    for (const char *s = getenv("MENUKEYS"); s && *s; s++) {
+        static const char name[] = "UDLRBY";
+        static const uint32_t key[] = { KEY_UP, KEY_DOWN, KEY_LEFT, KEY_RIGHT, KEY_B, KEY_Y };
+        const char *at = strchr(name, *s);
+        if (at) menu_step(key[at - name], 0);
+        for (int k = 0; k < 30; k++) menu_step(0, 0);
+    }
     for (int k = 0; k < steps; k++) menu_step(0, 0);
     blit_start(&l, 0);
     menu_backdrop(&l);

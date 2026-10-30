@@ -39,6 +39,10 @@ int snd_init(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint
    the nine rows smenu1..9 of the first SOUND_FX section of GEN.DAT's MENU.DTR (of SOUND.DAT
    only their samples need be there, at their places); every voice stopped. Returns how many
    rows have their sample. */
+#define SND_MENU_PAGE   0       /* smenu1: a page opened or left (0x28b5f, 0x280ec) */
+#define SND_MENU_LINE   1       /* smenu2: up or down a line (0x283ca, 0x284ba) */
+#define SND_MENU_OPTION 2       /* smenu3: an option changed (0x28df0) */
+#define SND_MENU_GAME   3       /* smenu4: an item that starts a game (0x28ba2) */
 #define SND_MENU_MOVE   6       /* smenu7: the camera on to the next track or car (0x2859e, 0x2874b) */
 int snd_menu(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint32_t gen_size);
 /* The rows of the first SOUND_FX section of another DTR text (the track's MAPnDAT.DTR) after

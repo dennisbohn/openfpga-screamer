@@ -507,6 +507,7 @@ static void still_show(const struct blit_list *l)
 
 #define FADE_STEP   437         /* the pause's fade: 0x8000 in 1.5 s of steps (16384 a second of 0x6000) */
 #define FADE_MENU   983         /* a menu screen from black: 1.5 a second (0x20374, 0x2c078, 0x29738) */
+#define FADE_PAGES  393         /* the pages from black: 0.6 a second (0x29ea0) */
 #define FADE_RACE   1311        /* a race in and out: 2 a second (0x21e50, 0x21d8c) */
 
 /* pal at f of 0x8000 into the back buffer's palette: towards black, as the game's 0x27de8 */
@@ -1238,16 +1239,19 @@ static int dashboard_init(void)
     return ok;
 }
 
-/* The track screen or the car screen (menu.h) from choice n on until one is taken: its number
-   (the track, the car's row + 1), -1 when the car screen goes back to the track screen. The
-   picture by the blitter, the models through the geometry unit while it waits (hw_piece), the
-   texts after them. It fades in from black, the models already turning (0x2c078, 0x2bdcc: the
-   palette at 1.5 a second, 0x29738), and is left with a cut to black. In the simulation
-   (SIM_MENU) its third frame is checked against the C models and reported. */
+/* A screen of the menu (menu.h) from choice n on until one is taken: its number (the track, the
+   car's row + 1; the pages: 1 NORMAL GAME), -1 when the track or car screen goes back. The
+   picture by the blitter, the models or the letters' cubes through the geometry unit while it
+   waits (hw_piece), the texts after them. It fades in from black, the models already turning
+   (0x2c078, 0x2bdcc: the palette at 1.5 a second, 0x29738; the pages 0.6, 0x29ea0), and is left
+   with a cut to black; the pages fade out at 2 a second while the camera pulls back (0x293e8).
+   MUSIC changed on the options page stops the menu's song or starts it again at once. In the
+   simulation (SIM_MENU) its third frame is checked against the C models and reported. */
 static int menu_screen(int screen, int n)
 {
     uint32_t drawn = 0, keys_before = IN_KEY, last_frame = 0, sim = SYS_FLAGS & FLAG_SIM;
-    int32_t fade = 0;
+    int32_t fade = 0, rate = screen == MENU_PAGE_SCREEN ? FADE_PAGES : FADE_MENU;
+    int chosen = 0;
     menu_enter(screen, n);
     const uint32_t *pal = menu_palette();
     music_play(0);
@@ -1270,15 +1274,26 @@ static int menu_screen(int screen, int n)
         last_frame = VID_FRAME(st);
         if (steps > 4) steps = 4;
         for (uint32_t k = 0; k < steps; k++) {
-            int chosen = menu_step(keys, keys_before);
+            int c = menu_step(keys, keys_before);
             keys_before = keys;
-            if (chosen) {
+            if (c && screen != MENU_PAGE_SCREEN) {
                 black();
-                return chosen;
+                return c;
             }
+            if (c) chosen = c;
         }
-        fade += (int32_t)steps * FADE_MENU;
-        if (fade > 0x8000) fade = 0x8000;
+        if (chosen && (fade -= (int32_t)steps * FADE_RACE) <= 0) {
+            black();
+            return chosen;
+        }
+        if (!chosen && (fade += (int32_t)steps * rate) > 0x8000) fade = 0x8000;
+        struct menu_options opt;
+        menu_options(&opt);
+        if (opt.music != music_on) {
+            music_on = opt.music;
+            if (music_on) music_play(0);
+            else music_stop();
+        }
         draw_buf = !(st & VID_FRONT);
         blit_start(&back, (int)draw_buf);
         menu_backdrop(&back);
@@ -1299,7 +1314,7 @@ static int menu_screen(int screen, int n)
         while (RS_DRAW & RS_BUSY)
             ;
         if (drawn % 250 == 2) {
-            dlog_str(screen == MENU_CAR_SCREEN ? "car screen" : "track screen");
+            dlog_str(screen == MENU_CAR_SCREEN ? "car screen" : screen == MENU_TRACK_SCREEN ? "track screen" : "pages");
             dlog_str(" frame ");
             dlog_dec((int32_t)drawn);
             dlog_str(": ");
@@ -1408,10 +1423,12 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     log_head("frames drawn: ", 0);
     dlog_str("program.bin: running in the SDRAM\n");
 
-    /* the game's files that stay (data slots 4, 6, 7, deferload) and the menu's; then the track
-       screen, the car screen (Y or SELECT there: the track screen again) and the race on the
-       track chosen with the car chosen, for ever. The simulation races the testbench's track
-       with the first car at once, or shows the screen MENU_CHECK_SLOT names. */
+    /* the game's files that stay (data slots 4, 6, 7, deferload) and the menu's; then the main
+       menu, from NORMAL GAME on the track screen (Y or SELECT there: the main menu again), the
+       car screen (Y or SELECT: the track screen again) and the race on the track chosen with the
+       car chosen and the options page's laps, difficulty and speech, then the main menu again
+       (0x2a114 -> 0x29ea0), for ever. The simulation races the testbench's track with the first
+       car at once, or shows the screen MENU_CHECK_SLOT names. */
     if (load_containers(0, FIXED_FILES)) {
         music_init(game.gen, game.gen_size);
         if (!hud_cd_init(game.game, game.game_size, CD_MEM, CD_SIZE, (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH))
@@ -1420,12 +1437,26 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         int screen = (!sim || check) && menus();
         int n = sim && slot_size(TRACK_SLOT) ? (int)slot_size(TRACK_SLOT) : 1, car = 0;
         if (screen) menu_sounds();
-        for (;;) {
+        for (int pages = !check;;) {
             if (screen) {
-                if (check != 2) n = menu_screen(MENU_TRACK_SCREEN, n);
+                if (pages) menu_screen(MENU_PAGE_SCREEN, 1);
+                pages = !check;
+                if (check != 2) {
+                    int t = menu_screen(MENU_TRACK_SCREEN, n);
+                    if (t < 0) continue;
+                    n = t;
+                }
                 int c = menu_screen(MENU_CAR_SCREEN, car + 1);
-                if (c < 0) continue;
+                if (c < 0) {
+                    pages = 0;
+                    continue;
+                }
                 car = c - 1;
+                struct menu_options opt;
+                menu_options(&opt);
+                car_laps = opt.laps;
+                track_build_difficulty = opt.difficulty;
+                speech_on = opt.speech;
             }
             if (!race(n, car) && !screen) break;
             if (screen) menu_sounds();          /* the race had its own (sounds()) */
