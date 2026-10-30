@@ -2,9 +2,8 @@
  * The scenery that is not the track's (openscreamer docs/NOTES.md section 14):
  *
  * Props (the game's 0x15178 places them, 0x124c0 hits one, 0x205b4 moves it): one per node of
- * the track's MAPnOST.SPL (in cone carnage MAPnCNG.SPL, 0x14fb4), the node's height field its
- * kind, a row of OSTACLES in MAPnDAT.DTR
- * whose first column names the mesh (track 1: cone, trestle barrier, sign). Each stands on the
+ * the track's MAPnOST.SPL (cone carnage MAPnCNG.SPL, slalom MAPnSLA.SPL: 0x14fb4), the node's
+ * height field its kind, a row of OSTACLES in MAPnDAT.DTR whose first column names the mesh (track 1: cone, trestle barrier, sign). Each stands on the
  * drivable surface under it, tilted to it, heading along the nearest point of the path. When
  * one of the player's two circles comes within its radius + 200 it is thrown the way the car
  * heads at 1.4 x its speed and upwards at 0.02 x per frame (the game adds that per frame, on a

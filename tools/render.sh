@@ -18,7 +18,7 @@
 #   REPLAYCHECK=s: the replay's determinism check instead (a robot's race of at most s steps, its
 #   replay compared step by step; CAR=6 finishes track 1); the picture is the replay's at its
 #   end, or at step REPLAYAT, NOHUD=1 without the race screen. MODE=m: the game mode (car.h,
-#   0x20 cone carnage) instead of the normal game.
+#   0x20 cone carnage, 0x40 slalom) instead of the normal game.
 # The firmware's sources are copied to build/host/ with hw.h's RISC-V instructions made plain C;
 # built and run with the simulation's Docker image (gcc).
 set -e

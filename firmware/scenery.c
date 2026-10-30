@@ -232,9 +232,9 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
         m->nb = car_mesh_blocks(m->mesh, m->x, m->y, m->h, m->yaw, 0.0f, 0.0f, m->b, MOVING_BLOCKS);
     }
 
-    /* the props' places: one spline, each node a prop; MAPnOST.SPL, in cone carnage MAPnCNG.SPL
-       (0x14fb4) */
-    memcpy(name + 4, car_mode == CAR_CONES ? "CNG.SPL" : "OST.SPL", 8);
+    /* the props' places: one spline, each node a prop; MAPnOST.SPL, in cone carnage MAPnCNG.SPL,
+       in slalom MAPnSLA.SPL (0x14fb4) */
+    memcpy(name + 4, car_mode == CAR_CONES ? "CNG.SPL" : car_mode == CAR_SLALOM ? "SLA.SPL" : "OST.SPL", 8);
     uint32_t len = entry(dat, dat_size, name, scratch, SCRATCH);
     int32_t count = len >= 8 ? rd32(scratch) : 0;
     for(int32_t i = 0; i < count && nprops < PROPS_MAX && 8 + 56 * (uint32_t)(i + 1) <= len; i++) {

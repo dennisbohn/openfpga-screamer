@@ -460,10 +460,10 @@ static int page_step(uint32_t press)
             snd_play(SND_MENU_OPTION);
         }
     } else if(press & (KEY_B | KEY_START)) {
-        if(it->id == 0 || it->id == 29 || it->id == 26 || it->id == 27) {  /* NORMAL GAME (0x28b80),
-                                    CONE CARNAGE (0x28bb0), the championship's NEW and RESUME (0x28c6b,
-                                    0x28c9e) */
-            mode = it->id == 29 ? CAR_CONES : it->id ? CAR_CHAMP : CAR_NORMAL;
+        if(it->id == 0 || it->id == 29 || it->id == 30 || it->id == 26 || it->id == 27) {  /* NORMAL GAME
+                                    (0x28b80), CONE CARNAGE, SLALOM (0x28bb0, 0x28bdf), the championship's
+                                    NEW and RESUME (0x28c6b, 0x28c9e) */
+            mode = it->id == 29 ? CAR_CONES : it->id == 30 ? CAR_SLALOM : it->id ? CAR_CHAMP : CAR_NORMAL;
             leaving = 1;
             back_f = 1.0f;
             roll = -4.0f * PI;

@@ -43,7 +43,8 @@
    on, 0 off. The game's defaults: HI, NORMAL, 3, on, on. */
 struct menu_options { int detail, difficulty, laps, speech, music; };
 void menu_options(struct menu_options *o);
-/* The game mode of the game menu_step() started last (car.h's CAR_NORMAL, CAR_CONES; 0x1d25c) */
+/* The game mode of the game menu_step() started last (car.h: CAR_NORMAL, CAR_CONES, CAR_SLALOM;
+   the game's word 0x1d25c) */
 int menu_mode(void);
 
 /* What menu_init() reads of the two containers: these entries, MENU.MLB whole (the cars'
@@ -82,13 +83,12 @@ void menu_enter(int screen, int n);
    option, B or START too, as the game's ENTER (SND_MENU_OPTION; once the words have landed,
    0x297d4), B or START on OPTIONS, SPECIAL MODES or CHAMPIONSHIP opens its page (the game's
    pages 1, 4 and 5; SND_MENU_PAGE), A or SELECT go back to the main menu (the same sound);
-   NORMAL GAME and CONE CARNAGE: 1, the championship's NEW MENU_CHAMP_NEW and RESUME
+   NORMAL GAME, CONE CARNAGE and SLALOM: 1, the championship's NEW MENU_CHAMP_NEW and RESUME
    MENU_CHAMP_RESUME (SND_MENU_GAME, menu_mode() the game's mode), from then on the camera pulls
    back and rolls (0x293e8) while the caller fades out at 2 a second, the keys not taken.
-   NETWORK GAME shows the game's NETWORK NOT FOUND; TIME ATTACK, SLALOM and VIEW RECORDS only
-   sound, for now. The championship's screen: B or START, or 10 s without a key (0x2d301), as
-   ENTER: 1; A or SELECT on a race's text screen as ESC (0x2829d): -1 (both silent). 0 while
-   none is taken. */
+   NETWORK GAME shows the game's NETWORK NOT FOUND; TIME ATTACK and VIEW RECORDS only sound, for
+   now. The championship's screen: B or START, or 10 s without a key (0x2d301), as ENTER: 1; A
+   or SELECT on a race's text screen as ESC (0x2829d): -1 (both silent). 0 while none is taken. */
 int menu_step(uint32_t keys, uint32_t keys_before);
 
 /* The frame in the order it is drawn: the picture (for the blitter), the projection and the

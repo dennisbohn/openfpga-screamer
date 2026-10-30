@@ -113,7 +113,7 @@ static void once(int ev, int mode)
    max(2, opponents) others) for 8 s; lapped: a lap up on an opponent for 2 s; hitcar: whenever
    the contact (opp.h) is over 0.8. By the game mode (car.h): hurry not in cone carnage and
    slalom (mask 0x17), lead not in the special modes (0x13); cone carnage says cones once past
-   the line, all once every prop is down. */
+   the line, all once every prop is down; slalom all once every gate is done, no prop touched. */
 static void notice(const struct car_race *rc)
 {
     const struct car_state *c = car_state();
@@ -129,11 +129,10 @@ static void notice(const struct car_race *rc)
     hold((nopp < 2 ? 2 : nopp) < rank, SAY_BAD, 8.0f);
     hold(opp_lapped(), SAY_LAPPED, 2.0f);
     repeat(opp_hitcar() > 0.8f, SAY_HITCAR, 0.0f);
-    if (car_mode == CAR_CONES) {
-        int all, down = scenery_hits(&all);
-        if (down == all) once(SAY_ALL, 3);              /* 0x24386: every prop down */
-        if (rc->clock_on) once(SAY_CONES, 3);           /* 0x24570: past the line */
-    }
+    int all, down = scenery_hits(&all), gates, through = car_gates(&gates);
+    if ((car_mode == CAR_CONES && down == all) || (car_mode == CAR_SLALOM && through == gates && !down))
+        once(SAY_ALL, 3);                               /* 0x2437b */
+    if (car_mode == CAR_CONES && rc->clock_on) once(SAY_CONES, 3);     /* 0x24570: past the line */
 }
 
 /* 0x24a24 / 0x24ae8: which of the event's recordings (0..2): the mode's, or in mode 3 the next

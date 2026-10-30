@@ -53,6 +53,12 @@ int car_laps = 3;                       /* the option's default (0x1d2ac + 1) */
 int car_mode = CAR_NORMAL;
 static int carnage;                     /* TRACK_DATA's carnage time (0xcf4c) */
 static int props_paid;                  /* the props down the last 1 s was given for (+0x7bc) */
+/* slalom's gates (MAPnSLA.MRK, 32-byte records: radius, .., +0x10 seconds, +0x14 x, +0x1c y),
+   whether each has been driven through (+0x694), how many (+0x7c0) */
+#define GATES_MAX   64
+static struct { int32_t r, seconds, x, y; } gate[GATES_MAX];
+static uint8_t gate_done[GATES_MAX];
+static int ngates, gates_done;
 static uint8_t mark_seen[64];
 static int mark_count;
 static float needle, needle_speed;
@@ -431,6 +437,20 @@ static void markers_step(void)
             props_paid = down;
         }
     }
+    if(car_mode == CAR_SLALOM) {                        /* 0x18b98: the first gate the car is in */
+        int32_t x = (int32_t)pc.x, y = (int32_t)pc.y;
+        for(int i = 0; i < ngates; i++) {
+            int32_t dx = x - gate[i].x, dy = y - gate[i].y, r = gate[i].r;
+            if(dx >= r || -dx >= r || dy >= r || -dy >= r || sqrtf((float)(dx * dx + dy * dy)) > (float)r) continue;
+            if(!gate_done[i]) {                         /* the first time through: its seconds */
+                gate_done[i] = 1;
+                gates_done++;
+                race.timer += (float)gate[i].seconds;
+                snd_play(SND_DOOR);
+            }
+            break;
+        }
+    }
     for(int k = -1; k <= 1; k++) {
         int i = ((mark_at + k) % n + n) % n;
         const struct track_marker *m = &mk[i];
@@ -447,10 +467,10 @@ static void markers_step(void)
         } else if(i == 0 && mark_count >= n - 1) {        /* across the line */
             if(race.laps + 1 >= race.total_laps) {
                 race.finished = 1;
-                if(car_mode == CAR_CONES) {             /* 0x23fbc: PERFECT! with every prop down */
-                    int all, down = scenery_hits(&all);
-                    race.perfect = down == all;
-                }
+                int all, down = scenery_hits(&all);     /* PERFECT! (flag 0x80): */
+                if(car_mode == CAR_CONES) race.perfect = down == all;   /* every prop down (0x23fbc) */
+                if(car_mode == CAR_SLALOM) race.perfect = gates_done == ngates && down == 0;    /* every
+                                                           gate, no prop touched (0x23f68) */
             } else if(!race.finished) {
                 race.timer = race.timer / 5.0f + bonus;
                 speech_rearm(SAY_HURRY);
@@ -596,7 +616,8 @@ void car_init(int which, int replay)
     refl_phase = 0;
     track_reflection_rate(0.008f);
     race.total_laps = car_mode & CAR_ALONE ? 1 : car_laps;
-    props_paid = 0;
+    props_paid = gates_done = 0;
+    for(int j = 0; j < GATES_MAX; j++) gate_done[j] = 0;
     for(int j = 0; j < 64; j++) mark_seen[j] = 0;
     mark_count = 0;
     needle = needle_speed = 0.0f;
@@ -1168,6 +1189,26 @@ void car_mode_init(const uint8_t *dat, uint32_t dat_size, int n, int difficulty)
                    dat_extract(dat, dat_size, &e, dtr, sizeof dtr) : 0;
     if(len && tb_track_data(dtr, len, td, sizeof td) == sizeof td)
         carnage = (int)(td[12] | (uint32_t)td[13] << 8 | (uint32_t)td[14] << 16 | (uint32_t)td[15] << 24);
+    static int32_t mrk[1 + 8 * GATES_MAX];              /* the gates: count, records of 8 words */
+    char gates_name[16] = "MAPnSLA.MRK";
+    gates_name[3] = name[3];
+    len = dat && dat_find(dat, dat_size, gates_name, &e) && e.size <= sizeof mrk ?
+          dat_extract(dat, dat_size, &e, (uint8_t *)mrk, sizeof mrk) : 0;
+    ngates = 0;
+    for(int32_t k = 0; len >= 4 && k < mrk[0] && k < GATES_MAX && 4 + 32 * (uint32_t)(k + 1) <= len; k++) {
+        const int32_t *g = mrk + 1 + 8 * k;
+        gate[k].r = g[0];
+        gate[k].seconds = g[4];
+        gate[k].x = g[5];
+        gate[k].y = g[7];
+        ngates = k + 1;
+    }
+}
+
+int car_gates(int *total)
+{
+    if(total) *total = ngates;
+    return gates_done;
 }
 
 void car_trackside_init(const uint8_t *dat, uint32_t dat_size, int n)

@@ -183,6 +183,15 @@ y 90), mit allen Hütchen dazu `PERFECT!` (15, y 120; `0x23fbc`, `0x24204`), son
 umgefahren sind (`0x24570`, `0x24386`), im Ziel „win“. `MODE=0x20` für `tools/render.sh`
 zeichnet und fährt (`REPLAYCHECK`) den Modus auf dem PC.
 
+**SLALOM** (`0x40`): die Hindernisse aus `MAPnSLA.SPL` (Torstangen, je zwei eine Straßenbreite
+auseinander), die Tore aus `MAPnSLA.MRK` (Anzahl, dann 32 Byte je Tor: Radius 1024, `+0x10`
+Sekunden 2–4, `+0x14` x, `+0x1c` y, die Mitte zwischen zwei Stangen; Strecke 1: 14 Tore).
+Ziellinie und Checkpoints geben wie in Cone Carnage nur `carnage`. Je Schritt (`0x18b98`) das
+erste Tor, in dessen Kreis der Wagen steht (seine ganze Stelle): beim ersten Mal gibt es seine
+Sekunden und das Türgeräusch (Sample 9, `door`). Im Ziel `YOU MADE IT!`, `PERFECT!` nur mit
+allen Toren und ohne eine Stange zu berühren (`0x23f68`, `0x241ac`); „all“ unter derselben
+Bedingung. `MODE=0x40` für `tools/render.sh`.
+
 ## Meisterschaft
 
 Wie im Original (sein Modus 2; OpenScreamer `docs/NOTES.md` Abschnitt 21, im EXE
@@ -362,7 +371,7 @@ ersten Strecke), die Tabelle setzt er nach jedem Rennen neu (`snd_menu` in `soun
 AGAIN? klickt bei jedem Druck von hoch/links oder runter/rechts (`SFXSBASE.DTR` Zeile 6,
 `sclick`; `0x21b0e`, `0x21b47`). Der CD-Spieler der Pause spielt nichts.
 
-Nicht dabei: Namenseingabe, Meisterschaft, Zeitfahren und Slalom, Rekorde, Intro, die gespiegelten
+Nicht dabei: Namenseingabe, Zeitfahren, Rekorde, Intro, die gespiegelten
 Strecken, „NEW TRACK AVAILABLE“,
 Wiederholungen als Datei (`REPLAYS\TEMP.RPL`). Die Simulation fährt gleich die Strecke aus `SIM_TRACK` (Slot 28) mit dem
 ersten Auto; mit `SIM_MENU=1` (Slot 27) zeigt sie stattdessen den Streckenbildschirm, mit
