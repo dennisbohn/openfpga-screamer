@@ -168,13 +168,29 @@ Grün gilt als Tempo sin(Autonummer × 0,5 × Uhr) × 15000, die Gegner lassen d
 aufheulen (`0x20e63`; unter der kleinsten Tonhöhe bleibt die Stimme stehen). Die beweglichen
 Teile der Strecke (`0x21b80`, `scenery.c`): die vierte Spalte von `ANIMATIONS` nennt eine
 Zeile der eigenen `SOUND_FX`-Liste in `MAPnDAT.DTR` (Strecke 1: `truck`, `airplane`), die
-hinter denen von `SFXSBASE.DTR` geladen wird; innerhalb von 40000 Einheiten, Lautstärke
+hinter den Effekten und dem Sprecher geladen wird; innerhalb von 40000 Einheiten, Lautstärke
 ((40000 − d) / 40000)², Tonhöhe 65536. Bei beiden kommt der Doppler dazu, + 9 je Einheit, die
 die Quelle in einem Bild des Spiels (1/30 s) näher kam, hier je Schritt × 50 / 30; springt die
 Kamera in einem Schritt über 1000 Einheiten (ein Schnitt), entfällt er. Nur diese Geräusche
 liegen im Stereobild: die Linie zur Quelle im Rahmen der Kamera, pan = 0x8000 ± 32767 ×
 √(|seitlich| / d), die ferne Seite linear leiser; die eigenen Geräusche des Spielers bleiben in
 der Mitte.
+
+Der Sprecher (`firmware/speech.c`, OpenScreamers Notes Abschnitt 17, „commentary“; EXE
+`0x2479c`, `0x24820`, `0x24a24`, `0x2425c`): seine Aufnahmen sind die Zeilen von `SPFXBASE.DTR`
+und `SPFXFULL.DTR` (GEN.DAT, 11 + 47), hinter den Effekten geladen; die Tabelle des Spiels
+(`0x1fb0`) gibt jedem der 27 Ereignisse bis zu drei davon. Ein Ereignis kommt mit Modus
+(Aufnahme 0–2 oder reihum) und Verzögerung in eine Warteschlange, jedes höchstens einmal.
+Schweigt die Stimme, läuft eine Uhr; das Ereignis mit der kürzesten Verzögerung kommt dran,
+sobald die Uhr sie erreicht, und nach dem Satz beginnt die Uhr von vorn, so überlappen sich
+nie zwei Sätze. Auslöser: der Countdown mit den Startampeln (`0x20d45`: 0, 2, 4, 6 s),
+Checkpoint (Aufnahme nach der Restzeit), Ziellinie (Runde; „new lap record“ unter dem Rekord,
+ohne `CHOICE.DAT` die 180 s des Spiels), Crash, das Ende (gewonnen, verloren, Zeit um) und je
+Schritt die Wächter von `0x2425c` mit ihren Zeiten: falsche Richtung (gegen die Straße an der
+letzten Wand, `+0x13c`), Stillstand, Eile, Führung und ihr Verlust, Kurve (Marker-Flag 4),
+Rutschen, Letzter, eine Runde voraus, Berührung mit einem Gegner. Die Stimme steht in der Mitte,
+mit dem Hauptregler der Effekte (`0x4000`; im Spiel beginnen beide bei `0x6000`). Jeder Satz
+geht ins Debug-Log: `say <Rennuhr> <Ereignis> <Aufnahme>`.
 
 ## Framebuffer
 

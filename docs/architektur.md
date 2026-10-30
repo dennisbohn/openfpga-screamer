@@ -13,9 +13,10 @@ auf dem Pocket steht aus: Routine 224 (Rauch, Schatten unter allen Autos), das R
 Cockpit-Ansicht, die Startrichtung des Originals und der Ton: ein Mischer mit 32 Stimmen
 (`audio.v`), der die Soundeffekte aus `SOUND.DAT` spielt (Motor, Rutschen, Wand, Crash,
 Requisiten, Berührung mit einem Gegner, die Motoren der Gegner und die Fahrzeuge der Strecke,
-im Stereobild und mit Doppler). Seit 2026-10-30 gebaut, Test auf dem Pocket steht aus: alle
-sechs Strecken, gewählt im Streckenbildschirm des Originals (siehe „Streckenwahl“), und die
-CD-Musik aus GOGs Abbild der CD, im Streckenbildschirm und im Rennen wie im Spiel.
+im Stereobild und mit Doppler) und den Sprecher. Seit 2026-10-30 gebaut, Test auf dem Pocket
+steht aus: alle sechs Strecken, gewählt im Streckenbildschirm des Originals (siehe
+„Streckenwahl“), und die CD-Musik aus GOGs Abbild der CD, im Streckenbildschirm und im Rennen
+wie im Spiel.
 Belegung siehe „Belegung“, alles gemessen.
 
 ## Hardware des Pocket (Haupt-FPGA)
@@ -443,8 +444,11 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   Gegner (`crash`, höchstens 30-mal je Sekunde). Seit 2026-10-30 auch Geräusche mit einem Ort,
   gehört an der Kamera (`docs/soc.md`, „Ton“): die Motoren der drei nächsten Gegner (in der
   Startaufstellung heulen sie auf) und die Fahrzeuge der Strecke (Lastwagen, Busse, Jet; die
-  vierte Spalte von `ANIMATIONS`), mit Doppler und als einzige im Stereobild. Noch nicht: der
-  Sprecher. Offen: ein Tiefpass wie der Ausgangsfilter der Soundkarten
+  vierte Spalte von `ANIMATIONS`), mit Doppler und als einzige im Stereobild. Seit 2026-10-30
+  der Sprecher, nur Firmware (`speech.c`, `docs/soc.md`, „Ton“): 58 Aufnahmen aus
+  `SPFXBASE/SPFXFULL.DTR`, 27 Ereignisse mit den Auslösern, Zeiten und der Warteschlange des
+  Spiels, eine Stimme in der Mitte mit dem Hauptregler der Effekte. Offen: ein Tiefpass wie der
+  Ausgangsfilter der Soundkarten
   (OpenScreamer nimmt 3,2 kHz wie die Sound Blaster Pro); ob er fehlt, entscheidet das Hören
   auf dem Pocket.
 - **Die CD-Musik** (2026-10-30, OpenScreamers Notes Abschnitt 17, MUSIC): Das Spiel spielt Lied
