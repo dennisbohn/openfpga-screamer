@@ -19,11 +19,12 @@ CPU_HZ = 74_250_000
 BUDGET = CPU_HZ // 50                   # cycles per picture at 50 fps
 STAND = "30.10.2026"
 
-T_START, T_PHYS, T_PREP, T_CULL, T_PIECES, T_SCENE, T_CLEAR, T_HUD, T_WAIT, T_END = range(10)
+T_START, T_PHYS, T_PREP, T_CULL, T_PIECES, T_SCENE, T_CLEAR, T_HUD, T_WAIT, T_END, T_MUSIC = range(11)
 
 # the CPU's phases: the mark that ends a stretch names it (categorical slots of the dataviz
 # reference palette, light and dark)
 PHASES = [
+    ("music", "Musik (Lesebefehl an die SD-Karte)", "#008300", "#008300", (T_MUSIC,)),
     ("phys", "Physik (Fahrzeug, Gegner)", "#2a78d6", "#3987e5", (T_PHYS,)),
     ("prep", "Vorbereitung (Kamera, Objekte, Hintergrund)", "#eda100", "#c98500", (T_PREP,)),
     ("cull", "Auswahl (Sichtprüfung, Sortierung)", "#eb6834", "#d95926", (T_CULL,)),
@@ -72,9 +73,9 @@ def deltas(marks, counters):
         d = {}
         for name in counters:
             if name == "bl":
-                d[name] = 0 if tag in (T_PHYS, T_CLEAR) else cur[name] if tag == T_PREP else cur[name] - prev[name]
+                d[name] = 0 if tag in (T_MUSIC, T_PHYS, T_CLEAR) else cur[name] if tag == T_PREP else cur[name] - prev[name]
             else:
-                d[name] = 0 if tag in (T_PHYS, T_PREP) else cur[name] - prev[name]
+                d[name] = 0 if tag in (T_MUSIC, T_PHYS, T_PREP) else cur[name] - prev[name]
             d[name] = max(0, d[name])
         out.append((prev["t"], cur["t"], tag, d))
     return out

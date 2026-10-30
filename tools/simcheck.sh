@@ -12,7 +12,9 @@
 #   (SIM_WAV names another file).
 # Needs build/firmware/ (tools/fw.sh) and all the game's files core/data.json names in
 # build/gamedata/ (SIM_GAME), in their folders as on the SD card: build/gamedata/GFX/MAP1H.DAT,
-# build/gamedata/DATA/MAP1.DAT, ... (the testbench drives the race only when all are there).
+# build/gamedata/DATA/MAP1.DAT, ..., and GOG's CD image at the top, build/gamedata/SCREAM.gog
+# (a hard link to it will do) and SCREAM.DAT (the testbench drives the race only when all are
+# there).
 set -e
 root=$(cd "$(dirname "$0")/.." && pwd)
 quick=1; save=""; name=check

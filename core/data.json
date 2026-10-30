@@ -231,6 +231,28 @@
                 "extensions": ["dat"],
                 "size_maximum": 4194304,
                 "address": "0x10600000"
+            },
+            {
+                "name": "SCREAM.DAT",
+                "id": 21,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "SCREAM.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 4096,
+                "address": "0x11E00000"
+            },
+            {
+                "name": "SCREAM.gog",
+                "id": 22,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "SCREAM.gog",
+                "extensions": ["gog"],
+                "size_maximum": 1073741824,
+                "address": "0x11E00000"
             }
         ]
     }

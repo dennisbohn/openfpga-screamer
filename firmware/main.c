@@ -30,6 +30,7 @@
 #include "scenery.h"
 #include "geom.h"
 #include "sound.h"
+#include "music.h"
 #include "menu.h"
 #include "dat.h"
 
@@ -158,7 +159,7 @@ static uint32_t back_clocks, back_cycles;   /* the blitter's clocks for it, the 
    the frame began, the busy clocks of the geometry unit, setup unit, rasterizer and blitter
    and the CPU's cycles writing to them, each as its counter holds it (cleared during the
    frame; a mark follows every clear). Two buffers: the last whole frame is logged. */
-enum { TL_START, TL_PHYS, TL_PREP, TL_CULL, TL_PIECES, TL_SCENE, TL_CLEAR, TL_HUD, TL_WAIT, TL_END };
+enum { TL_START, TL_PHYS, TL_PREP, TL_CULL, TL_PIECES, TL_SCENE, TL_CLEAR, TL_HUD, TL_WAIT, TL_END, TL_MUSIC };
 #define TL_MAX 48
 static struct tl_mark { uint32_t t, gu, su, rs, bl, wait, tag; } tl[2][TL_MAX];
 static uint32_t tl_n[2], tl_cur, tl_t0, tl_pieces, tl_scene;
@@ -483,6 +484,8 @@ static void run_track(void)
     for (;;) {
         uint32_t st = wait_swap_done(), keys = IN_KEY, t_frame = rdcycle();
         tl_begin(t_frame);
+        music_frame();                          /* the ring kept filled (music.h) */
+        tl_mark(TL_MUSIC);
         frames_shown = drawn;
         if (drawn == check_at + 1) {
             SYS_SIM = SIM_DONE | results;
@@ -968,12 +971,14 @@ static int track_screen(int n)
     const uint32_t *pal = menu_palette();
     uint32_t drawn = 0, keys_before = IN_KEY, last_frame = 0, sim = SYS_FLAGS & FLAG_SIM;
     menu_enter(n);
+    music_play(0);
     track_mode = TRACK_HW;
     track_hw_piece = hw_piece;
     GU_MLB = (uint32_t)((uintptr_t)menu_mlb() - SDRAM_BASE);
     GU_INVAL = 1;
     for (;;) {
         uint32_t st = wait_swap_done(), keys = IN_KEY;
+        music_frame();
         frames_shown = drawn;
         if (sim && drawn == 3) {
             SYS_SIM = SIM_DONE | results;
@@ -1029,6 +1034,7 @@ static int track_screen(int n)
 static int race(int n)
 {
     int placements = 0;
+    music_stop();                               /* before the loads: none of its reads running */
     if (track_loaded != n) {
         track_loaded = 0;
         if (!load_containers(n, TRACK_FILES)) return 0;
@@ -1062,6 +1068,7 @@ static int race(int n)
     sounds();                   /* before the scenery, which adds the track's own sounds */
     scenery(n);
     RS_CTRL = 1;
+    music_play(n);
     run_track();
     AU_STOP = 0xFFFFFFFFu;                      /* the race's sounds end with it */
     return 1;
@@ -1079,6 +1086,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
        the track screen and the race on the track chosen, for ever. The simulation races the
        testbench's track at once. */
     if (load_containers(0, FIXED_FILES)) {
+        music_init(game.gen, game.gen_size);
         int sim = (SYS_FLAGS & FLAG_SIM) != 0, screen = (!sim || slot_size(MENU_CHECK_SLOT)) && menus();
         int n = sim && slot_size(TRACK_SLOT) ? (int)slot_size(TRACK_SLOT) : 1;
         for (;;) {

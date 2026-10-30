@@ -12,6 +12,12 @@
    returns its result, 0 = ok, or -1 after 20 seconds. The data cache is cleared. */
 int slot_read(uint32_t id, uint32_t offset, uint32_t addr, uint32_t len);
 
+/* The same read, started only (the music's, music.c): slot_busy() until the APF is done, then
+   slot_result() its result. The data cache is not cleared. No other slot call meanwhile. */
+void slot_start(uint32_t id, uint32_t offset, uint32_t addr, uint32_t len);
+int slot_busy(void);
+int slot_result(void);
+
 /* The size of data slot id's file as the APF put it into the slot table when it loaded
    the core (deferload slots too); 0 if the slot has no file or the table no such slot */
 uint32_t slot_size(uint32_t id);

@@ -585,6 +585,7 @@ blit bl (
     wire        au_wr = d_write && d_region == R_REG && d_addr[15:11] == 5'b01000;     // 0x4000-0x47FC
     wire [31:0] au_playing;
     wire        au_late;
+    wire [16:0] au_music;
 
 audio au (
     .clk                ( clk ),
@@ -595,6 +596,7 @@ audio au (
     .playing            ( au_playing ),
     .late               ( au_late ),
     .busy               ( ),
+    .music              ( au_music ),
     .mem_valid          ( au_mem_valid ),
     .mem_ready          ( au_mem_ready ),
     .mem_addr           ( au_mem_addr ),
@@ -804,6 +806,7 @@ always @(posedge clk) begin
         16'h3184: reg_q <= bl_busy_clocks;
         16'h4400: reg_q <= au_playing;
         16'h4408: reg_q <= {31'd0, au_late};
+        16'h4414: reg_q <= {15'd0, au_music};
         default:  reg_q <= 32'd0;
     endcase
 end

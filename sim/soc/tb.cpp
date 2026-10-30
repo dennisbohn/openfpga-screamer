@@ -18,7 +18,9 @@
 // slot without a file). The boot loader checks program.bin and starts it. SIM_GAME names
 // a folder with the game's original files: the testbench serves them as the slots
 // core/data.json gives their names, and the program builds the track from them and drives
-// the race instead of the texture demo.
+// the race instead of the texture demo. The CD image SCREAM.gog (383 MB) is not read whole:
+// the part asked for is read from the file and sent at the APF's measured rate while the
+// simulation goes on, as the music streams it (firmware/music.c).
 //
 // Run until the firmware reports through SYS_SIM, then capture two more frames and check:
 // SYS_SIM, the model error counts and the longest refresh gap, the debug log's slot size
@@ -60,6 +62,25 @@ static bool read_file(const std::string &path, std::vector<uint8_t> &out) {
     while ((n = fread(buf, 1, sizeof buf, f)) > 0) out.insert(out.end(), buf, buf + n);
     fclose(f);
     return true;
+}
+
+// n bytes of a file from byte off
+static bool read_part(const std::string &path, uint64_t off, uint64_t n, std::vector<uint8_t> &out) {
+    FILE *f = fopen(path.c_str(), "rb");
+    if (!f) return false;
+    out.resize(n);
+    bool ok = fseek(f, long(off), SEEK_SET) == 0 && fread(out.data(), 1, n, f) == n;
+    fclose(f);
+    return ok;
+}
+
+static uint64_t file_size(const std::string &path) {
+    FILE *f = fopen(path.c_str(), "rb");
+    if (!f) return 0;
+    fseek(f, 0, SEEK_END);
+    long n = ftell(f);
+    fclose(f);
+    return n > 0 ? uint64_t(n) : 0;
 }
 
 // core/data.json's slots in its order (the order of the APF's slot table): id, file name
@@ -187,11 +208,62 @@ struct Sim {
     bool race = false;                                  // every game file is there
     int slot_reads = 0;
     uint32_t keys = 0;                                  // SIM_KEYS, held from the program's first read
+
+    // The CD image: read from the file where asked, its words over the bridge at the APF's
+    // measured rate (1.3 MB/s: one every 220 clocks) while run() goes on (cd_tick); done goes
+    // high after the last. A read still running when run() ends is finished at once (cd_finish).
+    static const int CD_GAP = 220;
+    std::string cd_path;
+    uint32_t cd_id = 0, cd_addr = 0;
+    uint64_t cd_size = 0;
+    std::vector<uint8_t> cd_part;
+    size_t cd_k = 0;
+    int cd_wait = 0, cd_state = 0;                      // 0 none, 1 sending, 2 sent, 3 done: until ds_read falls
+    bool cd_wr = false;                                 // a word is on the bridge for the next edge
+    void cd_tick() {
+        if (cd_wr) { top.bridge_wr = 0; top.eval(); cd_wr = false; }
+        if (cd_state == 1 && --cd_wait <= 0) {
+            const uint8_t *b = &cd_part[cd_k];
+            top.bridge_addr = cd_addr + uint32_t(cd_k);
+            top.bridge_wr_data = uint32_t(b[0]) << 24 | b[1] << 16 | b[2] << 8 | b[3];
+            top.bridge_wr = 1; top.eval();
+            cd_wr = true;
+            cd_k += 4;
+            cd_wait = cd_k < cd_part.size() ? CD_GAP : 9;
+            if (cd_k >= cd_part.size()) cd_state = 2;
+        } else if (cd_state == 2 && --cd_wait <= 0) {
+            top.ds_err = 0; top.ds_done = 1; top.eval();
+            cd_state = 3;
+        } else if (cd_state == 3 && !top.ds_read) {
+            cd_state = 0;
+        }
+    }
+    void cd_finish() {
+        if (cd_wr) { rise_74(); top.bridge_wr = 0; top.eval(); cd_wr = false; }
+        if (cd_state == 1) load(cd_addr + uint32_t(cd_k), std::vector<uint8_t>(cd_part.begin() + cd_k, cd_part.end()), 12);
+        if (cd_state == 1 || cd_state == 2) { rise_74(8); top.ds_err = 0; top.ds_done = 1; top.eval(); }
+        if (cd_state) while (top.ds_read) rise_74();
+        cd_state = 0;
+    }
+
     void serve_read() {
         top.ds_done = 0; top.eval();
         rise_74(8);
         uint32_t id = top.ds_id, off = top.ds_offset, addr = top.ds_addr, len = top.ds_length, err = 2;
         if (id >= 3) top.cont1_key = keys;              // the program runs: the boot loader is past its keys
+        if (id == cd_id && cd_size) {
+            uint64_t end = len == 0xFFFFFFFFu ? cd_size : uint64_t(off) + len;
+            if (off < cd_size && end <= cd_size && read_part(cd_path, off, end - off, cd_part)) {
+                while (cd_part.size() % 4) cd_part.push_back(0);
+                printf("data slot read %u: %u bytes from %u to 0x%08x, sent while the simulation runs\n", id, len, off, addr);
+                slot_reads++;
+                cd_addr = addr;
+                cd_k = 0;
+                cd_wait = CD_GAP;
+                cd_state = 1;
+                return;
+            }
+        }
         auto it = files.find(id);
         if (it != files.end()) {
             const std::vector<uint8_t> &f = it->second;
@@ -224,7 +296,8 @@ struct Sim {
         while (now <= limit) {
             int e = step();
             if (!e) continue;
-            if (e == 1 && top.ds_read) serve_read();
+            if (e == 1 && cd_state) cd_tick();
+            else if (e == 1 && top.ds_read) serve_read();
             asked |= top.swap_req != req0;
             if (top.front != prev_front) { unasked |= !asked; prev_front = top.front; }
             if (e == 1 && max_clocks && ++clocks >= max_clocks) break;
@@ -242,6 +315,7 @@ struct Sim {
                 frame.push_back(c >> 16); frame.push_back(c >> 8); frame.push_back(c);
             }
         }
+        cd_finish();
         done = done_at >= 0;
         return frames;
     }
@@ -375,8 +449,20 @@ int main(int argc, char **argv) {
         for (const Slot &slot : slots) {
             if (slot.id <= 2) continue;
             wanted++;
+            std::string path = std::string(game) + "/" + slot.name;
+            if (slot.name.size() > 4 && slot.name.compare(slot.name.size() - 4, 4, ".gog") == 0) {
+                s.cd_size = file_size(path);            // the CD image: read where asked
+                if (s.cd_size) {
+                    s.cd_path = path;
+                    s.cd_id = slot.id;
+                    found++;
+                    printf("%s: %llu bytes (slot %u, read where asked)\n", path.c_str(),
+                           (unsigned long long)s.cd_size, slot.id);
+                } else printf("%s: missing (slot %u)\n", path.c_str(), slot.id);
+                continue;
+            }
             std::vector<uint8_t> f;
-            if (read_file(std::string(game) + "/" + slot.name, f) && !f.empty()) {
+            if (read_file(path, f) && !f.empty()) {
                 s.files[slot.id] = f;
                 found++;
                 printf("%s/%s: %zu bytes (slot %u)\n", game, slot.name.c_str(), f.size(), slot.id);
@@ -416,7 +502,8 @@ int main(int argc, char **argv) {
     for (size_t k = 0; k < slots.size() && k < 32; k++) {
         uint32_t id = slots[k].id;
         auto it = s.files.find(id);
-        uint32_t size = id == 0 ? uint32_t(fw.size()) : it != s.files.end() ? uint32_t(it->second.size()) : 0;
+        uint32_t size = id == 0 ? uint32_t(fw.size()) : id == s.cd_id && s.cd_size ? uint32_t(s.cd_size)
+                        : it != s.files.end() ? uint32_t(it->second.size()) : 0;
         s.bridge_write(0xF8002000u + 8 * uint32_t(k), id);
         s.bridge_write(0xF8002004u + 8 * uint32_t(k), size);
     }

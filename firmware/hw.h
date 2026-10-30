@@ -174,6 +174,12 @@
 #define AU_STOP         REG32(0xF0004404u)  /* W: bit v stops voice v */
 #define AU_STATUS       REG32(0xF0004408u)  /* R: AU_LATE; W: clears */
 #define AU_LATE         (1u << 0)           /* a pass was not done by the next frame */
+/* the music: 16-bit stereo frames at 44.1 kHz (the CD's) in a ring of 256 KB, a frame a word */
+#define AU_MUSIC_ADDR   REG32(0xF000440Cu)  /* W: [25:18] SDRAM byte address of the ring; before a start */
+#define AU_MUSIC_VOL    REG32(0xF0004410u)  /* W: [15:0] the sample times this >> 15 */
+#define AU_MUSIC        REG32(0xF0004414u)  /* W: bit 0 1 plays the ring from its start, 0 stops;
+                                               R: [15:0] the place (the frame in the ring), bit 16 plays */
+#define AU_MUSIC_RING   0x40000u
 
 /* Cache maintenance: invalidate the whole data cache (it is write-through, so nothing is
    lost), and make the instruction cache fetch code written with stores (fence.i, then
