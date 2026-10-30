@@ -229,7 +229,6 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
         m->sound = sounds >= 0 && cell[k][3][0] ? sounds + (int)number(cell[k][3]) : -1;
         m->voice = -1;
         moving_place(m, 0);
-        m->nb = car_mesh_blocks(m->mesh, m->x, m->y, m->h, m->yaw, 0.0f, 0.0f, m->b, MOVING_BLOCKS);
     }
 
     /* the props' places: one spline, each node a prop; MAPnOST.SPL, in cone carnage MAPnCNG.SPL,
@@ -348,7 +347,6 @@ static void moving_step(void)
             }
         }
         moving_place(m, 0);
-        m->nb = car_mesh_blocks(m->mesh, m->x, m->y, m->h, m->yaw, 0.0f, 0.0f, m->b, MOVING_BLOCKS);
     }
 }
 
@@ -375,6 +373,20 @@ void scenery_step(void)
     moving_sound();
 }
 
+/* moving thing k's blocks, made when it is drawn, from its place now (the CPU's time before
+   the first piece is the frame's; once the pieces go, the geometry unit's work is); its
+   textures play by the clock (0x153e3: the record's phase -1), the rotor's 20 frames */
+static int moving_make(int k, const struct track_cam *cam, struct track_object *obj)
+{
+    struct moving *m = &moving[k];
+    (void)cam;
+    m->nb = car_mesh_blocks(m->mesh, m->x, m->y, m->h, m->yaw, 0.0f, 0.0f, m->b, MOVING_BLOCKS);
+    for(int b = 0; b < m->nb; b++) m->b[b].phase = track_phase();
+    obj->n = m->nb;
+    obj->b = m->b;
+    return 1;
+}
+
 int scenery_objects(const struct track_cam *cam, struct track_object *objs, int max)
 {
     int n = 0;
@@ -382,9 +394,7 @@ int scenery_objects(const struct track_cam *cam, struct track_object *objs, int 
         struct moving *m = &moving[k];
         float dx = m->x - cam->x, dy = m->y - cam->y;
         if(dx * dx + dy * dy > (REACH + MOVING_RADIUS) * (REACH + MOVING_RADIUS)) continue;
-        /* its textures play by the clock (0x153e3: the record's phase -1), the rotor's 20 frames */
-        for(int b = 0; b < m->nb; b++) m->b[b].phase = track_phase();
-        objs[n++] = (struct track_object){ m->x, m->y, m->h, MOVING_RADIUS, m->nb, m->b, 0, k, m->key, 0, 0 };
+        objs[n++] = (struct track_object){ m->x, m->y, m->h, MOVING_RADIUS, 0, 0, moving_make, k, m->key, 0, 0 };
     }
     for(int k = 0; k < nprops && n < max; k++) {
         const struct prop *p = &props[k];
