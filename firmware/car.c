@@ -181,16 +181,60 @@ static void contact(void)
     pc.roll  = atanf((jolted[2] - jolted[0]) / (2.0f * tr));
 }
 
+/* the road points by x for nearest_dir (dirs_prepare, at each race's start): their places as
+   floats (whole numbers: exact) and their index in the file */
+#define MAX_DIRS    1024
+static struct sdir { float x, y; int i; } sdirs[MAX_DIRS];
+static int nsdirs = -1;
+
+static void dirs_prepare(void)
+{
+    int n;
+    const struct track_dir *d = track_dirs(&n);
+    nsdirs = n <= MAX_DIRS ? n : -1;
+    for(int i = 0; i < nsdirs; i++) {
+        struct sdir s = { (float)d[i].x, (float)d[i].y, i };
+        int j = i;
+        for(; j > 0 && sdirs[j - 1].x > s.x; j--) sdirs[j] = sdirs[j - 1];
+        sdirs[j] = s;
+    }
+}
+
+/* the road point nearest (x, y), of equally near ones the first in the file: out from x both
+   ways through the points by x, each way ending where the distance in x alone (with a margin
+   over the rounding) is past the nearest found; the distances as the search through all of
+   them had them, so the same point */
 static const struct track_dir *nearest_dir(float x, float y)
 {
     int n;
     const struct track_dir *d = track_dirs(&n), *best = 0;
     float bd = 1e30f;
-    for(int i = 0; i < n; i++) {
-        float e = ((float)d[i].x - x) * ((float)d[i].x - x) + ((float)d[i].y - y) * ((float)d[i].y - y);
-        if(e < bd) { bd = e; best = &d[i]; }
+    if(nsdirs < 0 || nsdirs != n) {                     /* not in the table: all of them */
+        for(int i = 0; i < n; i++) {
+            float e = ((float)d[i].x - x) * ((float)d[i].x - x) + ((float)d[i].y - y) * ((float)d[i].y - y);
+            if(e < bd) { bd = e; best = &d[i]; }
+        }
+        return best;
     }
-    return best;
+    int lo = 0, hi = nsdirs, bi = -1;                   /* the first point with x >= the place's */
+    while(lo < hi) {
+        int m = (lo + hi) / 2;
+        if(sdirs[m].x < x) lo = m + 1;
+        else hi = m;
+    }
+    float reach = 1e30f;
+    for(int way = 1; way >= -1; way -= 2)
+        for(int k = way > 0 ? lo : lo - 1; k >= 0 && k < nsdirs; k += way) {
+            const struct sdir *s = &sdirs[k];
+            if(fabsf(s->x - x) > reach) break;
+            float e = (s->x - x) * (s->x - x) + (s->y - y) * (s->y - y);
+            if(e < bd || (e == bd && bi >= 0 && s->i < bi)) {
+                bd = e;
+                bi = s->i;
+                reach = sqrtf(bd) * 1.001f + 1.0f;
+            }
+        }
+    return bi >= 0 ? &d[bi] : 0;
 }
 
 static int nearest_wall(float x, float y)
@@ -212,6 +256,7 @@ static void walls_prepare(void)
 {
     int n;
     const struct track_wall *w = track_walls(&n);
+    dirs_prepare();
     for(int i = 0; i < n && i < MAX_WALLS; i++) {
         float nx = cosf(w[i].angle), ny = -sinf(w[i].angle);
         int neg = track_under((float)w[i].x - nx * 200.0f, (float)w[i].y - ny * 200.0f, 0, 0);
