@@ -190,7 +190,7 @@ Schritt die Wächter von `0x2425c` mit ihren Zeiten: falsche Richtung (gegen die
 letzten Wand, `+0x13c`), Stillstand, Eile, Führung und ihr Verlust, Kurve (Marker-Flag 4),
 Rutschen, Letzter, eine Runde voraus, Berührung mit einem Gegner. Die Stimme steht in der Mitte,
 mit dem Hauptregler der Effekte (`0x4000`; im Spiel beginnen beide bei `0x6000`). Jeder Satz
-geht ins Debug-Log: `say <Rennuhr> <Ereignis> <Aufnahme>`.
+geht ins Debug-Log, wenn er zu Ende ist: `say <von>-<bis> <Ereignis> <Aufnahme>` (Rennuhr).
 
 ## Framebuffer
 

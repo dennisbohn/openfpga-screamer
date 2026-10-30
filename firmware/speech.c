@@ -26,7 +26,9 @@ static const char *const event_name[SAY_EVENTS] = {
 static struct { int ev, mode; float delay; } queue[SAY_EVENTS];
 static int queued;
 static int voice = -1;                  /* the line being spoken (0x11906c) */
-static float quiet;                     /* how long the voice has been silent (0x119078) */
+static int said;                        /* its recording (0..2) */
+static float said_at;                   /* the race clock when it began */
+static float quiet;                    /* how long the voice has been silent (0x119078) */
 static int turn[SAY_EVENTS];            /* the recording an event said last in mode 3 (0x1191bc) */
 static float timer[SAY_EVENTS];         /* the triggers' (0x119228); -1: said, wait */
 static int stage;                       /* the start lights' state last said */
@@ -136,26 +138,31 @@ static int pick(int ev, int mode)
     return turn[ev];
 }
 
-/* the debug log: "say <race clock to 1/100 s> <event> <recording>" */
-static void log_line(int ev, int k)
+/* a race clock to 1/100 s */
+static void log_time(float s)
 {
-    int32_t t = (int32_t)(car_race()->clock * 100.0f + 0.5f);
-    dlog_str("say ");
+    int32_t t = (int32_t)(s * 100.0f + 0.5f);
     dlog_dec(t / 100);
     dlog_char('.');
     dlog_char((char)('0' + t / 10 % 10));
     dlog_char((char)('0' + t % 10));
-    dlog_char(' ');
-    dlog_str(event_name[ev]);
-    dlog_char(' ');
-    dlog_dec(k);
-    if (voice < 0) dlog_str(" silent");
-    dlog_char('\n');
 }
 
-/* the first in the queue is done with */
+/* the first in the queue is done with: the debug log gets "say <from>-<to> <event>
+   <recording>", the race clock when it began and ended ("silent" if it found no voice), once
+   it has ended, so that the frame report at the start keeps its room */
 static void pop(void)
 {
+    dlog_str("say ");
+    log_time(said_at);
+    dlog_char('-');
+    log_time(car_race()->clock);
+    dlog_char(' ');
+    dlog_str(event_name[queue[0].ev]);
+    dlog_char(' ');
+    dlog_dec(said);
+    if (voice < 0) dlog_str(" silent");
+    dlog_char('\n');
     queued--;
     for (int i = 0; i < queued; i++)
         queue[i] = queue[i + 1];
@@ -182,9 +189,10 @@ static void play(void)
         queue[first] = q;
     }
     if (quiet < queue[0].delay) return;
-    int ev = queue[0].ev, k = pick(ev, queue[0].mode), r = recording[ev][k];
+    said = pick(queue[0].ev, queue[0].mode);
+    said_at = car_race()->clock;
+    int r = recording[queue[0].ev][said];
     voice = r >= 0 ? snd_play(SND_SPEECH + r) : -1;
-    log_line(ev, k);
     if (voice < 0) pop();
 }
 

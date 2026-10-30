@@ -6,7 +6,8 @@
  * queued event has a mode (0..2 that recording, 3 take turns) and a delay: while the voice is
  * silent a clock runs, the event with the shortest delay goes first once the clock has passed
  * its delay, and the clock starts again when it has been spoken. The voice is in the middle.
- * Each line spoken goes to the debug log: "say <race clock> <event> <recording>".
+ * Each line spoken goes to the debug log once it has ended: "say <from>-<to> <event> <recording>",
+ * the race clock when it began and ended.
  */
 #pragma once
 
