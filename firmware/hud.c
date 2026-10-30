@@ -276,7 +276,8 @@ static void race_screen(struct blit_list *l, int overlay, int rank)
     text(l, 8, 0x38, buf, 3, 2);
     clock_text(buf, r->lap);
     text(l, 8, 0x48, buf, 3, 2);
-    clock_text(buf, r->best);
+    /* the third clock: the best lap; in time attack until the finish the ghost's (0x1d268) */
+    clock_text(buf, car_mode == CAR_ATTACK && !r->finished ? car_lap_record() : r->best);
     text(l, 8, 0x58, buf, 3, 2);
     uint32_t t0 = rdcycle();
     radar(l);
@@ -300,10 +301,10 @@ void hud_build(struct blit_list *l, int buffer, int fps, int overlay)
     if(r->clock < 8.0f) sprite(l, 0x78, 0x36, (int)r->clock / 2);     /* the start lights */
 
     /* the end (0x21048): GREAT! for the winner, the position (1ST .. 10TH POSITION), the total
-       time; or TIME OVER. Cone carnage and slalom (0x24204, 0x241ac): YOU MADE IT!, PERFECT!
-       under it (car.h). */
-    if(r->finished && (car_mode & (CAR_CONES | CAR_SLALOM))) {
-        centred(l, 0x5A, track_hud_text(14), 0, 2);
+       time; or TIME OVER. The special modes (0x24174, 0x241ac, 0x24204): YOU MADE IT! or TRY AGAIN,
+       PERFECT! under it (car.h). */
+    if(r->finished && (car_mode & CAR_ALONE)) {
+        centred(l, 0x5A, track_hud_text(13 + r->made_it), 0, 2);
         if(r->perfect) centred(l, 0x78, track_hud_text(15), 0, 2);
     } else if(r->finished) {
         if(rank == 1) centred(l, 0x3E, track_hud_text(11), 0, 2);

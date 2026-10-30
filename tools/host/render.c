@@ -18,7 +18,8 @@
  *   PAUSE=2: PLAY AGAIN? TRACKSIDE=1: the trackside camera after the steps, HUD=1 with the race
  *   screen. REPLAYCHECK=s: the replay's determinism check instead (replay_check()), REPLAYAT=k
  *   its picture at step k of the replay, NOHUD=1 without the race screen. MODE=m: the game
- *   mode (car.h, 0x20 cone carnage, 0x40 slalom), its props, rules and race screen.
+ *   mode (car.h, 4 time attack, 0x20 cone carnage, 0x40 slalom), its props, rules and race screen;
+ *   GHOST=1 with MODE=4: ghost_check() instead of replay_check().
  *        render menu <MENU.DAT> <GRAF.DAT> <LOCAL.DAT> <GEN.DAT> <out.rgb> [screen [n [steps]]]
  *   the track screen (screen 1, the default) with track n chosen or the car screen (screen 2)
  *   with the car of row n - 1 (menu.h; default 1), steps of 1/50 s after entering it (default 0);
@@ -37,6 +38,7 @@
 #include "track.h"
 #include "car.h"
 #include "opp.h"
+#include "ghost.h"
 #include "efx.h"
 #include "scenery.h"
 #include "blit.h"
@@ -159,6 +161,7 @@ static void check_frame(uint32_t frame, uint32_t steps_now, const char *out)
     car_camera(&cam);
     int nobj = car_object(&cam, &objs[0]);
     nobj += opp_objects(objs + nobj, MAX_OBJECTS - nobj);
+    nobj += ghost_objects(objs + nobj, MAX_OBJECTS - nobj);
     nobj += car_effects(&cam, objs + nobj, MAX_OBJECTS - nobj);
     nobj += scenery_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
     if (frame % 32 == 0 || out) {
@@ -176,6 +179,62 @@ static void check_frame(uint32_t frame, uint32_t steps_now, const char *out)
         if (!getenv("NOHUD")) blit_model(FB(0), &l);
         write_rgb(out, track_palette());
     }
+}
+
+/* GHOST=1 with MODE=4: time attack's ghost (ghost.h) instead. A robot's race as replay_check's,
+   kept as the track's best if it finishes; then a second one against it from the other grid
+   place, its picture at step REPLAYAT (default: its end) with the ghost and the race screen. At
+   each step 4k + 1 (a pose exactly) of every 500 the ghost's place is set against the first
+   race's player's, and the running order printed. */
+static int ghost_check(int max, int car, int n, uint32_t data_size, uint32_t gfx_size, const char *out)
+{
+    static float first[CHECK_MAX][3];
+    int props, moving;
+    uint32_t shot = getenv("REPLAYAT") ? (uint32_t)atoi(getenv("REPLAYAT")) : ~0u;
+    if (max > CHECK_MAX - 1) max = CHECK_MAX - 1;
+    for (int run = 0; run < 2; run++) {
+        uint32_t steps = 0, frames = 0, seed = 1, keys_before = 0, end = 0;
+        ghost_resume = run;
+        scenery_init(DATA_FILE, data_size, GFX_FILE, gfx_size, n, SCENERY_MEM, 0x10000, &props, &moving);
+        ghost_init(n, car);
+        car_init(car, 0);
+        car_view(CAR_VIEW_START);
+        opp_init(car);
+        printf("run %d: grid place %d, start %.0f %.0f, ghost's lap %.2f s\n", run, ghost_slot(), car_state()->x,
+               car_state()->y, ghost_time());
+        while ((int)steps < max && (!end || steps < end)) {
+            seed = seed * 1103515245u + 12345u;
+            uint32_t now = 1 + (seed >> 16) % 4;
+            for (uint32_t k = 0; k < now && (int)steps < max; k++) {
+                uint32_t keys = robot(steps);
+                car_step(car_keys(keys, keys_before));
+                keys_before = keys;
+                opp_step();
+                scenery_step();
+                steps++;
+                const struct car_state *c = car_state();
+                struct track_object g;
+                if (!run) {
+                    first[steps][0] = c->x; first[steps][1] = c->y; first[steps][2] = c->z;
+                } else if (steps % 500 == 1 && ghost_objects(&g, 1))
+                    printf("  step %u: ghost %.0f %.0f %.0f, first race %.0f %.0f %.0f, player %.0f %.0f, place %d\n",
+                           steps, g.x, g.y, g.h, first[steps][0], first[steps][1], first[steps][2], c->x, c->y,
+                           opp_player_rank());
+                if (car_race()->finished && !end) end = steps + 250;
+            }
+            check_frame(frames++, now, run && steps >= shot ? out : 0);
+            if (run && steps >= shot) shot = ~0u;
+        }
+        const struct car_race *r = car_race();
+        printf("run %d: %u steps, finished %d, time over %d, lap %.2f s, made it %d, place %d, lap to beat %.2f\n", run,
+               steps, r->finished, r->game_over, r->total, r->made_it, opp_player_rank(), car_lap_record());
+        if (run && shot != ~0u) check_frame(frames, 0, out);
+        ghost_end();
+        const struct ghost_file *f = ghost_track(n);
+        printf("  kept: %.4s, car %d, %d poses, %u steps (%u bytes)\n", f->magic, f->car, f->n, f->steps,
+               16 + 20 * f->n);
+    }
+    return 0;
 }
 
 static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gfx_size, const char *out)
@@ -314,6 +373,8 @@ int main(int argc, char **argv)
     printf("scenery: %d props, %d moving\n", props, moving);
     car_trackside_init(DATA_FILE, data_size, n);
     car_mode_init(DATA_FILE, data_size, n, 1);         /* NORMAL, as make_track.py */
+    if (getenv("REPLAYCHECK") && getenv("GHOST"))
+        return ghost_check(atoi(getenv("REPLAYCHECK")), car, n, data_size, gfx_size, argv[4]);
     if (getenv("REPLAYCHECK")) return replay_check(atoi(getenv("REPLAYCHECK")), car, n, data_size, gfx_size, argv[4]);
     car_init(car, 0);
     opp_init(car);
@@ -343,6 +404,7 @@ int main(int argc, char **argv)
     if (rf && sscanf(rf, "%f %f %f %u", &acc[0], &acc[1], &acc[2], &rph) >= 3) car_reflection(acc, rph);
     int nobj = car_object(&cam, &objs[0]);
     nobj += opp_objects(objs + nobj, MAX_OBJECTS - nobj);
+    nobj += ghost_objects(objs + nobj, MAX_OBJECTS - nobj);
     nobj += car_effects(&cam, objs + nobj, MAX_OBJECTS - nobj);
     nobj += scenery_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
     const struct rs_clip clip = { 0, 0, FB_W, car_cockpit() ? car_view_lines() : FB_H };

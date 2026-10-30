@@ -192,6 +192,27 @@ Sekunden und das Türgeräusch (Sample 9, `door`). Im Ziel `YOU MADE IT!`, `PERF
 allen Toren und ohne eine Stange zu berühren (`0x23f68`, `0x241ac`); „all“ unter derselben
 Bedingung. `MODE=0x40` für `tools/render.sh`.
 
+**TIME ATTACK** (`4`, `firmware/ghost.c`): TIME ATTACK öffnet Seite 3 (`0x28e0d`), A oder
+SELECT führt zurück zu Seite 4. NEW fährt allein (`0x28c0f`: `0x1d260` = 0), RESUME gegen den
+Geist der Strecke (`0x28c3c`; ohne einen allein, `0x2a1df`). Normale Bonuszeit, „hurry“ ja.
+Das Original zeichnet die Fahrt auf (`0x231d0`, eine Stellung je Bild) und spielt den Geist als
+zweiten Wagen ab, mit dem nichts zusammenstößt (`0x12e14` → `0x1ba3c`, `0x14d28`; `0x23018`,
+`0x23308`): das aufgezeichnete Auto auf dem Startplatz, von dem es fuhr, der Spieler auf dem
+anderen (`0x13ded`: Aufzeichnung 0 oder 1 + Gegnerzahl − 1, `0x1bb33` wechselt), seine Runde
+ist die zu schlagende (`0x1d268`, die dritte Uhr; darunter „new lap record“), der Spieler ist
+Zweiter, solange der Geist weiter ist (`0x20418`). Im Ziel (`0x23ef0`): langsamer oder gleich
+schnell `TRY AGAIN` (`GAME.TXT` 13) und „lose“, sonst (oder ohne Geist) `YOU MADE IT!` und
+„win“; dann wird die Fahrt nach dem Rennen zum neuen Geist (`0x1fd64` → `0x1b964`,
+`REPLAYS\MAPn.ATK`) und PLAY AGAIN fährt gegen ihn. Bei uns: eine Stellung je 4 Schritte
+(12,5/s) ab dem Aufbau, abgespielt im selben Schritt, der Ort über die Kubik des Originals
+durch vier Stellungen (`0x22724`), die Winkel zwischen zwei Stellungen gedreht; ohne Schatten
+und Motor. Je Strecke der beste Geist für die Sitzung (`ghost_track()`, im Format der
+Speicherdatei: 16 Byte Kopf „ATK1“, Strecke, Auto, Anzahl, Runde in 1/50 s, Startplatz; dann je
+Stellung 20 Byte: x, y, Höhe als int32, Richtung, Neigung, Rollen als int16 mit 65536 = 2π, Stand
+im Rennen × 64 und die Bremslicht-Bits; höchstens 3000 Stellungen, 60.016 Byte). `MODE=4
+GHOST=1 REPLAYCHECK=9000 tools/render.sh` fährt zwei Roboterrennen, das zweite gegen den Geist
+des ersten (Strecke 1: der Geist bis auf eine Einheit am Ort der ersten Fahrt).
+
 ## Meisterschaft
 
 Wie im Original (sein Modus 2; OpenScreamer `docs/NOTES.md` Abschnitt 21, im EXE
@@ -371,7 +392,7 @@ ersten Strecke), die Tabelle setzt er nach jedem Rennen neu (`snd_menu` in `soun
 AGAIN? klickt bei jedem Druck von hoch/links oder runter/rechts (`SFXSBASE.DTR` Zeile 6,
 `sclick`; `0x21b0e`, `0x21b47`). Der CD-Spieler der Pause spielt nichts.
 
-Nicht dabei: Namenseingabe, Zeitfahren, Rekorde, Intro, die gespiegelten
+Nicht dabei: Namenseingabe, Rekorde, Intro, die gespiegelten
 Strecken, „NEW TRACK AVAILABLE“,
 Wiederholungen als Datei (`REPLAYS\TEMP.RPL`). Die Simulation fährt gleich die Strecke aus `SIM_TRACK` (Slot 28) mit dem
 ersten Auto; mit `SIM_MENU=1` (Slot 27) zeigt sie stattdessen den Streckenbildschirm, mit

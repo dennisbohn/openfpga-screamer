@@ -10,6 +10,7 @@
 #include "dat.h"
 #include "track.h"
 #include "car.h"
+#include "ghost.h"
 #include "tb_hud.h"
 #include "tb_spl.h"
 #include "sound.h"
@@ -101,15 +102,16 @@ static float turn[2] = { 1.5707964f, 1.5707964f }, cam_x, from_x, to_x, slide;
    option, id 1234, shows its line + its value), by the game's numbers: 0 the main menu (NORMAL
    GAME 0, CHAMPIONSHIP 1, SPECIAL MODES 2, NETWORK GAME 3, OPTIONS 4), 1 the options with the
    game's values at the start (DETAIL, the difficulty, LAP NUMBER, SPEECH, MUSIC; VIEW RECORDS
-   21), 4 the special modes (TIME ATTACK 28, CONE CARNAGE 29, SLALOM 30), 5 the championship's
-   NEW 26 and RESUME 27 */
+   21), 3 time attack's NEW 24 and RESUME 25, 4 the special modes (TIME ATTACK 28, CONE CARNAGE
+   29, SLALOM 30), 5 the championship's NEW 26 and RESUME 27 */
 static struct item { int line, id, value, max; } items[PAGES][6] = {
     [0] = { { 0, 0, 0, 0 }, { 1, 1, 0, 0 }, { 2, 2, 0, 0 }, { 3, 3, 0, 0 }, { 4, 4, 0, 0 } },
     [1] = { { 5, OPTION, 2, 2 }, { 8, OPTION, 1, 2 }, { 13, OPTION, 0, 3 }, { 17, OPTION, 1, 1 },
             { 19, OPTION, 1, 1 }, { 21, 21, 0, 0 } },
+    [3] = { { 24, 24, 0, 0 }, { 25, 25, 0, 0 } },
     [4] = { { 28, 28, 0, 0 }, { 29, 29, 0, 0 }, { 30, 30, 0, 0 } },
     [5] = { { 26, 26, 0, 0 }, { 27, 27, 0, 0 } } };
-static const int page_lines[PAGES] = { [0] = 5, [1] = 6, [4] = 3, [5] = 2 };
+static const int page_lines[PAGES] = { [0] = 5, [1] = 6, [3] = 2, [4] = 3, [5] = 2 };
 static int mode = CAR_NORMAL;           /* the game mode the last game was started in (0x1d25c) */
 static const int laps[4] = { 3, 5, 10, 25 };            /* 0x21e0 + 1 */
 
@@ -460,25 +462,30 @@ static int page_step(uint32_t press)
             snd_play(SND_MENU_OPTION);
         }
     } else if(press & (KEY_B | KEY_START)) {
-        if(it->id == 0 || it->id == 29 || it->id == 30 || it->id == 26 || it->id == 27) {  /* NORMAL GAME
-                                    (0x28b80), CONE CARNAGE, SLALOM (0x28bb0, 0x28bdf), the championship's
-                                    NEW and RESUME (0x28c6b, 0x28c9e) */
-            mode = it->id == 29 ? CAR_CONES : it->id == 30 ? CAR_SLALOM : it->id ? CAR_CHAMP : CAR_NORMAL;
+        /* the items that start a game, by id: NORMAL GAME (0x28b80), time attack's NEW and RESUME
+           (0x28c0f, 0x28c3c), the championship's (0x28c6b, 0x28c9e), CONE CARNAGE (0x28bb0),
+           SLALOM (0x28bdf); those that open a page: CHAMPIONSHIP (0x28b3a), SPECIAL MODES
+           (0x28eab), OPTIONS (0x28db2), TIME ATTACK (0x28e0d) */
+        int id = it->id, game = id == 0 ? CAR_NORMAL : id == 24 || id == 25 ? CAR_ATTACK :
+                 id == 26 || id == 27 ? CAR_CHAMP : id == 29 ? CAR_CONES : id == 30 ? CAR_SLALOM : 0;
+        if(game) {
+            mode = game;
+            if(game == CAR_ATTACK) ghost_resume = id == 25;
             leaving = 1;
             back_f = 1.0f;
             roll = -4.0f * PI;
             snd_play(SND_MENU_GAME);
-            return mode == CAR_CHAMP ? it->id + 1 : 1;
+            return mode == CAR_CHAMP ? id + 1 : 1;
         }
-        if(it->id == 3) network = 1;            /* the game without a network (0x28d78), silent */
+        if(id == 3) network = 1;                /* the game without a network (0x28d78), silent */
         else snd_play(SND_MENU_PAGE);
-        if(it->id == 4 || it->id == 2 || it->id == 1) {     /* OPTIONS (0x28db2), SPECIAL MODES
-                                                               (0x28eab), CHAMPIONSHIP (0x28b3a) */
-            page = it->id == 4 ? 1 : it->id == 2 ? 4 : 5;
+        int to = id == 1 ? 5 : id == 2 ? 4 : id == 4 ? 1 : id == 28 ? 3 : -1;
+        if(to >= 0) {
+            page = to;
             turning = 1;
         }
-    } else if((press & (KEY_A | KEY_SELECT)) && page != 0) {    /* the game's ESC (0x280cb) */
-        page = 0;
+    } else if((press & (KEY_A | KEY_SELECT)) && page != 0) {    /* the game's ESC (0x280cb): */
+        page = page == 3 ? 4 : 0;                               /* the page before */
         turning = 1;
         snd_play(SND_MENU_PAGE);
     }

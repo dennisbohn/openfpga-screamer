@@ -209,9 +209,10 @@ void speech_step(void)
 {
     const struct car_race *rc = car_race();
     int over = rc->finished || rc->game_over;
-    if (over && !said_end) {                    /* 0x20f88 time over, 0x23e78 the finish */
-        said_end = 1;
-        speech_say(rc->game_over ? SAY_NOTIME : opp_player_rank() == 1 ? SAY_WIN : SAY_LOSE, 3, 0.0f);
+    if (over && !said_end) {                    /* 0x20f88 time over, 0x23e78 the finish; the */
+        said_end = 1;                           /* special modes' by made_it (0x23ef0 ..) */
+        int won = car_mode & CAR_ALONE ? rc->made_it : opp_player_rank() == 1;
+        speech_say(rc->game_over ? SAY_NOTIME : won ? SAY_WIN : SAY_LOSE, 3, 0.0f);
     }
     if (!over && rc->clock < 8.0f && (int)rc->clock / 2 != stage) {    /* 0x20d45: the lights */
         stage = (int)rc->clock / 2;

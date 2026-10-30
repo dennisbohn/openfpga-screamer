@@ -9,6 +9,7 @@
 #include "dat.h"
 #include "hw.h"
 #include "efx.h"
+#include "ghost.h"
 #include "scenery.h"
 #include "sound.h"
 #include "speech.h"
@@ -467,10 +468,11 @@ static void markers_step(void)
         } else if(i == 0 && mark_count >= n - 1) {        /* across the line */
             if(race.laps + 1 >= race.total_laps) {
                 race.finished = 1;
-                int all, down = scenery_hits(&all);     /* PERFECT! (flag 0x80): */
+                int all, down = scenery_hits(&all);     /* PERFECT! (flag 0x8000): */
                 if(car_mode == CAR_CONES) race.perfect = down == all;   /* every prop down (0x23fbc) */
                 if(car_mode == CAR_SLALOM) race.perfect = gates_done == ngates && down == 0;    /* every
                                                            gate, no prop touched (0x23f68) */
+                race.made_it = car_mode != CAR_ATTACK || ghost_finish(race.total);      /* 0x23ef0 */
             } else if(!race.finished) {
                 race.timer = race.timer / 5.0f + bonus;
                 speech_rearm(SAY_HURRY);
@@ -609,7 +611,8 @@ void car_init(int which, int replay)
     snd_over = 0;
     snd_engine = snd_play(SND_ENGINE);
     speech_reset();
-    if(!replay) record = car_mode & CAR_ALONE ? 0.0f : 180.0f;  /* a lap the race beat it with stays */
+    if(!replay) record = car_mode == CAR_ATTACK ? ghost_time() : car_mode & CAR_ALONE ? 0.0f : 180.0f;
+                                                        /* (0x1ba3c); a lap the race beat it with stays */
     race = (struct car_race){ 0 };
     race.timer = 15.0f;
     refl = (struct track_refl){ { 0, 0, 0 }, { 0.0f, 0.0f, 0.0f } };
@@ -628,9 +631,11 @@ void car_init(int which, int replay)
        skidding until a marker */
     float px, py, ph;
     track_start(&pc.x, &pc.y, &pc.yaw);
-    if(car_mode & CAR_ALONE) {                          /* 0x13ded: the last opponent's place */
-        int rows, ns = track_opp_count(&rows), last = (ns - 1 < rows ? ns - 1 : rows) - 1, start = 0, nn = 0;
-        const struct track_spline_node *s = last >= 0 ? track_opp_spline(last, &start, &nn) : 0;
+    if(car_mode & CAR_ALONE) {          /* 0x13ded: the last opponent's place, in time attack */
+        int rows, ns = track_opp_count(&rows), start = 0, nn = 0;       /* the ghost's other one */
+        int k = (ns - 1 < rows ? ns - 1 : rows) - 1 + (car_mode == CAR_ATTACK ? ghost_slot() : 0);
+        if(k > ns - 1) k = ns - 1;
+        const struct track_spline_node *s = k >= 0 ? track_opp_spline(k, &start, &nn) : 0;
         const struct track_dir *d = s && start >= 0 && start < nn ? nearest_dir((float)s[start].x, (float)s[start].y) : 0;
         if(d) {                                         /* the road's heading there, as the grid's */
             pc.x = (float)s[start].x;
@@ -825,6 +830,7 @@ void car_step(uint32_t keys)
     float full = dash ? 3.6128317f : PI, want = pc.rpm / pc.spec.maxrpm * full;
     if(want > full) want = full;
     needle = want + (needle - want) * drive_damp(0x5a);
+    ghost_step();                                       /* time attack (0x231d0, 0x23018) */
     if(dash) {
         want = pc.speed / pc.spec.maxspd * 4.0840706f;
         needle_speed = want + (needle_speed - want) * drive_damp(0x5a);
@@ -1009,16 +1015,22 @@ int car_mesh_draw(const uint8_t *mesh, const struct car_look *lk, const struct t
 static int car_make(int id, const struct track_cam *cam, struct track_object *obj)
 {
     static struct track_block blocks[MAX_BLOCKS];
+    struct car_look lk;
     (void)id;
-    /* the object's angles (player_sync): the car's, negated, and a crash's tumbling on top;
-       the four body blocks (0x15c0c): pitch +0x4e0 x 2, roll +0x4e8 x 4, the height less
-       +0x4c0; the texture frame (0x173a9): paint job | 0x4000 not braking | 0x2000 at 4000
-       units/s or under, of which the phase is a quarter (record +0x20 >> 2) */
-    struct car_look lk = { pc.x, pc.y, pc.z + crash.height, pc.yaw + pc.drift, -pc.pitch + crash.pitch,
-                           -pc.roll + crash.roll, body.pitch * 2.0f, body.roll * 4.0f, spin, steer,
-                           ((uint32_t)pc.spec.livery | (pc.brake == 0.0f ? 0x4000u : 0) |
-                            (pc.speed <= 4000.0f ? 0x2000u : 0)) >> 2 };
+    car_player_look(&lk);
     return draw_car(pmodel, &lk, (float)body.drop, cam, blocks, obj);
+}
+
+/* the object's angles (player_sync): the car's, negated, and a crash's tumbling on top; the four
+   body blocks (0x15c0c): pitch +0x4e0 x 2, roll +0x4e8 x 4 (the height less +0x4c0: draw_car);
+   the texture frame (0x173a9): paint job | 0x4000 not braking | 0x2000 at 4000 units/s or under,
+   of which the phase is a quarter (record +0x20 >> 2) */
+void car_player_look(struct car_look *lk)
+{
+    *lk = (struct car_look){ pc.x, pc.y, pc.z + crash.height, pc.yaw + pc.drift, -pc.pitch + crash.pitch,
+                             -pc.roll + crash.roll, body.pitch * 2.0f, body.roll * 4.0f, spin, steer,
+                             ((uint32_t)pc.spec.livery | (pc.brake == 0.0f ? 0x4000u : 0) |
+                              (pc.speed <= 4000.0f ? 0x2000u : 0)) >> 2 };
 }
 
 int car_object(const struct track_cam *cam, struct track_object *obj)
@@ -1209,6 +1221,11 @@ int car_gates(int *total)
 {
     if(total) *total = ngates;
     return gates_done;
+}
+
+float car_lap_record(void)
+{
+    return record;
 }
 
 void car_trackside_init(const uint8_t *dat, uint32_t dat_size, int n)

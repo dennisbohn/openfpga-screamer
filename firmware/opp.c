@@ -16,6 +16,7 @@
 #include "opp.h"
 #include <math.h>
 #include "car.h"
+#include "ghost.h"
 #include "efx.h"
 #include "hw.h"
 #include "sound.h"
@@ -543,5 +544,5 @@ int opp_count(void)
 
 int opp_player_rank(void)
 {
-    return player_rank;
+    return player_rank + ghost_ahead();                 /* time attack: second behind the ghost (0x20418) */
 }

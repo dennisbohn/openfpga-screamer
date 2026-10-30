@@ -68,6 +68,8 @@ int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, 
    blocks into out (CAR_BLOCKS) in the game's order for the camera; how many */
 int car_mesh_draw(const uint8_t *mesh, const struct car_look *lk, const struct track_cam *cam,
                   struct track_block *out);
+/* the player's car as car_object() draws it now (time attack records it, ghost.h) */
+void car_player_look(struct car_look *lk);
 
 /* The first block of a flat mesh (a shadow) placed as a car's body is: at x, y, z, heading yaw,
    tilted by pitch and roll (struct car_look's) */
@@ -94,8 +96,11 @@ int car_shadow_at(float *x, float *y, float *h);
 struct car_race {
     float clock, timer, total, lap, best, last;
     int laps, total_laps, on, clock_on, time_out, finished, game_over;
-    int perfect;                /* PERFECT! at the finish (flag 0x80): cone carnage every prop down,
+    int perfect;                /* PERFECT! at the finish (flag 0x8000): cone carnage every prop down,
                                    slalom every gate and no prop touched (0x23fbc, 0x23f68) */
+    int made_it;                /* the special modes' finish counts (flag 0x800): always in cone
+                                   carnage and slalom, in time attack faster than the ghost or
+                                   without one (0x23ef0); YOU MADE IT!, else TRY AGAIN */
 };
 const struct car_race *car_race(void);
 /* the laps of a race: the options page's LAP NUMBER (menu.h, 0x1d2ac + 1), 3 at first */
@@ -122,6 +127,9 @@ extern int car_mode;
 void car_mode_init(const uint8_t *dat, uint32_t dat_size, int n, int difficulty);
 /* slalom: the gates driven through so far; how many there are into *total (if given) */
 int car_gates(int *total);
+/* the lap to beat (0x1d268): the game's 180 s, none (0) in the special modes but time attack's
+   ghost's lap (ghost.h); a lap under it replaces it with "new lap record" */
+float car_lap_record(void);
 /* Contact with the opponents (opp.c, the game's 0x17818): the car's two circles (0x136c8:
    the body from 250 ahead of the front wheels to 150 behind the rear ones, length L, each
    circle L/4 in from its end and L/4 round; returns the radius); moved out of an opponent's

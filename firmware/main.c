@@ -29,6 +29,7 @@
 #include "car.h"
 #include "hud.h"
 #include "opp.h"
+#include "ghost.h"
 #include "efx.h"
 #include "scenery.h"
 #include "geom.h"
@@ -653,6 +654,7 @@ static int run_track(int n, int car, int replay)
         rec_n = 0;
         rec_full = 0;
     }
+    ghost_init(n, car);
     car_init(car, replay);
     opp_init(car);
     car_view(car_v);
@@ -756,6 +758,7 @@ static int run_track(int n, int car, int replay)
         car_camera(&cam);
         int nobj = car_object(&cam, &objs[0]);
         nobj += opp_objects(objs + nobj, MAX_OBJECTS - nobj);
+        nobj += ghost_objects(objs + nobj, MAX_OBJECTS - nobj);
         nobj += car_effects(&cam, objs + nobj, MAX_OBJECTS - nobj);
         nobj += scenery_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
         /* the 3D view: the whole screen, or in the cockpit its first 132 lines, the eye line
@@ -1411,6 +1414,7 @@ static int race(int n, int car)
         shown = 0;
         music_play(n);
         int end = run_track(n, car, replay);
+        ghost_end();                            /* time attack: a run that counted is kept (0x1fd64) */
         fade_out(track_palette(), 1);
         AU_STOP = 0xFFFFFFFFu;                  /* the race's sounds end with it, its song too: */
         music_stop();                           /* after PLAY AGAIN? YES or for the replay the race
