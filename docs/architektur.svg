@@ -56,7 +56,8 @@
   <rect x="40" y="200" width="70" height="40" rx="6" class="ext"/>
   <text x="75" y="225" class="b c">SD-Karte</text>
   <rect x="120" y="200" width="70" height="40" rx="6" class="ext"/>
-  <text x="155" y="225" class="b c">Tasten</text>
+  <text x="155" y="217" class="b c">Tasten,</text>
+  <text x="155" y="233" class="b c">Sticks</text>
   <path d="M75,240 V268" class="we" marker-end="url(#ext)"/>
   <path d="M155,240 V268" class="we" marker-end="url(#ext)"/>
 
@@ -82,7 +83,7 @@
   <rect x="250" y="260" width="120" height="100" rx="8" class="built"/>
   <text x="310" y="290" class="t c">APF-Bridge</text>
   <text x="310" y="310" class="b c">Data-Slots,</text>
-  <text x="310" y="326" class="b c">Tasten, Befehle</text>
+  <text x="310" y="326" class="b c">Eingaben, Befehle</text>
 
   <rect x="420" y="260" width="170" height="100" rx="8" class="built"/>
   <text x="505" y="282" class="t c">VexRiscv RV32IMF</text>
@@ -169,7 +170,7 @@
 
   <path d="M372,302 H418" class="wb" marker-start="url(#built)" marker-end="url(#built)"/>
   <text x="395" y="255" class="l c">Firmware,</text>
-  <text x="395" y="268" class="l c">Tasten,</text>
+  <text x="395" y="268" class="l c">Eingaben,</text>
   <text x="395" y="281" class="l c">Protokoll</text>
 
   <path d="M330,362 V575 H418" class="wb" marker-end="url(#built)"/>

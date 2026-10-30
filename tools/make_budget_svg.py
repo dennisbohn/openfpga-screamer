@@ -63,7 +63,7 @@ PLANNED = [
 ]
 TIMING_LIMIT = 0.80         # logic utilisation above which timing closure gets hard
 STAND = "30.10.2026"
-BUILD = "Audio: Mischer und CD-Musik"
+BUILD = "analoge Steuerung, Hardware unverändert"
 
 # layout
 WIDTH = 1120
