@@ -1041,14 +1041,13 @@ static int race(int n)
         track_loaded = n;
     }
     if (load_image() || build_track(n)) {
-        dlog_str("track image: CRC of the 256 KB blocks:");
         int bad = 0;
-        for (int k = 0; k < track_blocks(); k++) {
-            int ok = track_block_ok(k);
-            bad += !ok;
-            dlog_str(ok ? " ok" : " BAD");
-        }
-        dlog_str(bad ? " - damaged in the SDRAM, not used\n" : " (all ok)\n");
+        for (int k = 0; k < track_blocks(); k++)
+            bad += !track_block_ok(k);
+        dlog_str("track image: CRC of the 256 KB blocks:");
+        for (int k = 0; bad && k < track_blocks(); k++)     /* each, if one is damaged (the log has 4 KB) */
+            dlog_str(track_block_ok(k) ? " ok" : " BAD");
+        dlog_str(bad ? " - damaged in the SDRAM, not used\n" : " all ok\n");
         if (!bad) placements = track_init();
     }
     if (!placements) return 0;

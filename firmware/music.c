@@ -131,16 +131,7 @@ int music_init(const uint8_t *gen, uint32_t gen_size)
         for (int i = 1; i <= MAX_TRACKS; i++)
             n += audio[i] && first[i] >= 0 && (uint32_t)first[i] < sectors;
     }
-    dlog_str("music: SCREAM.gog ");
-    dlog_dec((int32_t)sectors);
-    dlog_str(" sectors, ");
-    dlog_dec(n);
-    dlog_str(" audio tracks; songs");
-    for (int i = 0; i < 8; i++) {
-        dlog_char(' ');
-        dlog_dec(songs[i]);
-    }
-    dlog_char('\n');
+    if (!n) dlog_str("music: no audio tracks (SCREAM.gog, SCREAM.DAT)\n");     /* (the log has 4 KB) */
     return n;
 }
 
@@ -179,7 +170,6 @@ void music_play(int k)
     while (m <= MAX_TRACKS && first[m] < 0)
         m++;
     uint32_t last = m <= MAX_TRACKS && (uint32_t)first[m] < sectors ? (uint32_t)first[m] : sectors;
-    uint32_t t0 = rdcycle();
     from = at = (uint32_t)first[n] * SECTOR;
     to = last * SECTOR;
     written = played = place = short_frames = 0;
@@ -190,17 +180,6 @@ void music_play(int k)
     AU_MUSIC_ADDR = RING_MEM - SDRAM_BASE;
     AU_MUSIC_VOL = MASTER;
     AU_MUSIC = 1;
-    dlog_str("music: CD track ");
-    dlog_dec(n);
-    dlog_str(" (song ");
-    dlog_dec(k);
-    dlog_str("), sectors ");
-    dlog_dec((int32_t)first[n]);
-    dlog_str(" to ");
-    dlog_dec((int32_t)last);
-    dlog_str(", started in ");
-    dlog_dec((int32_t)((rdcycle() - t0) / (CPU_HZ / 1000)));
-    dlog_str(" ms\n");
 }
 
 void music_frame(void)
