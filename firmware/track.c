@@ -157,21 +157,19 @@ static inline uint32_t now(void)
     __asm__ volatile ("csrr %0, cycle" : "=r"(c));
     return c;
 }
-/* the three worked out here, before the branches after it: the FPU's pipeline takes them side
-   by side, where one after the other each waits for the last (the values stay the same) */
-#define FP_NOW(a, b, c) __asm__ ("" : "+f"(a), "+f"(b), "+f"(c))
 /* the FPU's answers to comparisons (whole numbers) all asked for before any is used: an answer
    comes back late, and a use right after its question waits for it; asked one after the other,
    they come back side by side and the CPU waits once */
 #define INT_NOW2(a, b) __asm__ ("" : "+r"(a), "+r"(b))
 #define INT_NOW4(a, b, c, d) __asm__ ("" : "+r"(a), "+r"(b), "+r"(c), "+r"(d))
+#define INT_NOW6(a, b, c, d, e, f) __asm__ ("" : "+r"(a), "+r"(b), "+r"(c), "+r"(d), "+r"(e), "+r"(f))
 #define INT_NOW8(a, b, c, d, e, f, g, h) \
     __asm__ ("" : "+r"(a), "+r"(b), "+r"(c), "+r"(d), "+r"(e), "+r"(f), "+r"(g), "+r"(h))
 #else
 static inline uint32_t now(void) { return 0; }
-#define FP_NOW(a, b, c) ((void)0)
 #define INT_NOW2(a, b) ((void)0)
 #define INT_NOW4(a, b, c, d) ((void)0)
+#define INT_NOW6(a, b, c, d, e, f) ((void)0)
 #define INT_NOW8(a, b, c, d, e, f, g, h) ((void)0)
 #endif
 
@@ -960,9 +958,10 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         float dx = ob->x - cx, dy = ob->y - cy, dh = ob->h - ch, rad = ob->radius;
         float vf = dx * fx + dy * fy + dh * fh + EYE_BACK, vr = dx * rx + dy * ry + dh * rh;
         float vu = dx * ux + dy * uy + dh * uh;
-        FP_NOW(vf, vr, vu);
-        if((vf + rad < NEAR) | (vf - rad > far_eye) | (vr - rad > half_w * (vf + rad)) |
-           (vr + rad < -half_w * (vf + rad)) | (vu - rad > up * (vf + rad)) | (vu + rad < -down * (vf + rad))) continue;
+        int o1 = vf + rad < NEAR, o2 = vf - rad > far_eye, o3 = vr - rad > half_w * (vf + rad);
+        int o4 = vr + rad < -half_w * (vf + rad), o5 = vu - rad > up * (vf + rad), o6 = vu + rad < -down * (vf + rad);
+        INT_NOW6(o1, o2, o3, o4, o5, o6);               /* (one wait for the answers, as above) */
+        if(o1 | o2 | o3 | o4 | o5 | o6) continue;
         float d2 = dx * dx + dy * dy + dh * dh;
         /* 0x8a8c3: an object counts nearer; 0x8a8d7: its mesh's class */
         vis[nv++] = (KEY(d2) + 800 + ob->key) * 65536 + npieces + k;
