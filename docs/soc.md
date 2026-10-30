@@ -259,6 +259,15 @@ dazu (`mcause`, `mepc`, `mtval`).
 - Das fused multiply-add der FPU rundet das Produkt vor der Addition (`FpuCore.scala`:
   „FMA Precision lost“). GCC macht aus `a*b+c` standardmäßig `fmadd.s`; wo Ergebnisse bitgleich
   zu einem PC-Build sein müssen (Physik von OpenScreamer), mit `-ffp-contract=off` übersetzen.
+- Die Antwort der FPU auf einen Vergleich (`flt.s`, `fle.s`, `feq.s`) oder eine Umwandlung in
+  eine ganze Zahl (`fcvt.w.s`) kommt spät zurück; ein Befehl, der sie gleich danach braucht,
+  wartet. Mehrere Fragen nacheinander gestellt kommen nebeneinander zurück, die CPU wartet
+  einmal: `firmware/track.c` (`INT_NOW…`) und `firmware/opp.c` (`ASKED…`) halten GCC mit einem
+  leeren `asm`, das die Antworten als Operanden nimmt, davon ab, jede einzeln zu verbrauchen.
+- GCC übersetzt `fminf`/`fmaxf` hier mit einem Aufruf von `__issignalingf` vor dem `fmin.s`;
+  in einer Schleife langsamer als Vergleich und Sprung.
+- picolibcs `memset` und `memcpy` arbeiten Byte für Byte; auch `= { 0 }` eines großen lokalen
+  Felds wird zu einem `memset`-Aufruf.
 
 ## Eigene Befehle (CFU)
 
