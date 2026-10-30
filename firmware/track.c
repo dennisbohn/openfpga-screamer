@@ -137,6 +137,10 @@ static float sin_q[513];                /* sin(2 pi i / 2048) for i = 0..512 */
 static float under_n[3];                /* track_under's face: its normal in world axes (x, y, up) */
 static float far_z = 43808.0f;          /* the far plane of the DETAIL level */
 static float radius[MAX_OBJ];           /* of each mesh around its origin */
+/* the placements as the culling reads them, from the track's set-up: place as floats (the same
+   values), its mesh's reach (-1: no mesh) and class key */
+static struct cpiece { float x, y, h, rad; } cpieces[MAX_PIECES];
+static int16_t cpiece_key[MAX_PIECES];
 /* the placements in groups of 16 as they lie in the file (cell by cell, so close together),
    each group's box round their places: a group out of reach is passed over at once */
 #define GROUP       16
@@ -401,6 +405,9 @@ int track_init(void)
         if(x > groups[g].x1) groups[g].x1 = x;
         if(y < groups[g].y0) groups[g].y0 = y;
         if(y > groups[g].y1) groups[g].y1 = y;
+        int k = pieces[i].obj, ok = k >= 0 && k < unr_count;
+        cpieces[i] = (struct cpiece){ x, y, (float)pieces[i].h, ok ? radius[k] : -1.0f };
+        cpiece_key[i] = ok ? class_key[k] : 0;
     }
     return npieces;
 }
@@ -876,19 +883,20 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
                 continue;
             }
         }
-        const struct piece *pc = &pieces[i];
-        if(pc->obj < 0 || pc->obj >= unr_count) continue;
-        float dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch, rad = radius[pc->obj];
+        const struct cpiece *pc = &cpieces[i];
+        float rad = pc->rad;
+        if(rad < 0.0f) continue;
+        float dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch;
         float d2 = dx * dx + dy * dy + dh * dh;
+        if(d2 < nearest) nearest = d2;
+        if(d2 >= REACH2) continue;
+        /* out of view: the three axes and the tests at once (| not ||, one branch) */
         float vf = dx * fx + dy * fy + dh * fh + EYE_BACK, vr = dx * rx + dy * ry + dh * rh;
         float vu = dx * ux + dy * uy + dh * uh;
         FP_NOW(vf, vr, vu);
-        if(d2 < nearest) nearest = d2;
-        /* out of reach or out of view: the tests all at once (| not ||, one branch) */
-        if((d2 >= REACH2) | (vf + rad < NEAR) | (vf - rad > far_eye) |
-           (vr - rad > half_w * (vf + rad)) | (vr + rad < -half_w * (vf + rad)) |
-           (vu - rad > up * (vf + rad)) | (vu + rad < -down * (vf + rad))) continue;
-        vis[nv].k = (KEY(d2) + class_key[pc->obj]) * 65536 + i;
+        if((vf + rad < NEAR) | (vf - rad > far_eye) | (vr - rad > half_w * (vf + rad)) |
+           (vr + rad < -half_w * (vf + rad)) | (vu - rad > up * (vf + rad)) | (vu + rad < -down * (vf + rad))) continue;
+        vis[nv].k = (KEY(d2) + cpiece_key[i]) * 65536 + i;
         vis[nv].i = i;
         nv++;
     }
