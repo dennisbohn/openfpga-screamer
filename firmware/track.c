@@ -719,9 +719,9 @@ void track_view(const struct rs_clip *clip, struct su_view *v)
     v->far8 = (int32_t)((far_z + EYE_BACK) * 256.0f);  /* depths from the eye */
 }
 
-struct vis { int32_t k; int i; };              /* key << 16 | i; i: a piece, or npieces + an object */
+/* the list drawn: key << 16 | i, i (the low half) a piece, or npieces + an object */
 #define MAX_OBJS    64
-static struct vis vis[MAX_PIECES + MAX_OBJS];
+static int32_t vis[MAX_PIECES + MAX_OBJS];
 
 /* The eye of a block as the game takes it for its faces (0x834d6..0x83547): the eye in the
    block's frame (x, y, z) plus the block's middle, times 1.2 (imul 0x13333, sar 16; unscaled
@@ -902,9 +902,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         FP_NOW(vf, vr, vu);
         if((vf + rad < NEAR) | (vf - rad > far_eye) | (vr - rad > half_w * (vf + rad)) |
            (vr + rad < -half_w * (vf + rad)) | (vu - rad > up * (vf + rad)) | (vu + rad < -down * (vf + rad))) continue;
-        vis[nv].k = (KEY(d2) + cpiece_key[i]) * 65536 + i;
-        vis[nv].i = i;
-        nv++;
+        vis[nv++] = (KEY(d2) + cpiece_key[i]) * 65536 + i;
     }
     for(int k = 0; k < nobj && k < MAX_OBJS; k++) {
         const struct track_object *ob = &objs[k];
@@ -916,39 +914,37 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
            (vr + rad < -half_w * (vf + rad)) | (vu - rad > up * (vf + rad)) | (vu + rad < -down * (vf + rad))) continue;
         float d2 = dx * dx + dy * dy + dh * dh;
         /* 0x8a8c3: an object counts nearer; 0x8a8d7: its mesh's class */
-        vis[nv].k = (KEY(d2) + 800 + ob->key) * 65536 + npieces + k;
-        vis[nv].i = npieces + k;
-        nv++;
+        vis[nv++] = (KEY(d2) + 800 + ob->key) * 65536 + npieces + k;
         st->objects++;
     }
     st->nearest = nearest < 4e18f ? (uint32_t)__builtin_sqrtf(nearest) : 0xFFFFFFFFu;
     /* by key, far first. The list is in the order of i, the keys' low half, and the keys differ:
        sorted by their high half, keeping that order (two passes of 8 bits, radix), it is in the
        order of the whole key, as any sort by it has it */
-    static struct vis vis2[MAX_PIECES + MAX_OBJS];
+    static int32_t vis2[MAX_PIECES + MAX_OBJS];
     for(int pass = 0; pass < 2; pass++) {
         const int sh = 16 + 8 * pass;
-        const struct vis *from = pass ? vis2 : vis;
-        struct vis *to = pass ? vis : vis2;
+        const int32_t *from = pass ? vis2 : vis;
+        int32_t *to = pass ? vis : vis2;
         int at[256] = { 0 };
-        for(int n = 0; n < nv; n++) at[((uint32_t)from[n].k ^ 0x80000000u) >> sh & 255]++;
+        for(int n = 0; n < nv; n++) at[((uint32_t)from[n] ^ 0x80000000u) >> sh & 255]++;
         for(int d = 0, s = 0; d < 256; d++) {
             int c = at[d];
             at[d] = s;
             s += c;
         }
-        for(int n = 0; n < nv; n++) to[at[((uint32_t)from[n].k ^ 0x80000000u) >> sh & 255]++] = from[n];
+        for(int n = 0; n < nv; n++) to[at[((uint32_t)from[n] ^ 0x80000000u) >> sh & 255]++] = from[n];
     }
     uint32_t t_pieces = now();
     st->cyc_cull = t_pieces - t_start;
 #ifdef TRACK_DUMP                               /* the PC renderer (tools/render.sh): the list drawn */
     for(int k = 0; k < nv; k++)
-        if(vis[k].i < npieces)
-            printf("drawn piece obj %d at %d %d %d\n", (int)pieces[vis[k].i].obj, (int)pieces[vis[k].i].x,
-                   (int)pieces[vis[k].i].h, (int)pieces[vis[k].i].y);
+        if((vis[k] & 0xFFFF) < npieces)
+            printf("drawn piece obj %d at %d %d %d\n", (int)pieces[vis[k] & 0xFFFF].obj, (int)pieces[vis[k] & 0xFFFF].x,
+                   (int)pieces[vis[k] & 0xFFFF].h, (int)pieces[vis[k] & 0xFFFF].y);
         else
-            printf("drawn object at %.0f %.0f %.0f\n", objs[vis[k].i - npieces].x, objs[vis[k].i - npieces].h,
-                   objs[vis[k].i - npieces].y);
+            printf("drawn object at %.0f %.0f %.0f\n", objs[(vis[k] & 0xFFFF) - npieces].x,
+                   objs[(vis[k] & 0xFFFF) - npieces].h, objs[(vis[k] & 0xFFFF) - npieces].y);
 #endif
 
     struct su_view view;
@@ -956,8 +952,9 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
     track_view(clip, &view);
     uint32_t t_out = 0;
     for(int n = 0; n < nv; n++) {
-        if(vis[n].i >= npieces) {                   /* an object: its blocks as they come */
-            struct track_object *ob = &objs[vis[n].i - npieces];
+        const int vi = vis[n] & 0xFFFF;
+        if(vi >= npieces) {                         /* an object: its blocks as they come */
+            struct track_object *ob = &objs[vi - npieces];
             if(ob->make) ob->make(ob->id, cam, ob);
             uint32_t refl = ob->refl_phase & 0xFFFF;
             for(int b = 0; b < ob->n && ob->refl; b++)
@@ -979,7 +976,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
             }
             continue;
         }
-        const struct piece *pc = &pieces[vis[n].i];
+        const struct piece *pc = &pieces[vi];
         if(multi[pc->obj]) {
             struct gu_piece gs[MAX_BLOCKS];
             int nb = multi_pieces(c, f, r, u, pc, gs);
