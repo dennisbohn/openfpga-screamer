@@ -6,8 +6,9 @@
 #   tools/make_track.py if it is missing; the GFX and DATA containers from $GAME_DIR (default
 #   "C:/GOG Games/Screamer"). CAR=r: the player's car, row r of CARS.DTR (default 0).
 #   MENU=1: the track screen instead, track TRACK chosen, [view] taken as steps of 1/50 s after
-#   entering it (the models turn); MENU=2: the car screen, car CAR chosen. PAUSE=1: the pause's
-#   picture over the race's, PAUSE=2: PLAY AGAIN? (tools/host/render.c).
+#   entering it (the models turn); MENU=2: the car screen, car CAR chosen; MENU=3: track TRACK's
+#   loading screen. PAUSE=1: the pause's picture over the race's, PAUSE=2: PLAY AGAIN?
+#   (tools/host/render.c).
 #   CAM="x y h yaw pitch roll": the original's camera record; REFL="x y z [phase]": the player's
 #   reflection accumulators and picture from the original's car record (+0x30, +0x3c), the car
 #   standing; GAS=1: the pedal down for the steps (the race starts after 300). TRACKSIDE=1: the

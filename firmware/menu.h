@@ -10,7 +10,8 @@
  * gearbox, top speed and its grip and acceleration bars (CARDAT.TXT). The texts in the fonts of
  * MENUL.FNT, the arrows and bars of MENUL.SPR; each screen has its picture's palette. The models
  * go through the geometry unit with MENU.MLB as its material file (the tracks' faces are one
- * colour each, the cars' textured); the rest is the blitter's.
+ * colour each, the cars' textured); the rest is the blitter's. Then, while the race is set up,
+ * the loading screen (0x2a264): LOADnL.PCX of GRAF.DAT with LOADING (MENU.TXT) over it.
  */
 #pragma once
 #include <stdint.h>
@@ -63,3 +64,9 @@ void menu_backdrop(struct blit_list *l);
 void menu_view(struct su_view *v);
 void menu_scene(volatile uint8_t *fb);
 void menu_text(struct blit_list *l);
+
+/* The loading screen of track n (1 .. MENU_TRACKS) for the blitter (0x2a264, the game's before
+   every race but PLAY AGAIN; no fade): its picture LOADnL.PCX of GFX/GRAF.DAT and LOADING
+   (MENU.TXT) centred over it in font 3, colour 0. Returns the picture's palette, 0 without it
+   (no menu_init). The picture is in the SDRAM once the CPU's writes are. */
+const uint32_t *menu_loading(int n, struct blit_list *l);

@@ -19,7 +19,8 @@
  *   its picture at step k of the replay, NOHUD=1 without the race screen.
  *        render menu <MENU.DAT> <GRAF.DAT> <LOCAL.DAT> <GEN.DAT> <out.rgb> [screen [n [steps]]]
  *   the track screen (screen 1, the default) with track n chosen or the car screen (screen 2)
- *   with the car of row n - 1 (menu.h; default 1), steps of 1/50 s after entering it (default 0)
+ *   with the car of row n - 1 (menu.h; default 1), steps of 1/50 s after entering it (default 0);
+ *   screen 3: track n's loading screen
  */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -232,16 +233,24 @@ static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gf
 /* a screen of the menu: the containers whole (the firmware loads only menu.h's parts of them) */
 static int menu(int argc, char **argv)
 {
-    int screen = argc > 7 && atoi(argv[7]) == 2 ? MENU_CAR_SCREEN : MENU_TRACK_SCREEN;
+    int which = argc > 7 ? atoi(argv[7]) : 1, screen = which == 2 ? MENU_CAR_SCREEN : MENU_TRACK_SCREEN;
     int n = argc > 8 ? atoi(argv[8]) : 1, steps = argc > 9 ? atoi(argv[9]) : 0;
     uint32_t menu_size = load(argv[2], MENU_FILE, 0x400000), graf_size = load(argv[3], GRAF_FILE, 0x400000);
     uint32_t local_size = load(argv[4], LOCAL_FILE, 0x10000), gen_size = load(argv[5], GEN_FILE, 0x10000);
     if (!menu_init(MENU_FILE, menu_size, GRAF_FILE, graf_size, LOCAL_FILE, local_size, GEN_FILE, gen_size, MENU_MEM,
                    0x80000, SCRATCH, 0x2A0000)) { fprintf(stderr, "menu: its files are not all there\n"); return 1; }
-    menu_enter(screen, n);
-    for (int k = 0; k < steps; k++) menu_step(0, 0);
     static struct blit_list l;
     volatile uint8_t *fb = FB(0);
+    if (which == 3) {
+        blit_start(&l, 0);
+        const uint32_t *pal = menu_loading(n, &l);
+        if (!pal) { fprintf(stderr, "menu: no loading screen for track %d\n", n); return 1; }
+        blit_model(fb, &l);
+        write_rgb(argv[6], pal);
+        return 0;
+    }
+    menu_enter(screen, n);
+    for (int k = 0; k < steps; k++) menu_step(0, 0);
     blit_start(&l, 0);
     menu_backdrop(&l);
     blit_model(fb, &l);

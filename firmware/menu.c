@@ -32,7 +32,9 @@
 #define LINE_GEARS  37              /* MENU.TXT's lines, its '*' lines not counted: AUTOMATIC and */
 #define LINE_LABELS 39              /* MANUAL TRANSMISSION; MAX SPEED, GRIP, ACCELERATION; */
 #define LINE_CARS   44              /* CAR SELECTION; */
-#define LINE_TRACKS 45              /* TRACK SELECTION */
+#define LINE_TRACKS 45              /* TRACK SELECTION; LOADING */
+#define LINE_LOADING 47
+#define LOADING_Y   0x50            /* the loading screen's LOADING: its row, font 3, colour 0 (0x2a264) */
 #define SPR_GRIP    4               /* MENUL.SPR: the grip bar's five steps, the acceleration's */
 #define SPR_ACCEL   9
 #define CAR_MODELS  7               /* AAUTO00 .. AAUTO06 */
@@ -51,16 +53,18 @@ const struct menu_part menu_dat_parts[] = {
     { "AAUTO01.3DX", ~0u }, { "AAUTO02.3DX", ~0u }, { "AAUTO03.3DX", ~0u }, { "AAUTO04.3DX", ~0u },
     { "AAUTO05.3DX", ~0u }, { "AAUTO06.3DX", ~0u }, { 0, 0 } };
 const struct menu_part menu_graf_parts[] = {
-    { "MENU3L.PCX", ~0u }, { "MENU4L.PCX", ~0u }, { "MENUL.FNT", ~0u }, { "MENUL.SPR", ~0u }, { 0, 0 } };
+    { "MENU3L.PCX", ~0u }, { "MENU4L.PCX", ~0u }, { "MENUL.FNT", ~0u }, { "MENUL.SPR", ~0u },
+    { "LOAD1L.PCX", ~0u }, { "LOAD2L.PCX", ~0u }, { "LOAD3L.PCX", ~0u }, { "LOAD4L.PCX", ~0u },
+    { "LOAD5L.PCX", ~0u }, { "LOAD6L.PCX", ~0u }, { 0, 0 } };
 
 /* CARDAT.TXT's six lines a car: name, gearbox (0 automatic, 1 manual), km/h, grip and
    acceleration steps (0..4), 0; of its CARS.DTR row the model and the paint job */
 static struct car { char name[28]; int gears, kmh, grip, accel; const uint8_t *mesh; uint32_t livery; } car[MENU_CARS];
-static const uint8_t *mlb, *model[MENU_TRACKS], *pic[2], *hud;
+static const uint8_t *mlb, *model[MENU_TRACKS], *pic[3], *hud, *graf_dat;
 static const struct blit_image *img;
 static const struct blit_font *font;
-static uint32_t nimg, nfont, pal[2][256];
-static char title[2][32], name[MENU_TRACKS][32], gears[2][32], label[3][32];
+static uint32_t nimg, nfont, graf_len, pal[3][256];
+static char title[2][32], name[MENU_TRACKS][32], gears[2][32], label[3][32], loading[32];
 static int ncars, cars_on, pick, way;
 static float turn[2] = { 1.5707964f, 1.5707964f }, cam_x, from_x, to_x, slide;
 
@@ -166,20 +170,24 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
         n[6] = (char)('0' + k);
         if(!(cars[k] = in_place(menu_dat, menu_size, n, 0x80, &len)) || rd32(cars[k] + 0x14) < 1) return 0;
     }
-    /* the pictures, then the sprites and fonts as the race screen's (tb_hud.h, no pictures, no text) */
+    /* the pictures and room for the loading screen's (menu_loading), then the sprites and fonts
+       as the race screen's (tb_hud.h, no pictures, no text) */
     const uint8_t *p = in_place(graf, graf_size, "MENU3L.PCX", 0, &len);
-    if(cap < 2 * PIC_W * PIC_H || !p || !pcx(p, len, mem, pal[0])) return 0;
+    if(cap < 3 * PIC_W * PIC_H || !p || !pcx(p, len, mem, pal[0])) return 0;
     p = in_place(graf, graf_size, "MENU4L.PCX", 0, &len);
     if(!p || !pcx(p, len, mem + PIC_W * PIC_H, pal[1])) return 0;
     pic[0] = mem;
     pic[1] = mem + PIC_W * PIC_H;
-    uint8_t *at = mem + 2 * PIC_W * PIC_H;
+    pic[2] = mem + 2 * PIC_W * PIC_H;
+    graf_dat = graf;
+    graf_len = graf_size;
+    uint8_t *at = mem + 3 * PIC_W * PIC_H;
     uint32_t spr_n = unpack(graf, graf_size, "MENUL.SPR", scratch, scratch_cap);
     uint32_t used = (spr_n + 3) & ~3u;
     uint32_t fnt_n = used < scratch_cap ? unpack(graf, graf_size, "MENUL.FNT", scratch + used, scratch_cap - used) : 0;
     if(!spr_n || !fnt_n ||
        !tb_hud_build(scratch, spr_n, scratch + used, fnt_n, scratch, 0, scratch, 0, scratch, 0, at,
-                     cap - 2 * PIC_W * PIC_H)) return 0;
+                     cap - 3 * PIC_W * PIC_H)) return 0;
     hud = at;
     nimg = (uint32_t)rd32(hud);
     nfont = (uint32_t)rd32(hud + 4);
@@ -191,6 +199,7 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
              text_line(scratch, tn, LINE_CARS, title[1], sizeof title[1]);
     for(int k = 0; k < 2; k++) ok &= text_line(scratch, tn, LINE_GEARS + k, gears[k], sizeof gears[k]);
     for(int k = 0; k < 3; k++) ok &= text_line(scratch, tn, LINE_LABELS + k, label[k], sizeof label[k]);
+    ok &= text_line(scratch, tn, LINE_LOADING, loading, sizeof loading);
     tn = unpack(local, local_size, "TRACKDAT.TXT", scratch, scratch_cap);
     for(int k = 0; k < MENU_TRACKS; k++) ok &= text_line(scratch, tn, 4 * k, name[k], sizeof name[k]);
     /* the cars: CARS.DTR's rows as the track image has them (tb_spl.h), CARDAT.TXT's lines */
@@ -429,4 +438,19 @@ void menu_text(struct blit_list *l)
     else centred(l, PIC_H - 2 * (int)font[FONT_NAME].height, name[pick], FONT_NAME);
     if(pick > 0) sprite(l, 8, 100, lit && way < 0 ? 2 : 0);
     if(pick < choices() - 1) sprite(l, 0xEE, 100, lit && way > 0 ? 3 : 1);
+}
+
+/* The loading screen (0x2a264): LOADnL.PCX, unpacked from its place in GRAF.DAT now (the boot
+   loaded the six stored), LOADING over it centred at row 0x50 */
+const uint32_t *menu_loading(int n, struct blit_list *l)
+{
+    char file[16] = "LOAD1L.PCX";
+    uint32_t len;
+    file[4] = (char)('0' + n);
+    const uint8_t *p = graf_dat && n >= 1 && n <= MENU_TRACKS ? in_place(graf_dat, graf_len, file, 0, &len) : 0;
+    if(!p || !pcx(p, len, (uint8_t *)pic[2], pal[2])) return 0;
+    blit_copy(l, pic[2], PIC_W, PIC_H, PIC_W, 0, 0, BLIT_COPY | BLIT_OPAQUE, 0);
+    int w = blit_text(l, hud, img, &font[FONT_TITLE], 0, 0, loading, 0, 0);
+    blit_text(l, hud, img, &font[FONT_TITLE], (PIC_W - w) / 2, LOADING_Y, loading, 0, 1);
+    return pal[2];
 }

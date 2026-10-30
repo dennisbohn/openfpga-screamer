@@ -1205,14 +1205,32 @@ static int menu_screen(int screen, int n)
     }
 }
 
-/* Track n from its containers: the image built at TEX_FILE (or the testbench's) and used only
-   once all its blocks are as written, the effects and scenery, then the race with the car of
-   CARS.DTR row car until it is left, again while PLAY AGAIN? is answered YES; 0 if the track
-   could not be set up */
+/* Track n's loading screen (menu.h, 0x2a264) by the blitter in a swap; it stays up while the
+   track is set up, until the race's first picture (no fade). Nothing without the menu's files
+   (the simulation's race). */
+static void loading(int n)
+{
+    uint32_t st = wait_swap_done();
+    draw_buf = !(st & VID_FRONT);
+    blit_start(&hud, (int)draw_buf);
+    const uint32_t *pal = menu_loading(n, &hud);
+    if (!pal) return;
+    while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* the picture in the SDRAM for the blitter */
+        ;
+    for (int i = 0; i < 256; i++) VID_PAL[i] = pal[i];
+    still_show(&hud);
+}
+
+/* Track n from its containers behind its loading screen: the image built at TEX_FILE (or the
+   testbench's) and used only once all its blocks are as written, the effects and scenery, then
+   the race with the car of CARS.DTR row car until it is left, again while PLAY AGAIN? is
+   answered YES (without the loading screen, as the game); 0 if the track could not be set up */
 static int race(int n, int car)
 {
     int placements = 0;
-    music_stop();                               /* before the loads: none of its reads running */
+    music_stop();                               /* before the loads: none of its reads running; the
+                                                   menu's song ends as the loading screen goes up */
+    loading(n);
     if (track_loaded != n) {
         track_loaded = 0;
         if (!load_containers(n, TRACK_FILES)) return 0;
