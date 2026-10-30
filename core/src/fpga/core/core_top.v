@@ -300,8 +300,9 @@ always @(*) begin
     default: begin
         bridge_rd_data <= 0;
     end
-    32'h0010xxxx: begin
-        // the debug log (data slot debug.txt), saved by the APF on exit
+    32'h0010xxxx, 32'b000100xx_xxxxxxxx_xxxxxxxx_xxxxxxxx: begin
+        // the debug log (data slot debug.txt) and the SDRAM (CHOICE.DAT, ATTACK.DAT), saved
+        // by the APF on exit
         bridge_rd_data <= soc_log_rd_data;
     end
     32'hF8xxxxxx: begin

@@ -83,8 +83,9 @@ static uint64_t file_size(const std::string &path) {
     return n > 0 ? uint64_t(n) : 0;
 }
 
-// core/data.json's slots in its order (the order of the APF's slot table): id, file name
-struct Slot { uint32_t id; std::string name; };
+// core/data.json's slots in its order (the order of the APF's slot table): id, file name,
+// nonvolatile (the saves: no file in SIM_GAME, as on a Pocket that has none yet)
+struct Slot { uint32_t id; std::string name; bool save; };
 static std::vector<Slot> data_slots(const char *path) {
     std::vector<uint8_t> raw;
     std::vector<Slot> out;
@@ -94,7 +95,7 @@ static std::vector<Slot> data_slots(const char *path) {
     while (p != std::string::npos && (p = s.find('{', p)) != std::string::npos) {
         size_t e = s.find('}', p);
         std::string o = s.substr(p, e - p);
-        Slot slot{0, ""};
+        Slot slot{0, "", o.find("\"nonvolatile\"") != std::string::npos};
         size_t k = o.find("\"id\"");
         if (k != std::string::npos) slot.id = uint32_t(strtoul(o.c_str() + o.find(':', k) + 1, nullptr, 0));
         k = o.find("\"filename\"");
@@ -179,9 +180,11 @@ struct Sim {
         rise_74();
         top.bridge_wr = 0; top.eval();
     }
-    // one read transaction as io_bridge_peripheral.v does it: the address, 4 clocks, the
-    // answer is sampled, then the bridge_rd pulse. The answer belongs to the previous read.
+    // one read transaction as io_bridge_peripheral.v does it, at most every BRIDGE_GAP clocks:
+    // the address, 4 clocks, the answer is sampled, then the bridge_rd pulse. The answer
+    // belongs to the previous read (from the SDRAM it may take most of the gap).
     uint32_t bridge_read(uint32_t addr) {
+        rise_74(BRIDGE_GAP - 7);
         top.bridge_addr = addr; top.eval();
         rise_74(4);
         uint32_t answer = top.bridge_log_rd_data;
@@ -374,6 +377,22 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
     // the slot table entry and the log, read through the bridge as the APF does on exit
     printf("debug log slot size in the slot table: %u\n", top.log_slot_size);
     if (top.log_slot_size != 4096) { printf("FAIL: expected 4096\n"); fails++; }
+    // CHOICE.DAT (the game's files there: the program wrote the game's defaults at boot), as
+    // the APF saves it from the SDRAM: its size in the slot table, its first words (car 0,
+    // track 0, the name GRA)
+    if (s.race && !expect_trap) {
+        printf("CHOICE.DAT slot size in the slot table: %u\n", top.choice_slot_size);
+        if (top.choice_slot_size != 1120) { printf("FAIL: expected 1120\n"); fails++; }
+        static const uint32_t want[3] = { 0, 0, 0x47524100u };
+        s.bridge_read(0x13F00000);
+        int bad = 0;
+        for (uint32_t k = 0; k < 3; k++) {
+            uint32_t w = s.bridge_read(0x13F00004 + 4 * k);
+            if (w != want[k]) { printf("CHOICE.DAT word %u through the bridge: %08x, expected %08x\n", k, w, want[k]); bad++; }
+        }
+        printf("CHOICE.DAT through the bridge from the SDRAM: %s\n", bad ? "FAIL" : "as written");
+        fails += bad != 0;
+    }
     // like the APF saving the slot: one read more than words, the first answer dropped
     std::string log;
     s.bridge_read(0x00100000);
@@ -447,7 +466,7 @@ int main(int argc, char **argv) {
     if (const char *game = getenv("SIM_GAME")) {
         int found = 0, wanted = 0;
         for (const Slot &slot : slots) {
-            if (slot.id <= 2) continue;
+            if (slot.id <= 2 || slot.save) continue;
             wanted++;
             std::string path = std::string(game) + "/" + slot.name;
             if (slot.name.size() > 4 && slot.name.compare(slot.name.size() - 4, 4, ".gog") == 0) {

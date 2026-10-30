@@ -1,6 +1,6 @@
 //
-// The SDRAM's front end: a command register per CPU port, the bridge write buffer and the
-// arbiter in front of sdram.v (docs/speicher.md)
+// The SDRAM's front end: a command register per CPU port, the bridge write buffer, the
+// bridge read register and the arbiter in front of sdram.v (docs/speicher.md)
 //
 // iBus and dBus speak VexRiscv's native cache-bus protocol, limited to what soc.v sends
 // here: iBus lines, dBus line reads, single reads and writes; the line port (texture,
@@ -8,7 +8,9 @@
 // in the controller at once: the next one starts while the words of the one before still
 // come in. cmd_ready is "register empty" and comes from flops only, so the ports may take a
 // command in the same clock. At every job boundary the
-// arbiter picks bridge buffer > dBus register > rasterizer register > iBus register.
+// arbiter picks bridge buffer > bridge read > dBus register > rasterizer register > iBus
+// register. A bridge read (the APF saving a nonvolatile slot) is one word; it has the whole
+// next bridge word, 88 clocks at the APF's fastest, until its answer is sampled.
 // Writes of one source run in the order they were taken; a read sees every write taken
 // before it (an iBus read may see later ones too).
 //
@@ -59,6 +61,10 @@ module sdram_port (
     output  reg     [23:0]  br_words = 0,       // bridge words since power-up or Reset Enter
     output  reg             br_overflow = 0,    // a bridge word found the buffer full
     output  reg             br_dropped = 0,     // a bridge word met an SDRAM not ready
+    input   wire            br_rd,              // one clock: read the word at br_rd_addr
+    input   wire    [25:2]  br_rd_addr,
+    output  reg             br_rd_valid = 0,    // one clock: its word in br_rd_data
+    output  reg     [31:0]  br_rd_data,
     output  wire            cpu_writes_idle,    // no CPU write left here or in the controller
 
     // sdram.v
@@ -118,22 +124,26 @@ module sdram_port (
     reg  [31:0] bf_data [0:3];
     reg  [1:0]  bf_wp = 0, bf_rp = 0;
     reg  [2:0]  bf_count = 0;
+    reg         brd_valid = 0;              // a bridge read waits for the arbiter
+    reg  [25:2] brd_addr;
 
 //
 // arbiter
 //
     wire        sel_br = bf_count != 0;
-    wire        sel_db = !sel_br && db_valid;
-    wire        sel_rs = !sel_br && !db_valid && rs_valid;
-    wire        sel_ib = !sel_br && !db_valid && !rs_valid && ib_valid;
+    wire        sel_brd = !sel_br && brd_valid;
+    wire        sel_db = !sel_br && !brd_valid && db_valid;
+    wire        sel_rs = !sel_br && !brd_valid && !db_valid && rs_valid;
+    wire        sel_ib = !sel_br && !brd_valid && !db_valid && !rs_valid && ib_valid;
 
-    assign job_valid = sel_br || sel_db || sel_rs || sel_ib;
+    assign job_valid = sel_br || sel_brd || sel_db || sel_rs || sel_ib;
     assign job_write = sel_br || (sel_db && db_wr);
     assign job_line  = sel_db ? db_line : sel_rs || sel_ib;
-    assign job_addr  = sel_br ? bf_addr[bf_rp] : sel_db ? db_addr : sel_rs ? {rs_addr, 3'b000} : {ib_addr, 3'b000};
+    assign job_addr  = sel_br ? bf_addr[bf_rp] : sel_brd ? brd_addr : sel_db ? db_addr : sel_rs ? {rs_addr, 3'b000}
+                                                                                       : {ib_addr, 3'b000};
     assign job_wdata = sel_br ? bf_data[bf_rp] : db_data;
     assign job_mask  = sel_br ? 4'b1111 : db_mask;
-    assign job_tag   = {epoch, sel_br ? P_BR : sel_db ? P_DB : sel_rs ? P_RS : P_IB};
+    assign job_tag   = {epoch, sel_br || sel_brd ? P_BR : sel_db ? P_DB : sel_rs ? P_RS : P_IB};
 
     wire        job_take = job_valid && job_ready;
 
@@ -143,6 +153,7 @@ module sdram_port (
     wire        rd_ib = rd_valid && rd_tag == {epoch, P_IB} && !cpu_reset;
     wire        rd_db = rd_valid && rd_tag == {epoch, P_DB} && !cpu_reset;
     wire        rd_rs = rd_valid && rd_tag == {epoch, P_RS} && !cpu_reset;
+    wire        rd_br = rd_valid && rd_tag[1:0] == P_BR;    // whatever the epoch: not the CPU's
 
 always @(posedge clk) begin
     reset_d <= cpu_reset;
@@ -205,6 +216,14 @@ always @(posedge clk) begin
         rs_valid <= 0;
         rs_out <= 0;
     end
+
+    // bridge read
+    if(br_rd) begin
+        brd_valid <= 1;
+        brd_addr <= br_rd_addr;
+    end else if(job_take && sel_brd) brd_valid <= 0;
+    br_rd_valid <= rd_br;
+    if(rd_br) br_rd_data <= rd_data;
 
     // bridge buffer
     if(job_take && sel_br) begin

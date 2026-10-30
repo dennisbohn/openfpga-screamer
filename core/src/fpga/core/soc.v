@@ -37,6 +37,7 @@ module soc (
     input   wire    [31:0]  bridge_addr,
     input   wire    [31:0]  bridge_wr_data,
     output  reg     [31:0]  bridge_log_rd_data,     // read data for bridge addresses 0x0010_xxxx
+                                                    // (the debug log) and the SDRAM's
 
     // controller 1, synchronous to clk
     input   wire    [31:0]  cont1_key,
@@ -252,9 +253,13 @@ cfu_fixmul cfu (
         end
     endgenerate
 
-    // the answer for the next read transaction (see the header)
+    // the answer for the next read transaction (see the header); from the SDRAM (the APF
+    // saving the nonvolatile slots there, CHOICE.DAT and ATTACK.DAT) once sdram_port has it
+    wire        br_rd_valid;
+    wire [31:0] br_rd_data;
 always @(posedge clk) begin
     if(bridge_rd && bridge_log) bridge_log_rd_data <= swap32(log_q_b);
+    else if(br_rd_valid) bridge_log_rd_data <= swap32(br_rd_data);
 end
 
 //
@@ -363,6 +368,10 @@ sdram_port sdp (
     .br_words           ( br_words ),
     .br_overflow        ( br_overflow ),
     .br_dropped         ( br_dropped ),
+    .br_rd              ( bridge_rd && bridge_sdram ),
+    .br_rd_addr         ( bridge_addr[25:2] ),
+    .br_rd_valid        ( br_rd_valid ),
+    .br_rd_data         ( br_rd_data ),
     .cpu_writes_idle    ( sdram_cpu_writes_idle ),
     .job_valid          ( job_valid ),
     .job_ready          ( job_ready ),
@@ -764,8 +773,11 @@ end
     reg  [1:0]  dt_wait;
     reg         dt_log;                         // looking for the debug log's slot, else ds_id
     reg         dt_lookup = 0;                  // DS_ID written: a look-up for ds_id waits
+    reg         dt_put = 0;                     // DS_SIZE written: the look-up writes dt_value
+    reg  [31:0] dt_value;
     reg  [31:0] ds_size = 0;
     wire        ds_id_wr = d_write && d_region == R_REG && d_addr[15:0] == 16'h0020;
+    wire        ds_size_wr = d_write && d_region == R_REG && d_addr[15:0] == 16'h0034;
     wire        ds_sizing = dt_lookup || dt_state != 3'd0;
     reg  [31:0] reg_q;
     wire        writes_idle = sdram_cpu_writes_idle;
@@ -918,7 +930,9 @@ end
 // APF fills it in when it loads the core, deferload slots too). After reset: give the
 // debug log's slot its full size, so the APF saves all of it on exit (it only sets a size
 // when it loaded an existing file). Then after each write of DS_ID: that slot's size for
-// DS_SIZE, 0 if the table has no such slot (DS_CTRL bit 1 until it is there).
+// DS_SIZE, 0 if the table has no such slot (DS_CTRL bit 1 until it is there); after a write
+// of DS_SIZE: that value as slot DS_ID's size (the saves in the SDRAM, which the APF writes
+// back on exit only with a size).
 //
 always @(posedge clk) begin
     dt_wren <= 0;
@@ -927,6 +941,7 @@ always @(posedge clk) begin
         dt_slot <= 0;
         dt_log <= 1;
         dt_lookup <= 0;
+        dt_put <= 0;
     end else begin
         case(dt_state)
         0: if(dt_lookup) begin                  // a look-up for ds_id
@@ -947,13 +962,16 @@ always @(posedge clk) begin
         3: begin
             if(dt_q[15:0] == (dt_log ? LOG_SLOT_ID : ds_id)) begin
                 dt_addr <= {4'd0, dt_slot, 1'b1};   // its size word
-                dt_data <= LOG_SIZE;
-                dt_wren <= dt_log;
+                dt_data <= dt_log ? LOG_SIZE : dt_value;
+                dt_wren <= dt_log || dt_put;
                 dt_wait <= 2;
-                dt_state <= dt_log ? 3'd0 : 3'd4;
+                dt_state <= dt_log || dt_put ? 3'd0 : 3'd4;
+                if(dt_put) ds_size <= dt_value;
+                dt_put <= 0;
             end else begin
                 dt_slot <= dt_slot + 1'b1;
                 if(dt_slot == 5'd31 && !dt_log) ds_size <= 0;
+                if(dt_slot == 5'd31) dt_put <= 0;
                 dt_state <= dt_slot == 5'd31 ? 3'd0 : 3'd1;
             end
         end
@@ -967,7 +985,12 @@ always @(posedge clk) begin
         end
         default: dt_state <= 0;
         endcase
-        if(ds_id_wr) dt_lookup <= 1;            // after the case: a write wins over the start
+        if(ds_id_wr || ds_size_wr) dt_lookup <= 1;  // after the case: a write wins over the start
+        if(ds_id_wr) dt_put <= 0;
+        if(ds_size_wr) begin
+            dt_put <= 1;
+            dt_value <= d_data;
+        end
     end
 end
 

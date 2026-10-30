@@ -30,6 +30,7 @@ module soc_system (
 
     output  wire    [31:0]  sim_status,
     output  wire    [31:0]  log_slot_size,      // size word of the debug log's slot table entry (entry 1)
+    output  wire    [31:0]  choice_slot_size,   // the same of CHOICE.DAT's (entry 23)
     output  wire            swap_req,           // soc's swap request toggle
     output  wire            front,              // video_out: the buffer in front
     output  wire            sdram_ready,        // what core_top acknowledges data slot writes with
@@ -217,6 +218,7 @@ always @(posedge clk_74a) begin                 // address and output registered
     dt_q <= dt_r;
 end
     assign log_slot_size = dt[3];
+    assign choice_slot_size = dt[47];
     assign swap_req = swap_req_toggle;
 
 endmodule
