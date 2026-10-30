@@ -4,8 +4,9 @@
  * its own: the clock phase window, code, refresh, the write status, and program.bin, which
  * it asks the APF for only after them (slot.h).
  *
- * In the simulation (SYS_FLAGS) only the window sizes shrink: the first and the last
- * window are tested, so loop ends run too. The patterns go through the data cache
+ * The patterns go over the first and the last window of 2 KB, so loop ends run too; in the
+ * simulation (SYS_FLAGS) only the phase search and the measurements shrink. The patterns go
+ * through the data cache
  * (invalidated before each check), everything else uses uncached addresses. Each error is logged with
  * the value read and two uncached re-reads: the same wrong value three times points to a
  * write or address fault, changing values to read timing.
@@ -45,14 +46,13 @@ static const struct memory mems[M_N] = {
     { "SDRAM", SDRAM_BASE, SDRAM_UBASE, SDRAM_SIZE, SDRAM_SIZE, B_SD_DATA, 1 },
 };
 
-#define SIM_WINDOW      2048    /* bytes per window in the simulation */
+#define WINDOW          2048    /* bytes per window */
 #define MAX_LOGGED      8       /* error lines per memory */
 #define PHASE_STEPS_MAX 80      /* 80 steps of 168 ps = one clock period */
 
 static uint32_t results;        /* passed tests, bit numbers as in the enum */
 static uint32_t errors[M_N];
 static int sim;
-static int small;               /* windows instead of the whole memory */
 static const char *test;
 static void (*progress)(const char *what, uint32_t addr);
 
@@ -182,9 +182,8 @@ static void t_address(const struct memory *m)
     end(m, m->first_bit + 2, before, t0);
 }
 
-/* Patterns over the whole memory (in the simulation: the first and last window of each
-   die): address, inverted address, pseudo-random, and two that switch all 16 data lines
-   between halfwords */
+/* Patterns over the first and last window of each die: address, inverted address,
+   pseudo-random, and two that switch all 16 data lines between halfwords */
 static uint32_t xs;
 
 #define XORSHIFT(x)     ((x) ^= (x) << 13, (x) ^= (x) >> 17, (x) ^= (x) << 5, (x))
@@ -228,15 +227,10 @@ static int windows(const struct memory *m, uint32_t w[][2])
 {
     int n = 0;
     for(uint32_t d = 0; d < m->size; d += m->die) {
-        if(small) {
-            w[n][0] = d;
-            w[n++][1] = d + SIM_WINDOW;
-            w[n][0] = d + m->die - SIM_WINDOW;
-            w[n++][1] = d + m->die;
-        } else {
-            w[n][0] = d;
-            w[n++][1] = d + m->die;
-        }
+        w[n][0] = d;
+        w[n++][1] = d + WINDOW;
+        w[n][0] = d + m->die - WINDOW;
+        w[n++][1] = d + m->die;
     }
     return n;
 }
@@ -268,7 +262,7 @@ static void t_patterns(const struct memory *m)
     if(m->cached) {
         /* lines in a scrambled order (row misses right after writes), then stores read
            back at once through the uncached view */
-        uint32_t lines = (small ? SIM_WINDOW : 1u << 20) / 32;
+        uint32_t lines = WINDOW / 32;
         for(int check = 0; check < 2; check++) {
             for(uint32_t i = 0; i < lines; i++) {
                 uint32_t line = (i * (check ? 0x85EBCA77u : 0x9E3779B1u)) & (lines - 1);
@@ -296,9 +290,7 @@ static void t_memory(const struct memory *m)
 {
     dlog_str(m->name);
     dlog_str(sim ? ": simulation, windows of 2048 bytes at the start and the end\n"
-                 : small ? ": quick check, windows of 2048 bytes at the start and the end"
-                           " (hold Select at start for the whole memory)\n"
-                 : ": the whole memory\n");
+                 : ": quick check, windows of 2048 bytes at the start and the end\n");
     t_databus(m);
     t_bytes(m);
     t_address(m);
@@ -464,10 +456,10 @@ static void t_code(void)
     end(sd, B_SD_CODE, before, t0);
 }
 
-/* Refresh: count the AUTO REFRESH commands over a second (two frames in the simulation) */
+/* Refresh: count the AUTO REFRESH commands over two frames */
 static void t_refresh(void)
 {
-    uint32_t frames = small ? 2 : VID_HZ, t0 = rdcycle(), before = begin(sd, "refresh");
+    uint32_t frames = 2, t0 = rdcycle(), before = begin(sd, "refresh");
     uint32_t f0 = VID_FRAME(VID_STATUS), r0;
     while(VID_FRAME(VID_STATUS) == f0)      /* start at a frame boundary */
         ;
@@ -567,11 +559,10 @@ static void measure(void)
     dlog_str(" MB/s\n");
 }
 
-uint32_t memtest_run(int full, void (*cb)(const char *what, uint32_t addr))
+uint32_t memtest_run(void (*cb)(const char *what, uint32_t addr))
 {
     progress = cb;
     sim = (SYS_FLAGS & FLAG_SIM) != 0;
-    small = sim || !full;
     uint32_t st = MEM_STATUS, t0 = rdcycle();
     while(!(st & MEM_READY) && rdcycle() - t0 < CPU_HZ / 2) st = MEM_STATUS;
     dlog_str("memtest: SYS_FLAGS ");

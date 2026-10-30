@@ -1,12 +1,12 @@
 /*
  * The boot loader (firmware.bin, data slot 0, in the boot RAM; docs/soc.md): the CPU tests
- * itself and the memories, then starts the program in the SDRAM (program.bin, data slot 2).
- * CPU self-tests, then the memory test of SDRAM, SRAM and PSRAM cram0 (quick, or over the
- * whole memories while Select is held), its progress on screen and in the debug log's head
- * line; the memory test also checks program.bin's header and CRC-32. If that passed (and
- * the full test did not overwrite it), a jump to program.bin with the results and the debug
- * log's position. Otherwise the results stay on screen and go to SYS_SIM after the third
- * frame.
+ * itself and the SDRAM, then starts the program in the SDRAM (program.bin, data slot 2).
+ * CPU self-tests, then the short memory test of the SDRAM (memtest.h: its clock phase, then
+ * windows of 2 KB, a tenth of a second), its progress in the debug log's head line alone; the
+ * screen stays black until the program's first picture. The memory test also loads program.bin
+ * and checks its header and CRC-32. If everything passed, a jump to program.bin with the results
+ * and the debug log's position. Otherwise the results go on screen, stay there, and go to
+ * SYS_SIM after the third frame.
  */
 #include "hw.h"
 #include "console.h"
@@ -20,12 +20,13 @@ uint32_t frames_shown;             /* read by the trap handler */
 
 extern const uint8_t __image_start[], __image_end[];   /* link.ld: what firmware.bin holds */
 
+#define ALL_PASSED  (7u | MT_ALL)    /* the self-tests' bits and the memory test's */
+
 static int ok[3];               /* self-tests: integer, float, CFU */
 static uint32_t results;        /* SYS_SIM bits 20..0 */
 static int (*const tests[3])(void) = { selftest_int, selftest_float, selftest_cfu };
 static const char *const test_names[3] = { "Ganzzahl", "Fliesskomma", "CFU" };
 static const char *const log_names[3] = { "integer", "float", "cfu" };
-static volatile uint8_t *progress_fb;
 
 static void log_head(const char *what, uint32_t n)
 {
@@ -49,13 +50,11 @@ static void draw_frame(volatile uint8_t *fb, const char *title)
     }
 }
 
-/* memtest_run() calls this before each test and every 64 KB: on screen and in the log */
+/* memtest_run() calls this before each test and every 64 KB: into the log's head line, so
+   that a hang shows where */
 static void progress(const char *what, uint32_t addr)
 {
     char buf[DLOG_HEAD + 16];
-    fmt_hex(fmt_str(fmt_str(fmt_str(buf, "teste "), what), " bei "), addr, 8);
-    fb_fill(progress_fb, 0, 8 * 8, FB_W, 8, COL_BG);
-    con_text(progress_fb, 1, 8, buf, COL_TEXT, COL_BG);
     fmt_hex(fmt_str(fmt_str(fmt_str(buf, "Screamer Pocket boot, "), what), " @"), addr, 8);
     dlog_head(buf);
 }
@@ -101,17 +100,15 @@ int main(void)
     ((void (*)(void))0x00008000u)();
 #endif
 
-    /* the memory test, its progress drawn into the buffer on screen */
-    uint32_t st = wait_swap_done();
-    int full = (IN_KEY & KEY_SELECT) != 0;
-    progress_fb = FB(!(st & VID_FRONT));
-    draw_frame(progress_fb, "SCREAMER POCKET - SPEICHERTEST");
-    VID_SWAP = 1;
+    /* the screen black until the program's first picture (after a reset the last run's
+       picture would stay, docs/soc.md) */
     wait_swap_done();
-    results |= memtest_run(full, progress);
+    for (int i = 0; i < 256; i++) VID_PAL[i] = 0;
+    VID_SWAP = 1;
+    results |= memtest_run(progress);
 
     uint32_t entry = memtest_program();
-    if (entry && !full) {
+    if (entry && (results & ALL_PASSED) == ALL_PASSED) {
         uint32_t pos, cur;
         dlog_str("boot: starting program.bin\n");
         dlog_state(&pos, &cur);
@@ -120,13 +117,12 @@ int main(void)
         ((void (*)(uint32_t, uint32_t, uint32_t))(uintptr_t)entry)(results, pos, cur);
     }
 
-    /* no program to start: the results stay on screen */
-    const char *note = full ? "Voller Test: Neustart fuer das Programm" : "program.bin fehlt oder ist defekt";
-    dlog_str(full ? "boot: full memory test, its results stay on screen: restart the core for the program\n"
-                  : "boot: no program to start\n");
+    /* a test failed or no program to start: the results stay on screen */
+    const char *note = entry ? "Test fehlgeschlagen: kein Start" : "program.bin fehlt oder ist defekt";
+    dlog_str(entry ? "boot: a test failed, the results stay on screen\n" : "boot: no program to start\n");
     uint32_t drawn = 0;
     for (;;) {
-        st = wait_swap_done();
+        uint32_t st = wait_swap_done();
         frames_shown = drawn;
         if (drawn == 3) {
             SYS_SIM = SIM_DONE | results;

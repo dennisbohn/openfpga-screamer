@@ -18,7 +18,7 @@ etwas daran ändert, ändert beide Seiten und dieses Dokument.
   mit Palette 0: nach dem Laden des Cores schwarz, nach einem Neuladen der Firmware, was der
   vorige Lauf dort hinterlassen hat.
 - **Firmware:** zwei Teile. Data-Slot 0 `firmware.bin` (höchstens 32 KB) an Bridge-Adresse
-  `0x00000000` ins Boot-RAM: der Lader (Selbsttests, Speichertest). Data-Slot 2
+  `0x00000000` ins Boot-RAM: der Lader (Selbsttests, kurzer Speichertest). Data-Slot 2
   `program.bin` an `0x1300_0000` ins SDRAM: das Programm.
 - **Slots im SDRAM erst nach der Phasensuche:** Die Slots 2 (`program.bin`) und 3 bis 8 (die
   Spieldateien) haben `deferload`, der Pocket lädt sie nicht von selbst. Die Phasensuche des Speichertests
@@ -38,8 +38,12 @@ etwas daran ändert, ändert beide Seiten und dieses Dokument.
   `fence.i` und springt mit `a0` = seine Ergebnisse (`SYS_SIM`-Bits), `a1`, `a2` = Position
   und angefangenes Wort im Protokoll. Das Programm setzt eigenes `gp`, `tp` und `mtvec`, sein
   Stack liegt oben im Boot-RAM (ab `0x8000` abwärts bis `0x6000`; der Lader bleibt darunter).
-  Nach dem vollen Speichertest (Select beim Start) bleiben die Ergebnisse stehen; das Programm
-  startet erst beim nächsten Start des Cores.
+  Auf den Bildschirm kommt dabei nichts (ein Tausch mit schwarzer Palette, damit nach einem
+  Reset nicht das Bild des vorigen Laufs stehen bleibt); das erste Bild ist das Ladebild des
+  Programms. Schlägt ein Selbsttest oder ein Test des Speichertests fehl oder fehlt
+  `program.bin`, startet der Lader nichts, und die Ergebnisse bleiben auf dem Bildschirm
+  (seit 2026-10-31; davor zeigte er den Speichertest bei jedem Start, und Select beim Start
+  prüfte den ganzen Speicher).
 
 ## Speicherkarte der CPU
 

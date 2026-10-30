@@ -8,16 +8,15 @@ der Speichertest in [`docs/speicher.md`](../docs/speicher.md).
 
 Beim Start löscht die Firmware das Protokoll (`debug.txt`), trägt die Prüfsumme ihres
 eigenen Abbilds ein und prüft die CPU (Ganzzahl-Multiplikation, -Division und
-Schiebebefehle, Fließkomma, CFU). Dann läuft der Speichertest über den SDRAM: normal kurz
-(unter einer Sekunde, die ersten und letzten 2 KB), über den ganzen Speicher, wenn man beim
-Start **Select** hält. Danach zeichnet sie
+Schiebebefehle, Fließkomma, CFU). Dann läuft der kurze Speichertest über den SDRAM (eine
+Zehntelsekunde, die ersten und letzten 2 KB), ohne Bild; nur wenn etwas fehlschlägt, bleiben die
+Ergebnisse auf dem Bildschirm stehen. Ohne die Spieldateien zeichnet das Programm
 jedes Bild in den hinteren Puffer: Palette nach der Formel aus `docs/soc.md`, Prüfstreifen in
 den oberen 8 Zeilen, zwei sich drehende Räder aus Dreiecken, die sich überdecken, und ein
 Dreieck, das sich mit dem Steuerkreuz bewegt, dazu Pixel und Takte pro Bild. Die Dreiecke
 zeichnet der Hardware-Rasterizer (`raster.v`); einmal je Lauf zeichnet sein C-Modell `raster.c`
 dieselben Dreiecke ins SDRAM, und die Zeile `raster check` im Protokoll meldet, ob beide
-Bilder Pixel für Pixel gleich sind. Hält man **Select**,
-stehen statt der Dreiecke die Ergebnisse des Speichertests da. Nach drei getauschten Bildern
+Bilder Pixel für Pixel gleich sind. Nach drei getauschten Bildern
 meldet sie alle Ergebnisse an `SYS_SIM` (`0x80001FFF`, wenn alles stimmt). Ein Absturz
 (Trap) landet mit `mcause`, `mepc` und `mtval` im Protokoll und unten auf dem Bildschirm.
 

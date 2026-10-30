@@ -10,11 +10,11 @@
 #define MT_BITS         10
 #define MT_ALL          (((1u << MT_BITS) - 1) << MT_BIT_FIRST)
 
-/* Run every test once; the last checks program.bin in the SDRAM. full: patterns over the
-   whole memory (program.bin is gone afterwards), else over the first and last 2 KB, as always in the simulation (under a second), which
-   leaves program.bin and the textures alone. progress() is called before each test and
-   every 64 KB inside one. */
-uint32_t memtest_run(int full, void (*progress)(const char *what, uint32_t addr));
+/* Run every test once; the last loads program.bin into the SDRAM and checks it. The patterns
+   go over the first and last 2 KB (a tenth of a second with the clock phase's search), which
+   leaves the data slots loaded into the SDRAM alone. progress() is called before each test
+   and every 64 KB inside one. */
+uint32_t memtest_run(void (*progress)(const char *what, uint32_t addr));
 
 /* program.bin's entry if its header and CRC-32 were right, else 0 */
 uint32_t memtest_program(void);

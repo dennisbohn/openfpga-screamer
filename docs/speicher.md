@@ -19,8 +19,8 @@ Gründe dafür.
   Pocket Data-Slots direkt ins SDRAM lädt.
 - **SRAM** (256 KB) und **PSRAM** `cram0`, `cram1` (je 16 MB): nicht benutzt (siehe oben).
 - **Speichertest** als Firmware: das SDRAM mit Mustern beschreiben und zurücklesen,
-  das SDRAM-Timing auf dem Pocket vermessen, Ergebnis auf dem Bildschirm, in `debug.txt` und
-  für die Simulation in `SYS_SIM`.
+  das SDRAM-Timing auf dem Pocket vermessen, Ergebnis in `debug.txt`, für die Simulation in
+  `SYS_SIM` und nur bei einem Fehler auf dem Bildschirm (dann startet das Programm nicht).
 
 ## Die Chips
 
@@ -276,7 +276,7 @@ ungecachte Basis, Größe, Die-Größe); bis zum Ausbau liefen SRAM und `cram0` 
 nachgelesen (dreimal derselbe falsche Wert deutet auf Schreiben oder Adresse, wechselnde Werte
 auf Lese-Timing); höchstens acht Fehlerzeilen je Speicher, danach wird nur gezählt. Nach
 jedem Test eine Zeile mit „ok" oder „FAIL, errors n" und den Takten. Vor jedem Test und alle
-64 KB darin stehen Test und Adresse auf dem Bildschirm und in der Kopfzeile des Protokolls,
+64 KB darin stehen Test und Adresse in der Kopfzeile des Protokolls,
 damit ein Hängenbleiben eine Stelle zeigt. Jeder Test setzt bei Erfolg ein Bit in `SYS_SIM`
 (Bit 3..12, Liste in `tools/sim_faults.sh`).
 
@@ -299,18 +299,19 @@ SDRAM, in dieser Reihenfolge:
    lhu an jedem Offset lesen (Vorzeichen geprüft).
 6. **Adressbus:** eigene Werte an `0` und allen Zweierpotenzen, erst alle schreiben, dann alle
    ungecacht zurücklesen.
-7. **Muster über den ganzen Speicher** (Simulation: erstes und letztes Fenster von 2 KB),
+7. **Muster** über das erste und das letzte Fenster von 2 KB (bis 2026-10-31 mit Select beim
+   Start über den ganzen Speicher, knapp 20 s),
    D-Cache vor jedem Prüfdurchgang leeren (`0x0000500F`), über Cache-Zeilen: Adresse als Daten
    und invertiert, Pseudozufall (xorshift, beim Prüfen neu erzeugt), 0xFFFF0000 und
-   0xAAAA5555 (alle 16 Datenleitungen schalten zwischen den Halbwörtern); dann 1 MB in
+   0xAAAA5555 (alle 16 Datenleitungen schalten zwischen den Halbwörtern); dann 2 KB in
    verwürfelter Zeilenfolge (Zeilenwechsel direkt nach dem Schreiben) und 256 zufällige Wörter,
-   jedes geschrieben und sofort ungecacht zurückgelesen.
+   jedes geschrieben und sofort ungecacht zurückgelesen (das alte Wort danach zurück).
 8. **Code aus dem SDRAM:** `auipc a0, 0; ret` hineinkopieren, aufrufen, die Adresse der Kopie
    erwarten; dann viermal mit `li a0, K` überschreiben, `fence.i` und drei NOPs, aufrufen, K
    erwarten (die alte Zeile steht dabei jedes Mal noch im I-Cache). Jeder Befehl wird vorher
    als Cache-Zeile zurückgelesen, so wie der I-Cache ihn holt; was das SDRAM verfälscht hat,
    läuft nie (eine hängende Datenleitung machte sonst aus `auipc a0` ein `auipc s0`).
-9. **Refresh:** `MEM_REFRESH` über 60 Bilder ab einem Bildwechsel zählen (Simulation: 2),
+9. **Refresh:** `MEM_REFRESH` über 2 Bilder ab einem Bildwechsel zählen,
    mindestens 128.000 je Sekunde verlangen (erwartet 74,25 MHz / 512 = 145.020).
 10. **Schreib-Status:** Bank 0 Zeile 0x800 öffnen, ein `sw` nach Zeile 0xC00 (PRECHARGE,
     ACTIVATE, 2 × WRITE: 7 Takte), sofort `MEM_STATUS` lesen (Bit 4 = 0 erwartet), warten bis
@@ -339,8 +340,9 @@ memtest: errors SDRAM 0
 Eine Cache-Zeile kostet die CPU 30 Takte bei offener Zeile, 4 mehr (tRP + tRCD) bei einem
 Zeilenwechsel in der Bank. Die Musterschleifen sind eine Schleife je Muster ohne Aufrufe,
 der seltene Fehlerfall liegt außerhalb (`__builtin_expect`), damit VexRiscvs statische
-Sprungvorhersage immer trifft: 5 Befehle je Wort beim Prüfen. Geschätzte Dauer auf dem Pocket
-für den ganzen Speicher: SDRAM-Muster knapp 20 s.
+Sprungvorhersage immer trifft: 5 Befehle je Wort beim Prüfen. Der ganze Test dauert auf dem
+Pocket rund 0,1 s (Phasensuche 10 ms, Muster 5 ms, Refresh zwei Bilder), dazu `program.bin`
+(200 KB bei 1,3 MB/s: 0,16 s).
 
 ## Prüfung
 
