@@ -163,12 +163,14 @@ static inline uint32_t now(void)
 /* the FPU's answers to comparisons (whole numbers) all asked for before any is used: an answer
    comes back late, and a use right after its question waits for it; asked one after the other,
    they come back side by side and the CPU waits once */
+#define INT_NOW2(a, b) __asm__ ("" : "+r"(a), "+r"(b))
 #define INT_NOW4(a, b, c, d) __asm__ ("" : "+r"(a), "+r"(b), "+r"(c), "+r"(d))
 #define INT_NOW8(a, b, c, d, e, f, g, h) \
     __asm__ ("" : "+r"(a), "+r"(b), "+r"(c), "+r"(d), "+r"(e), "+r"(f), "+r"(g), "+r"(h))
 #else
 static inline uint32_t now(void) { return 0; }
 #define FP_NOW(a, b, c) ((void)0)
+#define INT_NOW2(a, b) ((void)0)
 #define INT_NOW4(a, b, c, d) ((void)0)
 #define INT_NOW8(a, b, c, d, e, f, g, h) ((void)0)
 #endif
@@ -193,10 +195,14 @@ static const uint8_t *block_of(int k, const uint8_t **obj)
    to hi reaches into the cells cell(lo) .. cell(hi), and a point between lies in one of those.
    (v - v0) * s stays well inside an int: the boxes are whole numbers at least 1 apart, s at
    most CGRID / 1, and track_under asks only for places nearer than 4,000,000 */
+static inline int cgrid_clamp(int i)
+{
+    return i < 0 ? 0 : i > CGRID - 1 ? CGRID - 1 : i;
+}
+
 static inline int cgrid_cell(float v, float v0, float s)
 {
-    int i = (int)((v - v0) * s);
-    return i < 0 ? 0 : i > CGRID - 1 ? CGRID - 1 : i;
+    return cgrid_clamp((int)((v - v0) * s));
 }
 
 /* the cells a face reaches into: all for one without a box */
@@ -590,18 +596,25 @@ void track_start(float *x, float *y, float *yaw)
 static inline int under_face(const struct cface *q, const struct gpiece *gp, float lx, float lz, float c, float s,
                              float *h, int *grass)
 {
-    /* (the comparisons with | and the counts without branches: the FPU answers them side by
-       side, where each branch would wait for one) */
-    if(q->boxed && ((lx < q->x0) | (lx > q->x1) | (lz < q->z0) | (lz > q->z1))) return 0;
-    int nc = q->nc, pos = 0, neg = 0;
-    if(!nc) return 0;
-    for(int j = 0; j < nc; j++) {
-        int b = j + 1 < nc ? j + 1 : 0;
-        float ax = q->x[j], az = q->z[j];
-        float cr = (q->x[b] - ax) * (lz - az) - (q->z[b] - az) * (lx - ax);
-        pos += cr > 0.0f;
-        neg += cr < 0.0f;
+    /* (each test's comparisons all asked for before any answer is used: they come back side by
+       side, and the CPU waits once) */
+    if(q->boxed) {
+        int w = lx < q->x0, e = lx > q->x1, s0 = lz < q->z0, n = lz > q->z1;
+        INT_NOW4(w, e, s0, n);
+        if(w | e | s0 | n) return 0;
     }
+    int nc = q->nc;
+    if(!nc) return 0;
+    /* the point's side of each edge, corner j to the next; a triangle's fourth (corner 3 is
+       none) is worked out but not counted */
+#define EDGE(j, b) ((q->x[b] - (float)q->x[j]) * (lz - (float)q->z[j]) - (q->z[b] - (float)q->z[j]) * (lx - (float)q->x[j]))
+    int four = nc > 3;
+    float cr0 = EDGE(0, 1), cr1 = EDGE(1, 2), cr2 = EDGE(2, four ? 3 : 0), cr3 = EDGE(3, 0);
+#undef EDGE
+    int p0 = cr0 > 0.0f, p1 = cr1 > 0.0f, p2 = cr2 > 0.0f, p3 = cr3 > 0.0f;
+    int n0 = cr0 < 0.0f, n1 = cr1 < 0.0f, n2 = cr2 < 0.0f, n3 = cr3 < 0.0f;
+    INT_NOW8(p0, p1, p2, p3, n0, n1, n2, n3);
+    int pos = p0 + p1 + p2 + (four & p3), neg = n0 + n1 + n2 + (four & n3);
     if(pos && neg) return 0;
     if(grass) *grass = cobj_grass[gp->obj];
     if(!h) return 1;
@@ -635,7 +648,9 @@ int track_under(float x, float y, float *h, int *grass)
             const struct cgrid *g = &cgrid[gp->obj];
             for(int tries = 0; tries < 3; tries++, lx += 10.0f, lz += 10.0f)
                 if(g->at[0] >= 0 && near) {
-                    int k = cgrid_cell(lz, g->z0, g->sz) * CGRID + cgrid_cell(lx, g->x0, g->sx);
+                    int iz = (int)((lz - g->z0) * g->sz), ix = (int)((lx - g->x0) * g->sx);
+                    INT_NOW2(iz, ix);                   /* (cgrid_cell's, both asked for at once) */
+                    int k = cgrid_clamp(iz) * CGRID + cgrid_clamp(ix);
                     for(const uint16_t *li = clist + g->at[k], *le = clist + g->at[k + 1]; li < le; li++)
                         if(under_face(f0 + *li, gp, lx, lz, c, s, h, grass)) return 1;
                 } else
