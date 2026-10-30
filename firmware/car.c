@@ -52,8 +52,9 @@ static int mark_count;
 static float needle, needle_speed;
 static float progress;                  /* how far round the race (marker_progress) */
 static float record;                    /* the lap to beat (0x1d268): the game's default, 180 s */
-static float road;                      /* the road's heading where the car last met a wall
-                                           (player +0x13c, 0x16c90) */
+static float road;                      /* the road's heading at the nearest road point, set
+                                           each step (player +0x13c: 0x16c90's first lines, which
+                                           run every frame, 0x15ae4) */
 static struct track_refl refl;          /* the car object's reflection state (record +0x24 ..) */
 static uint32_t refl_phase;             /* its reflection picture (player +0x7b0, record +0x3c) */
 
@@ -223,6 +224,8 @@ static void walls_step(void)
     float cr = fabsf(cosf(pc.roll)), cp = fabsf(cosf(pc.pitch));
     int out[4], any = 0;
     float px[4], py[4], wall_angle = 0.0f;
+    const struct track_dir *d = nearest_dir(pc.x, pc.y);   /* 0x16cbb, before any wall */
+    if(d) road = d->angle;
     for(int k = 0; k < 4; k++) {
         float lx = corner[k][0] * cr, lz = corner[k][1] * cp;
         px[k] = pc.x + rx * lx + fx * lz;
@@ -253,9 +256,7 @@ static void walls_step(void)
        and only out in the open (+0x7b0, the last marker's kind, is 0: not in a tunnel; the
        game checks that, OpenScreamer does not); the wall response comes all the same (the
        crash only stops the wall's sound there) */
-    const struct track_dir *d = nearest_dir(pc.x, pc.y);
-    if(d) road = d->angle;
-    float off = d ? fabsf(pc.yaw - d->angle) : 0.0f;
+    float off = d ? fabsf(pc.yaw - road) : 0.0f;          /* 0x16d17: against +0x13c */
     while(off > PI) off -= PI;
     if(off > PI / 2.0f) off = PI - off;
     int nm;
