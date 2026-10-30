@@ -29,6 +29,7 @@
 #endif
 #include "crc32.h"
 #include <math.h>
+#include <string.h>
 
 #define BLOCK       0x40000     /* bytes per CRC block (tools/make_track.py) */
 #define MAX_PIECES  2560        /* placements (H set): track 1 has 1164, track 5 the most, 2359 */
@@ -674,6 +675,19 @@ const struct track_spline_node *track_opp_spline(int k, int *start, int *n)
 /* the camera's frame (track_draw_cam): forward, right, up */
 static void cam_frame(const struct track_cam *cam, float f[3], float r[3], float u[3])
 {
+    /* the last angles' frame kept (the effects and the scene ask for the same camera's): for
+       the same bits the same values, without the six sines and cosines */
+    static uint32_t last[3];
+    static float lf[3], lr[3], lu[3];
+    static int kept;
+    uint32_t a[3];
+    memcpy(a, &cam->yaw, sizeof a);                     /* yaw, pitch, roll */
+    if(kept && a[0] == last[0] && a[1] == last[1] && a[2] == last[2]) {
+        memcpy(f, lf, sizeof lf);
+        memcpy(r, lr, sizeof lr);
+        memcpy(u, lu, sizeof lu);
+        return;
+    }
     float sy = sinf(cam->yaw), cy = cosf(cam->yaw), sp = sinf(cam->pitch), cp = cosf(cam->pitch);
     float sr = sinf(cam->roll), cr = cosf(cam->roll);
     f[0] = sy * cp; f[1] = -cy * cp; f[2] = sp;
@@ -682,6 +696,11 @@ static void cam_frame(const struct track_cam *cam, float f[3], float r[3], float
     const float u0[3] = { r0[1] * f[2], -r0[0] * f[2], r0[0] * f[1] - r0[1] * f[0] };
     r[0] = r0[0] * cr + u0[0] * sr; r[1] = r0[1] * cr + u0[1] * sr; r[2] = u0[2] * sr;
     u[0] = u0[0] * cr - r0[0] * sr; u[1] = u0[1] * cr - r0[1] * sr; u[2] = u0[2] * cr;
+    memcpy(last, a, sizeof a);
+    memcpy(lf, f, sizeof lf);
+    memcpy(lr, r, sizeof lr);
+    memcpy(lu, u, sizeof lu);
+    kept = 1;
 }
 
 void track_cam_axes(const struct track_cam *cam, float f[3], float r[3], float u[3])
