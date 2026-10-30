@@ -1030,13 +1030,40 @@ static int load_image(void)
     return 1;
 }
 
+/* SOUND.DAT (sound.h) whole into the SDRAM, once a boot: its read started before the first
+   track is built, so that the APF writes its 1.9 MB (1.3 s) while the CPU builds; its size once
+   it is there (sounds() reads it itself if it is not) */
+static uint32_t sound_size, sound_reading;
+
+static void sound_start(void)
+{
+    uint32_t size = slot_size(SOUND_SLOT);
+    if (sound_size || size < 4 || size > SOUND_MAX) return;
+    slot_start(SOUND_SLOT, 0, SOUND_MEM, size & ~3u);
+    sound_reading = size;
+}
+
+/* its end waited for (before any other slot call), then its last 1-3 bytes */
+static void sound_wait(void)
+{
+    uint32_t size = sound_reading, body = size & ~3u, t0 = rdcycle();
+    if (!size) return;
+    sound_reading = 0;
+    while (slot_busy())
+        if (rdcycle() - t0 > 20u * CPU_HZ) return;
+    if (slot_result() == 0 && (size == body || slot_read(SOUND_SLOT, body, SOUND_MEM + body, SLOT_REST) == 0))
+        sound_size = size;
+}
+
 /* Track n's image from them at TEX_FILE, its header opened; 1 if that worked */
 static int build_track(int n)
 {
     struct track_build_info info;
     uint8_t *out = (uint8_t *)(uintptr_t)TEX_FILE;
+    sound_start();
     uint32_t size = track_build(&game, n, out, game_files[0].addr - (uint32_t)(uintptr_t)out,
                                 (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH, &info);
+    sound_wait();
     while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* all of it in the SDRAM for the 3D units */
         ;
     dcache_invalidate();                        /* the block check reads the SDRAM */
@@ -1094,16 +1121,17 @@ static void scenery(int n)
     dlog_str(" ms\n");
 }
 
-/* The sound effects (sound.h): SOUND.DAT whole into the SDRAM once, their list from GEN.DAT
-   before each race (the scenery adds the track's own after them) */
+/* The sound effects (sound.h): SOUND.DAT whole into the SDRAM once (while the first track is
+   built, else here), their list from GEN.DAT before each race (the scenery adds the track's own
+   after them) */
 static void sounds(void)
 {
-    static uint32_t size;
     uint32_t t0 = rdcycle();
     int err;
-    if (!size) size = load_file(SOUND_SLOT, SOUND_MEM, SOUND_MAX, &err);
+    if (!sound_size) sound_size = load_file(SOUND_SLOT, SOUND_MEM, SOUND_MAX, &err);
     dcache_invalidate();
-    int n = size && game.gen_size ? snd_init((const uint8_t *)(uintptr_t)SOUND_MEM, size, game.gen, game.gen_size) : 0;
+    int n = sound_size && game.gen_size ?
+            snd_init((const uint8_t *)(uintptr_t)SOUND_MEM, sound_size, game.gen, game.gen_size) : 0;
     AU_STATUS = 0;
     dlog_str("sound: ");
     dlog_dec(n);
