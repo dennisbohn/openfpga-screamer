@@ -46,7 +46,7 @@ etwas daran ändert, ändert beide Seiten und dieses Dokument.
 | Adresse | Größe | Inhalt | Cache |
 |---|---|---|---|
 | `0x0000_0000` | 32 KB | Boot-RAM: der Lader, darüber der Stack des Programms. Reset-Vektor `0x0000_0000`, `mtvec` nach Reset `0x0000_0020` | ja |
-| `0x1000_0000` | 64 MB | SDRAM: die Teile von `MENU.DAT` ab `0x1020_0000` und `GRAF.DAT` ab `0x1060_0000` (Slots 19, 20, jeder an seiner Stelle wie in der Datei) und Bild, Sprites und Schriften des Streckenbildschirms ab `0x10A0_0000`, die Soundeffekte `SOUND.DAT` ab `0x11C0_0000` (Slot 8, bis 2 MB; der Mischer spielt sie von dort), das Abbild der Strecke ab `0x1210_0000` (von der Firmware gebaut), die Spieldateien ab `0x1280_0000` (`MAPnH.DAT` `0x1280_0000` (Slot 3, 9–13), `GAME.DAT` `0x12C0_0000` (4), `MAPn.DAT` `0x12D0_0000` (5, 14–18), `GEN.DAT` `0x12D4_0000` (6), `LOCAL.DAT` `0x12D5_0000` (7)), Arbeitsspeicher des Aufbaus ab `0x12D6_0000`, das Programm ab `0x1300_0000` (Slot 2) | ja |
+| `0x1000_0000` | 64 MB | SDRAM: die Teile von `MENU.DAT` ab `0x1020_0000` und `GRAF.DAT` ab `0x1060_0000` (Slots 19, 20, jeder an seiner Stelle wie in der Datei) und Bild, Sprites und Schriften des Streckenbildschirms ab `0x10A0_0000`, die Soundeffekte `SOUND.DAT` ab `0x11C0_0000` (Slot 8, bis 2 MB; der Mischer spielt sie von dort), der Ring der Musik ab `0x11E0_0000` (256 KB, aus `SCREAM.gog`, Slot 22), das Abbild der Strecke ab `0x1210_0000` (von der Firmware gebaut), die Spieldateien ab `0x1280_0000` (`MAPnH.DAT` `0x1280_0000` (Slot 3, 9–13), `GAME.DAT` `0x12C0_0000` (4), `MAPn.DAT` `0x12D0_0000` (5, 14–18), `GEN.DAT` `0x12D4_0000` (6), `LOCAL.DAT` `0x12D5_0000` (7)), Arbeitsspeicher des Aufbaus ab `0x12D6_0000`, das Programm ab `0x1300_0000` (Slot 2) | ja |
 | `0xF000_0000` | 4 KB | System- und Speicher-Register | nein |
 | `0xF000_1000` | 4 KB | Video-Register und Palette | nein |
 | `0xF000_2000` | 4 KB | Eingabe | nein |
@@ -122,6 +122,9 @@ Alle Register sind 32 Bit, Zugriff als Wort.
 | `0xF000_4400` | `AU_PLAY` | R/W | Schreiben: Bit v startet Stimme v (neu) an ihrem ersten Byte mit ihrer Schleifenzahl; der nächste Durchgang setzt die Stelle und holt ihre Zeile, der übernächste spielt das Byte. Lesen: Bit v = Stimme v spielt |
 | `0xF000_4404` | `AU_STOP` | W | Bit v hält Stimme v an |
 | `0xF000_4408` | `AU_STATUS` | R/W | Bit 0: ein Durchgang war bis zum nächsten Ausgabewert nicht fertig (der vorige Wert wurde wiederholt); Schreiben löscht |
+| `0xF000_440C` | `AU_MUSIC_ADDR` | W | Musik: Bit 25..18 die SDRAM-Byte-Adresse ihres Rings (256 KB, je Wort ein Stereo-Wert der CD, links in der unteren Hälfte); vor dem Start setzen |
+| `0xF000_4410` | `AU_MUSIC_VOL` | W | Bit 15..0 Lautstärke der Musik: Sample × Wert >> 15 |
+| `0xF000_4414` | `AU_MUSIC` | R/W | Schreiben: Bit 0 = 1 spielt den Ring von vorn (die zwei Durchgänge danach laden seine Zeilen, der dritte spielt den ersten Wert), 0 hält an. Lesen: Bit 15..0 die Stelle (der Wert im Ring, ab dem der nächste Durchgang spielt), Bit 16 spielt |
 
 ## Ton
 
@@ -136,6 +139,19 @@ der nächste sie braucht. Ausgabe als I²S an den Pocket im Takt der Vorlage: MC
 aus einem Bruchteiler auf `clk_74a`, Bittakt MCLK / 4, 64 Bit je Wert, LRCK low links, high
 rechts, je 16 Bit MSB zuerst ab dem zweiten Bittakt der Hälfte. Ein CPU-Reset hält alle
 Stimmen an, die Ausgabe läuft weiter.
+
+Nach den Stimmen spielt derselbe Durchgang die Musik, acht Takte: ein Strom 16-Bit-Stereo mit
+44,1 kHz (die CD) aus einem Ring von 256 KB im SDRAM, den die Firmware füllt. Je Seite die zwei
+Werte um die Stelle, dazwischen auf einer Geraden (16 Bit Bruchteil, abgerundet), mal
+Lautstärke (>> 15) in die Summen; dann rückt die Stelle um 60211 / 65536 Werte weiter (44.100 /
+48.000, 3 ppm zu langsam). Die zwei Zeilen um die Stelle (16 Werte) liegen in einem MLAB; rückt
+die Stelle in die zweite, holt der Durchgang die danach über den Zeilen-Port, einmal je acht
+Werte. Die vier Produkte rechnet der Multiplizierer der Stimmen, dafür 18 × 18 Bit breit; die
+Summen haben 22 Bit. Die Firmware (`firmware/music.c`) füllt den Ring aus `SCREAM.gog` (Slot 22):
+beim Start eines Lieds ganz, danach einmal je Bild mit einem Lesebefehl von 32 KB, den sie nur
+startet (`slot_start`); `AU_MUSIC` sagt ihr, wie weit der Mischer ist. Das kostet die CPU rund
+500 Takte je Bild (`docs/bildablauf.svg`, „Musik“), die Bridge schreibt 176 KB/s in den SDRAM.
+In der Simulation ist der Ausgang 4,9 s lang Wert für Wert der CD-Track (`tools/musiccheck.py`).
 
 Die Firmware (`firmware/sound.c`) spielt die Effekte aus `SFXSBASE.DTR` (GEN.DAT): die Samples
 liegen ungepackt in `SOUND.DAT`, der Mischer liest sie direkt aus dem geladenen Container.

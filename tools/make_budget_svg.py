@@ -53,7 +53,7 @@ MEASURED = [
     ("Texturen: Pipeline + Cache", "gfx", [(1, RT)]),
     ("Blitter (Hintergrund, HUD)", "gfx", [(1, SOC + "|blit:bl")]),
     ("SDRAM-Controller + Ports", "mem", [(1, SOC + "|sdram:sdc"), (1, SOC + "|sdram_port:sdp")]),
-    ("Audio: Mischer 32 Stimmen, I²S", "audio", [(1, SOC + "|audio:au")]),
+    ("Audio: Mischer 32 Stimmen + Musik, I²S", "audio", [(1, SOC + "|audio:au")]),
 ]
 # the SoC's own logic (bus, registers, arbiters): the SoC minus everything measured inside it
 SOC_REST = ("Bus, Register, Arbiter", "mem")
@@ -63,7 +63,7 @@ PLANNED = [
 ]
 TIMING_LIMIT = 0.80         # logic utilisation above which timing closure gets hard
 STAND = "30.10.2026"
-BUILD = "Audio: Mischer"
+BUILD = "Audio: Mischer und CD-Musik"
 
 # layout
 WIDTH = 1120

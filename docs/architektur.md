@@ -14,7 +14,8 @@ Cockpit-Ansicht, die Startrichtung des Originals und der Ton: ein Mischer mit 32
 (`audio.v`), der die Soundeffekte aus `SOUND.DAT` spielt (Motor, Rutschen, Wand, Crash,
 Requisiten, Berührung mit einem Gegner, die Motoren der Gegner und die Fahrzeuge der Strecke,
 im Stereobild und mit Doppler). Seit 2026-10-30 gebaut, Test auf dem Pocket steht aus: alle
-sechs Strecken, gewählt im Streckenbildschirm des Originals (siehe „Streckenwahl“).
+sechs Strecken, gewählt im Streckenbildschirm des Originals (siehe „Streckenwahl“), und die
+CD-Musik aus GOGs Abbild der CD, im Streckenbildschirm und im Rennen wie im Spiel.
 Belegung siehe „Belegung“, alles gemessen.
 
 ## Hardware des Pocket (Haupt-FPGA)
@@ -88,6 +89,9 @@ Strecke 1, geladen erst, wenn die Strecke gewählt ist) und für den Streckenbil
 das Inhaltsverzeichnis und die Einträge, die er braucht, jeden an seiner Stelle wie in der
 Datei (`load_parts` in `main.c`): 0,7 MB statt 5,9 MB, bei den gemessenen 1,3 MB/s des
 Pocket rund eine halbe statt viereinhalb Sekunden beim Start. `GAME.DAT`, `GEN.DAT`, `LOCAL.DAT` und `SOUND.DAT` lädt er einmal.
+Dazu seit 2026-10-30 GOGs Abbild der CD oben im Spielordner: `SCREAM.DAT` (Slot 21, das
+Cue-Sheet) und `SCREAM.gog` (Slot 22, 383 MB); daraus liest der Core nur die Musik, 32 KB auf
+einmal, während er zeichnet (siehe „Die CD-Musik“).
 
 - `DATA/`: alle 16 (`GEN`, `LOCAL`, `MUSIC`, `SOUND`, `MAP1`–`MAP6`, `MAP1I`–`MAP6I`)
 - `GFX/`: `GAME`, `GRAF`, `MENU`, `MAP1L`–`MAP6L`, `MAP1H`–`MAP6H` (L und H sind die Sätze der
@@ -135,10 +139,12 @@ Fahrbahn (offen, am Original zu prüfen).
 
 ## Belegung
 
-Gemessen am 2026-10-29 (Quartus-Build mit dem Mischer, Timing hält bei 74,25 MHz: Setup
-+0,28 ns, Hold +0,10 ns, die knappsten Pfade im Rasterizer; Bauzeit 5,5 min): 10.114 von
-18.480 ALMs (55 %), 281 von 308 M10K (91 %, davon 16 die Tabelle der Routine 224), 31 von 66
-DSP (47 %). Der Mischer: 416 ALMs (117 davon die MLABs seiner Register), 1 M10K, 1 DSP; vorher
+Gemessen am 2026-10-30 (Quartus-Build mit der CD-Musik, Timing hält bei 74,25 MHz: Setup
++0,94 ns, Hold +0,06 ns; Bauzeit 12 min): 10.278 von 18.480 ALMs (56 %), 281 von 308 M10K
+(91 %, davon 16 die Tabelle der Routine 224), 31 von 66 DSP (47 %). Der Mischer mit der Musik:
+565 ALMs, 1 M10K, 1 DSP; die Musik kostet 149 ALMs (ihre zwei Zeilen im MLAB, Register,
+Interpolation), kein M10K und kein DSP (sie rechnet auf dem Multiplizierer der Stimmen). Vorher
+(2026-10-29, nur die Effekte): 10.114 ALMs, Mischer 416, Setup +0,28 ns, Hold +0,10 ns; davor
 9.683 ALMs, 280 M10K, 30 DSP, Setup +0,94 ns. Von Build zu Build
 schwankt die Logik um einige hundert ALMs: Die Platzierung packt verschieden dicht, und wo
 das Timing knapp ist, baut der Fitter Logik und Register um (Physical Synthesis).
@@ -166,7 +172,7 @@ Block-RAM spart er 190 ALMs, kostet aber 19 M10K, die knappere Ressource). Setup
 3.041 → 1.512, Geometrie-Einheit 2.288 → 648, Rasterizer mit Texturen 2.539 → 1.895 ALMs; dafür
 11 M10K mehr und 5 DSP weniger. Geschätzt ist nur, was noch fehlt.
 
-![Platzbudget im FPGA: Logik 55 %, Block-RAM 91 %, DSP 47 %](ressourcen.svg)
+![Platzbudget im FPGA: Logik 56 %, Block-RAM 91 %, DSP 47 %](ressourcen.svg)
 
 Die Grafik erzeugt `tools/make_budget_svg.py`: die gemessenen Zeilen aus dem Fitter-Report
 (`core/src/fpga/output_files/ap_core.fit.rpt`, Tabelle „Resource Utilization by Entity“), die
@@ -175,22 +181,22 @@ diese Tabelle.
 
 | Komponente | ALMs | M10K | DSP |
 |---|---|---|---|
-| Analogue-Rahmen (Bridge, PLLs) | 408 | 2 | – |
-| Framebuffer ×2 + Video | 120 | 130 | – |
-| VexRiscv + 2× 8 KB Cache | 1.280 | 19 | 4 |
-| FPU (RV32F) | 1.470 | 5 | 4 |
+| Analogue-Rahmen (Bridge, PLLs) | 420 | 2 | – |
+| Framebuffer ×2 + Video | 124 | 130 | – |
+| VexRiscv + 2× 8 KB Cache | 1.289 | 19 | 4 |
+| FPU (RV32F) | 1.465 | 5 | 4 |
 | CFU (16.16-Multiplikation) | 9 | – | 3 |
 | Boot-RAM 32 KB + Protokoll | – | 36 | – |
-| Geometrie-Einheit | 684 | 22 | 4 |
-| Clipper | 955 | 6 | 2 |
-| Setup-Einheit | 1.510 | 7 | 4 |
-| Rasterizer | 1.258 | 2 | 5 |
-| Texturen: Pipeline + Cache | 672 | 47 | 4 |
-| Blitter (Hintergrund, HUD) | 496 | 2 | – |
-| SDRAM-Controller + Ports | 308 | 2 | – |
-| Audio: Mischer 32 Stimmen, I²S | 416 | 1 | 1 |
-| Bus, Register, Arbiter | 528 | – | – |
-| **gebaut** | **10.114 (55 %)** | **281 (91 %)** | **31 (47 %)** |
+| Geometrie-Einheit | 673 | 22 | 4 |
+| Clipper | 949 | 6 | 2 |
+| Setup-Einheit | 1.503 | 7 | 4 |
+| Rasterizer | 1.246 | 2 | 5 |
+| Texturen: Pipeline + Cache | 680 | 47 | 4 |
+| Blitter (Hintergrund, HUD) | 506 | 2 | – |
+| SDRAM-Controller + Ports | 302 | 2 | – |
+| Audio: Mischer 32 Stimmen + Musik, I²S | 565 | 1 | 1 |
+| Bus, Register, Arbiter | 547 | – | – |
+| **gebaut** | **10.278 (56 %)** | **281 (91 %)** | **31 (47 %)** |
 
 Knapp wird die Logik: ab etwa 80 % Belegung wird es auf dem Cyclone V schwer, die
 Taktfrequenz zu halten. Das zeigt sich beim Bauen (Timing-Analyse, `tools/build.sh` meldet es
@@ -438,9 +444,22 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   gehört an der Kamera (`docs/soc.md`, „Ton“): die Motoren der drei nächsten Gegner (in der
   Startaufstellung heulen sie auf) und die Fahrzeuge der Strecke (Lastwagen, Busse, Jet; die
   vierte Spalte von `ANIMATIONS`), mit Doppler und als einzige im Stereobild. Noch nicht: der
-  Sprecher, die Musik. Offen: ein Tiefpass wie der Ausgangsfilter der Soundkarten
+  Sprecher. Offen: ein Tiefpass wie der Ausgangsfilter der Soundkarten
   (OpenScreamer nimmt 3,2 kHz wie die Sound Blaster Pro); ob er fehlt, entscheidet das Hören
   auf dem Pocket.
+- **Die CD-Musik** (2026-10-30, OpenScreamers Notes Abschnitt 17, MUSIC): Das Spiel spielt Lied
+  n als CD-Track n + 1, n aus `CD_TRACKS` in `MENU.DTR` (GEN.DAT): Streckenbildschirm Track 3,
+  Strecken 1–6 Track 6, 4, 5, 7, 8, 2; endet der Track, spielt das Laufwerk ihn neu. Der Core
+  liest dazu GOGs Abbild der CD von der SD-Karte, unverändert: `SCREAM.DAT` (Cue-Sheet, Slot 21)
+  sagt, wo die Tracks in `SCREAM.gog` (Slot 22, roh, 2352 Bytes je Sektor) beginnen. Im Mischer
+  ein Strom 16-Bit-Stereo mit 44,1 kHz, linear auf 48 kHz interpoliert, aus einem Ring von
+  256 KB im SDRAM (`docs/soc.md`, „Ton“); `firmware/music.c` füllt ihn beim Start ganz (224 KB,
+  auf dem Pocket rund 170 ms) und dann einmal je Bild mit einem Lesebefehl von 32 KB, den die
+  CPU nur startet: Den Rest erledigt der Pocket über die Bridge, während das Bild entsteht.
+  Lautstärke `0x4000`: Im Spiel ist der CD-Hauptregler `0x6000` (0,75); wie bei den Effekten
+  sind es hier zwei Drittel davon, so bleibt das Verhältnis von Musik und Effekten wie im
+  Spiel, und die Summe bleibt in 16 Bit (mit `0x6000` übersteuerten Musik und die Motoren in der
+  Startaufstellung, in der Simulation 267 Werte in einer Sekunde).
 - **Bewegliche Teile der Strecke** (2026-10-28, aus der EXE: `0x8ad14`, `0x8acf0`, `0x8ac58`;
   das Format nach OpenScreamers Notes S2-5b, das für beide Spiele gilt): Ein Mesh kann
   mehrere Blöcke haben, und ein Block mit Positionssatz (+0x0C) wird von dort verschoben oder,

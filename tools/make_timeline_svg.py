@@ -167,7 +167,7 @@ def main():
              f"wartet auf den Bildwechsel: {fmt(BUDGET - end)} Takte ({ms(BUDGET - end)} ms)")
         text((px(end) + px(BUDGET)) / 2, y + lane_h / 2 + 4, "frei", "m", "middle")
     # phase names over the CPU lane where they fit
-    short = {"phys": "Physik", "prep": "Vorb.", "cull": "Auswahl", "pieces": "Bauteile",
+    short = {"music": "Musik", "phys": "Physik", "prep": "Vorb.", "cull": "Auswahl", "pieces": "Bauteile",
              "hud": "Anzeige", "wait": "", "rest": ""}
     for key, (t0, t1, *_) in runs.items():
         w = px(t1) - px(t0)
