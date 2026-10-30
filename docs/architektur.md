@@ -15,8 +15,9 @@ Cockpit-Ansicht, die Startrichtung des Originals und der Ton: ein Mischer mit 32
 Requisiten, Berührung mit einem Gegner, die Motoren der Gegner und die Fahrzeuge der Strecke,
 im Stereobild und mit Doppler) und den Sprecher. Seit 2026-10-30 gebaut, Test auf dem Pocket
 steht aus: alle sechs Strecken, gewählt im Streckenbildschirm des Originals, danach das Auto
-im Autobildschirm (siehe „Strecken- und Autowahl“), die Pause und „PLAY AGAIN?“, und die
-CD-Musik aus GOGs Abbild der CD, in den Menüs und im Rennen wie im Spiel.
+im Autobildschirm (siehe „Strecken- und Autowahl“), die Pause und „PLAY AGAIN?“, die
+CD-Musik aus GOGs Abbild der CD, in den Menüs und im Rennen wie im Spiel, und die
+Überblendungen und Menügeräusche des Originals.
 Belegung siehe „Belegung“, alles gemessen.
 
 ## Hardware des Pocket (Haupt-FPGA)
@@ -141,8 +142,9 @@ Danach lädt, entpackt und baut der Core die Strecke (einige Sekunden; Strecke 1
 Pocket: 1 s Laden, 3,2 s Bauen, 0,6 s Effekte, Kulisse und Armaturenbrett). So lange steht,
 wie im Original (`0x2a264`, vor jedem Rennen außer nach PLAY AGAIN), das Ladebild:
 `LOADnL.PCX` aus `GRAF.DAT` mit eigener Palette, darüber `LOADING` (`MENU.TXT` Zeile 47)
-zentriert in Zeile 0x50, Schrift 3, Farbe 0 (`0x2e598`), ohne Überblendung, bis zum ersten
-Bild des Rennens (`menu_loading` in `menu.c`, `loading` in `main.c`; `MENU=3` für
+zentriert in Zeile 0x50, Schrift 3, Farbe 0 (`0x2e598`), sofort mit seiner Palette; ist alles
+aufgebaut, blendet es in einer halben Sekunde aus (siehe „Überblendungen“ unten;
+`menu_loading` in `menu.c`, `loading` in `main.c`; `MENU=3` für
 `tools/render.sh`). Die Musik des Menüs hört auf, wenn es erscheint: Die CPU baut die Strecke
 am Stück und liest dabei aus den Data-Slots, den Ring der Musik füllt in der Zeit niemand.
 
@@ -188,12 +190,41 @@ beendeten Rennen erst nach der Wiederholung): ESC stoppt die Effekte
 (`0x1f8cc`), die Musik läuft weiter, das letzte Bild dreimal abgedunkelt, darüber `GAME.TXT`
 Zeilen 19–21 (PLAY AGAIN?, YES, NO) zentriert in den Zeilen 52, 92 und 122 (Schrift 0), die
 Frage in Farbe 2, die Antworten in 14, die gewählte blinkt nach 2. Hoch/links YES,
-runter/rechts NO, B oder START nimmt die Antwort, Y oder SELECT ist NO (ESC im Original).
-YES baut das Rennen neu auf (ohne die Strecke neu zu bauen), NO führt zur Streckenwahl.
+runter/rechts NO, jeder Druck mit dem Klick (siehe „Menügeräusche“), B oder START nimmt die
+Antwort, Y oder SELECT ist NO (ESC im Original). YES baut das Rennen neu auf (ohne die
+Strecke neu zu bauen), NO führt zur Streckenwahl.
 
-Nicht dabei: Hauptmenü, Optionen, Intro, Kameraflüge und Überblendungen zwischen den
-Bildschirmen, Menügeräusche, die gespiegelten Strecken, „NEW TRACK AVAILABLE“, Wiederholungen
-als Datei (`REPLAYS\TEMP.RPL`). Die Simulation fährt gleich die Strecke aus `SIM_TRACK` (Slot 28) mit dem
+**Überblendungen** (2026-10-30, aus der EXE): alle über die Palette, jeder Wert mal f zu
+Schwarz hin (`0x27de8`; bei uns `pal_faded` in `main.c`, in die Palette des Puffers, der als
+nächster gezeigt wird). Wird ein Menübildschirm verlassen (Strecke → Auto, Auto → Strecke,
+Auto → Rennen), ist es sofort schwarz (`0x1d220` = 0: die Palette schwarz im Bild des
+Tastendrucks; `black`), der neue Bildschirm blendet mit 1,5/s ein, in 2/3 s (`0x20374` aus
+`0x2c078` und `0x2bdcc`, `0x29738` in jedem Bild), Modelle und Kamera laufen dabei schon; ebenso
+der Streckenbildschirm nach dem Start und nach einem Rennen (das Original kommt dort aus
+seinem Hauptmenü, das wir nicht haben). Einen Kameraflug gibt es zwischen Strecken- und
+Autobildschirm nicht (nur beim Verlassen der Menüseiten). Das Ladebild erscheint ohne
+Überblendung (`0x2a264`) und blendet, wenn das Rennen aufgebaut ist, in einer halben Sekunde
+aus, nur das Bild (`0x128dc(1)` → `0x21d8c(0)`; OpenScreamers Notizen übersehen das). Das
+Rennen blendet in einer halben Sekunde ein, Bild, Effekte und Musik (`0x21e50` in jedem Bild,
+2/s); verlassen (PLAY AGAIN? NO, `0x1feed`) oder neu aufgebaut (YES, die Wiederholung:
+`0x128dc(0)`) blendet es ebenso aus, mit dem Ton (`0x21d8c(1)`). Das Spiel steht beim
+Ausblenden; wir lassen die Bildschleife laufen, damit die Musik weiter Daten bekommt: das
+stehende Bild in beide Puffer kopiert, je Bild bekommt einer die Palette und wird getauscht
+(`fade_out`). Die Pause blendet nicht.
+
+**Menügeräusche** (2026-10-30, aus der EXE): Solange ein Menü da ist, ist die Sample-Tabelle
+des Spiels `SOUND_FX` aus `MENU.DTR` (GEN.DAT: `smenu1`–`smenu9`, `MENU1.RAW`–`MENU9.RAW`;
+`0x29e1d`, `0x1f2d0`). Im Strecken- und Autobildschirm spielt nur der Schritt zur nächsten
+Strecke oder zum nächsten Auto etwas, Zeile 6, `smenu7` (`0x2859e`, `0x28617`, `0x2874b`,
+`0x287cd`); Wählen und Zurück sind still (die Zweige `0x28ef6`, `0x28172` und `0x2821e` spielen
+nichts; OpenScreamer spielt dort Zeile 0, nach eigener Lesart). Die neun Samples liest der
+Core beim Start an ihren Stellen aus `SOUND.DAT` (88 KB; der ganze Container folgt mit der
+ersten Strecke), die Tabelle setzt er nach jedem Rennen neu (`snd_menu` in `sound.c`). PLAY
+AGAIN? klickt bei jedem Druck von hoch/links oder runter/rechts (`SFXSBASE.DTR` Zeile 6,
+`sclick`; `0x21b0e`, `0x21b47`). Der CD-Spieler der Pause spielt nichts.
+
+Nicht dabei: Hauptmenü, Optionen, Intro, die gespiegelten Strecken, „NEW TRACK AVAILABLE“,
+Wiederholungen als Datei (`REPLAYS\TEMP.RPL`). Die Simulation fährt gleich die Strecke aus `SIM_TRACK` (Slot 28) mit dem
 ersten Auto; mit `SIM_MENU=1` (Slot 27) zeigt sie stattdessen den Streckenbildschirm, mit
 `SIM_MENU=2` den Autobildschirm, und prüft das dritte Bild gegen die C-Modelle (2026-10-30:
 beide 0 Pixel Unterschied; der Autobildschirm braucht 0,22 M Takte, 3 ms je Bild). Den
