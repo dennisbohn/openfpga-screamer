@@ -67,8 +67,10 @@ def main():
     print(f"{wav}: {len(got)} frames ({len(got) / RATE:.2f} s); CD track {n}: bytes {a} to {b}, "
           f"its first sound at output frame {m0}")
 
+    w0 = next((j for j, v in enumerate(got) if v != (0, 0)), None)
+    if w0 is None:
+        sys.exit("no sound in the file (the run ended before the track's first sound?)")
     if exact:
-        w0 = next(j for j, v in enumerate(got) if v != (0, 0))
         off = w0 - m0
         cmp = [(j, got[off + j], m[j]) for j in range(len(m)) if 0 <= off + j < len(got)]
         bad = [c for c in cmp if c[1] != c[2]]
