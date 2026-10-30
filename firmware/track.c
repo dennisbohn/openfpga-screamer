@@ -147,8 +147,12 @@ static inline uint32_t now(void)
     __asm__ volatile ("csrr %0, cycle" : "=r"(c));
     return c;
 }
+/* the three worked out here, before the branches after it: the FPU's pipeline takes them side
+   by side, where one after the other each waits for the last (the values stay the same) */
+#define FP_NOW(a, b, c) __asm__ ("" : "+f"(a), "+f"(b), "+f"(c))
 #else
 static inline uint32_t now(void) { return 0; }
+#define FP_NOW(a, b, c) ((void)0)
 #endif
 
 static int32_t rd32(const uint8_t *p) { return *(const int32_t *)p; }
@@ -853,13 +857,14 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         if(pc->obj < 0 || pc->obj >= unr_count) continue;
         float dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch, rad = radius[pc->obj];
         float d2 = dx * dx + dy * dy + dh * dh;
-        if(d2 < nearest) nearest = d2;
-        if(d2 >= REACH2) continue;
         float vf = dx * fx + dy * fy + dh * fh + EYE_BACK, vr = dx * rx + dy * ry + dh * rh;
         float vu = dx * ux + dy * uy + dh * uh;
-        if(vf + rad < NEAR || vf - rad > far_eye) continue;
-        if(vr - rad > half_w * (vf + rad) || vr + rad < -half_w * (vf + rad)) continue;
-        if(vu - rad > up * (vf + rad) || vu + rad < -down * (vf + rad)) continue;
+        FP_NOW(vf, vr, vu);
+        if(d2 < nearest) nearest = d2;
+        /* out of reach or out of view: the tests all at once (| not ||, one branch) */
+        if((d2 >= REACH2) | (vf + rad < NEAR) | (vf - rad > far_eye) |
+           (vr - rad > half_w * (vf + rad)) | (vr + rad < -half_w * (vf + rad)) |
+           (vu - rad > up * (vf + rad)) | (vu + rad < -down * (vf + rad))) continue;
         vis[nv].k = (KEY(d2) + class_key[pc->obj]) * 65536 + i;
         vis[nv].i = i;
         nv++;
@@ -880,13 +885,23 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         st->objects++;
     }
     st->nearest = nearest < 4e18f ? (uint32_t)__builtin_sqrtf(nearest) : 0xFFFFFFFFu;
-    for(int gap = nv / 2; gap > 0; gap /= 2)    /* Shell sort by key and order: far first */
-        for(int i = gap; i < nv; i++) {
-            struct vis t = vis[i];
-            int j = i;
-            for(; j >= gap && vis[j - gap].k > t.k; j -= gap) vis[j] = vis[j - gap];
-            vis[j] = t;
+    /* by key, far first. The list is in the order of i, the keys' low half, and the keys differ:
+       sorted by their high half, keeping that order (two passes of 8 bits, radix), it is in the
+       order of the whole key, as any sort by it has it */
+    static struct vis vis2[MAX_PIECES + MAX_OBJS];
+    for(int pass = 0; pass < 2; pass++) {
+        const int sh = 16 + 8 * pass;
+        const struct vis *from = pass ? vis2 : vis;
+        struct vis *to = pass ? vis : vis2;
+        int at[256] = { 0 };
+        for(int n = 0; n < nv; n++) at[((uint32_t)from[n].k ^ 0x80000000u) >> sh & 255]++;
+        for(int d = 0, s = 0; d < 256; d++) {
+            int c = at[d];
+            at[d] = s;
+            s += c;
         }
+        for(int n = 0; n < nv; n++) to[at[((uint32_t)from[n].k ^ 0x80000000u) >> sh & 255]++] = from[n];
+    }
     uint32_t t_pieces = now();
     st->cyc_cull = t_pieces - t_start;
 #ifdef TRACK_DUMP                               /* the PC renderer (tools/render.sh): the list drawn */
