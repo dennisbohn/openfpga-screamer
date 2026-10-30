@@ -51,9 +51,12 @@ uint32_t gu_draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         /* the material */
         const uint8_t *mat = mlb + rd16(fc + 4);
         int32_t routine = rd32(mat), tw = 0, th = 0;
+        /* 192 (0xcae84, track 5's bridge) takes the face's colour and corners like 128: one
+           colour, no texture record */
+        int flat = routine == 128 || routine == 192;
         if(routine == 224) st->see_through++;   /* through the see-through table (raster.h) */
         struct rs_texture tex;
-        if(routine != 128) {
+        if(!flat) {
             tw = clamp_size(rd32(mat + 8));
             th = clamp_size(rd32(mat + 12));
             /* the frame: n x phase >> 14 of the texture record's n frames (the game's 0xd5980),
@@ -64,7 +67,7 @@ uint32_t gu_draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
             tex.data = mlb + rd32(trec + 8 + 4 * frame);
             tex.width = tw;
             tex.height = th;
-            tex.routine = routine == 64 || routine == 224 ? routine : 16;
+            tex.routine = routine == 64 || routine == 48 ? 64 : routine == 224 ? 224 : 16;    /* 48: as 64 */
         }
 
         /* the corners */
@@ -84,7 +87,7 @@ uint32_t gu_draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         if(!ok) continue;
         st->faces++;
         st->triangles += (uint32_t)(nc - 2);
-        pixels += su_polygon8(fb, clip, v, c, nc, routine == 128 ? 0 : &tex, (uint8_t)(rd16(fc + 2) & 255));
+        pixels += su_polygon8(fb, clip, v, c, nc, flat ? 0 : &tex, (uint8_t)(rd16(fc + 2) & 255));
     }
     return pixels;
 }

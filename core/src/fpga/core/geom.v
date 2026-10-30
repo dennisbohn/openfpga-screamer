@@ -308,7 +308,7 @@ always @* begin
 end
     wire [25:0] ra_sum = ra_base + {{7{ra_off[18]}}, ra_off};
     wire [25:0] rv_sum = rv_base + rv_val;
-    wire        untex = rd_word == 32'd128;
+    wire        untex = rd_word == 32'd128 || rd_word == 32'd192;    // 192 (0xcae84): one colour too
     // (step 29 of a face in one colour reads face + 2: the choice comes from the value just
     // read, so it picks between two sums, not the adder's inputs)
     wire [25:0] rd_a = pc == 6'd29 && untex ? face + 26'd2 : ra_sum;
@@ -515,7 +515,7 @@ always @(posedge clk) begin
             read(6'd33);                        // face + 2
         end else begin
             textured <= 1;
-            cut <= rd_word == 32'd64 || rd_word == 32'd224;
+            cut <= rd_word == 32'd64 || rd_word == 32'd48 || rd_word == 32'd224;   // 48: as 64
             read(6'd30);                        // mat + 8
         end
     end

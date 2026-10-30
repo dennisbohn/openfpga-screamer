@@ -9,6 +9,7 @@
 
 #define SMG_SIZE    16384               /* 64 rows of 256 palette indices */
 #define SMG_RADAR   63                  /* the row the radar's texels pick */
+#define SMG_GLASS   62                  /* routine 192's: no see-through texture of a track uses 48..62 */
 #define MESH_MAX    0x2000
 
 /* where things lie in mem */
@@ -18,6 +19,8 @@
 #define AT_RADAR    0x8000              /* the radar's mesh (0xE0 bytes) */
 #define AT_TEX      0x8400              /* its texture: 4 x 4 texels 63, rows of 256 bytes */
 #define TEX_SIZE    4
+#define AT_GLASS    0x8800              /* routine 192's texture: texels 62, rows of 256 bytes */
+#define AT_GLASS_REC 0x9000             /* its texture record */
 /* its texture record and material: the last 32 bytes of mem */
 
 /* the radar's mesh: one block that is its own object (vertex and texture coordinate offsets
@@ -71,13 +74,13 @@ static const uint8_t *mesh(const uint8_t *gfx, uint32_t size, const char *name, 
    0.75 of its brightness, in the 6-bit values of MAPn.COL (the track file has them times 4),
    squared distances in floats from 22100000 down (0x259ad) as the game; its clamp at 255
    never bites on 6-bit values */
-static void darken(const uint32_t *pal, uint8_t out[256])
+static void darken(const uint32_t *pal, uint8_t out[256], float f)
 {
     static float v[256][3];
     for(int i = 0; i < 256; i++)
         for(int k = 0; k < 3; k++) v[i][k] = (float)((pal[i] >> (16 - 8 * k) & 255) >> 2);
     for(int c = 0; c < 256; c++) {
-        float tr = v[c][0] * 0.75f, tg = v[c][1] * 0.75f, tb = v[c][2] * 0.75f, best = 22100000.0f;
+        float tr = v[c][0] * f, tg = v[c][1] * f, tb = v[c][2] * f, best = 22100000.0f;
         for(int i = 0; i < 256; i++) {
             float er = v[i][0] - tr, eg = v[i][1] - tg, eb = v[i][2] - tb, d = er * er + eg * eg + eb * eb;
             if(d < best) {
@@ -130,6 +133,33 @@ static const uint8_t *radar_mesh(uint8_t *m, uint8_t *tex, uint8_t *end, const u
     return m;
 }
 
+/* Routine 192 (0xcae84; track 5's station): one colour that is not drawn, each pixel under the
+   face taken through the second table 0x25870 builds, 0.6 of its brightness ([0xbcb1c] =
+   0x15cbc + 0x100, the column loop 0xccad0) -- tinted glass. Drawn as a see-through face
+   (routine 224) whose texels all pick the table's row SMG_GLASS: each such material of the
+   track's MLB (the table up to its first texture record) is turned into one over the
+   texture here */
+static void glass(uint8_t *tex, uint8_t *rec, const uint8_t *mlb)
+{
+    for(int y = 0; y < 2 * TEX_SIZE; y++)
+        for(int x = 0; x < 256; x++) tex[256 * y + x] = SMG_GLASS;
+    wr32(rec, 1);                                       /* frames */
+    wr32(rec + 4, SMG_GLASS);
+    wr32(rec + 8, (int32_t)(tex - mlb));                /* frame 0 */
+    uint8_t *m = (uint8_t *)mlb;
+    int32_t first = 0x7FFFFFFF;
+    for(int32_t k = 0; 16 * (k + 1) <= first; k++) {
+        int32_t routine = rd32(m + 16 * k), ro = rd32(m + 16 * k + 4);
+        if(routine == 192) {
+            wr32(m + 16 * k, 224);
+            wr32(m + 16 * k + 4, (int32_t)(rec - mlb));
+            wr32(m + 16 * k + 8, TEX_SIZE);
+            wr32(m + 16 * k + 12, TEX_SIZE);
+        } else if(ro > 0 && ro < first)
+            first = ro;
+    }
+}
+
 int efx_init(const uint8_t *gfx, uint32_t gfx_size, int n, const uint8_t *mlb, const uint32_t *pal,
              uint8_t *mem, uint32_t cap)
 {
@@ -142,7 +172,9 @@ int efx_init(const uint8_t *gfx, uint32_t gfx_size, int n, const uint8_t *mlb, c
     smg_kept = smg;
     int ok = table = entry(gfx, gfx_size, name, smg, SMG_SIZE) == SMG_SIZE;
     if(ok) {
-        darken(pal, smg + SMG_RADAR * 256);
+        darken(pal, smg + SMG_RADAR * 256, 0.75f);
+        darken(pal, smg + SMG_GLASS * 256, 0.6f);
+        glass(mem + AT_GLASS, mem + AT_GLASS_REC, mlb);
         for(uint32_t a = 0; a < SMG_SIZE; a++)          /* nothing blended is drawn now */
             RS_SMG = a << 8 | smg[a];
         rs_smg = smg;                                   /* the C models' copy (raster.h) */
