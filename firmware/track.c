@@ -896,12 +896,13 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         float d2 = dx * dx + dy * dy + dh * dh;
         if(d2 < nearest) nearest = d2;
         if(d2 >= REACH2) continue;
-        /* out of view: the three axes and the tests at once (| not ||, one branch) */
-        float vf = dx * fx + dy * fy + dh * fh + EYE_BACK, vr = dx * rx + dy * ry + dh * rh;
-        float vu = dx * ux + dy * uy + dh * uh;
-        FP_NOW(vf, vr, vu);
-        if((vf + rad < NEAR) | (vf - rad > far_eye) | (vr - rad > half_w * (vf + rad)) |
-           (vr + rad < -half_w * (vf + rad)) | (vu - rad > up * (vf + rad)) | (vu + rad < -down * (vf + rad))) continue;
+        /* behind the eye or past the far plane (more than half of those in reach), then out at a
+           side: each one's tests at once (| not ||, one branch: the FPU answers them side by side) */
+        float vf = dx * fx + dy * fy + dh * fh + EYE_BACK;
+        if((vf + rad < NEAR) | (vf - rad > far_eye)) continue;
+        float vr = dx * rx + dy * ry + dh * rh, vu = dx * ux + dy * uy + dh * uh;
+        if((vr - rad > half_w * (vf + rad)) | (vr + rad < -half_w * (vf + rad)) | (vu - rad > up * (vf + rad)) |
+           (vu + rad < -down * (vf + rad))) continue;
         vis[nv++] = (KEY(d2) + cpiece_key[i]) * 65536 + i;
     }
     for(int k = 0; k < nobj && k < MAX_OBJS; k++) {
