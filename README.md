@@ -80,18 +80,6 @@ tools/package.sh     # the SD card layout in build/sdcard/
 tools/deploy.sh /i   # package and copy to the SD card at /i, with your game files
 ```
 
-[docs/development.md](docs/development.md) covers the build, simulation and tools in detail.
-
-## Documentation
-
-- [docs/architecture.md](docs/architecture.md): how the core is put together
-- [docs/soc.md](docs/soc.md): memory map and registers, the contract between firmware and hardware
-- [docs/memory.md](docs/memory.md): the memory system and its test
-- [docs/original_geometry.md](docs/original_geometry.md),
-  [docs/original_filler.md](docs/original_filler.md): how the original game's renderer
-  behaves, which the hardware reproduces
-- [firmware/README.md](firmware/README.md): the firmware's parts
-
 ## Credits
 
 - [OpenScreamer](https://github.com/ItsDanik/openscreamer) (GPL-3.0): the reference for the
