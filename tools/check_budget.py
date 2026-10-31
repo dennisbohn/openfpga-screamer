@@ -7,7 +7,7 @@ blocks) when the code is changed. This fails the build when an entity listed in
 EXPECTED does not use exactly that many M10K.
 
 The SDRAM, SRAM and PSRAM cram0 pins must take their signals straight from registers in
-the IO cells (docs/speicher.md); otherwise their timing depends on the placement. Quartus
+the IO cells (docs/memory.md); otherwise their timing depends on the placement. Quartus
 ignores a FAST_*_REGISTER assignment it cannot honour with only a warning, so this also
 fails the build when a pin in IO_REGS lacks one of its registers in the pin tables.
 """

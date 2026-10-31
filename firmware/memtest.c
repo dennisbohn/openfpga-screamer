@@ -1,5 +1,5 @@
 /*
- * Memory test of step 2 (docs/speicher.md). A set of tests for a memory given its base
+ * Memory test of step 2 (docs/memory.md). A set of tests for a memory given its base
  * addresses and size (once there were the SRAM and PSRAM cram0 too); the SDRAM gets a few of
  * its own: the clock phase window, code, refresh, the write status, and program.bin, which
  * it asks the APF for only after them (slot.h).
