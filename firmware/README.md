@@ -1,106 +1,79 @@
-# Firmware (Schritt 3: Dreiecke)
+# Firmware
 
-Die Programme für die RISC-V-CPU im Core, in zwei Teilen: `firmware.bin`, der Lader im
-Boot-RAM (`boot.c`: Selbsttests, Speichertest, Prüfung und Start des Programms), und
-`program.bin`, das Programm im SDRAM (`main.c`), das über die Caches läuft. Speicherkarte,
-Register, Startablauf und was die Simulation prüft, stehen in [`docs/soc.md`](../docs/soc.md),
-der Speichertest in [`docs/speicher.md`](../docs/speicher.md).
+The programs for the core's RISC-V CPU, in two parts:
 
-Beim Start löscht die Firmware das Protokoll (`debug.txt`), trägt die Prüfsumme ihres
-eigenen Abbilds ein und prüft die CPU (Ganzzahl-Multiplikation, -Division und
-Schiebebefehle, Fließkomma, CFU). Dann läuft der kurze Speichertest über den SDRAM (eine
-Zehntelsekunde, die ersten und letzten 2 KB), ohne Bild; nur wenn etwas fehlschlägt, bleiben die
-Ergebnisse auf dem Bildschirm stehen. Ohne die Spieldateien zeichnet das Programm
-jedes Bild in den hinteren Puffer: Palette nach der Formel aus `docs/soc.md`, Prüfstreifen in
-den oberen 8 Zeilen, zwei sich drehende Räder aus Dreiecken, die sich überdecken, und ein
-Dreieck, das sich mit dem Steuerkreuz bewegt, dazu Pixel und Takte pro Bild. Die Dreiecke
-zeichnet der Hardware-Rasterizer (`raster.v`); einmal je Lauf zeichnet sein C-Modell `raster.c`
-dieselben Dreiecke ins SDRAM, und die Zeile `raster check` im Protokoll meldet, ob beide
-Bilder Pixel für Pixel gleich sind. Nach drei getauschten Bildern
-meldet sie alle Ergebnisse an `SYS_SIM` (`0x80001FFF`, wenn alles stimmt). Ein Absturz
-(Trap) landet mit `mcause`, `mepc` und `mtval` im Protokoll und unten auf dem Bildschirm.
+- `firmware.bin`, the boot loader in the boot RAM (`boot.c`): self-tests, memory test, checks
+  and starts the program. At most 32 KB; the build fails above that.
+- `program.bin`, the game, in the SDRAM from `0x1300_0000` (`main.c`), running through the
+  CPU's caches. Its header holds the size, a CRC-32 and the entry point.
 
-## Bauen
+The memory map, the registers and the boot sequence are in [`docs/soc.md`](../docs/soc.md),
+the memory system and its test in [`docs/memory.md`](../docs/memory.md).
+
+At start the firmware clears the debug log, writes the checksum of its own image into it and
+tests the CPU (integer multiply, divide and shifts, floating point, the CFU). A short memory
+test of the SDRAM follows; only a failure leaves its results on the screen. Then `program.bin`
+loads the game's files from the data slots and runs the game. Without the game files it draws
+a test scene instead. A crash (trap) ends up in the log with `mcause`, `mepc` and `mtval`.
+
+## Building
 
 ```sh
 tools/fw.sh
 ```
 
-GCC 14 und picolibc aus Debian trixie laufen in Docker (`firmware/docker/Dockerfile`,
-Basis-Image und Paketstand festgenagelt); das Image `screamer-fw:trixie-20261005` baut das
-Skript beim ersten Mal selbst. Ergebnis in `build/firmware/`: `firmware.bin` (höchstens
-32 KB, das Skript bricht sonst ab), `firmware.elf`, `firmware.lst` (Disassembly) und
-`firmware.map`. `firmware.bin` wird nach `build/assets/screamer/Chainy.Screamer/` kopiert,
-`tools/package.sh` bzw. `tools/deploy.sh` bringen es von dort auf die SD-Karte.
+GCC 14 and picolibc from Debian trixie run in Docker (`firmware/docker/Dockerfile`, base image
+and package versions pinned); the script builds the image on first use. The result is in
+`build/firmware/`: `firmware.bin`, `program.bin`, and for each the `.elf`, `.lst`
+(disassembly) and `.map`. Both binaries are copied to `build/assets/screamer/Chainy.Screamer/`;
+`tools/package.sh` and `tools/deploy.sh` take them from there to the SD card.
 
-| Datei | Inhalt |
+## Files
+
+| Files | Content |
 |---|---|
-| `start.S`, `link.ld` | Lader: Sprung bei `0x0`, Trap-Einsprung bei `0x20`, alles im Boot-RAM unterhalb von 24 KB |
-| `boot.c` | Lader: Selbsttests, Speichertest, Prüfung und Start von `program.bin` |
-| `start_prog.S`, `link_prog.ld` | Programm: Kopf (Größe, CRC-32, Einsprung), Start, eigener Trap-Einsprung, im SDRAM ab `0x1300_0000` |
-| `prog_crc.py` | trägt beim Bauen den CRC-32 in den Kopf von `program.bin` ein |
-| `main.c` | Programm: Textur-Szene Bild für Bild (Hardware, einmal gegen `raster.c` geprüft), FPS |
-| `hw.h` | Adressen und Register aus `docs/soc.md`, `rdcycle`, `fixmul` (CFU), Cache-Befehle |
-| `selftest.c` | die drei Selbsttests mit festen Sollwerten |
-| `memtest.c` | der Speichertest (`docs/speicher.md`) |
-| `raster.c` | Rasterizer als C-Modell: Dreiecke mit genauer Pixelregel, Texturen in Fest- und Fließkomma |
-| `texdemo.c` | die Szene (Fahne, Banner, Schild, Leitplanke), Testmuster ohne `textures.bin` |
-| `screen.c` | was Lader und Programm beide zeichnen |
-| `console.c` | Text (8×8-Font) und Rechtecke im Framebuffer, Zahlen ohne `printf` |
-| `dlog.c` | das Protokoll `debug.txt` |
-| `trap.c` | Trap-Handler |
-| `font8x8_basic.h` | Font von [dhepper/font8x8](https://github.com/dhepper/font8x8) (gemeinfrei), unverändert |
+| `start.S`, `link.ld`, `boot.c` | boot loader: jump at `0x0`, trap entry at `0x20`, everything in the boot RAM below 24 KB |
+| `start_prog.S`, `link_prog.ld`, `prog_crc.py` | program: header, start, its own trap entry; the build writes the CRC-32 into the header |
+| `main.c` | program flow: loading, menus, race loop, pause, replay, restart |
+| `hw.h` | addresses and registers from `docs/soc.md`, `rdcycle`, `fixmul` (CFU), cache instructions |
+| `slot.c`, `dat.c`, `crc32.c` | data slots (deferred load), the game's `.DAT` containers, CRC-32 |
+| `setup.c`, `geom.c`, `raster.c`, `blit.c` | C models of the hardware units and their drivers: setup, geometry, rasterizer, blitter. Each model is bit-exact with its Verilog. |
+| `mixer.c` | C model of the audio mixer (`audio.v`) |
+| `track.c`, `track_build.c`, `tb_gfx.c`, `tb_hud.c`, `tb_mmp.c`, `tb_spl.c` | the track: drawing it, and building its image from the game's own files |
+| `efx.c` | effects the game draws through lookup tables: glass, shadows, smoke |
+| `drive.c`, `car.c` | the player's car: engine, gearbox, brakes, steering, walls, crashes, cameras |
+| `opp.c`, `scenery.c`, `ghost.c` | opponents, props and moving scenery, the time-attack ghost |
+| `champ.c`, `save.c` | the championship, saved data (nonvolatile data slots) |
+| `menu.c`, `hud.c`, `intro.c` | menus, the race screen, the intro |
+| `sound.c`, `speech.c`, `music.c` | sound effects, the race commentary, the music streamed from the CD image |
+| `console.c`, `screen.c`, `dlog.c`, `selftest.c`, `memtest.c`, `trap.c`, `texdemo.c` | text drawing, the test band, the debug log, self-tests, the memory test, the trap handler, the test scene |
+| `font8x8_basic.h` | font from [dhepper/font8x8](https://github.com/dhepper/font8x8) (public domain), unchanged |
 
-## Protokoll vom Pocket holen
+## Getting the debug log from the Pocket
 
-Der Pocket speichert den Protokollbereich, wenn man den Core im Menü beendet („Quit“) oder
-ausschaltet, auch nach einem Absturz der CPU. Danach den Pocket per USB als Laufwerk
-anschließen (oder die SD-Karte einstecken) und `/Saves/screamer/Chainy.Screamer/debug.txt`
-öffnen. Die alte `debug.txt` lädt der Pocket beim Start zwar in den Bereich, der Core
-ignoriert das aber: Nach dem Start des Cores stammt der Inhalt von diesem Lauf (besteht die
-Datei nur aus Nullen, ist die CPU gar nicht losgelaufen). Ausnahme: Lädt man die Firmware im
-Menü neu, ist das nur ein Reset, und das Protokoll des vorigen Laufs bleibt stehen, bis die
-neue Firmware es löscht; welche Firmware es geschrieben hat, zeigt die Prüfsumme in der
-zweiten Zeile. Beispiel aus der Simulation (gekürzt; auf dem Pocket steht „the whole memory"
-statt der Fenster, und die Phasenkarte hat 80 Zeichen):
+The Pocket saves the log area when you quit the core from its menu or switch it off, also
+after a CPU crash. Connect the Pocket by USB as a drive (or insert the SD card) and open
+`/Saves/screamer/Chainy.Screamer/debug.txt`, or run `tools/pocketlog.py` for a short table. The
+old `debug.txt` is loaded into the area at start but the core ignores it: after the core has
+started, the content is from this run (a file of only zeros means the CPU never ran). When you
+only reload the firmware from the menu, that is a reset, and the previous run's log stays until
+the new firmware clears it; the checksum in the second line shows which firmware wrote it.
 
-```
-Screamer Pocket step 2, frames drawn: 6
-firmware.bin: 19968 bytes, crc32 cc055ef4
-SYS_ID=53435231 ok
-selftest integer: ok
-selftest float: ok
-selftest cfu: ok
-memtest: SYS_FLAGS 00000001, MEM_STATUS 00000013, bridge words 4992
-SDRAM slot: ok, cycles 474618
-phase map ####
-phase: good from step 0, 4 steps of 168 ps, now at step 0
-SDRAM phase: ok, cycles 37292
-SDRAM: simulation, windows of 2048 bytes at the start and the end
-SDRAM data bus: ok, cycles 14085
-...
-SDRAM line read: row hit 30 cycles, row miss 34; read 63 MB/s, write 95 MB/s
-...
-memtest: errors SDRAM 0
-stack used 624 bytes
-SYS_SIM=80001fff
-```
-
-Die Phasenkarte zeigt je Schritt von 168 ps ein `#` (SDRAM arbeitet) oder `.`; die Firmware
-stellt die Mitte der längsten Folge ein. Ein fehlgeschlagener Speichertest nennt je Fehler
-Adresse, Soll, Ist und zweimal nachgelesen (höchstens acht Zeilen je Speicher), zum Beispiel
-`  bytes @10000080 want 5aa5c35e got 5aa55e3c 5aa55e3c 5aa55e3c`, und am Ende der Testzeile
-„FAIL, errors n".
-
-Die erste Zeile schreibt die Firmware nach jedem Bild neu: Steht der Zähler, hing sie dort.
-Die Prüfsumme muss die sein, die `tools/fw.sh` beim Bauen ausgibt, sonst kam nicht genau
-diese Datei im Boot-RAM an. Ein fehlgeschlagener Test nennt Prüfung, Ist- und Sollwert, ein
-Absturz sieht so aus:
+The first line is rewritten after every frame: if its counter stands still, the firmware hung
+there. The checksum must be the one `tools/fw.sh` printed, otherwise a different file reached
+the boot RAM. A failed test names the check, the actual and the expected value. A crash looks
+like this:
 
 ```
 TRAP mcause=00000005 load access fault
      mepc=00000178 mtval=f0000000 ra=00000174 sp=00003f60
 ```
 
-`mepc` ist die Adresse des Befehls, der den Trap ausgelöst hat; in `build/firmware/firmware.lst`
-nachschlagen (dieselbe Firmware-Version vorausgesetzt).
+`mepc` is the address of the instruction that trapped; look it up in
+`build/firmware/firmware.lst` (for the same firmware version).
+
+A failed memory test lists each error with address, expected value, actual value and two
+re-reads (at most eight lines per memory), for example
+`  bytes @10000080 want 5aa5c35e got 5aa55e3c 5aa55e3c 5aa55e3c`, and ends the test line with
+"FAIL, errors n". The phase map shows one `#` per 168 ps step where the SDRAM works and `.`
+where it does not; the firmware picks the middle of the longest run.
