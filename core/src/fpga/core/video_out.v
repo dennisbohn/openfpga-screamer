@@ -10,7 +10,7 @@
 //
 // Video timing at the 12.288 MHz pixel clock: 480 clocks x 512 lines = 50 Hz, 320 x 200
 // of it visible. 50 Hz is the game's own step: its physics never takes less than 20 ms a
-// frame (docs/architektur.md).
+// frame (docs/architecture.md).
 //
 
 module video_out (

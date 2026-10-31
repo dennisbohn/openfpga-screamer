@@ -42,8 +42,8 @@ def elapsed(path):
 
 
 def de(n, sign=False):
-    """an integer with German thousands dots"""
-    return (f"{n:+,}" if sign else f"{n:,}").replace(",", ".")
+    """an integer with thousands separators"""
+    return (f"{n:+,}" if sign else f"{n:,}")
 
 
 def delta(now, before, fmt=None):
@@ -55,7 +55,7 @@ def delta(now, before, fmt=None):
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     nodes = mb.read_report(os.path.join(OUT, "ap_core.fit.rpt"))
-    units = {c[0]: c[3][0] for c in mb.components(nodes) if c[2]}
+    units = {c[0]: c[2] for c in mb.components(nodes)}
     top = nodes[mb.TOP]
     now = {"alm": round(top[0]), "m10k": top[1], "dsp": top[2], "units": units,
            "slack": slacks(os.path.join(OUT, "ap_core.sta.summary")),
