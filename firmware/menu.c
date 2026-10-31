@@ -61,7 +61,6 @@
 #define WORDS       37              /* MENU.TXT's lines 0 .. 36: the pages' words */
 #define PAGES       7               /* the game's pages (0x2de4) */
 #define LINE_NEW_TRACK 53           /* NEW TRACK AVAILABLE */
-#define LINE_NETWORK 55             /* NETWORK NOT FOUND */
 #define SPR_LOGO    14              /* MENUL.SPR: the logos 14 and 15 (0x2df38) */
 #define FONT_MSG    0
 #define LINE_ENTER  56              /* PRESS ENTER TO CONTINUE */
@@ -113,20 +112,21 @@ static const struct blit_font *font;
 static uint32_t nimg, nfont, graf_len, pal[4][256];     /* the tracks', the cars', the pages', loading */
 static char title[2][32], name[MENU_TRACKS][32], gears[2][32], label[3][32], loading[32], best[2][32];
 static char name_title[32];
-static char words[WORDS][16], network_text[32], enter_text[32], new_track[32], champ_text[CHAMP_LINES][24];
+static char words[WORDS][16], enter_text[32], new_track[32], champ_text[CHAMP_LINES][24];
 static int on, ncars, cars_on, pages_on, pick, way, block[CHAMP_BLOCKS + 1], idle;   /* on: the screen */
 static float turn[2] = { 1.5707964f, 1.5707964f }, cam_x, from_x, to_x, slide;
 
 /* The game's pages (0x2de4, items of 16 bytes: MENU.TXT's line, id, value, highest value; an
    option, id 1234, shows its line + its value), by the game's numbers: 0 the main menu (NORMAL
-   GAME 0, CHAMPIONSHIP 1, SPECIAL MODES 2, NETWORK GAME 3, OPTIONS 4), 1 the options with the
+   GAME 0, CHAMPIONSHIP 1, SPECIAL MODES 2, OPTIONS 4; the game's NETWORK GAME 3 is left out: the
+   Pocket has no network, it could only say NETWORK NOT FOUND), 1 the options with the
    game's values at the start (the difficulty, LAP NUMBER, SPEECH, MUSIC; VIEW RECORDS 21). The
    game's first option, DETAIL, is left out: the core always draws everything, as far as HI
    reaches; CHOICE.DAT keeps it at HI (2). 3 time attack's NEW 24 and RESUME 25, 4 the special modes (TIME ATTACK 28, CONE CARNAGE
    29, SLALOM 30), 5 the championship's NEW 26 and RESUME 27, 6 VIEW RECORDS' six tracks (id 31,
    the track 0 .. 5 as the highest value) */
 static struct item { int line, id, value, max; } items[PAGES][6] = {
-    [0] = { { 0, 0, 0, 0 }, { 1, 1, 0, 0 }, { 2, 2, 0, 0 }, { 3, 3, 0, 0 }, { 4, 4, 0, 0 } },
+    [0] = { { 0, 0, 0, 0 }, { 1, 1, 0, 0 }, { 2, 2, 0, 0 }, { 4, 4, 0, 0 } },
     [1] = { { 8, OPTION, 1, 2 }, { 13, OPTION, 0, 3 }, { 17, OPTION, 1, 1 }, { 19, OPTION, 1, 1 },
             { 21, 21, 0, 0 } },
     [3] = { { 24, 24, 0, 0 }, { 25, 25, 0, 0 } },
@@ -134,7 +134,7 @@ static struct item { int line, id, value, max; } items[PAGES][6] = {
     [5] = { { 26, 26, 0, 0 }, { 27, 27, 0, 0 } },
     [6] = { { 31, 31, 0, 0 }, { 32, 31, 0, 1 }, { 33, 31, 0, 2 }, { 34, 31, 0, 3 }, { 35, 31, 0, 4 },
             { 36, 31, 0, 5 } } };
-static const int page_lines[PAGES] = { [0] = 5, [1] = 5, [3] = 2, [4] = 3, [5] = 2, [6] = 6 };
+static const int page_lines[PAGES] = { [0] = 4, [1] = 5, [3] = 2, [4] = 3, [5] = 2, [6] = 6 };
 static int mode = CAR_NORMAL;           /* the game mode the last game was started in (0x1d25c) */
 static const int laps[4] = { 3, 5, 10, 25 };            /* 0x21e0 + 1 */
 
@@ -151,7 +151,7 @@ static const int16_t fly[8][5] = {
    its place now (x left, y up, z to the camera, as the game's) and its heading (the name's
    ring; turned about y after x) */
 static struct letter { int line, code; float t[3], s[3], ax, ay, p, a, pos[3], h; } let[LETTERS];
-static int nlet, page, shown, sel[PAGES], style, turning, leaving, network;    /* shown: the letters' page */
+static int nlet, page, shown, sel[PAGES], style, turning, leaving;    /* shown: the letters' page */
 static float wave, logo[2], cam_z = PAGE_CAM_Z, back_f, roll;
 static uint32_t ticks;                                  /* 100 a second, for the blinking */
 static int rec_track, rec_sel;          /* VIEW RECORDS: the track (0x20988), the total chosen (0x2098c) */
@@ -318,7 +318,6 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
     for(int k = 0; k < 2; k++) ok &= text_line(scratch, tn, LINE_GEARS + k, gears[k], sizeof gears[k]);
     for(int k = 0; k < 3; k++) ok &= text_line(scratch, tn, LINE_LABELS + k, label[k], sizeof label[k]);
     for(int k = 0; k < WORDS; k++) ok &= text_line(scratch, tn, k, words[k], sizeof words[k]);
-    ok &= text_line(scratch, tn, LINE_NETWORK, network_text, sizeof network_text);
     ok &= text_line(scratch, tn, LINE_NEW_TRACK, new_track, sizeof new_track);
     ok &= text_line(scratch, tn, LINE_ENTER, enter_text, sizeof enter_text);
     for(int k = 0; k < 2; k++) ok &= text_line(scratch, tn, LINE_BEST + k, best[k], sizeof best[k]);
@@ -466,7 +465,7 @@ void menu_enter(int screen, int n)
     if(pages_on) {                              /* 0x29ea0: the logos 400 and 800 left of their places */
         if(n >= 1 && n <= PAGES && page_lines[n - 1]) page = n - 1;
         page_build(1);
-        turning = leaving = network = page_idle = idle_out = 0;
+        turning = leaving = page_idle = idle_out = 0;
         cam_z = PAGE_CAM_Z;
         roll = 0.0f;
         logo[0] = (float)((PIC_W - (int)img[SPR_LOGO + 1].w) / 2 - 400);
@@ -542,11 +541,9 @@ static int page_step(uint32_t press)
     if(idle_out) return MENU_IDLE;
     if((press & KEY_UP) && sel[page] > 0) {     /* no wrap (0x2848e) */
         sel[page]--;
-        network = 0;
         snd_play(SND_MENU_LINE);
     } else if((press & KEY_DOWN) && sel[page] < page_lines[page] - 1) {
         sel[page]++;
-        network = 0;
         snd_play(SND_MENU_LINE);
     } else if(it->id == OPTION && (press & (KEY_LEFT | KEY_RIGHT | KEY_B | KEY_START))) {
         if(landed()) {                          /* 0x297d4, the game's ENTER: the next value */
@@ -573,8 +570,7 @@ static int page_step(uint32_t press)
             snd_play(SND_MENU_GAME);
             return id == 31 ? MENU_RECORDS + it->max + 1 : mode == CAR_CHAMP ? id + 1 : 1;
         }
-        if(id == 3) network = 1;                /* the game without a network (0x28d78), silent */
-        else snd_play(SND_MENU_PAGE);
+        snd_play(SND_MENU_PAGE);
         int to = id == 1 ? 5 : id == 2 ? 4 : id == 4 ? 1 : id == 28 ? 3 : id == 21 ? 6 : -1;
         if(to >= 0) {
             page = to;
@@ -919,13 +915,12 @@ void menu_text(struct blit_list *l)
     if(on == MENU_RECORDS_SCREEN) records_text(l);
     if(on == MENU_NAME_SCREEN) name_text(l);
     if(on == MENU_CHAMP_SCREEN || on == MENU_RECORDS_SCREEN || on == MENU_NAME_SCREEN) return;
-    if(pages_on) {          /* the logos (0x2df38), off the screen not drawn; NETWORK NOT FOUND blinking */
+    if(pages_on) {          /* the logos (0x2df38), off the screen not drawn */
         for(int k = 0; k < 2; k++) {
             const struct blit_image *s = &img[SPR_LOGO + 1 - k];
             int x = (int)(logo[k] + (k ? 0.0f : 4.0f));
             if(x + s->x + (int)s->w > 0) sprite(l, x, k ? 0x10 : 0, SPR_LOGO + 1 - (uint32_t)k);
         }
-        if(network && (ticks & 0x7F) < 0x48) centred(l, 0xBE, network_text, FONT_MSG);
         return;
     }
     centred(l, 2, title[cars_on], FONT_TITLE);

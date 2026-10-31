@@ -112,7 +112,7 @@ void menu_enter(int screen, int n);
    NORMAL GAME, time attack's NEW and RESUME (ghost_resume, ghost.h), CONE CARNAGE and SLALOM: 1,
    the championship's NEW MENU_CHAMP_NEW and RESUME MENU_CHAMP_RESUME (SND_MENU_GAME, menu_mode()
    the game's mode), from then on the camera pulls back and rolls (0x293e8) while the caller fades
-   out at 2 a second, the keys not taken. NETWORK GAME shows the game's NETWORK NOT FOUND; VIEW
+   out at 2 a second, the keys not taken (the game's NETWORK GAME is left out). VIEW
    RECORDS opens the page of the six tracks (SND_MENU_PAGE; A or SELECT there back to the
    options), a track there leaves as a game does: MENU_RECORDS + the track. 30 s on the main
    menu without a key: MENU_IDLE, the caller fades out (the intro next). The championship's
