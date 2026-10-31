@@ -49,8 +49,8 @@ static const float far_depth[3] = { 27808.0f, 27808.0f, 43808.0f };     /* LOW, 
    128 / (far - 128) (0xd7837, ds:0x829b0 = far - 128, 0x8bad6). So the eye is EYE_BACK
    behind the camera along the view: the near plane through the camera (depth 128 from the
    eye), the scale 128 at the eye. The camera itself stays the origin of the view's z, the
-   reach, the drawing order (the places less the camera, 0x8ab8e) and the faces' eye (0x834d6:
-   the camera in the block's frame, from those places). The eye line 65 % down the view, in
+   reach, the drawing order (the places less the camera, 0x8ab8e) and the faces' row (0x834d6:
+   the camera in the block's frame, from those places; face_eye). The eye line 65 % down the view, in
    whole lines (0x19cbe: 0x4c610(320, h, h x 0.65 cut by 0x4d7b4): 130 of 200, 85 of the
    cockpit's 132) */
 #define NEAR        128.0f
@@ -763,20 +763,26 @@ void track_view(const struct rs_clip *clip, struct su_view *v)
 #define MAX_OBJS    64
 static int32_t vis[MAX_PIECES + MAX_OBJS];
 
-/* The eye of a block as the game takes it for its faces (0x834d6..0x83547): the eye in the
-   block's frame (x, y, z) plus the block's middle, times 1.2 (imul 0x13333, sar 16; unscaled
-   if that overflows 32 bits on any axis). It picks the face row (0x8a598): 8 more when it is
-   below the block's x-z plane, then the 45-degree sector round its y axis, on a diagonal the
-   row next to the x axis; and it is the eye of the normal test (0x835a0 pops it into the
-   test's operands). Sets g->row and g->e (8 fraction bits). */
+/* The faces of a block as the game takes them (0x834d6..0x83547): the camera in the block's
+   frame (x, y, z) plus the block's middle picks the face row (0x8a598; the game scales that
+   point by 1.2, imul 0x13333, which leaves the row as it is): 8 more when it is below the
+   block's x-z plane, then the 45-degree sector round its y axis, on a diagonal the row next to
+   the x axis. The game's normal test (0x835a0) takes the same point, but its polygon filler
+   (0xd55ff: one edge walks the corners forwards, the other backwards, a span only where the
+   first is right of the second, 0xd5969, 0xd59eb) draws nothing of a face whose corners run
+   the other way round on screen: one turned away from the lens's eye, EYE_BACK behind the
+   camera. With that point alone a car's nose showed through its front tyre on the car screen
+   (AAUTO00 fauto). So the normal test here takes the lens's eye; the faces it sees and the
+   point leaves out (the game draws neither) changed no pixel in the frames checked. Sets
+   g->row and g->e (8 fraction bits); takes g->m (its row f: the view's forward in the
+   block's frame). */
 static void face_eye(const uint8_t *blk, float x, float y, float z, struct gu_piece *g)
 {
+    const float e[3] = { x, y, z };
     float p[3] = { x + (float)rd16(blk + 4), y + (float)rd16(blk + 6), z + (float)rd16(blk + 8) };
-    /* (all comparisons first, with | and without branches: the FPU answers them side by side,
+    for(int i = 0; i < 3; i++) g->e[i] = (int32_t)((e[i] - (float)g->m[6 + i] * (EYE_BACK / 65536.0f)) * 256.0f);
+    /* (all comparisons first, without branches: the FPU answers them side by side,
        where a branch on each would wait for it) */
-    int big = 0;
-    for(int i = 0; i < 3; i++) big |= (p[i] * 78643.0f >= 2147483648.0f) | (p[i] * 78643.0f < -2147483648.0f);
-    for(int i = 0; i < 3; i++) g->e[i] = (int32_t)((big ? p[i] : p[i] * (78643.0f / 65536.0f)) * 256.0f);
     int below = p[1] < 0.0f, xpos = p[0] >= 0.0f, zpos = p[2] >= 0.0f, zneg = p[2] < 0.0f;
     int c0 = p[2] > p[0], c2 = -p[2] <= p[0], c4 = -p[2] > -p[0], c6 = p[2] <= -p[0];
     int row = xpos ? (zpos ? !c0 : 2 + !c2) : (zneg ? 4 + !c4 : 6 + !c6);
@@ -784,7 +790,7 @@ static void face_eye(const uint8_t *blk, float x, float y, float z, struct gu_pi
 }
 
 /* A block placed at o with m (world from local) as a piece for the geometry unit: its place in
-   the view from the eye (EYE_BACK further along forward), its faces' eye the camera c */
+   the view from the eye (EYE_BACK further along forward), its faces' row from the camera c */
 static void block_piece(const float c[3], const float f[3], const float r[3], const float u[3],
                         const float m[9], const float o[3], const uint8_t *blk, struct gu_piece *g)
 {
@@ -1063,7 +1069,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         for(int k = 0; k < 9; k++) g.m[k] = (int32_t)(m[k] * 65536.0f);
         for(int k = 0; k < 3; k++) g.t[k] = (int32_t)(o[k] * 256.0f);
 
-        /* the eye in the piece's frame picks the row and tells the faces turned away */
+        /* the camera in the piece's frame picks the row, the eye tells the faces turned away */
         face_eye(g.blk, -dx * ca - dy * sa, -dh, dx * sa - dy * ca, &g);
         st->pieces++;
         uint32_t t0 = now();
