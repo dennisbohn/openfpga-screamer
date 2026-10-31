@@ -3,10 +3,10 @@
 An [openFPGA](https://www.analogue.co/developer) core that runs *Screamer* (Graffiti / Virgin
 Interactive, 1995, MS-DOS) on the Analogue Pocket.
 
-It is not an emulator of a PC. The game's logic runs as C firmware on a RISC-V soft core
-(VexRiscv, 74.25 MHz); the 3D work is done by dedicated hardware units: geometry, triangle
-setup, rasterizer, blitter and an audio mixer. The core reads the **unchanged original game
-files** from the SD card. No game data is part of this repository or of its releases.
+The game's logic runs as C firmware on a RISC-V soft core (VexRiscv, 74.25 MHz), and the 3D
+work is done by dedicated hardware units: geometry, triangle setup, rasterizer, blitter and an
+audio mixer. The core reads the **unchanged original game files** from the SD card. No game
+data is part of this repository or of its releases.
 
 ## Features
 
@@ -21,29 +21,32 @@ files** from the SD card. No game data is part of this repository or of its rele
 
 Not supported: network play (the menu entry is left out), the link port.
 
-## What you need
-
-- An Analogue Pocket (firmware 1.1 or newer)
-- Your own copy of the game, for example the GOG release. The core needs these files, in the
-  game's own folders:
-
-  | From the game folder | Files |
-  |---|---|
-  | `GFX/` | `GAME.DAT`, `GRAF.DAT`, `MENU.DAT`, `MAP1H.DAT` ... `MAP6H.DAT` |
-  | `DATA/` | `GEN.DAT`, `LOCAL.DAT`, `SOUND.DAT`, `MAP1.DAT` ... `MAP6.DAT` |
-  | top level | `SCREAM.gog` and `SCREAM.DAT` (the CD image and its cue sheet, for the music) |
-
 ## Installation
+
+You need an Analogue Pocket (firmware 1.1 or newer) and your own copy of the game.
 
 1. Copy the contents of the release archive to the root of the Pocket's SD card. It adds
    `Cores/Chainy.Screamer/`, `Platforms/` and `Assets/screamer/Chainy.Screamer/`.
-2. Copy the game files from the table above, with their folders, to
-   `Assets/screamer/common/` on the SD card, so that for example
-   `Assets/screamer/common/GFX/GAME.DAT` exists.
+2. Copy these game files, keeping their folders, to `Assets/screamer/common/` on the SD card,
+   so that for example `Assets/screamer/common/GFX/GAME.DAT` exists:
+
+   | From the game folder | Files |
+   |---|---|
+   | `GFX/` | `GAME.DAT`, `GRAF.DAT`, `MENU.DAT`, `MAP1H.DAT` ... `MAP6H.DAT` |
+   | `DATA/` | `GEN.DAT`, `LOCAL.DAT`, `SOUND.DAT`, `MAP1.DAT` ... `MAP6.DAT` |
+   | top level | `SCREAM.gog` and `SCREAM.DAT` (the CD image and its cue sheet, for the music) |
+
 3. Start *Screamer* from the Pocket's core list.
 
-Saves and the debug log go to `Saves/screamer/Chainy.Screamer/` (`debug.txt` helps when
-something goes wrong; the Pocket writes it when the core is quit).
+Saves and the debug log go to `Saves/screamer/Chainy.Screamer/`. `debug.txt` helps when
+something goes wrong; the Pocket writes it when the core is quit.
+
+### The GOG version
+
+So far the core has only been tested with the GOG release, so that is what I'd use. Its
+install folder already has everything from the table above: the `GFX` and `DATA` folders, and
+`SCREAM.gog` and `SCREAM.DAT` next to them. Copy those files as they are, don't convert or
+rename anything. Other releases might work if their files are the same, but I haven't tried.
 
 ## Controls
 
