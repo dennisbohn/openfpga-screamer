@@ -1,6 +1,6 @@
 //
 // One dynamic phase shift step of a PLL output counter at a time (Cyclone V altera_pll,
-// pll_subtype "DPS"; docs/speicher.md)
+// pll_subtype "DPS"; docs/memory.md)
 //
 // A step moves the phase by one eighth of a VCO period (168 ps for pll_sdram's 742.5 MHz
 // VCO). cntsel and updn are set first, phase_en is held for 4 scan clocks, then the PLL

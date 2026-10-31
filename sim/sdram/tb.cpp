@@ -1,4 +1,4 @@
-// Random test of the SDRAM front end and controller (docs/speicher.md): sdram_port +
+// Random test of the SDRAM front end and controller (docs/memory.md): sdram_port +
 // sdram + the SDRAM model, driven by bus models that follow VexRiscv's cache-bus
 // protocol, a bridge, random CPU resets and reinit pulses.
 //

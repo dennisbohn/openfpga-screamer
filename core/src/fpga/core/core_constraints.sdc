@@ -12,7 +12,7 @@ set_clock_groups -asynchronous \
  -group { ic|mp1|mf_pllbase_inst|altera_pll_i|general[3].gpll~PLL_OUTPUT_COUNTER|divclk }
 
 #
-# SDRAM (docs/speicher.md). dram_clk is the SDRAM PLL's output (pll_sd) forwarded through a
+# SDRAM (docs/memory.md). dram_clk is the SDRAM PLL's output (pll_sd) forwarded through a
 # DDIO register. clk_74a, that PLL output and dram_clk_pin are one synchronous domain:
 # never put them into separate asynchronous groups above, or every SDRAM IO check below
 # disappears without a warning (tools/sta_sdram.tcl fails the build then).

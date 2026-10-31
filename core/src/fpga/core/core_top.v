@@ -261,7 +261,7 @@ assign port_tran_sd = 1'bz;
 assign port_tran_sd_dir = 1'b0;     // SD is input and not used
 
 // tie off the rest of the pins we are not using (SDRAM, SRAM and cram0: see the CPU system)
-// cram0, cram1 and the SRAM are not used: sounds go into the SDRAM (docs/speicher.md)
+// cram0, cram1 and the SRAM are not used: sounds go into the SDRAM (docs/memory.md)
 assign cram0_a = 'h0;
 assign cram0_dq = {16{1'bZ}};
 assign cram0_clk = 0;
@@ -495,7 +495,7 @@ core_bridge_cmd icb (
 // the CPU system (docs/soc.md) and the video: the CPU draws into the back one of two
 // 320x200 8-bit framebuffers in block RAM, each with its own palette; video_out shows
 // the front one and swaps them in the vertical blanking when the CPU asks. The CPU
-// system also drives the SDRAM, the SRAM and PSRAM cram0 (docs/speicher.md).
+// system also drives the SDRAM, the SRAM and PSRAM cram0 (docs/memory.md).
 // Everything but the video runs on clk_74a.
 // ~12,288,000 hz pixel clock, 60 hz
 

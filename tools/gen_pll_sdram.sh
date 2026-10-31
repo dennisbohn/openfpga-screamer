@@ -1,6 +1,6 @@
 #!/bin/sh
 # Generate the SDRAM clock PLL with Intel's ip-generate, in the Quartus image tools/build.sh
-# uses (docs/speicher.md): integer mode, 74.25 MHz in and out (VCO 742.5 MHz), 10 ns phase
+# uses (docs/memory.md): integer mode, 74.25 MHz in and out (VCO 742.5 MHz), 10 ns phase
 # asked for (9932 ps = 265.5 degrees come out), dynamic phase shift ports, locked output.
 # Writes core/src/fpga/core/pll_sdram/ and core/src/fpga/core/pll_sdram.qip.
 # Usage: tools/gen_pll_sdram.sh

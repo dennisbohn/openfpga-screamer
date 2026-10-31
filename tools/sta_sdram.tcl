@@ -1,4 +1,4 @@
-# Check the SDRAM IO timing of the compiled project in every corner (docs/speicher.md).
+# Check the SDRAM IO timing of the compiled project in every corner (docs/memory.md).
 # Run in core/src/fpga after the compile: quartus_sta -t sta_sdram.tcl
 #
 # The four transfers between clk_74a and dram_clk_pin (output setup and hold, read setup

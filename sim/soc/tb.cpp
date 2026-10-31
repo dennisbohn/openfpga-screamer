@@ -1,5 +1,5 @@
 // soc testbench: the CPU system with its firmware and a model of the SDRAM, loaded the way
-// the Pocket loads it, checked the way docs/soc.md and docs/speicher.md describe.
+// the Pocket loads it, checked the way docs/soc.md and docs/memory.md describe.
 //
 // Usage: Vsoc_system <firmware.bin> <out prefix> [timeout in frames, default 80]
 //                    [expected SYS_SIM in hex, default 80001FFF]

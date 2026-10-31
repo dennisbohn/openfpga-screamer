@@ -1,6 +1,6 @@
 //
 // SDRAM controller for the Pocket's AS4C32M16MSA (64 MB, 16 bit) on clk_74a
-// (docs/speicher.md)
+// (docs/memory.md)
 //
 // One job at a time: a read of one 32-bit word or of a 32-byte line (8 words), or a
 // write of one 32-bit word with a byte mask. CL2, burst length 2, single-location writes,

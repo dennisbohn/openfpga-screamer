@@ -1,6 +1,6 @@
 //
 // The SDRAM's front end: a command register per CPU port, the bridge write buffer, the
-// bridge read register and the arbiter in front of sdram.v (docs/speicher.md)
+// bridge read register and the arbiter in front of sdram.v (docs/memory.md)
 //
 // iBus and dBus speak VexRiscv's native cache-bus protocol, limited to what soc.v sends
 // here: iBus lines, dBus line reads, single reads and writes; the line port (texture,

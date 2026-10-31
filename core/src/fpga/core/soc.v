@@ -1,7 +1,7 @@
 //
 // The CPU system (docs/soc.md): VexRiscv, 32 KB boot RAM, registers, the framebuffer
 // drawing port, the 4 KB debug log, a CFU, and since step 2 the SDRAM, SRAM and PSRAM
-// cram0 controllers (docs/speicher.md); the 3D units, the blitter and the sound mixer
+// cram0 controllers (docs/memory.md); the 3D units, the blitter and the sound mixer
 //
 // One clock for everything (clk_74a). The CPU is held in reset while reset_n is low; the
 // APF loads the firmware data slot into the boot RAM before it releases reset. The
@@ -263,7 +263,7 @@ always @(posedge clk) begin
 end
 
 //
-// SDRAM: controller and front end (docs/speicher.md)
+// SDRAM: controller and front end (docs/memory.md)
 //
     wire        sdp_ib_cmd_valid, sdp_ib_cmd_ready;
     wire        sdp_ib_rsp_valid, sdp_ib_rsp_error;

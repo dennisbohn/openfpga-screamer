@@ -764,7 +764,7 @@ set_global_assignment -name SDC_FILE core/core_constraints.sdc
 set_global_assignment -name SIGNALTAP_FILE core/stp1.stp
 set_global_assignment -name QIP_FILE core/mf_pllbase.qip
 
-# IO registers for the SDRAM (docs/speicher.md; tools/check_budget.py
+# IO registers for the SDRAM (docs/memory.md; tools/check_budget.py
 # checks in the fit report that they were placed in the IO cells)
 set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_a[*]
 set_instance_assignment -name FAST_OUTPUT_REGISTER ON -to dram_ba[*]

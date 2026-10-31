@@ -1,5 +1,5 @@
 #!/bin/sh
-# Negative tests of the memory test (docs/speicher.md): sim/soc with one fault built into a
+# Negative tests of the memory test (docs/memory.md): sim/soc with one fault built into a
 # memory model per run. The memory test must report exactly the tests named below, no
 # more and no fewer; tb.cpp compares SYS_SIM and checks that the log reports a failure.
 # The runs go in parallel, each with its own Verilator build.

@@ -1,7 +1,7 @@
 //
 // Simulation top for the SDRAM random test: sdram_port + sdram + the SDRAM model, with
 // the CPU-side ports, the bridge and the job and pin signals brought out for the
-// testbench's bus models and checks (docs/speicher.md)
+// testbench's bus models and checks (docs/memory.md)
 //
 
 module sdram_system (
