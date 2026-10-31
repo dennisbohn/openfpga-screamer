@@ -609,7 +609,7 @@ int memtest_rows(char rows[][41], uint8_t fail[])
         int b = mems[i].first_bit;
         p = fmt_str(rows[n], names[i]);
         if(i == M_SDRAM && !(results & 1u << B_SD_READY)) {
-            fmt_str(p, " nicht bereit");
+            fmt_str(p, " not ready");
             fail[n++] = 1;
             continue;
         }
@@ -624,7 +624,7 @@ int memtest_rows(char rows[][41], uint8_t fail[])
             p = fmt_str(p, slot_state == 1 ? "ok" : "FEHLER");
             p = fmt_str(p, " Phase ");
             p = fmt_udec(p, (uint32_t)phase_len);
-            fmt_udec(fmt_str(p, "/80, Schritt "), (uint32_t)phase_centre);
+            fmt_udec(fmt_str(p, "/80, step "), (uint32_t)phase_centre);
             fail[n++] = !((results >> B_SD_SLOT) & (results >> B_SD_PHASE) & 1);
             p = ok_word(fmt_str(rows[n], "     "), " Code", B_SD_CODE);
             p = ok_word(p, "Refresh", B_SD_REFRESH);
