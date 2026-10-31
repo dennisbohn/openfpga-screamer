@@ -25,3 +25,6 @@ __pycache__/
 
 # Written by apf/build_id_gen.tcl before every build (build date and time)
 core/src/fpga/apf/build_id.mif
+
+# Local assistant state
+.claude/
