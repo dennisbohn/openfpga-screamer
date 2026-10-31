@@ -51,7 +51,7 @@ passes before it is read, which absorbs any wait.
 | Map grid | `MAPn.MMP` | 100-240 KB |
 | Sky | `MAPn.BCK` | about 70 KB |
 | Racing lines, AI, cameras | `DATA/MAPn.DAT` | 17-41 KB |
-| HUD, cockpit | `GFX/GAME.DAT` | 0.5 MB (the L pictures; the file also holds the SVGA H pictures, 1.8 MB, unused) |
+| HUD, cockpit | `GFX/GAME.DAT` | 0.5 MB |
 | Effects (8-bit PCM) | `DATA/SOUND.DAT` | 1.9 MB |
 | Tables | `TABS/*.TAB` | about 410 KB |
 
