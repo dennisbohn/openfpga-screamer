@@ -51,7 +51,7 @@ passes before it is read, which absorbs any wait.
 | Map grid | `MAPn.MMP` | 100-240 KB |
 | Sky | `MAPn.BCK` | about 70 KB |
 | Racing lines, AI, cameras | `DATA/MAPn.DAT` | 17-41 KB |
-| HUD, cockpit | `GFX/GAME.DAT` | 2.3 MB (L and H set) |
+| HUD, cockpit | `GFX/GAME.DAT` | 0.5 MB (the L pictures; the file also holds the SVGA H pictures, 1.8 MB, unused) |
 | Effects (8-bit PCM) | `DATA/SOUND.DAT` | 1.9 MB |
 | Tables | `TABS/*.TAB` | about 410 KB |
 
@@ -112,8 +112,10 @@ loads while the first track is built: the firmware only starts the read (`sound_
   parts up to 52000 units, faces clipped at depth 27808 (LOW, MID) or 43808 (HI). The SVGA
   version draws just as far (same table at `ds:0x21d8` in `STARTH.EXE`, same comparison with
   52000^2/4 at `0x8340b`); it only doubles the pixels (focal length 128, result x 2, centre
-  column 319). The core always uses the full H set and the HI distances; DETAIL is only displayed. Cockpit, race info and other static pictures are sprites from the L set of
-  `GAME.DAT`, copied 1:1 pixel-exact into the framebuffer by the blitter.
+  column 319). The core always uses the full H set and the HI distances; DETAIL is only displayed. Cockpit, race info and other static pictures are sprites from the L entries of
+  `GAME.DAT` (`COCKnnAL`, `COCKnnBL`, `CDFRONTL`, `GAMEL`, `IMPLET_L`, `IMPRES_L`), copied 1:1
+  pixel-exact into the framebuffer by the blitter. In `GAME.DAT`, L and H mean the 320 x 200 and
+  the SVGA pictures, not the DETAIL sets of the `MAPn` files.
 - **Two framebuffers in block RAM** instead of PSRAM: the rasterizer writes the back one at one
   pixel per clock, overdraw costs nothing, and no PSRAM controller or framebuffer arbitration is
   needed (saves logic, the scarce resource). Each buffer has its own palette, so palette changes
