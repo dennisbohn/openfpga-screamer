@@ -405,17 +405,29 @@ static void still(struct blit_list *l, int buffer, const uint8_t *pic)
     blit_copy(l, pic, 320, 200, 320, 0, 0, BLIT_COPY | BLIT_OPAQUE, 0);
 }
 
-void hud_cd(struct blit_list *l, int buffer, const uint8_t *pic, int first, int last, int track, int blink)
+void hud_cd(struct blit_list *l, int buffer, const uint8_t *pic, const struct cd_player *c)
 {
+    /* per button its x, sprite and pressed sprite (0x1f1c) */
+    static const uint8_t button[7][3] = { { 59, 7, 11 }, { 83, 8, 12 }, { 113, 9, 13 }, { 137, 10, 14 },
+                                          { 167, 57, 59 }, { 167, 58, 60 }, { 217, 61, 62 } };
+    static const char name[3][3] = { "CD", "FX", "MU" };
+    static const uint8_t stroke[4] = { 22, 214, 208, 208 };
     still(l, buffer, pic);
     if(cd_front) boxes(l, cd_front);
-    for(int k = first; first > 0 && k <= last; k++) {
-        if(k == track && blink) continue;
+    for(int i = 0; c->last > c->first && i <= c->last - c->first; i++) {
+        if(c->first + i == c->track && c->blink) continue;
         char s[8] = { 3 };                              /* "\x03%d" (0xd05): no column before */
-        put_dec(s + 1, (uint32_t)k, 0);
-        text(l, 0x40 + 13 * (k - first), 0x4E, s, 5, 9);
+        put_dec(s + 1, (uint32_t)(c->first + i), 0);
+        text(l, 0x40 + 13 * (i >= 10 ? i - 10 : i), 0x4E + (i >= 10 ? 7 : 0), s, 5, 9);
     }
-    sprite(l, 59, 0x61, 7);
+    if(c->eject) text(l, 0x40, 0x46, track_hud_text(17), 5, 3);
+    else if(c->last <= c->first && c->button <= 3) text(l, 0x40, 0x46, track_hud_text(16), 5, 3);
+    sprite(l, button[c->button][0], 0x61, button[c->button][c->pressed ? 2 : 1]);
+    if(c->button > 3) {
+        text(l, 0x40, 0x45, name[c->chan], 5, 3);
+        for(int i = 0; i < c->vol / 1024 && i < 32; i++)  /* (32: 0x7fff's, a list's room) */
+            blit_fill(l, 0x55 + 3 * i, 0x45, 1, 6, stroke[i / 10]);
+    }
 }
 
 void hud_question(struct blit_list *l, int buffer, const uint8_t *pic, int no, int blink)

@@ -14,7 +14,9 @@
  *   player's row of CARS.DTR (default 0), the opponents take the others
  *   GAS=1 in the environment: the pedal down for the steps; TURN=k: the last k steering left (-k
  *   right), BRAKE=k: the last k braking. PAUSE=1: the pause's picture over the frame (the race screen left out),
- *   with the disc's tracks 2-8, 3 playing (GAME.DAT for the CD player in the working directory);
+ *   with the disc's tracks 2-8, 6 chosen (GAME.DAT for the CD player in the working directory);
+ *   CD="b[,p[,c[,v]]]": its cursor on button b (0 PLAY .. 6), pressed if p (EJECT's text with it),
+ *   volume c (0 CD, 1 FX, 2 MU) at v (default 0x6000) shown on buttons 4..6 (hud.h);
  *   PAUSE=2: PLAY AGAIN? TRACKSIDE=1: the trackside camera after the steps, HUD=1 with the race
  *   screen. REPLAYCHECK=s: the replay's determinism check instead (replay_check()), REPLAYAT=k
  *   its picture at step k of the replay, NOHUD=1 without the race screen, REPLAYDUMP=f: the
@@ -508,7 +510,12 @@ int main(int argc, char **argv)
         else {
             if (!hud_cd_init(GAME_FILE, load("GAME.DAT", GAME_FILE, 0x100000), CD_MEM, 0x10000, SCRATCH, 0x2A0000))
                 fprintf(stderr, "CDFRONTL.PKC missing\n");
-            hud_cd(&l, 0, STILL_MEM, 2, 8, 3, 0);
+            struct cd_player c = { 2, 8, 6, 0, 0, 0, 0, 0, 0x6000 };
+            if (getenv("CD")) sscanf(getenv("CD"), "%d,%d,%d,%i", &c.button, &c.pressed, &c.chan, &c.vol);
+            c.button = c.button < 0 ? 0 : c.button > 6 ? 6 : c.button;
+            c.chan %= 3;
+            c.eject = c.button == 1 && c.pressed;
+            hud_cd(&l, 0, STILL_MEM, &c);
         }
         blit_model(fb, &l);
     }

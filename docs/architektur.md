@@ -436,13 +436,27 @@ am Stück und liest dabei aus den Data-Slots, den Ring der Musik füllt in der Z
 **Pause:** START im Rennen, solange es läuft. Das Original hat dafür den CD-Spieler (P,
 `0x211d0` → `0x21328`): das letzte Bild zweimal abgedunkelt (`0x25cc8`, dieselbe Tabelle wie
 das Radar, 0,75), das Rennen steht, darüber das Autoradio `CDFRONTL.PKC` aus `GAME.DAT`, die
-Audio-Tracks der CD (2–8, Schrift 5, Farbe 9, ab (64, 78) im Abstand 13, der laufende
+Audio-Tracks der CD (2–8, Schrift 5, Farbe 9, ab (64, 78) im Abstand 13, der gewählte
 blinkt) und der Cursor auf PLAY (Sprite 7 bei (59, 97)). Effekte und Musik blenden mit
-16384/s von 0x6000 aus (1,5 s), dann hält die CD an (`0x26458`). Bei uns genauso, nur ohne
-die Funktionen der Tasten: die CPU dunkelt das gezeigte Bild einmal über die Tabelle ab und
-legt es als Standbild in den SDRAM (`still` in `main.c`), der Blitter kopiert es jedes Bild
-und legt das Radio darüber (`hud_cd`). START noch einmal: Lautstärken zurück, die Musik der
-Strecke (von vorn, wenn sie schon stand), wie PLAY.
+16384/s von 0x6000 aus (1,5 s), dann hält die CD an (`0x26458`, MSCDEX' STOP AUDIO: eine
+Pause). Links/rechts (`0x214e1`) wandert der Cursor über sieben Tasten (Tabelle `0x1f1c`: x,
+Sprite, gedrückt), ENTER (`0x21551`) drückt: PLAY (59) verlässt den Spieler, EJECT (83) zeigt
+GAME.TXT Zeile 17 PLEASE EJECT DISK bis der Cursor weiterzieht (DOSBox' Abbild geht nie
+heraus), zurück/vor (113, 137) wählen den Track, − und + (167, Sprites 57/58) ändern die
+gezeigte Lautstärke um 48000/s mal die Bildzeit (in DOSBox 480 je Druck), die letzte (217)
+schaltet CD → FX → MU (`0x1f7c`: Hauptlautstärken `0x1d2bc`, `0x1d2b8`, `0x1d2c0`; in
+`CHOICE.DAT` +0x448, +0x444, +0x44c gespeichert). Auf diesen drei zeigt `0x23dac` Name und
+Wert/1024 Striche (Farben 22, 214, 208 je zehn). Die gedrückte Taste sieht 0,5 s gedrückt aus,
+Töne gibt es keine, die Musik spielt in der Pause nie. ESC verlässt ebenso; beim Verlassen
+(`0x21982`) gelten die Lautstärken, und der gewählte Track spielt von vorn (`0x2636c`,
+wiederholt), wenn zurück/vor ihn geändert haben, sonst geht das Lied weiter, wo es stand
+(`0x26498`; das Flag dazu, ebp+0x4a, setzt niemand, in DOSBox stand dort eine Stackadresse,
+nicht 0). Das Rennen behält den Track; der nächste Start spielt wieder das Lied der Strecke.
+Bei uns genauso (B ist ENTER, START ist ESC, eine gehaltene Taste wiederholt nach 0,5 s jedes
+Bild wie die Tastatur in DOSBox): die CPU dunkelt das gezeigte Bild einmal über die Tabelle ab
+und legt es als Standbild in den SDRAM (`still` in `main.c`), der Blitter kopiert es jedes Bild
+und legt Radio, Cursor und Anzeigen darüber (`hud_cd`, `pause_race`). Die Lautstärken gehen an
+Effekte und Musik (`snd_master`, `music_master`), MU hat bei uns keine Musik.
 
 **Die Wiederholung** (2026-10-30, aus der EXE): 5 s nach dem Ende eines beendeten Rennens,
 sobald der Kommentator alles gesagt hat, was er sich vorgenommen hatte (`0x21048` fragt
@@ -513,7 +527,7 @@ beim Öffnen einer Seite und bei ESC zurück (`0x28b5f`, `0x280ec`), Zeile 3 fü
 Core beim Start an ihren Stellen aus `SOUND.DAT` (88 KB; der ganze Container folgt mit der
 ersten Strecke), die Tabelle setzt er nach jedem Rennen neu (`snd_menu` in `sound.c`). PLAY
 AGAIN? klickt bei jedem Druck von hoch/links oder runter/rechts (`SFXSBASE.DTR` Zeile 6,
-`sclick`; `0x21b0e`, `0x21b47`). Der CD-Spieler der Pause spielt nichts.
+`sclick`; `0x21b0e`, `0x21b47`). Der CD-Spieler der Pause ist still (`0x21328`).
 
 Nicht dabei: Namenseingabe, Rekorde, Intro, die gespiegelten
 Strecken, „NEW TRACK AVAILABLE“,
@@ -526,7 +540,9 @@ Pocket zeichnete die CPU das Bild dafür eine Sekunde lang nach und hielt das Re
 „three“ an; dort steht jetzt `track check: simulation only` im Protokoll.
 `TRACK=n`, `CAR=r` und `MENU=1` oder `2` für `tools/render.sh` zeichnen Start mit Auto r,
 Strecken- oder Autobildschirm auf dem PC, `MENU=4` oder `5` Hauptmenü oder Optionen
-(`MENUKEYS="DDDDB"` drückt vorher Tasten), `PAUSE=1` oder `2` Pause oder Frage über dem Start.
+(`MENUKEYS="DDDDB"` drückt vorher Tasten), `PAUSE=1` oder `2` Pause oder Frage über dem Start
+(`CD="4,1"`: Cursor auf Taste 4, gedrückt; mit DOSBox' Bildschirmfotos verglichen: im Radio
+0 Pixel Unterschied, bis auf die blinkende Zahl).
 
 Die sechs Startbilder (Simulation, Schnelllauf, nahe Verfolgerkamera, Bild 2; jeweils 0 Pixel
 Unterschied zu den C-Modellen; „Bild“ ist die ganze Zeit von Bild 1, 20 ms = 1,485 M Takte):

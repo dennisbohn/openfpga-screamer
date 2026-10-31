@@ -584,39 +584,93 @@ static void fade_out(const uint32_t *pal, int sound)
     }
 }
 
-/* The pause: the game's CD player (0x21328, P in a race, 0x211d0) over the picture on the
-   screen darkened twice (hud.h), the race standing; the effects and the music fade out at the
-   game's 16384 a second of its 0x6000, then the music stops (0x26458). START again: the volumes
-   back and track n's song, from its start if it had stopped, as PLAY does. */
-static void pause_race(uint32_t st, int n)
+/* The game's master volumes as CHOICE.DAT keeps them (0x2774d), to the effects and the music:
+   [0] digital (0x1d2b8), [1] CD (0x1d2bc); [2], MIDI (0x1d2c0), has no music here */
+static void volumes(void)
 {
-    int first, last, playing = music_disc(&first, &last);
-    uint32_t keys_before = in_keys(), last_frame = VID_FRAME(st), ticks = 0;
+    snd_master(choice.volume[0]);
+    music_master(choice.volume[1]);
+}
+
+#define CD_HOLD     25          /* a key held this many steps (0.5 s) repeats every step: the game
+                                   takes each of the keyboard's repeats as a press (0x101b4 clears
+                                   the key), in DOSBox over 30 a second (- held 2 s: 24096 to 0) */
+#define CD_PRESSED  25          /* a button looks pressed for 0.5 s after B (0x218f8) */
+#define CD_VOL_STEP 480         /* a press of - or +: 48000 a second (0x21615) of the frame's time,
+                                   at least 0.01 s, which the CD player's quick frames have in
+                                   DOSBox (one press 480 there) */
+
+/* The pause: the game's CD player (0x21328, P in a race, 0x211d0) over the picture on the
+   screen darkened twice (hud.h), the race standing. The effects and the music fade out at the
+   game's 16384 a second of its 0x6000, then the music stops (0x26458, a pause). Left and right
+   move the cursor over the seven buttons (0x214e1); B presses the one under it (the game's
+   ENTER, 0x21551): PLAY leaves (with a disc of more than one track), EJECT shows GAME.TXT's
+   PLEASE EJECT DISK until the cursor moves (DOSBox's disc never leaves), previous and next
+   choose the track (the disc's first .. last), - and + turn the volume shown down and up,
+   the third button shows the next of CD, FX, MU (0x1f7c). The volumes are CHOICE.DAT's, heard
+   once the race goes on. START leaves too (the game's ESC). Leaving (0x21982): the volumes back,
+   the chosen track from its start if previous or next changed it (0x2636c, looped), else the
+   song goes on where it stopped (0x26498: the flag that chooses it, ebp+0x4a, is never set, but
+   held a stack address in DOSBox, not 0). The race keeps the chosen track; the next race's
+   start plays its own song again. */
+static void pause_race(uint32_t st)
+{
+    static const uint8_t vol_of[3] = { 1, 0, 2 };   /* CD, FX, MU: choice.volume's (0x1f7c) */
+    struct cd_player c = { 0 };
+    c.track = music_disc(&c.first, &c.last);
+    if (c.track < c.first || c.track > c.last) c.track = c.first;     /* 0x21398 */
+    uint32_t keys_before = in_keys(), last_frame = VID_FRAME(st), ticks = 0, held = 0;
     int32_t fade = 0x8000;
+    int changed = 0;
     still(st, 2);
     for (;;) {
         st = next_frame();
-        uint32_t keys = in_keys();
+        uint32_t keys = in_keys(), press = keys & ~keys_before;
         music_frame();
-        if (keys & ~keys_before & KEY_START) break;
-        keys_before = keys;
         uint32_t steps = still_steps(st, &last_frame, &ticks);
+        held = keys == keys_before ? held + steps : 0;
+        if (held >= CD_HOLD) press |= keys & (KEY_LEFT | KEY_RIGHT | KEY_B);
+        keys_before = keys;
+        if (press & KEY_START) break;
+        if (press & (KEY_LEFT | KEY_RIGHT)) {
+            int b = c.button + ((press & KEY_RIGHT) && c.button < 6) - ((press & KEY_LEFT) && c.button > 0);
+            if (b != c.button) c.pressed = c.eject = 0;
+            c.button = b;
+        }
+        if (press & KEY_B) {
+            int32_t *v = &choice.volume[vol_of[c.chan]];
+            c.pressed = CD_PRESSED;
+            if (c.button == 0 && c.last > c.first) break;
+            if (c.button == 1) c.eject = 1;
+            if ((c.button == 2 && c.track > c.first) || (c.button == 3 && c.track < c.last)) {
+                c.track += c.button == 2 ? -1 : 1;
+                changed = 1;
+            }
+            if (c.button == 4) *v = *v > CD_VOL_STEP ? *v - CD_VOL_STEP : 0;
+            if (c.button == 5) *v = *v < 0x7FFF - CD_VOL_STEP ? *v + CD_VOL_STEP : 0x7FFF;
+            if (c.button == 6) c.chan = (c.chan + 1) % 3;
+        }
+        c.blink = (ticks & 0x20) != 0;
+        c.vol = choice.volume[vol_of[c.chan]];
         draw_buf = !(st & VID_FRONT);
-        hud_cd(&hud, (int)draw_buf, STILL_MEM, first, last, playing, (ticks & 0x20) != 0);
+        hud_cd(&hud, (int)draw_buf, STILL_MEM, &c);
         still_show(&hud);
+        c.pressed = c.pressed > (int)steps ? c.pressed - (int)steps : 0;
         if (fade > 0) {
             fade -= (int32_t)steps * FADE_STEP;
             if (fade <= 0) {
                 fade = 0;
-                music_stop();
+                music_pause();
             }
             snd_fade(fade);
             music_fade(fade);
         }
     }
+    volumes();
     snd_fade(0x8000);
     music_fade(0x8000);
-    music_play(n);
+    if (changed) music_cd(c.track);
+    else music_resume();
 }
 
 /* PLAY AGAIN? (0x219d0), as the game asks it when a race is left (0x1fe86): the effects stop
@@ -738,7 +792,7 @@ static int run_track(int n, int car, int replay)
             if ((press & (KEY_B | KEY_START | KEY_SELECT)) || rec_at >= rec_n) ask = 1;
         } else {
             if ((press & KEY_START) && drawn && !car_race()->finished && !car_race()->game_over) {
-                pause_race(st, n);
+                pause_race(st);
                 keys_before = IN_KEY;
                 last_frame = VID_FRAME(VID_STATUS);
                 continue;
@@ -1672,6 +1726,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     save_load();                    /* first: until then an exit would save the SDRAM as it is */
     setjmp(restart);                /* from here again after the Pocket menu's save reset (next_frame) */
     menu_options_load();
+    volumes();
     int sim = (SYS_FLAGS & FLAG_SIM) != 0;
     const uint32_t *shown = sim ? 0 : first_picture(intro_track());    /* the simulation's race: none */
 
