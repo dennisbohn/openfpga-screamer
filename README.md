@@ -8,6 +8,11 @@ work is done by dedicated hardware units: geometry, triangle setup, rasterizer, 
 audio mixer. The core reads the **unchanged original game files** from the SD card. No game
 data is part of this repository or of its releases.
 
+So far the core has only been tested with the GOG release of the game. Other releases might
+work if their files are the same, but I haven't tried.
+
+<img src="docs/images/race.png" alt="A race on the Pocket: the start lights, a red car, the lap and position display" width="640">
+
 ## Features
 
 - All six tracks, all cars, the opponents' cars, props and moving scenery
@@ -40,17 +45,14 @@ You need an Analogue Pocket (firmware 1.1 or newer) and your own copy of the gam
 Saves and the debug log go to `Saves/screamer/Chainy.Screamer/`. `debug.txt` helps when
 something goes wrong; the Pocket writes it when the core is quit.
 
-### The GOG version
+### Installing the GOG version
 
-So far the core has only been tested with the GOG release, so that is what I'd use. Its
-install folder has the `GFX` and `DATA` folders from the table above. Copy the files as they
-are, don't convert or rename anything.
-
-The music is the game's CD soundtrack, and GOG ships the CD as an image: `SCREAM.gog` and its
-cue sheet `SCREAM.DAT`, both at the top of the install folder. Copy those two to
-`Assets/screamer/common/` as well, next to the `GFX` and `DATA` folders.
-
-Other releases might work if their files are the same, but I haven't tried.
+1. Open the game's install folder. It has the `GFX` and `DATA` folders from the table above.
+   Copy the files from the table as they are, don't convert or rename anything.
+2. The music is the game's CD soundtrack, and GOG ships the CD as an image: `SCREAM.gog` and
+   its cue sheet `SCREAM.DAT`, both at the top of the install folder. Copy those two as well.
+3. Everything goes to `Assets/screamer/common/` on the SD card: the `GFX` and `DATA` files
+   keep their folders, `SCREAM.gog` and `SCREAM.DAT` sit next to them.
 
 ## Controls
 
