@@ -1,5 +1,5 @@
 /*
- * Memory test of step 2 (docs/speicher.md): the SDRAM with patterns, its clock phase window
+ * Memory test of step 2 (docs/memory.md): the SDRAM with patterns, its clock phase window
  * measured on the Pocket, results in the debug log, on the screen and as SYS_SIM bits.
  */
 #pragma once

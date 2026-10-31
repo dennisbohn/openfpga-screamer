@@ -77,7 +77,7 @@ static inline uint32_t in_keys(void)
 #define FB1_BASE        0xF1010000u
 #define FB(n)           ((volatile uint8_t *)((n) ? FB1_BASE : FB0_BASE))
 
-/* Step 2 memories (docs/speicher.md). The SDRAM is cached for code and data and has an
+/* Step 2 memories (docs/memory.md). The SDRAM is cached for code and data and has an
    uncached view; SRAM and PSRAM are not used. Code runs from the boot RAM and the SDRAM;
    fetching from anywhere else is an instruction access fault. */
 #define SDRAM_BASE      0x10000000u
