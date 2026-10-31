@@ -8,7 +8,7 @@
             "shortname": "Screamer",
             "description": "Screamer (1995): RISC-V softcore + hardware 3D renderer, WIP",
             "author": "Chainy",
-            "url": "",
+            "url": "https://github.com/chainy-openfpga/openfpga-screamer",
             "version": "0.1.0",
             "date_release": "2026-10-25"
         },
