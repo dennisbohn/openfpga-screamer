@@ -28,7 +28,7 @@ Not supported: network play (the menu entry is left out), the link port.
 You need an Analogue Pocket (firmware 1.1 or newer) and your own copy of the game.
 
 So far the core has only been tested with the GOG release of the game. Other releases might
-work if their files are the same, but I haven't tried.
+work if their files are the same.
 
 ### GOG version
 
