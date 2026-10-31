@@ -683,9 +683,13 @@ Die FPU macht Float-Rechnungen 13–32 × schneller als Soft-Float.
   (Listen 0..7) und unter seiner x-z-Ebene (8..15). Die CPU wählt die Liste wie das Spiel
   (`0x8a598`; bis 2026-10-28 nur die oberen acht, daher der falsch verdeckte
   Gesichtsschutz des Helms am Start), die Geometrie-Einheit sortiert nicht und lässt
-  Rückseiten über die Normale weg. Auge ist dabei wie im Spiel das Auge im Rahmen des Blocks
-  plus dessen Mitte, mal 1,2 (`0x83511`, unskaliert bei einem 32-Bit-Überlauf): Dieser
-  Punkt wählt die Liste und ist das Auge des Rückseitentests (`0x835a0`). Die Streckendaten verlassen sich auf diese Reihenfolge
+  Rückseiten über die Normale weg. Die Liste wählt wie im Spiel die Kamera im Rahmen des
+  Blocks plus dessen Mitte (`0x83511` skaliert das mit 1,2, was die Liste nicht ändert). Das
+  Spiel testet die Rückseiten mit demselben Punkt (`0x835a0`), sein Füller (`0xd55ff`)
+  zeichnet aber nichts von einer Fläche, deren Ecken auf dem Schirm andersherum laufen, also
+  einer vom Auge der Linse (128 hinter der Kamera) abgewandten. Der Rückseitentest der
+  Geometrie-Einheit nimmt deshalb dieses Auge (mit dem Punkt allein schaute die Nase des
+  ersten Autos im Autoauswahlbild durch den Vorderreifen). Die Streckendaten verlassen sich auf diese Reihenfolge
   (Grasflächen unter der Straße, zwei Objekte an einer Stelle), OpenScreamer brauchte
   dafür mit seinem Tiefenpuffer Sonderregeln. Nötig bleibt das Clipping an der vorderen
   Ebene. Es spart rund 125 M10K (320×200×16 Bit passen nur in die 8-Kbit-Modi); dafür

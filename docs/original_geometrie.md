@@ -389,7 +389,15 @@ if (sichtbar) liste += { (int32)(int16)face[+4], face };          /* 0x5d188 */
 ```
 
 Es gibt keinen Test im Bildraum (kein Kreuzprodukt), keinen Frustumtest pro Block und keinen
-pro Fläche außer den folgenden Klassen.
+pro Fläche außer den folgenden Klassen. Der Füller (0xd55ff) prüft aber stillschweigend die
+Drehrichtung: eine Kante läuft die Ecken vorwärts ab, die andere rückwärts, und eine Spanne
+entsteht nur, wo die erste rechts der zweiten liegt (`sub`/`jg` bei 0xd5969 und 0xd59eb). Von
+einer Fläche, deren Ecken auf dem Schirm andersherum laufen, also einer vom Projektionsauge
+(128 hinter der Kamera) abgewandten, erscheint nichts, auch wenn sie den Test mit E12 besteht.
+Im RAM geprüft (2026-10-31, Autoauswahl, SHADOW): die Flächenliste 0x5d188 des zuletzt
+gezeichneten Blocks (rauto) enthält genau die 30 Flächen, die der Test mit E12 durchlässt,
+darunter 11, die vom Projektionsauge abgewandt sind; ebenso besteht die vordere Nasenfläche von
+fauto den Test, im Bild deckt sie den Vorderreifen trotzdem nicht.
 
 ### 6.3 Blockklassen: einfach, nah, fern
 
@@ -641,7 +649,10 @@ Aus dem Vergleich, nicht vollständig: Gleitkomma-Matrizen statt der Tabellenmat
 Originals ist um je 1/2048 Umdrehung in allen drei Winkeln verdreht); 1/16 Pixel statt
 `floor(x·e/65536)` mit abgeschnittenem `e`; **immer Detailstufe 0** (`block_of()` liest nur
 mesh+0x18), das Original zeichnet ferne Blöcke aus Stufe 1 und 2; Frustumtests mit Kugeln statt
-des Halbauflösungstests aus 3; kein VIS.TAB-Test; Schnittpunkte am Clipper anders gerundet.
+des Halbauflösungstests aus 3; kein VIS.TAB-Test; Schnittpunkte am Clipper anders gerundet;
+Rückseitentest mit dem Projektionsauge statt mit E12 (6.2: das Original lässt die vom
+Projektionsauge abgewandten Flächen im Füller weg; was E12 zusätzlich verwirft, zeichnet die
+Portierung, in den geprüften Bildern ohne ein anderes Pixel).
 
 ## 12. Offen
 
