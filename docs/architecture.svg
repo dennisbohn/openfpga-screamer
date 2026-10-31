@@ -3,30 +3,46 @@
   <desc>Built and tested on the Pocket: APF bridge with data slots (program and original game files on request), two framebuffers in block RAM that swap at VSync, video_out at 50 Hz with two palettes, VexRiscv RV32IMF with FPU and CFU, SDRAM controller, rasterizer with a 16 KB texture cache that prefetches missing lines, setup unit with clipper, the geometry unit, and a blitter that copies the backdrop image in before and the race display in after the scene. The CPU drives nine opponents with collisions and splits movable track parts (the helmet at the start) into their blocks; with it the track fly-through holds a steady 50 fps, and the CPU needs about 20 % of a frame. The rasterizer also draws smoke and shadows (MAPn.SMG), obstacles and moving scenery. The mixer plays the sound effects and the speaker (32 voices from SDRAM, one line per voice in block RAM, I2S to the Pocket) and the CD music (16-bit stereo from GOG's CD image, linearly interpolated from 44.1 to 48 kHz). SRAM and PSRAM are not used.</desc>
   <defs>
     <marker id="built" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#2e7d32"/>
+      <path d="M0,0 L10,5 L0,10 z" class="mk-built"/>
     </marker>
     <marker id="ext" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M0,0 L10,5 L0,10 z" fill="#888888"/>
+      <path d="M0,0 L10,5 L0,10 z" class="mk-ext"/>
     </marker>
   </defs>
   <style>
-    text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: #1f1f1f; }
+    svg {
+      --surface: #fcfcfb; --panel: #f5f5f3; --lane: #f0efec;
+      --ink: #0b0b0b; --ink2: #52514e; --muted: #898781; --base: #c3c2b7;
+      --built-fill: #e8f5e9; --built-line: #2e7d32;
+    }
+    @media (prefers-color-scheme: dark) {
+      svg {
+        --surface: #1a1a19; --panel: #222221; --lane: #2c2c2a;
+        --ink: #f0efec; --ink2: #c3c2b7; --muted: #898781; --base: #383835;
+        --built-fill: #1d3322; --built-line: #43a047;
+      }
+    }
+    text { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; fill: var(--ink); }
     .h { font-size: 20px; font-weight: 700; }
     .t { font-size: 13px; font-weight: 600; }
     .b { font-size: 11.5px; }
-    .p { font-size: 11px; font-style: italic; fill: #444444; }
-    .l { font-size: 11px; fill: #444444; }
+    .p { font-size: 11px; font-style: italic; fill: var(--ink2); }
+    .l { font-size: 11px; fill: var(--ink2); }
     .c { text-anchor: middle; }
     .r { text-anchor: end; }
-    .built { fill: #e8f5e9; stroke: #2e7d32; stroke-width: 1.6; }
-    .ext { fill: #eeeeee; stroke: #999999; stroke-width: 1.2; }
-    .free { fill: #ffffff; stroke: #aaaaaa; stroke-width: 1.2; stroke-dasharray: 3 3; }
-    .wb { fill: none; stroke: #2e7d32; stroke-width: 1.8; }
-    .wf { fill: none; stroke: #2e7d32; stroke-width: 1.8; stroke-dasharray: 6 4; }
-    .we { fill: none; stroke: #888888; stroke-width: 1.4; }
+    .dim { fill: var(--muted); }
+    .built { fill: var(--built-fill); stroke: var(--built-line); stroke-width: 1.6; }
+    .ext { fill: var(--lane); stroke: var(--muted); stroke-width: 1.2; }
+    .free { fill: var(--surface); stroke: var(--base); stroke-width: 1.2; stroke-dasharray: 3 3; }
+    .fpga { fill: var(--panel); stroke: var(--ink2); stroke-width: 1.5; }
+    .wb { fill: none; stroke: var(--built-line); stroke-width: 1.8; }
+    .wf { fill: none; stroke: var(--built-line); stroke-width: 1.8; stroke-dasharray: 6 4; }
+    .we { fill: none; stroke: var(--muted); stroke-width: 1.4; }
+    .mk-built { fill: var(--built-line); }
+    .mk-ext { fill: var(--muted); }
   </style>
 
-  <rect width="1560" height="860" fill="#ffffff"/>
+  <rect width="1560" height="860" fill="var(--surface)"/>
 
   <!-- title and legend -->
   <text x="40" y="44" class="h">Screamer on the Analogue Pocket – architecture</text>
@@ -39,7 +55,7 @@
 
   <!-- SRAM above the FPGA -->
   <rect x="590" y="94" width="170" height="52" rx="6" class="free"/>
-  <text x="675" y="115" class="t c" fill="#666666">SRAM · 256 KB</text>
+  <text x="675" y="115" class="t c dim">SRAM · 256 KB</text>
   <text x="675" y="133" class="b c">not used</text>
 
   <!-- outside the FPGA, left -->
@@ -64,7 +80,7 @@
   <text x="1460" y="323" class="b c">+ Display</text>
 
   <!-- the FPGA -->
-  <rect x="230" y="170" width="1120" height="480" rx="14" fill="#fbfbfb" stroke="#333333" stroke-width="1.5"/>
+  <rect x="230" y="170" width="1120" height="480" rx="14" class="fpga"/>
   <text x="248" y="194" class="t">Main FPGA · Cyclone V 5CEBA4</text>
   <text x="1332" y="194" class="l r">Clocks: system 74.25 MHz · pixel 12.288 MHz</text>
 
@@ -146,11 +162,11 @@
   <text x="605" y="741" class="b c">program, game files, track</text>
 
   <rect x="830" y="700" width="170" height="56" rx="6" class="free"/>
-  <text x="915" y="724" class="t c" fill="#666666">PSRAM cram0 · 16 MB</text>
+  <text x="915" y="724" class="t c dim">PSRAM cram0 · 16 MB</text>
   <text x="915" y="741" class="b c">not used</text>
 
   <rect x="1040" y="700" width="140" height="56" rx="6" class="free"/>
-  <text x="1110" y="724" class="t c" fill="#666666">PSRAM cram1 · 16 MB</text>
+  <text x="1110" y="724" class="t c dim">PSRAM cram1 · 16 MB</text>
   <text x="1110" y="741" class="b c">not used</text>
 
   <!-- built connections -->
