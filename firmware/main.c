@@ -154,8 +154,8 @@ static void draw_frame(volatile uint8_t *fb, const char *title)
     con_text(fb, 1, 2, title, col_bg, col_text);
     int cpu_ok = (results & 7) == 7;
     int mem_ok = ((results >> MT_BIT_FIRST) & ((1u << MT_BITS) - 1)) == (1u << MT_BITS) - 1;
-    int col = con_text(fb, 1, 4, cpu_ok ? "CPU ok" : "CPU FEHLER", col_text, cpu_ok ? col_bg : col_alert) + 1;
-    con_text(fb, col, 4, mem_ok ? "Speicher ok" : "Speicher FEHLER", col_text, mem_ok ? col_bg : col_alert);
+    int col = con_text(fb, 1, 4, cpu_ok ? "CPU ok" : "CPU FAIL", col_text, cpu_ok ? col_bg : col_alert) + 1;
+    con_text(fb, col, 4, mem_ok ? "Memory ok" : "Memory FAIL", col_text, mem_ok ? col_bg : col_alert);
 }
 
 /*
@@ -384,9 +384,9 @@ static void draw_status(volatile uint8_t *fb, uint32_t st, uint32_t drawn, const
 {
     char buf[CON_COLS + 1];
     if (d) {
-        char *p = fmt_udec(fmt_str(buf, "Dreiecke "), d->triangles);
-        p = fmt_udec(fmt_str(p, " Pixel "), d->pixels);
-        fmt_udec(fmt_str(p, " Takte "), d->cycles);
+        char *p = fmt_udec(fmt_str(buf, "Triangles "), d->triangles);
+        p = fmt_udec(fmt_str(p, " pixels "), d->pixels);
+        fmt_udec(fmt_str(p, " clocks "), d->cycles);
         con_text(fb, 1, 22, buf, col_text, col_bg);
     }
     /* frames drawn in the last second */

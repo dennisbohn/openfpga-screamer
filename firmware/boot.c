@@ -64,7 +64,7 @@ static void draw_results(volatile uint8_t *fb, const char *note)
     char rows[MT_ROWS][41];
     uint8_t fail[MT_ROWS];
     int n = memtest_rows(rows, fail);
-    con_text(fb, 1, 6, "Speicher", COL_DIM, COL_BG);
+    con_text(fb, 1, 6, "Memory", COL_DIM, COL_BG);
     for (int i = 0; i < n; i++)
         con_text(fb, 1, 7 + i, rows[i], COL_TEXT, fail[i] ? COL_ALERT : COL_BG);
     con_text(fb, 1, 18, note, COL_TEXT, COL_BG);
@@ -118,7 +118,7 @@ int main(void)
     }
 
     /* a test failed or no program to start: the results stay on screen */
-    const char *note = entry ? "Test fehlgeschlagen: kein Start" : "program.bin fehlt oder ist defekt";
+    const char *note = entry ? "Test failed: not starting" : "program.bin missing or damaged";
     dlog_str(entry ? "boot: a test failed, the results stay on screen\n" : "boot: no program to start\n");
     uint32_t drawn = 0;
     for (;;) {

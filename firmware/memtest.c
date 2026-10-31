@@ -621,7 +621,7 @@ int memtest_rows(char rows[][41], uint8_t fail[])
         n++;
         if(i == M_SDRAM) {
             p = fmt_str(rows[n], "      Prog ");
-            p = fmt_str(p, slot_state == 1 ? "ok" : "FEHLER");
+            p = fmt_str(p, slot_state == 1 ? "ok" : "FAIL");
             p = fmt_str(p, " Phase ");
             p = fmt_udec(p, (uint32_t)phase_len);
             fmt_udec(fmt_str(p, "/80, step "), (uint32_t)phase_centre);
@@ -631,9 +631,9 @@ int memtest_rows(char rows[][41], uint8_t fail[])
             ok_word(p, "Status", B_SD_STATUS);
             fail[n] = ((results >> B_SD_CODE) & 7) != 7;
             n++;
-            p = fmt_udec(fmt_str(rows[n], "      Zeile "), line_hit);
+            p = fmt_udec(fmt_str(rows[n], "      line "), line_hit);
             p = fmt_udec(fmt_str(p, "/"), line_miss);
-            p = fmt_udec(fmt_str(p, " Takte, "), read_mbs);
+            p = fmt_udec(fmt_str(p, " clocks, "), read_mbs);
             fmt_str(fmt_udec(fmt_str(p, "/"), write_mbs), " MB/s");
             fail[n++] = 0;
         }
