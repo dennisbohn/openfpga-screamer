@@ -9,7 +9,7 @@
 #define RING_MEM    (SDRAM_BASE + 0x1E00000)    /* the ring: 256 KB right after SOUND.DAT's 2 MB (main.c) */
 #define CHUNK       0x8000u                 /* a read: 0.19 s of music, 25 ms at the APF's 1.3 MB/s */
 #define MARGIN      0x400u                  /* left free behind the mixer's place (it holds 64 bytes) */
-#define MASTER      0x4000                  /* the CD master volume, of 0x7fff (music.h) */
+#define MASTER      0x4000                  /* the CD master volume at the game's 0x6000 (music.h) */
 #define SECTOR      2352u
 #define MAX_TRACKS  99
 
@@ -21,6 +21,9 @@ static uint32_t sectors;                    /* the image's */
 static int songs[8] = { 1, 2, 5, 3, 4, 6, 7, 1 };
 
 static int playing;                         /* the CD track playing, 0 none */
+static int paused;                          /* the track music_pause stopped, 0 none */
+static uint32_t paused_at;                  /* its place: bytes into it, whole sectors */
+static uint32_t master = MASTER;            /* music_master */
 int music_on = 1;
 static uint32_t from, to, at;               /* its bytes in the image; the next byte to read */
 static uint32_t written, played, place;     /* frames into the ring, frames played, the mixer's place */
@@ -162,30 +165,63 @@ static void done(uint32_t len, int r)
     if (at == to) at = from;                /* the song again, as the drive's poll plays it */
 }
 
-void music_play(int k)
+/* CD track n from byte off of it on (a whole sector), the music before stopped */
+static void start(int n, uint32_t off)
 {
-    int n = k >= 0 && k <= 6 ? songs[k + 1] + 1 : 0, m = n + 1;
-    if (n == playing) return;
+    int m = n + 1;
     music_stop();
     if (!music_on || n < 1 || n > MAX_TRACKS || !audio[n] || first[n] < 0 || (uint32_t)first[n] >= sectors) return;
     while (m <= MAX_TRACKS && first[m] < 0)
         m++;
     uint32_t last = m <= MAX_TRACKS && (uint32_t)first[m] < sectors ? (uint32_t)first[m] : sectors;
-    from = at = (uint32_t)first[n] * SECTOR;
+    from = (uint32_t)first[n] * SECTOR;
     to = last * SECTOR;
+    at = off < to - from ? from + off : from;
     written = played = place = short_frames = 0;
     playing = n;
     for (uint32_t len; playing && (len = next()) != 0;)
         done(len, slot_read(DISC_SLOT, at, RING_MEM + written * 4 % AU_MUSIC_RING, len));
     if (!playing) return;
     AU_MUSIC_ADDR = RING_MEM - SDRAM_BASE;
-    AU_MUSIC_VOL = MASTER;
+    AU_MUSIC_VOL = master;
     AU_MUSIC = 1;
+}
+
+void music_play(int k)
+{
+    int n = k >= 0 && k <= 6 ? songs[k + 1] + 1 : 0;
+    if (n != playing) start(n, 0);
+}
+
+void music_cd(int n)
+{
+    start(n, 0);
+}
+
+void music_pause(void)
+{
+    int n = playing;
+    if (!n) return;
+    played += ((AU_MUSIC & 0xFFFF) - place) & 0xFFFF;
+    uint32_t off = played * 4 % (to - from) / SECTOR * SECTOR;
+    music_stop();
+    paused = n;
+    paused_at = off;
+}
+
+void music_resume(void)
+{
+    if (paused) start(paused, paused_at);
 }
 
 void music_fade(int32_t f)
 {
-    AU_MUSIC_VOL = (uint32_t)(MASTER * (f < 0 ? 0 : f > 0x8000 ? 0x8000 : f)) >> 15;
+    AU_MUSIC_VOL = master * (uint32_t)(f < 0 ? 0 : f > 0x8000 ? 0x8000 : f) >> 15;
+}
+
+void music_master(int32_t v)
+{
+    master = (uint32_t)(v < 0 ? 0 : v > 0x7FFF ? 0x7FFF : v) * MASTER / 0x6000;
 }
 
 int music_disc(int *lo, int *hi)
@@ -236,5 +272,5 @@ void music_stop(void)
         dlog_dec((int32_t)short_frames);
         dlog_str(" frames\n");
     }
-    playing = 0;
+    playing = paused = 0;
 }

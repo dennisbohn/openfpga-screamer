@@ -70,6 +70,9 @@ int snd_play_once(int id, int h);
 /* Every voice, playing or not, at f of 0x8000 of its loudness from now on (the pause's fade,
    the game's master volumes going down, 0x21328); 0x8000 again: as before */
 void snd_fade(int32_t f);
+/* The game's digital master volume v of 0x7fff (0x1d2b8, CHOICE.DAT's +0x444; the CD player
+   changes it): the effects and the commentary at v / 0x6000 of their masters */
+void snd_master(int32_t v);
 
 /* Where the sounds with a place are heard from: the camera, once a step */
 struct track_cam;

@@ -27,6 +27,14 @@ extern int music_on;
    the ring is filled (224 KB, 1.3 s of music; waiting, about 170 ms) and the song starts; no
    read is left running. */
 void music_play(int k);
+/* The CD player's (hud.h): CD track n from its start, even if it plays already, and again at
+   its end (0x2636c with the repeat flag, as music_play) */
+void music_cd(int n);
+/* The CD player's stop (0x26458, MSCDEX's STOP AUDIO while it plays: a pause) and resume
+   (0x26498): the music stops, its place kept; music_resume goes on from there (to the sector)
+   with the same track, if music_pause stopped one and nothing played or stopped since */
+void music_pause(void);
+void music_resume(void);
 /* Once a frame while a song plays: a read done is taken, the next one started if the ring
    has room */
 void music_frame(void);
@@ -34,6 +42,9 @@ void music_frame(void);
 void music_stop(void);
 /* The music at f of 0x8000 of its volume (the pause's fade); a song started has it whole */
 void music_fade(int32_t f);
-/* For the CD player (hud.h): the disc's first and last audio track (0 without the image) and
-   the CD track playing (0 none) */
+/* The game's CD master volume v of 0x7fff (0x1d2bc, CHOICE.DAT's +0x448; the CD player
+   changes it): the music's volume is two thirds of it, MASTER at the game's 0x6000 */
+void music_master(int32_t v);
+/* For the CD player: the disc's first and last audio track (0 without the image) and the CD
+   track playing (0 none) */
 int music_disc(int *lo, int *hi);

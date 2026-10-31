@@ -5,7 +5,7 @@
 #include "track.h"
 
 #define SND_MAX     72                  /* the 12 effects, the 58 recordings, a track's 2 */
-#define MASTER      0x4000              /* the effects' master volume (sound.h) */
+#define MASTER      0x4000              /* the effects' master volume at the game's 0x6000 (sound.h) */
 #define SPEECH_MASTER 0x3000            /* the commentary's (sound.h) */
 
 /* a row: SDRAM byte address and length, where it ends or loops (from the start), back by how
@@ -21,6 +21,7 @@ static uint32_t serial[AU_VOICES];
 static int voice_fx[AU_VOICES];
 static int32_t voice_vol[AU_VOICES], voice_pan[AU_VOICES];
 static int32_t fade = 0x8000;           /* snd_fade: all of them at this of 0x8000 */
+static uint32_t level = 0x8000;         /* snd_master: the game's digital master, 0x8000 at its 0x6000 */
 
 /* the next token of the text from *p up to the line's end (spaces and tabs between): its length */
 static uint32_t token(const char **p, const char *end, const char **tok)
@@ -175,7 +176,7 @@ static uint32_t vol_reg(const struct snd *s, int32_t vol, int32_t pan)
 {
     int id = (int)(s - fx);
     uint32_t master = id >= SND_SPEECH && id < speech_end ? SPEECH_MASTER : MASTER;
-    uint32_t t = (((s->vol * (uint32_t)vol) >> 15) * master >> 15) * (uint32_t)fade >> 15;
+    uint32_t t = (((s->vol * (uint32_t)vol) >> 15) * master >> 15) * ((uint32_t)fade * level >> 15) >> 15;
     uint32_t fl = pan <= 0x8000 ? 0x7FFF : (uint32_t)(0xFFFF - pan), fr = pan >= 0x8000 ? 0x7FFF : (uint32_t)pan;
     return (t * fl >> 22) | (t * fr >> 22) << 8;
 }
@@ -249,6 +250,12 @@ void snd_fade(int32_t f)
     fade = f < 0 ? 0 : f > 0x8000 ? 0x8000 : f;
     for(int v = 0; v < AU_VOICES; v++)
         AU_VOL(v) = vol_reg(&fx[voice_fx[v]], voice_vol[v], voice_pan[v]);
+}
+
+void snd_master(int32_t v)
+{
+    level = (uint32_t)(v < 0 ? 0 : v > 0x7FFF ? 0x7FFF : v) * 4 / 3;
+    snd_fade(fade);
 }
 
 int snd_play_once(int id, int h)
