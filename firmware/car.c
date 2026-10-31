@@ -649,7 +649,9 @@ void car_init(int which, int replay)
     body.drop = 0;
     susp_clock = susp_speed = 0.0f;
     wall_hits = crashes = 0;
-    crash.on = 0;
+    if(crash.on) view = crash.view;                     /* a race left in a crash: its tumble */
+    crash.on = crash.bounces = 0;                       /* and the crash view gone too */
+    crash.height = crash.vy = crash.pitch = crash.roll = crash.pitch_rate = crash.roll_rate = 0.0f;
     replaying = replay;
     trackside = 0;
     if(replay) car_trackside();                         /* row 3 asked for (0x12afe) */
