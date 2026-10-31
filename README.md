@@ -34,7 +34,6 @@ You need an Analogue Pocket (firmware 1.1 or newer) and your own copy of the gam
    |---|---|
    | `GFX/` | `GAME.DAT`, `GRAF.DAT`, `MENU.DAT`, `MAP1H.DAT` ... `MAP6H.DAT` |
    | `DATA/` | `GEN.DAT`, `LOCAL.DAT`, `SOUND.DAT`, `MAP1.DAT` ... `MAP6.DAT` |
-   | top level | `SCREAM.gog` and `SCREAM.DAT` (the CD image and its cue sheet, for the music) |
 
 3. Start *Screamer* from the Pocket's core list.
 
@@ -44,9 +43,14 @@ something goes wrong; the Pocket writes it when the core is quit.
 ### The GOG version
 
 So far the core has only been tested with the GOG release, so that is what I'd use. Its
-install folder already has everything from the table above: the `GFX` and `DATA` folders, and
-`SCREAM.gog` and `SCREAM.DAT` next to them. Copy those files as they are, don't convert or
-rename anything. Other releases might work if their files are the same, but I haven't tried.
+install folder has the `GFX` and `DATA` folders from the table above. Copy the files as they
+are, don't convert or rename anything.
+
+The music is the game's CD soundtrack, and GOG ships the CD as an image: `SCREAM.gog` and its
+cue sheet `SCREAM.DAT`, both at the top of the install folder. Copy those two to
+`Assets/screamer/common/` as well, next to the `GFX` and `DATA` folders.
+
+Other releases might work if their files are the same, but I haven't tried.
 
 ## Controls
 
