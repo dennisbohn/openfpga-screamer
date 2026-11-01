@@ -16,6 +16,8 @@ core/src/fpga/core/clipper.v
 core/src/fpga/core/geom.v
 core/src/fpga/core/blit.v
 core/src/fpga/core/audio.v
+core/src/fpga/core/opl.v
+sim/models/jtopl2_stub.v
 core/src/fpga/core/framebuffer.v
 core/src/fpga/core/video_out.v
 sim/models/sdram_model.v

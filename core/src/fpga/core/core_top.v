@@ -305,6 +305,11 @@ always @(*) begin
         // by the APF on exit
         bridge_rd_data <= soc_log_rd_data;
     end
+    32'h20000000: begin
+        // the Pocket menu's Music Source (interact.json; the list is write-only, this is
+        // for an APF that reads it back all the same)
+        bridge_rd_data <= soc_opt_music;
+    end
     32'hF8xxxxxx: begin
         bridge_rd_data <= cmd_bridge_rd_data;
     end
@@ -504,6 +509,7 @@ assign video_rgb_clock_90 = clk_core_12288_90deg;
 assign video_skip = 0;
 
     wire    [31:0]  soc_log_rd_data;
+    wire    [31:0]  soc_opt_music;
     wire    [31:0]  soc_sim_status;         // only for the simulation
     wire            fb_wr_en, fb_buf;
     wire    [13:0]  fb_addr;
@@ -624,7 +630,8 @@ soc soc (
     .audio_sclk         ( ),
     .audio_lrck         ( audio_lrck ),
     .audio_dac          ( audio_dac ),
-    .sim_status         ( soc_sim_status )
+    .sim_status         ( soc_sim_status ),
+    .opt_music          ( soc_opt_music )
 );
 
 framebuffer fb (

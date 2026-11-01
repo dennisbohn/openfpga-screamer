@@ -36,6 +36,8 @@
 //              lines, the third plays the first sample), 0 stops; read: [15:0] the place, the
 //              sample in the ring the next pass starts from, bit 16 it plays
 // A register takes effect when the pass comes to its voice: writes between passes all at once.
+// The FM music (opl.v) is one more value that the sums start with, the same on both sides;
+// without it (0) the pass is the C model's.
 //
 // I2S as the APF takes it (the template's timing): MCLK 12.288 MHz from a fractional divider,
 // the bit clock MCLK / 4 (not a pin), 64 bits a frame; LRCK low the left half, high the right,
@@ -54,6 +56,8 @@ module audio (
     output  reg             late = 0,
     output  wire            busy,               // a pass runs or waits (the testbench writes between)
     output  wire    [16:0]  music,              // {it plays, the place in the ring}
+    output  wire            frame,              // a frame begins (opl.v computes its value for the next)
+    input   wire signed [15:0] fm,              // the FM music's value, mono (opl.v): the sums start with it
 
     // lines from the SDRAM (soc.v's line port)
     output  reg             mem_valid = 0,
@@ -80,6 +84,7 @@ module audio (
     wire [5:0]  bitn_n = bitn + 1'b1;
     wire        s_fall = m_edge && mc == 3'd7;
     wire        tick = s_fall && bitn_n == 6'd0;    // a frame begins
+    assign frame = tick;
     reg  [15:0] sh = 0;                         // the half being sent
     reg  [15:0] out_l = 0, out_r = 0;           // the last pass's sums
     reg  [15:0] r_next = 0;                     // its right half, for the frame being sent
@@ -340,8 +345,8 @@ always @(posedge clk) begin
         run <= 1;
         v <= 0;
         ph <= 0;
-        acc_l <= 0;
-        acc_r <= 0;
+        acc_l <= {{6{fm[15]}}, fm};
+        acc_r <= {{6{fm[15]}}, fm};
     end
 
     // the CPU starts and stops voices, bit by bit over the pass's own changes

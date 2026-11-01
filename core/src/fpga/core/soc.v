@@ -101,7 +101,8 @@ module soc (
     output  wire            audio_lrck,
     output  wire            audio_dac,
 
-    output  reg     [31:0]  sim_status = 0          // SYS_SIM, for the testbench
+    output  reg     [31:0]  sim_status = 0,         // SYS_SIM, for the testbench
+    output  wire    [31:0]  opt_music               // the Pocket menu's Music Source (bridge 0x2000_0000)
 );
 
     localparam  [31:0]  SYS_ID = 32'h53435231;      // "SCR1"
@@ -494,7 +495,7 @@ end
         else if(a[31:12] == 20'hF0008)                      region = R_LOG;
         else if(a[31:17] == 15'h7880 && a[15:2] < 14'd16000) region = R_FB;
         else if(a[31:12] == 20'hF0000 || a[31:12] == 20'hF0001 || a[31:12] == 20'hF0002 ||
-                a[31:12] == 20'hF0003 || a[31:12] == 20'hF0004) region = R_REG;
+                a[31:12] == 20'hF0003 || a[31:12] == 20'hF0004 || a[31:12] == 20'hF0005) region = R_REG;
         else                                                region = R_NONE;
     endfunction
 
@@ -595,6 +596,35 @@ blit bl (
     wire [31:0] au_playing;
     wire        au_late;
     wire [16:0] au_music;
+    wire        au_frame;
+
+// the FM music (opl.v): registers at 0xF000_5000, its value goes into the mixer's sums
+    wire        fm_wr = d_write && d_region == R_REG && d_addr[15:5] == 11'b0101_0000_000;     // 0x5000-0x501C
+    wire signed [15:0] fm_value;
+    wire        fm_run, fm_ready, fm_busy;
+    wire [8:0]  fm_fill;
+    wire [15:0] fm_now;
+
+opl fm_unit (
+    .clk                ( clk ),
+    .reset              ( cpu_reset ),
+    .wr                 ( fm_wr ),
+    .wr_addr            ( d_addr[4:2] ),
+    .wr_data            ( d_data ),
+    .run_out            ( fm_run ),
+    .fill               ( fm_fill ),
+    .ready              ( fm_ready ),
+    .busy               ( fm_busy ),
+    .now                ( fm_now ),
+    .frame              ( au_frame ),
+    .fm                 ( fm_value )
+);
+
+// the Pocket menu's Music Source (interact.json): the bridge writes it, no reset of the CPU
+// clears it (the Pocket writes the saved value just before Reset Exit); the CPU reads it
+    reg  [31:0] opt_music_r = 0;
+always @(posedge clk) if(bridge_wr && bridge_addr == 32'h2000_0000) opt_music_r <= bridge_wr_data;
+    assign opt_music = opt_music_r;
 
 audio au (
     .clk                ( clk ),
@@ -606,6 +636,8 @@ audio au (
     .late               ( au_late ),
     .busy               ( ),
     .music              ( au_music ),
+    .frame              ( au_frame ),
+    .fm                 ( fm_value ),
     .mem_valid          ( au_mem_valid ),
     .mem_ready          ( au_mem_ready ),
     .mem_addr           ( au_mem_addr ),
@@ -796,6 +828,7 @@ always @(posedge clk) begin
         16'h000C: reg_q <= {27'd0, writes_idle, br_dropped, br_overflow, sdram_ready, sdram_locked};
         16'h0010: reg_q <= {8'd0, br_words};
         16'h0014: reg_q <= sdram_refreshes;
+        16'h0040: reg_q <= opt_music_r;
         16'h0018: reg_q <= {phase_count, 14'd0, sdram_ready, phase_busy || phase_step};
         16'h0030: reg_q <= {25'd0, ds_result, 2'd0, ds_sizing, ds_read};
         16'h0034: reg_q <= ds_size;
@@ -819,6 +852,9 @@ always @(posedge clk) begin
         16'h4400: reg_q <= au_playing;
         16'h4408: reg_q <= {31'd0, au_late};
         16'h4414: reg_q <= {15'd0, au_music};
+        16'h5000: reg_q <= {31'd0, fm_run};
+        16'h5008: reg_q <= {14'd0, fm_busy, fm_ready, 7'd0, fm_fill};
+        16'h500C: reg_q <= {16'd0, fm_now};
         default:  reg_q <= 32'd0;
     endcase
 end
