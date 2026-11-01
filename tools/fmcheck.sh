@@ -5,8 +5,8 @@
 # game's HMIMDRV.386), which is built here from where it is (copied into build/ only).
 # tools/fmsongs.py reads the songs independently first (tracks, messages, lengths, notes).
 # Usage: tools/fmcheck.sh [song ...]       default all seven
-#   GAME_DIR (default "C:/GOG Games/Screamer"), OPENSCREAMER (default
-#   "C:/Users/Gaming/Documents/Projects/Screamer/openscreamer"); build/fmcheck/ gets the work.
+#   GAME_DIR (default "C:/GOG Games/Screamer"), OPENSCREAMER (required: the path of an
+#   openscreamer checkout); build/fmcheck/ gets the work.
 #   SECONDS_RUN=s: how long each song plays (default its length plus 10 s: a full round and more).
 set -e
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -39,7 +39,7 @@ if [ "$1" = "--inner" ]; then
 fi
 
 game=${GAME_DIR:-C:/GOG Games/Screamer}
-os=${OPENSCREAMER:-C:/Users/Gaming/Documents/Projects/Screamer/openscreamer}
+os=${OPENSCREAMER:?set OPENSCREAMER to the path of an openscreamer checkout}
 # music.c and fmchip.h are copied into build/ (not part of the repository) with an empty port.h
 # beside them, so that music.c does not take openscreamer's own (it replaces fopen and the like)
 mkdir -p "$root/build/fmcheck/ref"

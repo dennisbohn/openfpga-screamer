@@ -6,11 +6,11 @@
                 "screamer"
             ],
             "shortname": "Screamer",
-            "description": "Screamer (1995): RISC-V softcore + hardware 3D renderer, WIP",
+            "description": "Screamer (1995): RISC-V soft core and a hardware 3D renderer",
             "author": "Chainy",
-            "url": "https://github.com/chainy-openfpga/openfpga-screamer",
-            "version": "0.1.0",
-            "date_release": "2026-10-25"
+            "url": "https://github.com/dennisbohn/openfpga-screamer",
+            "version": "1.0.0",
+            "date_release": "2026-11-01"
         },
         "framework": {
             "target_product": "Analogue Pocket",
