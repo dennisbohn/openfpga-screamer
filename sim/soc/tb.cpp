@@ -18,7 +18,7 @@
 // slot without a file). The boot loader checks program.bin and starts it. SIM_GAME names
 // a folder with the game's original files: the testbench serves them as the slots
 // core/data.json gives their names, and the program builds the track from them and drives
-// the race instead of the texture demo. The CD image SCREAM.gog (383 MB) is not read whole:
+// the race instead of the list of missing files. The CD image SCREAM.gog (383 MB) is not read whole:
 // the part asked for is read from the file and sent at the APF's measured rate while the
 // simulation goes on, as the music streams it (firmware/music.c).
 //
@@ -350,20 +350,35 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
     if (top.sdram_errors) { printf("FAIL: the memory model reported errors\n"); fails++; }
     if (top.sdram_max_refresh > 580) { printf("FAIL: refresh gap above 7.8 us (580 clocks)\n"); fails++; }
 
-    // the last whole frame: the test band, or the trap handler's box (rows 18..24 in
-    // COL_ALERT; text row 22 is empty); the race (the game's files) draws no band
+    // the last whole frame: the test band (the boot loader's screen), the white title bar of the
+    // list of the game's files (the program's screen without them, firmware/files.c: its right
+    // end, where there is no text), or the trap handler's box (rows 18..24 in COL_ALERT; text
+    // row 22 is empty); the race (the game's files) draws no band
     if (last.size() == size_t(W * H * 3)) {
         bool race = s.race && !expect_trap;
-        int bad = 0, y0 = expect_trap ? 22 * 8 : 0, x1 = expect_trap ? W : 256;
-        for (int y = y0; y < (race ? y0 : y0 + 8); y++)
-            for (int x = 0; x < x1; x++) {
-                uint32_t want = pal_formula(expect_trap ? 230 : x);
-                const uint8_t *p = &last[(y * W + x) * 3];
-                uint32_t got = uint32_t(p[0]) << 16 | p[1] << 8 | p[2];
-                if (got != want) { if (bad < 5) printf("pixel %d,%d: %06x, expected %06x\n", x, y, got, want); bad++; }
-            }
-        int n = 8 * x1;
-        printf("%s: %s\n", expect_trap ? "trap box" : "test band",
+        auto wrong = [&](int y0, int x0, int x1, bool band, uint32_t fixed) {
+            int bad = 0;
+            for (int y = y0; y < y0 + 8; y++)
+                for (int x = x0; x < x1; x++) {
+                    uint32_t want = band ? pal_formula(x) : fixed;
+                    const uint8_t *p = &last[(y * W + x) * 3];
+                    uint32_t got = uint32_t(p[0]) << 16 | p[1] << 8 | p[2];
+                    if (got != want) { if (bad < 5) printf("pixel %d,%d: %06x, expected %06x\n", x, y, got, want); bad++; }
+                }
+            return bad;
+        };
+        int bad = 0, n = 8 * 256;
+        const char *what = "test band";
+        if (expect_trap) {
+            what = "trap box";
+            n = 8 * W;
+            bad = wrong(22 * 8, 0, W, false, pal_formula(230));
+        } else if (!race) {
+            int band = wrong(0, 0, 256, true, 0), bar = wrong(0, 256, W, false, 0xFFFFFF);
+            if (bar == 0) { what = "title bar of the list of files"; n = 8 * (W - 256); }
+            else bad = band;
+        }
+        printf("%s: %s\n", what,
                race ? "none in the race, not checked"
                : bad ? (std::to_string(bad) + " of " + std::to_string(n) + " pixels wrong").c_str()
                    : ("all " + std::to_string(n) + " pixels match").c_str());
@@ -420,8 +435,9 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
         if (reported != negative) { printf(negative ? "FAIL: the log reports no failed test\n" : "FAIL: the log reports a failed test\n"); fails++; }
         if (slot_line && text.find(slot_line) == std::string::npos) { printf("FAIL: no \"%s\" in the log\n", slot_line); fails++; }
         if (text.find("windows of 2048 bytes") == std::string::npos) { printf("FAIL: the log does not name the simulation windows\n"); fails++; }
-        // the texture demo checks its triangles, the race (the game's files) its whole picture
-        const char *check = s.race ? "track check: ok" : "raster check: ok";
+        // the race (the game's files) checks its whole picture, without them the program says
+        // which files it misses
+        const char *check = s.race ? "track check: ok" : "game files: ";
         if (!negative && text.find(check) == std::string::npos) { printf("FAIL: no \"%s\" in the log\n", check); fails++; }
     }
     return fails;

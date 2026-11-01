@@ -12,7 +12,7 @@
 #define MARGIN      0x400u                  /* left free behind the mixer's place (it holds 64 bytes) */
 #define MASTER      0x4000                  /* the CD master volume at the game's 0x6000 (music.h) */
 #define FM_SLOT     25                      /* DATA/MUSIC.DAT, core/data.json */
-#define FM_MEM      (SDRAM_BASE + 0x1F40000)    /* up to 256 KB (its 200 KB), after the ring and the test scene's mesh (main.c) */
+#define FM_MEM      (SDRAM_BASE + 0x1F40000)    /* up to 256 KB (its 200 KB), after the ring */
 #define FM_MAX      0x40000u
 #define SECTOR      2352u
 #define MAX_TRACKS  99

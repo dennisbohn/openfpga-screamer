@@ -13,7 +13,7 @@
 # .. MAP6.DAT, GEN.DAT, LOCAL.DAT, SOUND.DAT, in their folders; build/ is ignored by git, game
 # data is never committed). The soc testbench serves them as their data slots, the firmware
 # builds the track from them and drives the race (the 3D units, the blitter) instead of the
-# texture demo, without the track screen; that takes about 400 frames:
+# list of missing files, without the track screen; that takes about 400 frames:
 #   SIM_GAME=build/gamedata tools/sim.sh soc build/firmware/firmware.bin build/sim/orig 400
 # SIM_QUICK=1 leaves out the two resets after the first run, SIM_IMAGE=<file> offers the
 # finished track image as data slot 30 so the firmware does not build it (tools/simcheck.sh).

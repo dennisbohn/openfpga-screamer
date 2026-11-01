@@ -13,8 +13,8 @@ the memory system and its test in [`docs/memory.md`](../docs/memory.md).
 At start the firmware clears the debug log, writes the checksum of its own image into it and
 tests the CPU (integer multiply, divide and shifts, floating point, the CFU). A short memory
 test of the SDRAM follows; only a failure leaves its results on the screen. Then `program.bin`
-loads the game's files from the data slots and runs the game. Without the game files it draws
-a test scene instead. A crash (trap) ends up in the log with `mcause`, `mepc` and `mtval`.
+loads the game's files from the data slots and runs the game. If a file the game needs is
+missing, it lists all the files with [OK] or [MISSING] instead (`files.c`). A crash (trap) ends up in the log with `mcause`, `mepc` and `mtval`.
 
 ## Building
 
@@ -47,7 +47,8 @@ and package versions pinned); the script builds the image on first use. The resu
 | `menu.c`, `hud.c`, `intro.c` | menus, the race screen, the intro |
 | `sound.c`, `speech.c`, `music.c` | sound effects, the race commentary, the music: streamed from the CD image, or the MIDI songs on the FM chip |
 | `fm.c` | the FM music: HMI's song player and OPL2 driver, queueing the chip's register writes with their times |
-| `console.c`, `screen.c`, `dlog.c`, `selftest.c`, `memtest.c`, `trap.c`, `texdemo.c` | text drawing, the test band, the debug log, self-tests, the memory test, the trap handler, the test scene |
+| `files.c` | the list of the game's files with [OK] or [MISSING], shown when one is missing |
+| `console.c`, `screen.c`, `dlog.c`, `selftest.c`, `memtest.c`, `trap.c` | text drawing, the test band, the debug log, self-tests, the memory test, the trap handler |
 | `font8x8_basic.h` | font from [dhepper/font8x8](https://github.com/dhepper/font8x8) (public domain), unchanged |
 
 ## Getting the debug log from the Pocket

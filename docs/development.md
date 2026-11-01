@@ -43,7 +43,8 @@ and compares the result byte for byte.
 loads the `L` set only for LOW and the `H` set from MID on (more scenery, same textures). The
 core uses the `H` sets.
 
-Without the game files the core shows a small scene with test patterns.
+If a file the game needs is missing, the core lists all its files with [OK] or [MISSING] and
+stops there. `SCREAM.gog`, `SCREAM.DAT` and `MUSIC.DAT` are optional: they only bring the music.
 
 ## PC renderer
 
