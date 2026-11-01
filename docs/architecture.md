@@ -54,12 +54,11 @@ passes before it is read, which absorbs any wait.
 | Racing lines, AI, cameras | `DATA/MAPn.DAT` | 17-41 KB |
 | HUD, cockpit | `GFX/GAME.DAT` | 0.5 MB |
 | Effects (8-bit PCM) | `DATA/SOUND.DAT` | 1.9 MB |
-| Tables | `TABS/*.TAB` | about 410 KB |
 
 ## Game data on the SD card
 
 The original files, unchanged, in their folders under `Assets/screamer/common/`: the game's
-`DATA`, `GFX` and `TABS` folders as they are (the Pocket accepts a folder in a slot's file name,
+`DATA` and `GFX` folders as they are (the Pocket accepts a folder in a slot's file name,
 e.g. `GFX/MAP1H.DAT`). One data slot per file, with `deferload`. The core reads the table of
 contents at the end of a file and fetches the entries it needs. The firmware unpacks them
 (`dat.c`, LZW) and builds the track image at start-up (`track_build.c`; byte for byte what
@@ -98,7 +97,8 @@ loads while the first track is built: the firmware only starts the read (`sound_
 - `DATA/`: all 16 (`GEN`, `LOCAL`, `MUSIC`, `SOUND`, `MAP1`-`MAP6`, `MAP1I`-`MAP6I`)
 - `GFX/`: `GAME`, `GRAF`, `MENU`, `MAP1L`-`MAP6L`, `MAP1H`-`MAP6H` (L and H are the sets of the
   DETAIL option: L at LOW, H from MID; not the resolution)
-- `TABS/`: `PERSP01.TAB`, `VIS.TAB`
+- `TABS/`: `PERSP01.TAB`, `VIS.TAB`: the original's perspective divide table (the same as the formula
+  the geometry unit computes) and its visibility table. The core does not read them; the folder is not needed
 
 ## Design decisions
 
