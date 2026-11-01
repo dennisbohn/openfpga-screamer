@@ -26,7 +26,7 @@ cp "$core/dist/platforms/_images/screamer.bin" "$out/Platforms/_images/"
 
 # the firmware only: build/assets/ may also hold files made from the game data
 assets="$root/build/assets/screamer/$name"
-mkdir -p "$out/Assets/screamer/$name"
+mkdir -p "$out/Assets/screamer/$name" "$out/Assets/screamer/common"      # common: empty, for the game files
 for f in firmware.bin program.bin; do
     [ -f "$assets/$f" ] || { echo "$assets/$f is missing: run tools/fw.sh first"; exit 1; }
     cp "$assets/$f" "$out/Assets/screamer/$name/"
