@@ -12,6 +12,8 @@ data is part of this repository or of its releases.
 
 <img src="docs/images/race.png" alt="A race on the Pocket: the start lights, a red car, the lap and position display" width="640">
 
+Video: [Screamer running on the Analogue Pocket](https://youtu.be/lczQRB2F0cM)
+
 ## Features
 
 - All six tracks, all cars, the opponents' cars, props and moving scenery
