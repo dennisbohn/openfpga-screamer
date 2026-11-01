@@ -30,6 +30,8 @@ static int paused_fm;                       /* the FM song music_pause paused */
 static int cd_count;                        /* the audio tracks the image has */
 static int fm_state;                        /* MUSIC.DAT: 0 not read yet, 1 read and usable, -1 missing or not usable */
 static int last_source;                     /* the source of the last song: 0 none yet, SRC_CD, SRC_FM */
+static int opt_seen;                        /* the Pocket menu's Music Source as music_frame saw it last: 0 Auto, 1 FM Synth */
+static int paused_song;                     /* the song music_pause paused, CD or FM (0 none) */
 enum { SRC_CD = 1, SRC_FM };
 static uint32_t paused_at;                  /* its place: bytes into it, whole sectors */
 static uint32_t master = MASTER;            /* music_master */
@@ -182,6 +184,7 @@ int music_init(const uint8_t *gen, uint32_t gen_size)
     dlog_str("music: Music Source option ");
     dlog_hex(OPT_MUSIC);
     dlog_str(OPT_MUSIC ? " (FM Synth)\n" : " (Auto)\n");
+    opt_seen = OPT_MUSIC != 0;
     if (OPT_MUSIC || !n) fm_available();        /* needed from the first song on; else when it is */
     return n || fm_state > 0;
 }
@@ -259,6 +262,7 @@ void music_cd(int n)
 void music_pause(void)
 {
     int n = playing;
+    paused_song = playing ? playing - 1 : fm_playing();
     if (fm_playing()) {
         fm_pause();
         paused_fm = 1;
@@ -273,6 +277,16 @@ void music_pause(void)
 
 void music_resume(void)
 {
+    int song = paused_song;
+    paused_song = 0;
+    if (song && music_on && (paused || paused_fm)) {
+        int old = last_source;
+        opt_seen = OPT_MUSIC != 0;
+        if (choose() != old) {              /* Music Source was changed in the pause: the song from its start, on the other source */
+            begin(song);
+            return;
+        }
+    }
     if (paused_fm) {
         paused_fm = 0;
         fm_resume();
@@ -314,6 +328,12 @@ int music_disc(int *lo, int *hi)
 
 void music_frame(void)
 {
+    int opt = OPT_MUSIC != 0;
+    if (opt != opt_seen) {                  /* the Pocket menu's Music Source changed: the song goes on from its start on the other source */
+        opt_seen = opt;
+        int n = playing ? playing - 1 : fm_playing();
+        if (n) begin(n);
+    }
     fm_frame();
     if (!playing) return;
     uint32_t p = AU_MUSIC & 0xFFFF;
