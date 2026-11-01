@@ -45,7 +45,8 @@ and package versions pinned); the script builds the image on first use. The resu
 | `opp.c`, `scenery.c`, `ghost.c` | opponents, props and moving scenery, the time-attack ghost |
 | `champ.c`, `save.c` | the championship, saved data (nonvolatile data slots) |
 | `menu.c`, `hud.c`, `intro.c` | menus, the race screen, the intro |
-| `sound.c`, `speech.c`, `music.c` | sound effects, the race commentary, the music streamed from the CD image |
+| `sound.c`, `speech.c`, `music.c` | sound effects, the race commentary, the music: streamed from the CD image, or the MIDI songs on the FM chip |
+| `fm.c` | the FM music: HMI's song player and OPL2 driver, queueing the chip's register writes with their times |
 | `console.c`, `screen.c`, `dlog.c`, `selftest.c`, `memtest.c`, `trap.c`, `texdemo.c` | text drawing, the test band, the debug log, self-tests, the memory test, the trap handler, the test scene |
 | `font8x8_basic.h` | font from [dhepper/font8x8](https://github.com/dhepper/font8x8) (public domain), unchanged |
 

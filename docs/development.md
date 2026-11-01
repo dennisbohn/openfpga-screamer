@@ -85,6 +85,9 @@ tools/sim.sh sdram_model
 # The mixer (audio.v) against its C model firmware/mixer.c: random voices, loops, steps and
 # volumes; every output value as it leaves over I2S is compared. Values, seed.
 tools/sim.sh audio 20000 1
+# The FM music (opl.v with the real JTOPL chip): the write queue's timing, the chip's pitch
+# against the register values, the gain, run = 0.
+tools/sim.sh opl
 ```
 
 The SDRAM model in `sim/models/sdram_model.v` checks the datasheet timings in clocks and can be
@@ -103,6 +106,7 @@ run (I2S output, 48 kHz stereo) goes to `build/sim/audio.wav`. It also needs `DA
 |---|---|
 | `tools/dat_sizes.py <file.DAT>...` | lists a game container with unpacked sizes (`-v`: every file) |
 | `tools/datfile.py` | reads the containers (shared by the other scripts) |
+| `tools/fmcheck.sh [song ...]`, `tools/fmsongs.py`, `tools/host/fmdump.c`, `tools/host/fmref.c` | the FM music on the PC: `fmsongs.py` reads the songs of `DATA/MUSIC.DAT` independently (tracks, messages, lengths); `fmdump.c` runs `firmware/fm.c` against a model of the hardware's write queue; `fmref.c` is openscreamer's driver with the chip replaced by a log; `fmcheck.sh` runs all of them (Docker) and compares the register writes tick by tick |
 | `tools/dis.sh [-h] [-f] <from> <to>` | disassembles part of `STARTL.EXE` (`-h`: `STARTH.EXE`) at the addresses of OpenScreamer's notes; `tools/unle.py` (from OpenScreamer) unpacks the program into `build/exe/` on first use |
 | `tools/dosram.py` | reads the memory of the original game running in DOSBox, to compare with the firmware |
 | `tools/pocketlog.py [debug.txt]` | reads the Pocket's debug log (default: the SD card at I:) as a short table |

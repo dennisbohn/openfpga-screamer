@@ -1,7 +1,22 @@
 {
     "interact": {
         "magic": "APF_VER_1",
-        "variables": [],
+        "variables": [
+            {
+                "name": "Music Source",
+                "id": 1,
+                "type": "list",
+                "enabled": true,
+                "persist": true,
+                "writeonly": true,
+                "address": "0x20000000",
+                "defaultval": 0,
+                "options": [
+                    { "value": 0, "name": "Auto" },
+                    { "value": 1, "name": "FM Synth" }
+                ]
+            }
+        ],
         "messages": []
     }
 }

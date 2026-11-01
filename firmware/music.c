@@ -3,6 +3,7 @@
 #include "dat.h"
 #include "dlog.h"
 #include "slot.h"
+#include "fm.h"
 
 #define CUE_SLOT    21                      /* SCREAM.DAT, core/data.json */
 #define DISC_SLOT   22                      /* SCREAM.gog */
@@ -10,6 +11,9 @@
 #define CHUNK       0x8000u                 /* a read: 0.19 s of music, 25 ms at the APF's 1.3 MB/s */
 #define MARGIN      0x400u                  /* left free behind the mixer's place (it holds 64 bytes) */
 #define MASTER      0x4000                  /* the CD master volume at the game's 0x6000 (music.h) */
+#define FM_SLOT     25                      /* DATA/MUSIC.DAT, core/data.json */
+#define FM_MEM      (SDRAM_BASE + 0x1F40000)    /* up to 256 KB (its 200 KB), after the ring and the test scene's mesh (main.c) */
+#define FM_MAX      0x40000u
 #define SECTOR      2352u
 #define MAX_TRACKS  99
 
@@ -22,6 +26,11 @@ static int songs[8] = { 1, 2, 5, 3, 4, 6, 7, 1 };
 
 static int playing;                         /* the CD track playing, 0 none */
 static int paused;                          /* the track music_pause stopped, 0 none */
+static int paused_fm;                       /* the FM song music_pause paused */
+static int cd_count;                        /* the audio tracks the image has */
+static int fm_state;                        /* MUSIC.DAT: 0 not read yet, 1 read and usable, -1 missing or not usable */
+static int last_source;                     /* the source of the last song: 0 none yet, SRC_CD, SRC_FM */
+enum { SRC_CD = 1, SRC_FM };
 static uint32_t paused_at;                  /* its place: bytes into it, whole sectors */
 static uint32_t master = MASTER;            /* music_master */
 int music_on = 1;
@@ -120,6 +129,39 @@ static void cd_tracks(const uint8_t *gen, uint32_t gen_size)
             songs[i] = v[i];
 }
 
+/* MUSIC.DAT into the SDRAM and its banks into the driver, once; 1 if the FM music can play. No
+   CD read may be running (slot calls take turns). */
+static int fm_available(void)
+{
+    if (fm_state == 0) {
+        uint32_t size = slot_size(FM_SLOT);
+        fm_state = -1;
+        if (!size) dlog_str("music: no MUSIC.DAT (DATA/MUSIC.DAT)\n");
+        else if (size > FM_MAX || slot_read(FM_SLOT, 0, FM_MEM, SLOT_REST) != 0) dlog_str("music: MUSIC.DAT could not be read\n");
+        else if (!fm_init((const uint8_t *)FM_MEM, size)) dlog_str("music: MUSIC.DAT has no usable banks and songs\n");
+        else {
+            fm_state = 1;
+            dlog_str("music: MUSIC.DAT read (");
+            dlog_dec((int32_t)size);
+            dlog_str(" bytes)\n");
+        }
+    }
+    return fm_state > 0;
+}
+
+/* The source for a song that starts now: the Pocket menu's Music Source forces FM Synth when
+   it can; Auto (or no MUSIC.DAT) takes the CD image if its tracks are there, else FM if
+   MUSIC.DAT is; 0 for silence. The choice goes into the log when it changes. */
+static int choose(void)
+{
+    int src = OPT_MUSIC && fm_available() ? SRC_FM : cd_count ? SRC_CD : fm_available() ? SRC_FM : 0;
+    if (src != last_source) {
+        dlog_str(src == SRC_FM ? "music: FM synth plays (MUSIC.DAT)\n" : src == SRC_CD ? "music: the CD image plays\n" : "music: silence (no CD image, no MUSIC.DAT)\n");
+        last_source = src;
+    }
+    return src;
+}
+
 int music_init(const uint8_t *gen, uint32_t gen_size)
 {
     uint32_t size = slot_size(CUE_SLOT);
@@ -135,8 +177,13 @@ int music_init(const uint8_t *gen, uint32_t gen_size)
         for (int i = 1; i <= MAX_TRACKS; i++)
             n += audio[i] && first[i] >= 0 && (uint32_t)first[i] < sectors;
     }
+    cd_count = n;
     if (!n) dlog_str("music: no audio tracks (SCREAM.gog, SCREAM.DAT)\n");     /* (the log has 4 KB) */
-    return n;
+    dlog_str("music: Music Source option ");
+    dlog_hex(OPT_MUSIC);
+    dlog_str(OPT_MUSIC ? " (FM Synth)\n" : " (Auto)\n");
+    if (OPT_MUSIC || !n) fm_available();        /* needed from the first song on; else when it is */
+    return n || fm_state > 0;
 }
 
 /* the next read into the ring, if there is room for it: its bytes, else 0 */
@@ -166,7 +213,7 @@ static void done(uint32_t len, int r)
 }
 
 /* CD track n from byte off of it on (a whole sector), the music before stopped */
-static void start(int n, uint32_t off)
+static void cd_start(int n, uint32_t off)
 {
     int m = n + 1;
     music_stop();
@@ -187,20 +234,35 @@ static void start(int n, uint32_t off)
     AU_MUSIC = 1;
 }
 
+/* Song n (MUSICn.HMP, CD track n + 1) from its start, the music before stopped: from the source
+   choose() says */
+static void begin(int n)
+{
+    music_stop();
+    if (!music_on || n < 1) return;
+    int src = choose();
+    if (src == SRC_FM) fm_play(n);
+    else if (src == SRC_CD) cd_start(n + 1, 0);
+}
+
 void music_play(int k)
 {
-    int n = k >= 0 && k <= 6 ? songs[k + 1] + 1 : 0;
-    if (n != playing) start(n, 0);
+    int n = k >= 0 && k <= 6 ? songs[k + 1] : 0;
+    if (n != (playing ? playing - 1 : fm_playing())) begin(n);
 }
 
 void music_cd(int n)
 {
-    start(n, 0);
+    begin(n - 1);
 }
 
 void music_pause(void)
 {
     int n = playing;
+    if (fm_playing()) {
+        fm_pause();
+        paused_fm = 1;
+    }
     if (!n) return;
     played += ((AU_MUSIC & 0xFFFF) - place) & 0xFFFF;
     uint32_t off = played * 4 % (to - from) / SECTOR * SECTOR;
@@ -211,12 +273,17 @@ void music_pause(void)
 
 void music_resume(void)
 {
-    if (paused) start(paused, paused_at);
+    if (paused_fm) {
+        paused_fm = 0;
+        fm_resume();
+    }
+    if (paused) cd_start(paused, paused_at);
 }
 
 void music_fade(int32_t f)
 {
     AU_MUSIC_VOL = master * (uint32_t)(f < 0 ? 0 : f > 0x8000 ? 0x8000 : f) >> 15;
+    fm_fade(f);
 }
 
 void music_master(int32_t v)
@@ -224,9 +291,19 @@ void music_master(int32_t v)
     master = (uint32_t)(v < 0 ? 0 : v > 0x7FFF ? 0x7FFF : v) * MASTER / 0x6000;
 }
 
+void music_master_mu(int32_t v)
+{
+    fm_master(v);
+}
+
 int music_disc(int *lo, int *hi)
 {
     *lo = *hi = 0;
+    if (fm_playing() || paused_fm || (!cd_count && fm_state > 0)) {    /* the songs stand for tracks 2 .. 8 */
+        *lo = 2;
+        *hi = FM_SONGS + 1;
+        return fm_playing() ? fm_playing() + 1 : 0;
+    }
     for (int i = 1; i <= MAX_TRACKS; i++)
         if (audio[i] && first[i] >= 0 && (uint32_t)first[i] < sectors) {
             if (!*lo) *lo = i;
@@ -237,6 +314,7 @@ int music_disc(int *lo, int *hi)
 
 void music_frame(void)
 {
+    fm_frame();
     if (!playing) return;
     uint32_t p = AU_MUSIC & 0xFFFF;
     played += (p - place) & 0xFFFF;
@@ -272,5 +350,21 @@ void music_stop(void)
         dlog_dec((int32_t)short_frames);
         dlog_str(" frames\n");
     }
-    playing = paused = 0;
+    if (fm_playing() || paused_fm) {
+        uint32_t lost, full, behind;
+        fm_stats(&lost, &full, &behind);
+        if (lost || full || behind) {
+            dlog_str("music: FM song ");
+            dlog_dec(fm_playing());
+            dlog_str(": ");
+            dlog_dec((int32_t)lost);
+            dlog_str(" notes without a voice, ");
+            dlog_dec((int32_t)full);
+            dlog_str(" times the queue was full, ");
+            dlog_dec((int32_t)behind);
+            dlog_str(" times behind\n");
+        }
+    }
+    fm_stop();
+    playing = paused = paused_fm = 0;
 }

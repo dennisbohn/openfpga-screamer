@@ -18,7 +18,8 @@ data is part of this repository or of its releases.
 - Normal race, championship, time attack with ghost, cone carnage and slalom
 - Replays with the game's trackside cameras, the pause screen with its working CD player
 - The game's menus, options, records and name entry, saved between sessions
-- Music from the game's CD image, sound effects and speech
+- Music from the game's CD image, or without it the MIDI songs through an FM chip (OPL2, the
+  AdLib sound of the original), sound effects and speech
 - 50 frames per second at the Pocket's native 320 x 200 picture, perspective-correct textures
 - Pocket integration: Core Controls remapping, analog sticks and triggers in the dock
 
@@ -41,13 +42,16 @@ work if their files are the same.
    | In the install folder | Files |
    |---|---|
    | `GFX/` | `GAME.DAT`, `GRAF.DAT`, `MENU.DAT`, `MAP1H.DAT` ... `MAP6H.DAT` |
-   | `DATA/` | `GEN.DAT`, `LOCAL.DAT`, `SOUND.DAT`, `MAP1.DAT` ... `MAP6.DAT` |
+   | `DATA/` | `GEN.DAT`, `LOCAL.DAT`, `SOUND.DAT`, `MUSIC.DAT`, `MAP1.DAT` ... `MAP6.DAT` |
    | top level | `SCREAM.gog` and `SCREAM.DAT` |
 
    The last two are the music: the game's CD soundtrack, which GOG ships as a CD image
    (`SCREAM.gog`) with its cue sheet (`SCREAM.DAT`). They sit next to the `GFX` and `DATA`
    folders, so that for example `Assets/screamer/common/GFX/GAME.DAT` and
-   `Assets/screamer/common/SCREAM.gog` exist.
+   `Assets/screamer/common/SCREAM.gog` exist. `MUSIC.DAT` holds the MIDI songs that the original
+   played through an AdLib card when it found no CD; the core plays them on an FM chip. The
+   Pocket menu's *Music Source* is *Auto* (the CD if its image is there, else FM) or *FM Synth*
+   (always FM).
 3. Start *Screamer* from the Pocket's core list.
 
 Saves and the debug log go to `Saves/screamer/Chainy.Screamer/`. `debug.txt` helps when

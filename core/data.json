@@ -277,6 +277,17 @@
                 "extensions": ["dat"],
                 "size_maximum": 360096,
                 "address": "0x13F10000"
+            },
+            {
+                "name": "MUSIC.DAT",
+                "id": 25,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "DATA/MUSIC.DAT",
+                "extensions": ["dat"],
+                "size_maximum": 262144,
+                "address": "0x11F40000"
             }
         ]
     }

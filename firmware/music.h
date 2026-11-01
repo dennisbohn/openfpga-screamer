@@ -45,6 +45,9 @@ void music_fade(int32_t f);
 /* The game's CD master volume v of 0x7fff (0x1d2bc, CHOICE.DAT's +0x448; the CD player
    changes it): the music's volume is two thirds of it, MASTER at the game's 0x6000 */
 void music_master(int32_t v);
+/* The game's MIDI master volume (0x1d2c0, CHOICE.DAT's +0x44c, the CD player's MU): the FM
+   music's, see fm.h */
+void music_master_mu(int32_t v);
 /* For the CD player: the disc's first and last audio track (0 without the image) and the CD
    track playing (0 none) */
 int music_disc(int *lo, int *hi);

@@ -53,13 +53,14 @@ MEASURED = [
     ("Blitter (backdrop, HUD)", "gfx", [(1, SOC + "|blit:bl")]),
     ("SDRAM controller + ports", "mem", [(1, SOC + "|sdram:sdc"), (1, SOC + "|sdram_port:sdp")]),
     ("Audio: 32-voice mixer + music, I²S", "audio", [(1, SOC + "|audio:au")]),
+    ("FM music: OPL2 chip + write queue", "audio", [(1, SOC + "|opl:fm_unit")]),
 ]
 # the SoC's own logic (bus, registers, arbiters): the SoC minus everything measured inside it
 SOC_REST = ("Bus, registers, arbiters", "mem")
 
 TIMING_LIMIT = 0.80         # logic utilisation above which timing closure gets hard
-STAMP = "2026-10-30"
-BUILD = "analog controls, hardware unchanged"
+STAMP = "2026-11-01"
+BUILD = "FM music: OPL2 with its write queue"
 
 # layout
 WIDTH = 1120

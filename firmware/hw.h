@@ -202,6 +202,24 @@ static inline uint32_t in_keys(void)
                                                R: [15:0] the place (the frame in the ring), bit 16 plays */
 #define AU_MUSIC_RING   0x40000u
 
+/* the FM music (core/src/fpga/core/opl.v, fm.h): the OPL2 of the AdLib, fed through a queue of
+   time-stamped register writes; its output joins the mixer's sums, mono. Time is counted in the
+   chip's samples, 3579545 / 72 = 49715.9 a second. */
+#define FM_CTRL         REG32(0xF0005000u)  /* W: bit 0 run: 0 holds the chip in reset (silent) and the queue
+                                               empty, 1 and the chip is ready 36 us later; R: the same */
+#define FM_WRITE        REG32(0xF0005004u)  /* W: a write for the chip: [31:16] the time (the low 16 bits of
+                                               FM_TIME's) at which it is made, [15:8] the register, [7:0] the
+                                               value; ignored when the queue is full or run is 0 */
+#define FM_STATUS       REG32(0xF0005008u)  /* R: [8:0] writes in the queue (0..256), bit 16 the chip is ready,
+                                               bit 17 a write is going on */
+#define FM_TIME         REG32(0xF000500Cu)  /* R: [15:0] the chip's samples since power-up (wraps in 1.3 s) */
+#define FM_GAIN         REG32(0xF0005010u)  /* W: [7:0] the output times this / 32 (power-up value 32) */
+#define FM_QUEUE        256                 /* writes the queue holds */
+
+/* the Pocket menu's Music Source (core/interact.json), written over the bridge to 0x2000_0000 and
+   kept in a register that no reset clears: 0 Auto, 1 FM Synth (any non-zero value is taken as 1) */
+#define OPT_MUSIC       REG32(0xF0000040u)
+
 /* Cache maintenance: invalidate the whole data cache (it is write-through, so nothing is
    lost), and make the instruction cache fetch code written with stores (fence.i, then
    three instructions that may still come from the old line). */

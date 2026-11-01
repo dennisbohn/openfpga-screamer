@@ -1,7 +1,7 @@
 #!/bin/sh
 # Package the core and copy it onto the Pocket's SD card (Pocket in USB mode or card reader),
 # together with the player's own original game files the core reads (core/data.json, slots
-# 3-22), unchanged and in the game's own folders (DATA, GFX; GOG's image of the CD, SCREAM.gog
+# 3-22 and 25), unchanged and in the game's own folders (DATA, GFX; GOG's image of the CD, SCREAM.gog
 # and its cue sheet SCREAM.DAT, at the top), into Assets/screamer/common/. A file already there
 # with the same size is left as it is (the CD image has 383 MB).
 # Usage: tools/deploy.sh <SD card root> [game folder], e.g. tools/deploy.sh /i  (Git Bash for
@@ -12,7 +12,7 @@ root=$(cd "$(dirname "$0")/.." && pwd)
 card=${1:?usage: tools/deploy.sh <SD card root> [game folder]}
 game=${2:-${GAME_DIR:-C:/GOG Games/Screamer}}
 [ -d "$card/Cores" ] && [ -d "$card/Platforms" ] || { echo "$card does not look like a Pocket SD card"; exit 1; }
-files="GFX/GAME.DAT GFX/MENU.DAT GFX/GRAF.DAT DATA/GEN.DAT DATA/LOCAL.DAT DATA/SOUND.DAT SCREAM.DAT SCREAM.gog"
+files="GFX/GAME.DAT GFX/MENU.DAT GFX/GRAF.DAT DATA/GEN.DAT DATA/LOCAL.DAT DATA/SOUND.DAT DATA/MUSIC.DAT SCREAM.DAT SCREAM.gog"
 for n in 1 2 3 4 5 6; do files="$files GFX/MAP${n}H.DAT DATA/MAP$n.DAT"; done
 for f in $files; do
     [ -f "$game/$f" ] || { echo "$game/$f is missing: name the game's folder (argument or GAME_DIR)"; exit 1; }

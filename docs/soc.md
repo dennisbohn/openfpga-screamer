@@ -57,6 +57,7 @@ controller, caches, clock phase): `docs/memory.md`. Overall architecture:
 | `0xF000_2000` | 4 KB | Input | no |
 | `0xF000_3000` | 4 KB | Rasterizer, setup and geometry units, blitter | no |
 | `0xF000_4000` | 4 KB | Sound: the mixer | no |
+| `0xF000_5000` | 4 KB | Sound: the FM music (OPL2 and its write queue) | no |
 | `0xF000_8000` | 4 KB | Log (`debug.txt`, see below) | no |
 | `0xF100_0000` | 64,000 B | Framebuffer 0 | no |
 | `0xF101_0000` | 64,000 B | Framebuffer 1 | no |
@@ -73,6 +74,7 @@ SDRAM layout (set by the firmware and the data slot addresses in `core/data.json
 | `0x10A0_0000` | images, sprites and fonts of the menu pages and of the track and car selection, the unpacked loading screen |
 | `0x11C0_0000` | sound effects `SOUND.DAT` (slot 8, up to 2 MB; the mixer plays them from there; the nine menu samples already at start, each at its place) |
 | `0x11E0_0000` | music ring (256 KB, from `SCREAM.gog`, slot 22) |
+| `0x11F4_0000` | `MUSIC.DAT` (slot 25, up to 256 KB; 200 KB: the FM music's songs and instrument banks, read when the FM music is first needed) |
 | `0x1210_0000` | track image (built by the firmware) |
 | `0x1280_0000` | game files: `MAPnH.DAT` `0x1280_0000` (slots 3, 9-13), `GAME.DAT` `0x12C0_0000` (4), `MAPn.DAT` `0x12D0_0000` (5, 14-18), `GEN.DAT` `0x12D4_0000` (6), `LOCAL.DAT` `0x12D5_0000` (7) |
 | `0x12D6_0000` | working memory of the track build |
@@ -108,6 +110,7 @@ All registers are 32 bits wide, accessed as words.
 | `0xF000_002C` | `DS_LENGTH` | W | bytes, a multiple of 4, or `0xFFFF_FFFF` for the rest of the file (the Pocket sizes it; this is how the firmware reads the last 1 to 3 bytes) |
 | `0xF000_0030` | `DS_CTRL` | R/W | Write: bit 0 = start the request. Read: bit 0 still running, bit 1 `DS_SIZE` still being looked up, bits 6..4 the Pocket's result (0 = good, 2 e.g. no file in the slot) |
 | `0xF000_0034` | `DS_SIZE` | R/W | Read: file size of slot `DS_ID` from the Pocket's slot table, 0 if missing; looked up again after every write of `DS_ID`. Write: the value becomes the size of slot `DS_ID` in the table (the saves, see below; bit 1 of `DS_CTRL` until it is entered) |
+| `0xF000_0040` | `OPT_MUSIC` | R | The Pocket menu's Music Source (`core/interact.json`): the word the Pocket wrote to bridge address `0x2000_0000`, 0 Auto, 1 FM Synth (the firmware takes any non-zero word for 1; the byte order of the Pocket's 32-bit write is not documented). A register of its own in `soc.v`, not in the SDRAM and not cleared by a reset of the CPU: the Pocket writes the saved value just before Reset Exit, when the SDRAM may not be ready yet and a bridge word into it is dropped (`MEM_STATUS` bit 3). The bridge reads it back at the same address. 0 after power-up |
 | `0xF000_1000` | `VID_STATUS` | R | Bit 0: front buffer (0/1). Bit 1: swap requested, not yet done. Bits 31..16: frame counter, counts every video frame (50 Hz) |
 | `0xF000_1004` | `VID_SWAP` | W | any value: request a swap. It happens in the next blanking interval; while one is pending (bit 1), further requests are ignored |
 | `0xF000_1400` + 4*i | `VID_PAL[i]` | W | palette of the **back** buffer, entry i (0..255): `0x00RRGGBB`. Only while no swap is pending (`VID_STATUS` bit 1 = 0); otherwise it hits the buffer being displayed |
@@ -146,6 +149,11 @@ All registers are 32 bits wide, accessed as words.
 | `0xF000_440C` | `AU_MUSIC_ADDR` | W | music: bits 25..18 the SDRAM byte address of its ring (256 KB, per word one stereo value of the CD, left in the lower half); set before the start |
 | `0xF000_4410` | `AU_MUSIC_VOL` | W | bits 15..0 volume of the music: sample * value >> 15 |
 | `0xF000_4414` | `AU_MUSIC` | R/W | Write: bit 0 = 1 plays the ring from its start (the two passes after that load its lines, the third plays the first value), 0 stops. Read: bits 15..0 the position (the value in the ring from which the next pass plays), bit 16 playing |
+| `0xF000_5000` | `FM_CTRL` | R/W | FM music (`opl.v`, `firmware/fm.c`): bit 0 run. 0 holds the chip in reset (silent, its registers cleared) and the queue empty; 1 starts it, ready 129 chip clocks (36 us) later. A reset of the CPU clears it |
+| `0xF000_5004` | `FM_WRITE` | W | one register write for the chip into the queue: bits 31..16 the time at which it is to be made (the low 16 bits of the `FM_TIME` that has then been reached), bits 15..8 the chip's register, bits 7..0 the value. Ignored while the queue is full or run is 0 |
+| `0xF000_5008` | `FM_STATUS` | R | bits 8..0 writes in the queue (0..256), bit 16 the chip is ready (out of reset), bit 17 a write to the chip is going on |
+| `0xF000_500C` | `FM_TIME` | R | bits 15..0: the chip's samples since power-up, 3,579,545 / 72 = 49,715.9 a second; wraps after 1.3 s. A time is due when `FM_TIME - time`, 16 bits, is not negative: at most 0.65 s ahead |
+| `0xF000_5010` | `FM_GAIN` | W | bits 7..0: the chip's output times this / 32, limited to 16 bits (32 at power-up; the firmware sets 50) |
 
 ## Sound
 
@@ -173,6 +181,35 @@ with a 32 KB read command that it only starts (`slot_start`); `AU_MUSIC` tells i
 mixer is. This costs the CPU about 500 clocks per frame (`docs/frame_timeline.svg`, "music");
 the bridge writes 176 KB/s into the SDRAM. In the simulation the output is the CD track value
 for value for 4.9 s (`tools/musiccheck.py`).
+
+**FM music** (`opl.v`, `core/src/fpga/core/jtopl/`): the OPL2 of the AdLib, for the songs of
+`DATA/MUSIC.DAT` when there is no CD image (or the Pocket menu says FM Synth); the firmware
+(`firmware/fm.c`, `fm.h`) is HMI's player and driver. The chip is JTOPL, an open core by Jose
+Tejada (GPL-3.0; the licence and the origin are in `jtopl/README.md`), at its clock of 3.579545 MHz:
+a clock enable from `clk_74a` by a fractional accumulator (715,909 / 14,850,000 a clock, the exact
+ratio), so it makes 49,715.9 samples a second and every note has the pitch the original had. The
+firmware's CPU frame is 20 ms but the music's time resolution is 8 ms, so the writes do not go to the
+chip directly. They go into a queue of 256 (one M10K) with the time at which each is to be made, in
+the chip's own samples (`FM_TIME`, 20 us); the firmware keeps it filled 60 ms ahead of the clock
+and the hardware releases the first write when its time has come, and writes of one time one after
+the other, 129 chip clocks (36 us) apart: JTOPL takes a value into its operator when that comes
+round, once in 72 clocks, and forgets it at the next write, and the original's driver waited
+about that long too (a note takes 25 writes, 0.9 ms). A time is 16 bits, compared as a difference,
+so the firmware must stay within 0.65 s of the clock; if it is late the writes come late, in
+order, and the song's time follows the clock again after 120 ms. Run 0 empties the queue and resets
+the chip: that is how the music stops. The chip is silent until the firmware sets run.
+
+The chip's output (16 bits, mono) goes to the mixer: once per output value `opl.v` takes the two
+newest chip samples and a point between them by a straight line (the fraction is the clocks since
+the newer sample over those between two, 1493.5, approximated by 44 / 65536), times `FM_GAIN` / 32,
+limited to 16 bits (one multiplier, in turn, 8 clocks after the mixer's frame strobe). The mixer
+starts both sums with this value and adds voices and music: the limiter follows. The nearest-sample
+alternative (zero-order hold) would skip a chip sample every 28th output value (49,716 / 48,000), a
+buzz on high notes. Without FM the value is 0 and the mixer is bit for bit its C model
+(`tools/sim.sh audio`). `tools/sim.sh opl` (`sim/opl`) runs `opl.v` with the real JTOPL: the queue
+releases writes at their times and 129 chip clocks apart, the chip plays a note whose measured pitch
+is 875.43 Hz for a chip pitch of 875.43 Hz (within 0.05 %), the gain doubles the output, run 0
+silences it. Cost: 646 ALMs, 10 M10K (queue 1, JTOPL's shift registers 6, tables 3) and 3 DSP.
 
 The firmware (`firmware/sound.c`) plays the effects from `SFXSBASE.DTR` (GEN.DAT): the samples
 are unpacked in `SOUND.DAT`, the mixer reads them directly from the loaded container. Volume:
