@@ -56,7 +56,7 @@ work if their files are the same.
    played through an AdLib card when it found no CD; the core plays them on an FM chip. The
    Pocket menu's *Music Source* is *Auto* (the CD if its image is there, else FM) or *FM Synth*
    (always FM).
-3. Start *Screamer* from the Pocket's core list.
+3. Start *Screamer* from the Pocket's core list. You find it in the group *Computer*.
 
 Saves and the debug log go to `Saves/screamer/Chainy.Screamer/`. `debug.txt` helps when
 something goes wrong; the Pocket writes it when the core is quit.
