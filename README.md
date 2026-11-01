@@ -45,9 +45,9 @@ work if their files are the same.
 
    | In the install folder | Files |
    |---|---|
-   | `GFX/` | `GAME.DAT`, `GRAF.DAT`, `MENU.DAT`, `MAP1H.DAT` ... `MAP6H.DAT` |
-   | `DATA/` | `GEN.DAT`, `LOCAL.DAT`, `SOUND.DAT`, `MUSIC.DAT`, `MAP1.DAT` ... `MAP6.DAT` |
-   | top level | `SCREAM.gog` and `SCREAM.DAT` |
+   | `./GFX/` | `GAME.DAT`, `GRAF.DAT`, `MENU.DAT`, `MAP1H.DAT` ... `MAP6H.DAT` |
+   | `./DATA/` | `GEN.DAT`, `LOCAL.DAT`, `SOUND.DAT`, `MUSIC.DAT`, `MAP1.DAT` ... `MAP6.DAT` |
+   | `./` | `SCREAM.gog` and `SCREAM.DAT` |
 
    The last two are the music: the game's CD soundtrack, which GOG ships as a CD image
    (`SCREAM.gog`) with its cue sheet (`SCREAM.DAT`). They sit next to the `GFX` and `DATA`
