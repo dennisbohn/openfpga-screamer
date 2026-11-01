@@ -1,3 +1,5 @@
+<p align="center"><img src="core/dist/platforms/_images/screamer.png" alt="Screamer" width="521"></p>
+
 # Screamer for the Analogue Pocket
 
 An [openFPGA](https://www.analogue.co/developer) core that runs *Screamer* (Graffiti / Virgin
