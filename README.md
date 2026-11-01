@@ -1,4 +1,4 @@
-<p align="center"><img src="core/dist/platforms/_images/screamer.png" alt="Screamer" width="521"></p>
+<img src="core/dist/platforms/_images/screamer.png" alt="Screamer" width="521">
 
 # Screamer for the Analogue Pocket
 
