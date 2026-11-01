@@ -79,7 +79,6 @@ SDRAM layout (set by the firmware and the data slot addresses in `core/data.json
 | `0x1300_0000` | the program (slot 2, at most 1 MB) |
 | `0x13F0_0000` | saved game `CHOICE.DAT` (slot 23, nonvolatile) |
 | `0x13F1_0000` | saved game `ATTACK.DAT` (slot 24, nonvolatile) |
-| `0x13FF_0000` | the two words of the Pocket menu that erase the saves (`core/interact.json`) |
 
 `0xF000_0000`-`0xFFFF_FFFF` is uncached for the CPU (`StaticMemoryTranslatorPlugin`). A
 read outside the ranges gives a bus error (trap), a write there is ignored. Code runs only
@@ -258,17 +257,6 @@ after the bridge's write buffer and has until the next bridge word, at least 88 
 complete). If the core is quit before `save_load` ran (in the first second), the Pocket saves
 whatever is in the SDRAM there.
 
-**Erasing the saves** from the Pocket menu (`core/interact.json`): the checkbox "Allow Save
-Reset" writes a 1 through the bridge to `0x13FF_0000`, the action "Reset Save Data" writes one
-to `0x13FF_0004`, both into the SDRAM (free between `ATTACK.DAT` and the last window of the
-memory test; `save_load` clears both words at start). In every frame of every loop of the game
-(menus, intro, race, pause, PLAY AGAIN?, fade-out) the firmware looks at them uncached
-(`save_reset` in `save.c`, `next_frame` in `main.c`). Only with the checkbox set does it reset
-both saves in the SDRAM to the defaults used for missing files, clear both words, stop effects
-and music and jump back to the start of the game behind `save_load` (`setjmp`/`longjmp`):
-first frame, loading, intro as at start. Without the checkbox it clears only the action
-word. It does not re-read the files on the SD card: the old ones stay there until the core is
-quit, then the Pocket writes the defaults back.
 
 At start the firmware clears the area, writes a header line, the self-test results and
 measurements; the trap handler adds cause and address of a crash (`mcause`, `mepc`, `mtval`).

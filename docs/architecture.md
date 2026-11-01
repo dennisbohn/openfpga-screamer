@@ -83,8 +83,7 @@ the CD image and two save slots:
   `SCREAM.gog` (slot 22, 383 MB). The core reads only the music from it, 32 KB at a time while it
   draws (see "CD music").
 - Two nonvolatile slots for the saves, `CHOICE.DAT` (23) and `ATTACK.DAT` (24), in the Pocket's
-  save folder, not with the game files (see "Championship"). The Pocket menu resets both to the
-  defaults and restarts the game ("Reset Save Data", `docs/soc.md`).
+  save folder, not with the game files (see "Championship").
 
 `GAME.DAT`, `GEN.DAT`, `LOCAL.DAT` and `SOUND.DAT` are loaded once. `SOUND.DAT` (1.9 MB, 1.3 s)
 loads while the first track is built: the firmware only starts the read (`sound_start` in

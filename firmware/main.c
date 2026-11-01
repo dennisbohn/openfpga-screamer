@@ -41,7 +41,6 @@
 #include "champ.h"
 #include "save.h"
 #include "intro.h"
-#include <setjmp.h>
 
 uint32_t frames_shown;            /* read by the trap handler */
 
@@ -530,26 +529,11 @@ static void pal_faded(const uint32_t *pal, int32_t f)
     }
 }
 
-static jmp_buf restart;                 /* prog_main's game from its start (next_frame) */
-
 /* The next frame of a loop of the game (the menus, the intro, a race, its pause, PLAY AGAIN?,
-   a fade): the swap before it done, its VID_STATUS. The Pocket menu's Reset Save Data
-   (save_reset) is taken here: the sound stopped, what the boot sets anew as it was, and the
-   game from its beginning (prog_main after save_load), the saves the game's defaults. */
+   a fade): the swap before it done, its VID_STATUS */
 static uint32_t next_frame(void)
 {
-    uint32_t st = wait_swap_done();
-    if (save_reset()) {
-        AU_STOP = 0xFFFFFFFFu;
-        music_stop();
-        snd_fade(0x8000);
-        music_fade(0x8000);
-        music_on = 1;
-        menu_fresh();
-        dlog_str("the game starts again\n");
-        longjmp(restart, 1);
-    }
-    return st;
+    return wait_swap_done();
 }
 
 /* A cut to black: the other buffer swapped in with an all-black palette (a menu screen left:
@@ -1724,7 +1708,6 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     log_head("frames drawn: ", 0);
     dlog_str("program.bin: running in the SDRAM\n");
     save_load();                    /* first: until then an exit would save the SDRAM as it is */
-    setjmp(restart);                /* from here again after the Pocket menu's save reset (next_frame) */
     menu_options_load();
     volumes();
     int sim = (SYS_FLAGS & FLAG_SIM) != 0;

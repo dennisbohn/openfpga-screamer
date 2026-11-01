@@ -20,8 +20,7 @@ data is part of this repository or of its releases.
 - The game's menus, options, records and name entry, saved between sessions
 - Music from the game's CD image, sound effects and speech
 - 50 frames per second at the Pocket's native 320 x 200 picture, perspective-correct textures
-- Pocket integration: Core Controls remapping, analog sticks and triggers in the dock, and a
-  menu entry to reset the save data
+- Pocket integration: Core Controls remapping, analog sticks and triggers in the dock
 
 Not supported: network play (the menu entry is left out), the link port.
 
