@@ -32,7 +32,9 @@ extern uint32_t fm_host_tick, fm_host_rounds, fm_host_notes;    /* the ticks run
 #define BEHIND      6000                    /* the song's time more than 120 ms behind the clock: it is set to it */
 #define ROOM        48                      /* free places the hardware's queue needs for one message (a note: 25 writes) */
 #define QUEUE       256
-#define FM_GAIN_DEFAULT 50                  /* opl.v: 32 = as the chip makes it; the original's was the card's analog mixer */
+#define FM_GAIN_DEFAULT 50                  /* opl.v: 32 = as the chip makes it; the original had the card's analog mixer. At 50 songs 2 and 5 through
+                                               the real chip (sim/opl play) have rms 1913 and 2971, peak 10985 and 14862; the CD tracks 2 and
+                                               6 as the mixer plays them 2585 and 2818, peak 16384 */
 
 #define MAXTRACK    32
 

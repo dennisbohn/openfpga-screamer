@@ -9,10 +9,17 @@
 //
 // Usage: Vopl     tools/sim.sh opl
 // Prints PASS or FAIL and exits with 0 or 1.
+//
+// Vopl play <events> <seconds> <out.wav> [gain]: plays a song instead. <events> is what
+// `fmdump <MUSIC.DAT> <song> <seconds> events` prints (tools/host/fmdump.c): a write's time in
+// chip samples from the song's start, the register, the value. They are queued the way the
+// firmware does, every 20 ms those due within 60 ms; the 48 kHz frames go to a 16-bit mono WAV
+// file (the mixer takes them as they are, times the gain / 32, default 50).
 
 #include <cstdio>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <cmath>
 #include <vector>
 #include "Vopl.h"
@@ -56,6 +63,48 @@ static void push(uint16_t when, unsigned reg, unsigned val)
     write_reg(1, (uint32_t)when << 16 | reg << 8 | val);
 }
 
+struct event { double due; unsigned reg, val; };
+
+static int play(const char *evfile, double seconds, const char *wavfile, unsigned gain)
+{
+    std::vector<event> ev;
+    FILE *f = fopen(evfile, "r");
+    if(!f) { perror(evfile); return 2; }
+    event e;
+    while(fscanf(f, "%lf %x %x", &e.due, &e.reg, &e.val) == 3) ev.push_back(e);
+    fclose(f);
+    write_reg(4, gain);
+    write_reg(0, 1);
+    while(!top->ready) tick();
+    run(100);
+    uint32_t now32 = top->now, base = now32 + 2000;
+    size_t next = 0;
+    want_frames = true;
+    const uint64_t end = cycles + (uint64_t)(seconds * 74250000.0), step = 1485000;     // 20 ms
+    while(cycles < end) {
+        now32 += (uint16_t)(top->now - (uint16_t)now32);
+        while(next < ev.size() && top->fill < 208 &&
+              (int32_t)(base + (uint32_t)(int32_t)llround(ev[next].due) - now32) <= 3000) {
+            push((uint16_t)(base + (uint32_t)(int32_t)llround(ev[next].due)), ev[next].reg, ev[next].val);
+            next++;
+        }
+        run(step);
+    }
+    double sum = 0;
+    int peak = 0;
+    for(int16_t v : frames) { sum += (double)v * v; if(abs(v) > peak) peak = abs(v); }
+    printf("%zu of %zu writes, %zu frames: peak %d, rms %.0f\n", next, ev.size(), frames.size(), peak,
+           frames.empty() ? 0.0 : sqrt(sum / (double)frames.size()));
+    FILE *w = fopen(wavfile, "wb");
+    if(!w) { perror(wavfile); return 2; }
+    uint32_t bytes = (uint32_t)frames.size() * 2, hdr[11] = {
+        0x46464952, 36 + bytes, 0x45564157, 0x20746d66, 16, 0x00010001, 48000, 96000, 0x00100002, 0x61746164, bytes };
+    fwrite(hdr, 4, 11, w);
+    fwrite(frames.data(), 2, frames.size(), w);
+    fclose(w);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     Verilated::commandArgs(argc, argv);
@@ -64,6 +113,9 @@ int main(int argc, char **argv)
     run(4);
     top->reset = 0;
     run(10);
+
+    if(argc > 4 && !strcmp(argv[1], "play"))
+        return play(argv[2], atof(argv[3]), argv[4], argc > 5 ? (unsigned)atoi(argv[5]) : 50);
 
     // run = 0: a write is ignored, nothing ready
     push(0, 0x01, 0x20);

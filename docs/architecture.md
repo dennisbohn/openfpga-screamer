@@ -498,7 +498,10 @@ music master (the CD player's MU) and the pause's fade reach the chip as the dri
 as in the original; the CD master only the CD. Source: the Pocket menu's Music Source, Auto (the CD
 image if its tracks are there, else FM if `MUSIC.DAT` is) or FM Synth (always FM); the game's own
 MUSIC option switches both off. The CD player of the pause lists tracks 2 to 8 for the seven songs;
-leaving it with another track plays that song from its start.
+leaving it with another track plays that song from its start. Level: the gain `FM_GAIN` is 50 of 32
+(1.56 times what the chip makes, `FM_GAIN_DEFAULT` in `fm.c`); songs rendered through the real chip
+(`tools/sim.sh opl play`) have an RMS of 1,900 to 3,000 against 2,400 to 2,900 for the CD tracks as the
+mixer plays them, peaks 11,000 and 14,900 against 16,400. By ear it is not tuned.
 
 ## Intro
 

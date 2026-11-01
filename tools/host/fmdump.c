@@ -6,7 +6,9 @@
  *           compares it with openscreamer's driver)
  *   else:   a summary: the song's rounds and notes, the writes, how late the model releases them
  *           (the queue spaces them 129 chip clocks apart) and how true the ticks' times are.
- * Usage: fmdump <MUSIC.DAT> <song 1..7> <seconds> [trace]
+ * Usage: fmdump <MUSIC.DAT> <song 1..7> <seconds> [trace|events]
+ *   events: every write with its time in chip samples from the song's first tick (sim/opl/tb.cpp plays
+ *   them on the real chip into a WAV file)
  *   FMJITTER=1: the frames come 20 to 45 ms apart instead of 20 ms.
  */
 #include <math.h>
@@ -26,7 +28,8 @@ static int run;
 static struct { uint32_t word; double due; } q[QUEUE_LEN];
 static int head, fill;
 static uint64_t next_free;
-static int tracing;
+static int tracing;                         /* 1 trace: tick, register, value; 2 events: time in samples, register, value */
+static double song_start;
 static long writes, released, late_1ms, late_8ms, dropped_full, max_fill, pushed_not_run;
 static double max_late, sum_late;
 static double first_due = -1, last_due;
@@ -67,7 +70,8 @@ void fm_host_put(uint32_t word)
     if (first_due < 0) first_due = due;
     last_due = due;
     last_tick_pushed = fm_host_tick;
-    if (tracing) printf("%u %02x %02x\n", fm_host_tick, (word >> 8) & 0xFF, word & 0xFF);
+    if (tracing == 1) printf("%u %02x %02x\n", fm_host_tick, (word >> 8) & 0xFF, word & 0xFF);
+    if (tracing == 2) printf("%.1f %02x %02x\n", due - song_start, (word >> 8) & 0xFF, word & 0xFF);
 }
 
 /* the queue's hardware up to time `to` (in cens): the first write is made when its time has come
@@ -126,7 +130,7 @@ int main(int argc, char **argv)
     fclose(f);
     int song = atoi(argv[2]);
     double seconds = atof(argv[3]);
-    tracing = argc > 4 && !strcmp(argv[4], "trace");
+    tracing = argc > 4 ? !strcmp(argv[4], "trace") ? 1 : !strcmp(argv[4], "events") ? 2 : 0 : 0;
     int jitter = getenv("FMJITTER") != NULL;
 
     if (!fm_init(file, (uint32_t)n)) {
@@ -135,6 +139,7 @@ int main(int argc, char **argv)
     }
     cens = (uint64_t)(12345.6 * CEN_PER_SAMPLE);                /* (not at zero: the 16 bits count on) */
     double t0 = samples();
+    song_start = t0 + 1500;                                     /* (the first tick's time, fm.c LEAD) */
     if (!fm_play(song)) {
         fprintf(stderr, "fm_play(%d) failed\n", song);
         return 1;
@@ -155,7 +160,7 @@ int main(int argc, char **argv)
         advance((uint64_t)(t * CEN_PER_SAMPLE));
     }
     if (tracing) {
-        fprintf(stderr, "%u\n", fm_host_tick);
+        if (tracing == 1) fprintf(stderr, "%u\n", fm_host_tick);
         return 0;
     }
 

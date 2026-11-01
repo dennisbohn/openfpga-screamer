@@ -88,6 +88,8 @@ tools/sim.sh audio 20000 1
 # The FM music (opl.v with the real JTOPL chip): the write queue's timing, the chip's pitch
 # against the register values, the gain, run = 0.
 tools/sim.sh opl
+# A song on the real chip into a WAV file (events from tools/host/fmdump.c, "events"), to
+# listen to and to measure the level: tools/sim.sh opl play <events> <seconds> <out.wav> [gain]
 ```
 
 The SDRAM model in `sim/models/sdram_model.v` checks the datasheet timings in clocks and can be
