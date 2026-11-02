@@ -40,22 +40,20 @@ work if their files are the same.
 
 1. Copy the contents of the release archive to the root of the Pocket's SD card. It adds
    `Cores/Chainy.Screamer/`, `Platforms/` and `Assets/screamer/Chainy.Screamer/`.
-2. Copy these files from the game's install folder to `Assets/screamer/common/` on the SD
-   card. Keep the folders and copy the files as they are, don't convert or rename anything:
+2. Copy the following folders and files from the game's install folder to
+   `Assets/screamer/common/` on the SD card, as they are:
 
-   | In the install folder | Files |
+   | Copy | What it is |
    |---|---|
-   | `./GFX/` | `GAME.DAT`, `GRAF.DAT`, `MENU.DAT`, `MAP1H.DAT` ... `MAP6H.DAT` |
-   | `./DATA/` | `GEN.DAT`, `LOCAL.DAT`, `SOUND.DAT`, `MUSIC.DAT`, `MAP1.DAT` ... `MAP6.DAT` |
-   | `./` | `SCREAM.gog` and `SCREAM.DAT` |
+   | `./GFX/` | The graphics: textures, track pictures, menus, the cockpit and the dashboard. |
+   | `./DATA/` | The game's data: track data, texts, sound effects, and the MIDI songs (`MUSIC.DAT`) that the original played through an AdLib card when it found no CD. |
+   | `./SCREAM.gog` | The CD image with the game's music. GOG ships the CD as an image, with the music as audio tracks. |
+   | `./SCREAM.DAT` | The cue sheet of the CD image: it says where each audio track begins. |
 
-   The last two are the music: the game's CD soundtrack, which GOG ships as a CD image
-   (`SCREAM.gog`) with its cue sheet (`SCREAM.DAT`). They sit next to the `GFX` and `DATA`
-   folders, so that for example `Assets/screamer/common/GFX/GAME.DAT` and
-   `Assets/screamer/common/SCREAM.gog` exist. `MUSIC.DAT` holds the MIDI songs that the original
-   played through an AdLib card when it found no CD; the core plays them on an FM chip. The
-   Pocket menu's *Music Source* is *Auto* (the CD if its image is there, else FM) or *FM Synth*
-   (always FM).
+   Afterwards `Assets/screamer/common/GFX/GAME.DAT` and `Assets/screamer/common/SCREAM.gog`
+   should exist. The music is optional: without `SCREAM.gog` and `SCREAM.DAT` the core plays
+   the MIDI songs from `DATA/MUSIC.DAT` on an FM chip. In the Pocket menu, *Music Source* is
+   *Auto* (the CD if its image is there, else FM) or *FM Synth* (always FM).
 3. Start *Screamer* from the Pocket's core list. You find it in the group *Computer*.
 
 Saves and the debug log go to `Saves/screamer/Chainy.Screamer/`. `debug.txt` helps when
