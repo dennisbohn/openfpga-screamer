@@ -265,7 +265,10 @@ void intro_text(struct blit_list *l)
     if(state == 3 || state == 4 || !hud) return;
     uint32_t s = block < 2 ? (uint32_t)block : 2;
     const struct blit_image *m = &img[s];
-    int x = (int)((float)((320 - (int)m->w) >> 1) + logo_x), y = block < 2 ? 24 * block + 4 : 4;
+    /* the sum in a wider type than float, as the x87 forms it (0x27a8c..0x27aa4: fild, fadd, then
+       fistp truncating): the logo rests one pixel left of its middle while logo_x is a little
+       below 0, and does not jump to it when float would round the sum up (after about 3.5 s) */
+    int x = (int)((double)((320 - (int)m->w) >> 1) + (double)logo_x), y = block < 2 ? 24 * block + 4 : 4;
     if(x + m->x + (int)m->w > 0 && x + m->x < 320) blit_copy(l, hud + m->off, m->w, m->h, m->w, x + m->x, y + m->y, BLIT_COPY, 0);
     int i = 0, k = first;
     do {
