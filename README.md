@@ -31,19 +31,14 @@ Not supported: network play (the menu entry is left out), the link port.
 
 ## Installation
 
-You need an Analogue Pocket (firmware 1.1 or newer) and your own copy of the game.
-
 So far the core has only been tested with the GOG release of the game. Other releases might
 work if their files are the same.
 
-1. Copy the contents of the release archive to the root of the Pocket's SD card. It adds
-   `Cores/Chainy.Screamer/`, `Platforms/` and `Assets/screamer/Chainy.Screamer/`.
+1. Install the core with the Pocket Updater (recommended), or unzip the release archive into
+   the root of the SD card.
 2. Copy the game's files to `Assets/screamer/common/` on the SD card. For the GOG version, see
    below.
 3. Start *Screamer* from the Pocket's core list. You find it in the group *Computer*.
-
-You can also install the core with the Pocket Updater (step 1). The game files still go to
-`Assets/screamer/common/`, see below.
 
 ### GOG version
 
