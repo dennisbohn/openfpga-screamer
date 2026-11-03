@@ -8,7 +8,7 @@ the firmware toolchain and Verilator; Python 3 for the scripts.
 
 ```sh
 tools/fw.sh          # firmware: build/firmware/firmware.bin and program.bin
-tools/build.sh       # Quartus: core/output/bitstream.rbf_r, about 6 minutes
+tools/build.sh       # Quartus: core/output/bitstream.rbf_r
 tools/package.sh     # SD card layout in build/sdcard/, copy its contents to the card's root
 tools/deploy.sh /i   # package and copy to the SD card mounted at /i (or I:)
 ```

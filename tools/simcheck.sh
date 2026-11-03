@@ -3,7 +3,7 @@
 # Usage: [SIM_TRACK=n] tools/simcheck.sh [--full] [--save] [name]
 #   quick (default): no resets (SIM_QUICK) and the finished track image as a testbench slot
 #   (SIM_IMAGE, build/check/trackn.bin, made once by tools/make_track.py), so the simulated CPU
-#   does not build it: a few minutes. --full: as on the Pocket, the firmware builds the image,
+#   does not build it: much faster. --full: as on the Pocket, the firmware builds the image,
 #   then the two resets; before a release or when the image build or resets changed.
 #   SIM_TRACK=n: track n (default 1; the simulation has no track screen). SIM_MENU=1: the
 #   track screen instead of the race, its third frame checked (with SIM_TRACK chosen); SIM_MENU=2:

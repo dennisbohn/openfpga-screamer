@@ -49,8 +49,8 @@ Copy the following folders and files from the game's install folder to
 |---|---|
 | `./GFX/` | The graphics: textures, track pictures, menus, the cockpit and the dashboard. |
 | `./DATA/` | The game's data: track data, texts, sound effects, and the MIDI songs (`MUSIC.DAT`) that the original played through an AdLib card when it found no CD. |
-| `./SCREAM.gog` | The CD image with the game's music. GOG ships the CD as an image, with the music as audio tracks. |
-| `./SCREAM.DAT` | The cue sheet of the CD image: it says where each audio track begins. |
+| `./SCREAM.gog` | The CD image with the game's music. |
+| `./SCREAM.DAT` | The cue sheet of the CD image. |
 
 Saves and the debug log go to `Saves/screamer/Chainy.Screamer/`. `debug.txt` helps when
 something goes wrong; the Pocket writes it when the core is quit.
@@ -76,7 +76,7 @@ and Python 3. From the repository root:
 
 ```sh
 tools/fw.sh          # firmware: build/firmware/firmware.bin, program.bin
-tools/build.sh       # bitstream (about 6 minutes): core/output/bitstream.rbf_r
+tools/build.sh       # bitstream: core/output/bitstream.rbf_r
 tools/package.sh     # the SD card layout in build/sdcard/
 tools/deploy.sh /i   # package and copy to the SD card at /i, with your game files
 ```
