@@ -42,6 +42,13 @@ work if their files are the same.
    below.
 3. Start *Screamer* from the Pocket's core list. You find it in the group *Computer*.
 
+Instead of step 1 you can install the core with the Pocket Updater: *Screamer* by Chainy is in
+its list, in the group *Computer*. Enable it and update; that installs the core, the platform and
+the firmware. The game files still have to be copied by hand, as described below. The updater
+shows the assets as 23/26. The three it counts as missing are `debug.txt`, `CHOICE.DAT` and
+`ATTACK.DAT`: the debug log and your saved game, which the Pocket creates in
+`Saves/screamer/Chainy.Screamer/` when you quit the core. Nothing is wrong.
+
 ### GOG version
 
 Copy the following folders and files from the game's install folder to
