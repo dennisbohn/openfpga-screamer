@@ -20,7 +20,7 @@ GAME = (".dat", ".gog", ".pcx", ".pkc", ".spr", ".mlb", ".unr", ".3dx", ".raw", 
 version = json.load(open(os.path.join(root, "core", "core.json"), encoding="utf-8"))["core"]["metadata"]["version"]
 files = sorted(os.path.relpath(os.path.join(d, f), src).replace(os.sep, "/")
                for d, _, names in os.walk(src) for f in names)
-# empty folders go into the archive too (Assets/screamer/common/, where the player puts the game files)
+# empty folders go into the archive too
 dirs = sorted(os.path.relpath(os.path.join(d, n), src).replace(os.sep, "/") + "/"
               for d, subs, names in os.walk(src) for n in subs if not os.listdir(os.path.join(d, n)))
 if not files:
