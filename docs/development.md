@@ -103,6 +103,21 @@ the saved reference (`--save`). Without `--full` it is the quick run (no resets,
 finished track image as a testbench slot); `--full` behaves like the Pocket. The audio of the
 run (I2S output, 48 kHz stereo) goes to `build/sim/audio.wav`. It also needs `DATA/SOUND.DAT`.
 
+## Frame statistics
+
+What a frame asks of the CPU and the units can be counted on the PC, without a simulation: `tools/perf/framestats.sh`
+builds copies of the firmware's `track.c`, `geom.c`, `setup.c` and `raster.c` with counters (`perf_patch.py`; the
+firmware is never changed) and draws frames with the C models of the units, either along a track's road with
+the near chase camera and a number of cars (`sweep`) or in a race of a robot at the keys (`race`). Each frame is a
+line of a CSV: placements tested and pieces handed on, faces looked at, vertices, pixels, the misses of the
+texture cache (16 KB) and of the geometry unit's read cache (4 KB), a hash of the sorted list of pieces. The
+counters agree with the simulation (pieces and faces equal, texture misses within 0.4 %).
+`tools/perf/perf_model.py` turns them into a frame time: a model of the CPU phases and of the geometry unit
+and rasterizer, calibrated on the six start frames of the simulation (each predicted from the other five: rms
+error 1.8 %, worst 3.4 %). `tools/perf/check_cull.sh <commit>` checks that a change of the cull hands the same
+pieces to the geometry unit, in the same order, in every frame of road sweeps and races of all six tracks as
+the firmware of an earlier commit does.
+
 ## Tools
 
 | Tool | What it does |
@@ -113,6 +128,7 @@ run (I2S output, 48 kHz stereo) goes to `build/sim/audio.wav`. It also needs `DA
 | `tools/dis.sh [-h] [-f] <from> <to>` | disassembles part of `STARTL.EXE` (`-h`: `STARTH.EXE`) at the addresses of OpenScreamer's notes; `tools/unle.py` (from OpenScreamer) unpacks the program into `build/exe/` on first use |
 | `tools/dosram.py` | reads the memory of the original game running in DOSBox, to compare with the firmware |
 | `tools/release_zip.py` | after `tools/package.sh`: the release archive `build/release/Chainy.Screamer_<version>.zip` (version from `core/core.json`), refusing to include game data |
+| `tools/perf/framestats.sh`, `perf_model.py`, `check_cull.sh` | frame statistics on the PC, the frame-time model, the check that a cull hands on the same pieces; see "Frame statistics" |
 | `tools/pocketlog.py [debug.txt]` | reads the Pocket's debug log (default: the SD card at I:) as a short table |
 | `tools/platform_image.py` | makes the platform image (`.bin`) from a PNG and back |
 | `tools/gen_pll_sdram.sh` | regenerates the SDRAM clock PLL (Intel `ip-generate` in the Quartus image) |
