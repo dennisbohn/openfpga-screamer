@@ -35,6 +35,7 @@
 #include "champ.h"
 #include "save.h"
 #include "intro.h"
+#include "ftime.h"
 
 uint32_t frames_shown;            /* read by the trap handler */
 
@@ -127,6 +128,14 @@ static void log_head(const char *what, uint32_t n)
 {
     char buf[DLOG_HEAD + 16];
     fmt_udec(fmt_str(fmt_str(buf, "Screamer Pocket step 3, "), what), n);
+    dlog_head(buf);
+}
+
+/* the race's first line: the frames drawn, then the frame times so far and the longest frame's parts (ftime.h) */
+static void log_race_head(uint32_t n)
+{
+    char buf[DLOG_HEAD + 64];
+    ft_head(fmt_udec(fmt_str(fmt_str(buf, "Screamer Pocket step 3, "), "frames drawn: "), n));
     dlog_head(buf);
 }
 
@@ -554,6 +563,9 @@ static int run_track(int n, int car, int replay)
     uint32_t drawn = 0, keys_before = replay ? IN_KEY : 0, last_frame = 0, steps = 0, over = 0;
     int ask = 0;
     uint32_t fps = 0, fps_drawn = 0, fps_frame = 0, rec_at = 0;
+    ft_reset();
+    const uint8_t ov_fg = nearest(pal, 255, 255, 255), ov_bg = nearest(pal, 0, 0, 0);   /* the timing overlay's colours */
+    uint32_t swallow = 0;                       /* L and R held while A was: no gear change for them */
     int car_v = CAR_VIEW_START;
     if (!replay) {
         rec_n = 0;
@@ -608,6 +620,12 @@ static int run_track(int n, int car, int replay)
             dlog_char('\n');
         }
         uint32_t press = keys & ~keys_before;
+        /* A, L and R together switch the timing overlay (ftime.h). Nothing else in the race uses A; L and R
+           shift, so while A is held they do not: the chord (A first, then L and R) changes no gear */
+        const uint32_t chord = KEY_A | KEY_L | KEY_R;
+        if ((keys & chord) == chord && (keys_before & chord) != chord) ft_overlay_toggle();
+        if (keys & KEY_A) swallow |= keys & (KEY_L | KEY_R);
+        swallow &= keys;
         if (ask) return play_again(st);
         if (replay) {
             if ((press & (KEY_B | KEY_START | KEY_SELECT)) || rec_at >= rec_n) ask = 1;
@@ -643,7 +661,7 @@ static int run_track(int n, int car, int replay)
             if (replay)
                 w = rec[rec_at++];
             else {
-                w = car_keys(keys, keys_before, joy, trig);
+                w = car_keys(keys & ~swallow, keys_before & ~swallow, joy, trig);
                 if (rec_n < REC_MAX) rec[rec_n++] = w;
                 else rec_full = 1;
             }
@@ -699,6 +717,7 @@ static int run_track(int n, int car, int replay)
         GU_FACES = 0;
         GU_MODE = draw_buf << 8;
         draw_wait = 0;
+        const uint32_t t_pre = rdcycle() - t_frame;     /* before the scene (ftime.h) */
         tl_mark(TL_PREP);
         RS_CLIP0 = RS_XY(clip.x0, clip.y0);
         RS_CLIP1 = RS_XY(clip.x1, clip.y1);
@@ -731,6 +750,7 @@ static int run_track(int n, int car, int replay)
         }
         hw_blit(&hud);
         tl_mark(TL_HUD);
+        const uint32_t t_wait = rdcycle();
         while (RS_DRAW & RS_BUSY)
             ;
         tl_mark(TL_WAIT);
@@ -741,9 +761,21 @@ static int run_track(int n, int car, int replay)
         uint32_t r_drain = RS_DRAIN_CLOCKS, r_starved = RS_STARVED;
         ts.faces = GU_FACES;
         uint32_t efx_objects = efx_cyc_objects, efx_radar = efx_cyc_radar;    /* (the check adds) */
+        uint32_t t_check = rdcycle();
         if (drawn == check_at) {
             if (sim) track_check(fb, &clip, &cam, objs, nobj, &back, cockpit ? &dashboard : 0, &hud);
             else dlog_str("track check: simulation only\n");
+        }
+        t_check = rdcycle() - t_check;
+
+        /* the frame's work for the statistics and the timing overlay (ftime.h): the overlay shows the frames up to this one; the
+           question's picture is not a frame of the race, and the simulation's check is not the frame's work */
+        if (!ask) {
+            if (ft_overlay_on()) ft_draw(fb, ov_fg, ov_bg);
+            struct ft_frame ff = { rdcycle() - t_frame - t_check, t_pre, ts.cyc_cull, ts.cyc_piece + ts.cyc_out, 0, rdcycle() - t_wait,
+                                   ts.faces, ts.pieces, (uint32_t)car_marker() };
+            ff.post = t_wait - t_frame - t_pre - ts.cyc_cull - ts.cyc_piece - ts.cyc_out;
+            ft_frame(&ff);
         }
 
         if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
@@ -751,7 +783,7 @@ static int run_track(int n, int car, int replay)
             fps_drawn = drawn;
             fps_frame = VID_FRAME(st);
         }
-        if (drawn % 250 == 2 || drawn == check_at) {
+        if ((drawn % 250 == 2 && !sim_race) || drawn == check_at) {     /* (the 4 KB log has room for one big line) */
             dlog_str("track frame ");
             dlog_dec((int32_t)drawn);
             dlog_str(": car ");
@@ -868,7 +900,7 @@ static int run_track(int n, int car, int replay)
         frame_cycles = rdcycle() - t_frame;
         tl_mark(TL_END);
         VID_SWAP = 1;
-        log_head("frames drawn: ", ++drawn);
+        log_race_head(++drawn);
     }
 }
 

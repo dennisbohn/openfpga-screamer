@@ -10,11 +10,11 @@
 #pragma once
 #include <stdint.h>
 
-#define DLOG_HEAD       64      /* first line: 63 characters and '\n' */
+#define DLOG_HEAD       128     /* first line: 127 characters and '\n' (firmware.bin and program.bin must be of the same build) */
 #define DLOG_RESERVE    256     /* only dlog_trap() opens these */
 
 void dlog_init(void);           /* clear the 4 KB; call first thing at boot */
-void dlog_head(const char *s);  /* (re)write the first line, cut or padded to 63 */
+void dlog_head(const char *s);  /* (re)write the first line, cut or padded to DLOG_HEAD - 1 */
 /* hand the log over from the boot loader to the program: where the next byte goes and the
    bytes already in that word */
 void dlog_state(uint32_t *pos, uint32_t *cur);

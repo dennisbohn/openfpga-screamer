@@ -68,6 +68,7 @@ The defaults can be changed in the Pocket menu under *Core Controls*.
 | Gear up / down | R / L |
 | Pause | Start |
 | Quit race | Select |
+| Frame time display (in a race) | hold A, then press L and R |
 
 ## Building
 
