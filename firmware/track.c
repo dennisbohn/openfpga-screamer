@@ -142,10 +142,12 @@ static float radius[MAX_OBJ];           /* of each mesh around its origin */
    values), its mesh's reach (-1: no mesh) and class key */
 static struct cpiece { float x, y, h, rad; } cpieces[MAX_PIECES];
 static int16_t cpiece_key[MAX_PIECES];
-/* the placements in groups of 16 as they lie in the file (cell by cell, so close together),
-   each group's box round their places: a group out of reach is passed over at once */
-#define GROUP       16
-static struct { float x0, y0, x1, y1; } groups[MAX_PIECES / GROUP + 1];
+/* the placements in groups of 8 as they lie in the file (cell by cell, so close together): each
+   group's box round their places (those with a mesh; none: count 0, it is never looked at), the middle
+   of their heights and the radius round their middle that holds them all (r0), the largest reach of a
+   mesh (rmax). A group out of reach or out of view is passed over at once (draw) */
+#define GROUP       8
+static struct { float x0, y0, x1, y1, ch, r0, rmax; uint16_t count; } groups[MAX_PIECES / GROUP + 1];
 
 int track_mode;
 void (*track_hw_piece)(const struct gu_piece *p);
@@ -163,6 +165,7 @@ static inline uint32_t now(void)
 #define INT_NOW2(a, b) __asm__ ("" : "+r"(a), "+r"(b))
 #define INT_NOW4(a, b, c, d) __asm__ ("" : "+r"(a), "+r"(b), "+r"(c), "+r"(d))
 #define INT_NOW6(a, b, c, d, e, f) __asm__ ("" : "+r"(a), "+r"(b), "+r"(c), "+r"(d), "+r"(e), "+r"(f))
+#define INT_NOW7(a, b, c, d, e, f, g) __asm__ ("" : "+r"(a), "+r"(b), "+r"(c), "+r"(d), "+r"(e), "+r"(f), "+r"(g))
 #define INT_NOW8(a, b, c, d, e, f, g, h) \
     __asm__ ("" : "+r"(a), "+r"(b), "+r"(c), "+r"(d), "+r"(e), "+r"(f), "+r"(g), "+r"(h))
 #else
@@ -170,6 +173,7 @@ static inline uint32_t now(void) { return 0; }
 #define INT_NOW2(a, b) ((void)0)
 #define INT_NOW4(a, b, c, d) ((void)0)
 #define INT_NOW6(a, b, c, d, e, f) ((void)0)
+#define INT_NOW7(a, b, c, d, e, f, g) ((void)0)
 #define INT_NOW8(a, b, c, d, e, f, g, h) ((void)0)
 #endif
 
@@ -413,16 +417,35 @@ int track_init(void)
         class_key[k] = (int16_t)track_class_key(obj);
     }
     for(int i = 0; i < npieces; i++) {
-        float x = (float)pieces[i].x, y = (float)pieces[i].y;
-        int g = i / GROUP;
-        if(i % GROUP == 0) { groups[g].x0 = groups[g].x1 = x; groups[g].y0 = groups[g].y1 = y; }
-        if(x < groups[g].x0) groups[g].x0 = x;
-        if(x > groups[g].x1) groups[g].x1 = x;
-        if(y < groups[g].y0) groups[g].y0 = y;
-        if(y > groups[g].y1) groups[g].y1 = y;
         int k = pieces[i].obj, ok = k >= 0 && k < unr_count;
-        cpieces[i] = (struct cpiece){ x, y, (float)pieces[i].h, ok ? radius[k] : -1.0f };
+        cpieces[i] = (struct cpiece){ (float)pieces[i].x, (float)pieces[i].y, (float)pieces[i].h, ok ? radius[k] : -1.0f };
         cpiece_key[i] = ok ? class_key[k] : 0;
+    }
+    for(int g = 0; g * GROUP < npieces; g++) {
+        int first = g * GROUP, n = npieces - first < GROUP ? npieces - first : GROUP, m = 0;
+        float h0 = 0.0f, h1 = 0.0f, rmax = 0.0f;
+        for(int i = first; i < first + n; i++) {
+            const struct cpiece *p = &cpieces[i];
+            if(p->rad < 0.0f) continue;             /* no mesh: never drawn */
+            if(!m++) {
+                groups[g].x0 = groups[g].x1 = p->x;
+                groups[g].y0 = groups[g].y1 = p->y;
+                h0 = h1 = p->h;
+            }
+            if(p->x < groups[g].x0) groups[g].x0 = p->x;
+            if(p->x > groups[g].x1) groups[g].x1 = p->x;
+            if(p->y < groups[g].y0) groups[g].y0 = p->y;
+            if(p->y > groups[g].y1) groups[g].y1 = p->y;
+            if(p->h < h0) h0 = p->h;
+            if(p->h > h1) h1 = p->h;
+            if(p->rad > rmax) rmax = p->rad;
+        }
+        groups[g].count = (uint16_t)m;
+        if(!m) groups[g].x0 = groups[g].x1 = groups[g].y0 = groups[g].y1 = 0.0f;
+        float ex = 0.5f * (groups[g].x1 - groups[g].x0), ey = 0.5f * (groups[g].y1 - groups[g].y0), eh = 0.5f * (h1 - h0);
+        groups[g].ch = 0.5f * (h0 + h1);
+        groups[g].r0 = __builtin_sqrtf(ex * ex + ey * ey + eh * eh);
+        groups[g].rmax = rmax;
     }
     return npieces;
 }
@@ -926,38 +949,49 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
     const float up = (float)eye / FOCAL;                                       /* above the eye line */
     const float down = (float)(clip->y1 - clip->y0 - eye) / FOCAL;
     int nv = 0;
-    float nearest = 1e30f;
     /* the game's key (0x8a7b0): -(sqrt(dist^2 >> 2), rounded, >> 2) */
 #define KEY(d2) (-((int32_t)lrintf(sqrtf((d2) * 0.25f)) >> 2))
-    for(int i = 0; i < npieces; i++) {
-        if(i % GROUP == 0) {                        /* the whole group out of reach (in the plane) */
-            int g = i / GROUP;
+    const float side = __builtin_sqrtf(1.0f + half_w * half_w), top = __builtin_sqrtf(1.0f + up * up),
+                bottom = __builtin_sqrtf(1.0f + down * down);
+    for(int g = 0; g * GROUP < npieces; g++) {
+        if(!groups[g].count) continue;
+        {                                           /* the whole group out of reach (in the plane) */
             int wx = cx < groups[g].x0, ex = cx > groups[g].x1, sy = cy < groups[g].y0, ny = cy > groups[g].y1;
             INT_NOW4(wx, ex, sy, ny);
             float gx = wx ? groups[g].x0 - cx : ex ? cx - groups[g].x1 : 0.0f;
             float gy = sy ? groups[g].y0 - cy : ny ? cy - groups[g].y1 : 0.0f;
-            if(gx * gx + gy * gy >= REACH2) {
-                i += GROUP - 1;
-                continue;
-            }
+            if(gx * gx + gy * gy >= REACH2) continue;
         }
-        const struct cpiece *pc = &cpieces[i];
-        int32_t no_mesh;                                /* (its reach -1, as a whole number) */
-        memcpy(&no_mesh, &pc->rad, sizeof no_mesh);
-        if(no_mesh < 0) continue;
-        float rad = pc->rad, dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch;
-        float d2 = dx * dx + dy * dy + dh * dh;
-        float vf = dx * fx + dy * fy + dh * fh + EYE_BACK, vr = dx * rx + dy * ry + dh * rh;
-        float vu = dx * ux + dy * uy + dh * uh;
-        /* the nearest so far, and out of reach or out of view: all the comparisons asked for at
-           once, then one wait for their answers */
-        int nearer = d2 < nearest, o0 = d2 >= REACH2, o1 = vf + rad < NEAR, o2 = vf - rad > far_eye;
-        int o3 = vr - rad > half_w * (vf + rad), o4 = vr + rad < -half_w * (vf + rad);
-        int o5 = vu - rad > up * (vf + rad), o6 = vu + rad < -down * (vf + rad);
-        INT_NOW8(nearer, o0, o1, o2, o3, o4, o5, o6);
-        if(nearer) nearest = d2;
-        if(o0 | o1 | o2 | o3 | o4 | o5 | o6) continue;
-        vis[nv++] = (KEY(d2) + cpiece_key[i]) * 65536 + i;
+        {   /* the whole group out of view: every placement p of it lies within r0 of the middle m, its reach rad is
+               at most rmax, and the placement is out if (n . (p - cam)) > rad (1 + k) for a plane's normal n of
+               length s (the tests below, rewritten): so the group is out if n . (m - cam) > rmax (1 + k) + r0 s
+               (and a margin for the rounding). Near: vf + rad < NEAR, far: vf - rad > far_eye (s = 1, k = 0) */
+            float dx = 0.5f * (groups[g].x0 + groups[g].x1) - cx, dy = 0.5f * (groups[g].y0 + groups[g].y1) - cy, dh = groups[g].ch - ch;
+            float vf = dx * fx + dy * fy + dh * fh + EYE_BACK, vr = dx * rx + dy * ry + dh * rh;
+            float vu = dx * ux + dy * uy + dh * uh, r0 = groups[g].r0 + 8.0f, rm = groups[g].rmax;
+            int o1 = vf + r0 + rm < NEAR, o2 = vf - r0 - rm > far_eye;
+            int o3 = vr - half_w * vf > rm * (1.0f + half_w) + r0 * side, o4 = -vr - half_w * vf > rm * (1.0f + half_w) + r0 * side;
+            int o5 = vu - up * vf > rm * (1.0f + up) + r0 * top, o6 = -vu - down * vf > rm * (1.0f + down) + r0 * bottom;
+            INT_NOW6(o1, o2, o3, o4, o5, o6);
+            if(o1 | o2 | o3 | o4 | o5 | o6) continue;
+        }
+        for(int i = g * GROUP, end = i + (npieces - i < GROUP ? npieces - i : GROUP); i < end; i++) {
+            const struct cpiece *pc = &cpieces[i];
+            int32_t no_mesh;                            /* (its reach -1, as a whole number) */
+            memcpy(&no_mesh, &pc->rad, sizeof no_mesh);
+            if(no_mesh < 0) continue;
+            float rad = pc->rad, dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch;
+            float d2 = dx * dx + dy * dy + dh * dh;
+            float vf = dx * fx + dy * fy + dh * fh + EYE_BACK, vr = dx * rx + dy * ry + dh * rh;
+            float vu = dx * ux + dy * uy + dh * uh;
+            /* out of reach or out of view: all the comparisons asked for at once, then one wait for their answers */
+            int o0 = d2 >= REACH2, o1 = vf + rad < NEAR, o2 = vf - rad > far_eye;
+            int o3 = vr - rad > half_w * (vf + rad), o4 = vr + rad < -half_w * (vf + rad);
+            int o5 = vu - rad > up * (vf + rad), o6 = vu + rad < -down * (vf + rad);
+            INT_NOW7(o0, o1, o2, o3, o4, o5, o6);
+            if(o0 | o1 | o2 | o3 | o4 | o5 | o6) continue;
+            vis[nv++] = (KEY(d2) + cpiece_key[i]) * 65536 + i;
+        }
     }
     for(int k = 0; k < nobj && k < MAX_OBJS; k++) {
         const struct track_object *ob = &objs[k];
@@ -973,7 +1007,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         vis[nv++] = (KEY(d2) + 800 + ob->key) * 65536 + npieces + k;
         st->objects++;
     }
-    st->nearest = nearest < 4e18f ? (uint32_t)__builtin_sqrtf(nearest) : 0xFFFFFFFFu;
+    st->nearest = 0xFFFFFFFFu;                  /* (not measured any more: it cost a compare for every placement) */
     /* by key, far first. The list is in the order of i, the keys' low half, and the keys differ:
        sorted by their high half, keeping that order (two passes of 8 bits, radix), it is in the
        order of the whole key, as any sort by it has it */

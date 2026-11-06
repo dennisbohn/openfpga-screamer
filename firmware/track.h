@@ -111,7 +111,7 @@ struct track_stats {
        drawn, triangles, faces of routine 224 left out for now, vertices into view space */
     uint32_t faces, triangles, see_through, vertices;
     int32_t cam[3];                             /* camera X, Y, height */
-    uint32_t nearest;                           /* distance to the nearest placement */
+    uint32_t nearest;                           /* (not measured any more: always 0xFFFFFFFF) */
     /* CPU cycles (0 on the PC): pieces in view and sorted, each piece's place in view
        space, handing the pieces on (the hook or the C models) */
     uint32_t cyc_cull, cyc_piece, cyc_out;
