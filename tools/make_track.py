@@ -18,7 +18,14 @@ The output, the image firmware/main.c builds at TEX_FILE, little-endian:
   0x1C  u32 offset, count of placements  from MAPn.MMP: int32 object, X, Y, height, heading
                                          (2048 = one turn), 20 bytes each; cell by cell, each
                                          cell's record run 1 before its run 0, the order in which
-                                         the game puts them into its draw list (0x83164)
+                                         the game puts them into its draw list (0x83164); then
+                                         the cell table: "CELL", u32 cells, u32 0, per cell
+                                         u16 key (row x 256 + column in the map's grid), u16 first
+                                         placement, u16 placements, u16 1 if it has a view box
+                                         (cell array 4: the part of the map the game draws
+                                         while the camera is in this cell, 0x82e88), the box
+                                         int32 x0, z0, x1, z1 (zeros without one); the cells in the
+                                         order of their keys, 24 bytes each
   0x24  u32 offset, count of camera path points: int32 X, Y, height, about 100 units apart,
                                          along the player's line (MAPnOPP.SPL, the tenth
                                          spline, a uniform quadratic B-spline over the
@@ -123,6 +130,29 @@ def placements(mmp):
             out.append((i32(o), i32(o + 0x08), i32(o + 0x10), i32(o + 0x0C), i32(o + 0x18)))
             run0.append(k < n0)
     return out, run0
+
+
+def cell_table(mmp):
+    """The table that ends the placements: every cell's key, its placements and its view box"""
+    i32 = lambda o: struct.unpack_from("<i", mmp, o)[0]
+    out, first, n = [], 0, 0
+    for gy in range(256):
+        row = i32(4 * gy)
+        if row == -1:
+            continue
+        for gx in range(256):
+            c = i32(row + 4 * gx)
+            if c == -1:
+                continue
+            count = i32(c + 0x14) + i32(c + 0x18)
+            box = (0, 0, 0, 0)
+            if i32(c + 0x24) > 0:
+                p = i32(c + 0x10)
+                box = (i32(p), i32(p + 8), i32(p + 0x0C), i32(p + 0x14))
+            out.append(struct.pack("<4H4i", gy * 256 + gx, first, count, 1 if i32(c + 0x24) > 0 else 0, *box))
+            first += count
+            n += 1
+    return b"CELL" + struct.pack("<2I", n, 0) + b"".join(out)
 
 
 def ground_index(pl, run0):
@@ -437,7 +467,7 @@ def main():
     assert (bw, bh) == (512, 256), f"backdrop {bw} x {bh}"
     back += back[-512:]
 
-    sections = [mlb, unr, pal, b"".join(struct.pack("<5i", *p) for p in pl),
+    sections = [mlb, unr, pal, b"".join(struct.pack("<5i", *p) for p in pl) + cell_table(mmp),
                 b"".join(struct.pack("<3i", *p) for p in path), ground, mrk[4:4 + 32 * nmark],
                 cars, models, b"".join(dirs), b"".join(walls), hud, back, opp]
     counts = [len(mlb), len(unr), 0, len(pl), len(path), nground, nmark, ncars, 7, len(dirs), len(walls),

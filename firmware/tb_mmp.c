@@ -10,6 +10,8 @@
 #define DIR_LEN     12                  /* array 2 entry */
 #define WALL_LEN    28                  /* array 3 entry */
 #define PL_LEN      20                  /* a placement in the track file */
+#define BOX_LEN     24                  /* a cell's view box (array 4): int32 x0, -, z0, x1, -, z1 */
+#define CELL_LEN    24                  /* an entry of the cell table that ends the placements */
 
 static uint32_t get32(const uint8_t *p)
 {
@@ -22,6 +24,12 @@ static void put16(uint8_t *p, uint32_t v)
 {
     p[0] = (uint8_t)v;
     p[1] = (uint8_t)(v >> 8);
+}
+
+static void put32(uint8_t *p, uint32_t v)
+{
+    put16(p, v);
+    put16(p + 2, v >> 16);
 }
 
 /* the int32 at off; beyond the end of the file 0 and *bad set */
@@ -37,9 +45,10 @@ static int fits(uint32_t size, uint32_t off, uint32_t n, uint32_t len)
     return off <= size && n <= (size - off) / len;
 }
 
-/* a cell that holds something: its records (from rec, n0 of run 0, then n1 of run 1) and its
-   arrays 2 and 3 (offset, entries) */
-struct cell { uint32_t rec, n0, n1, dirs, ndirs, walls, nwalls; };
+/* a cell that holds something: its records (from rec, n0 of run 0, then n1 of run 1), its arrays
+   2 and 3 (offset, entries) and its view box (array 4: the offset of its 24 bytes, 0 if the cell
+   has none) */
+struct cell { uint32_t rec, n0, n1, dirs, ndirs, walls, nwalls, box; };
 
 /* the header of the cell at a into c, checked against the file: 1, or 0 if malformed */
 static int read_cell(const uint8_t *p, uint32_t size, uint32_t a, struct cell *c)
@@ -51,11 +60,14 @@ static int read_cell(const uint8_t *p, uint32_t size, uint32_t a, struct cell *c
     int32_t n1 = rd32(p, size, a + 0x18, &bad);
     int32_t ndirs = rd32(p, size, a + 0x1C, &bad);
     int32_t nwalls = rd32(p, size, a + 0x20, &bad);
+    int32_t nbox = rd32(p, size, a + 0x24, &bad);
+    int32_t box = rd32(p, size, a + 0x10, &bad);
     if(bad || n0 < 0 || n1 < 0 || ndirs < 0 || nwalls < 0) return 0;
     /* an empty array's offset is never read (0 in the game's files) */
     if((n0 || n1) && !fits(size, a + 0x28, (uint32_t)n0 + (uint32_t)n1, REC)) return 0;
     if(ndirs && (dirs < 0 || !fits(size, (uint32_t)dirs, (uint32_t)ndirs, DIR_LEN))) return 0;
     if(nwalls && (walls < 0 || !fits(size, (uint32_t)walls, (uint32_t)nwalls, WALL_LEN))) return 0;
+    if(nbox > 0 && (box < 0 || !fits(size, (uint32_t)box, 1, BOX_LEN))) return 0;
     c->rec = a + 0x28;
     c->n0 = (uint32_t)n0;
     c->n1 = (uint32_t)n1;
@@ -63,6 +75,7 @@ static int read_cell(const uint8_t *p, uint32_t size, uint32_t a, struct cell *c
     c->ndirs = (uint32_t)ndirs;
     c->walls = nwalls ? (uint32_t)walls : 0;
     c->nwalls = (uint32_t)nwalls;
+    c->box = nbox > 0 ? (uint32_t)box : 0;
     return 1;
 }
 
@@ -152,8 +165,30 @@ uint32_t tb_mmp_placements(const uint8_t *mmp, uint32_t size, uint8_t *out, uint
         }
     }
     if(w.bad) return 0;
+    /* and the cell table: every cell's key (row x 256 + column), its first placement and how many
+       it has, the flag and the 4 values of its view box (the game's 0x82e88 reads array 4 of the
+       cell the camera is in) */
+    uint32_t cells = 0, at = PL_LEN * n, first = 0;
+    struct walk w2 = { mmp, size, 0, 0, 0 };
+    if(cap - at < 12) return 0;
+    memcpy(out + at, "CELL", 4);
+    put32(out + at + 8, 0);
+    at += 12;
+    while(next_cell(&w2, &c)) {
+        if(cap - at < CELL_LEN) return 0;
+        put16(out + at, w2.k - 1);
+        put16(out + at + 2, first);
+        put16(out + at + 4, c.n0 + c.n1);
+        put16(out + at + 6, c.box != 0);
+        for(int f = 0; f < 4; f++) put32(out + at + 8 + 4 * f, c.box ? get32(mmp + c.box + 4 * (f == 0 ? 0 : f == 1 ? 2 : f == 2 ? 3 : 5)) : 0);
+        first += c.n0 + c.n1;
+        at += CELL_LEN;
+        cells++;
+    }
+    if(w2.bad) return 0;
+    put32(out + PL_LEN * n + 4, cells);
     *count = n;
-    return PL_LEN * n;
+    return at;
 }
 
 /* Two walks over the placements: the first counts each grid cell's pieces into first[cell + 1]

@@ -17,7 +17,10 @@
 #include <stdint.h>
 
 /* The placements (header 0x1C): int32 object, X, Y, height, heading (2048 = one turn), 20 bytes
-   each; the cells row by row, each cell's run 1 before its run 0 */
+   each; the cells row by row, each cell's run 1 before its run 0. Then the cell table (the count
+   stays the placements'): "CELL", u32 cells, u32 0, per cell u16 key (row x 256 + column), u16 first
+   placement, u16 placements, u16 1 if the cell has a view box (array 4), int32 x0, z0, x1, z1 of it
+   (0 without), 24 bytes each, in the order of the keys */
 uint32_t tb_mmp_placements(const uint8_t *mmp, uint32_t size, uint8_t *out, uint32_t cap,
                            uint32_t *count);
 
