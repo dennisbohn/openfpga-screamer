@@ -39,14 +39,16 @@
 
 /*
  * Layout of this file:
- *   - the SDRAM map and the data slots, then helpers for debug.txt and the debug timeline
+ *   - the SDRAM map and the data slots, the stack helpers and log_head
  *   - hw_piece, hw_blit and the check of a picture against the C models
  *   - fades, the pause (pause_race) and the question PLAY AGAIN? (play_again)
- *   - run_track: the race loop, one picture per pass
+ *   - run_track: the race loop, one picture per pass, with the steps of a pass (race_*) above it
  *   - loading the game's files and the set-up of what a race needs (load_*, effects, scenery, sounds)
  *   - menu_screen, the loading screen, track_ready and race (a whole race with its replays)
- *   - the benchmark of the debug build, the intro, the championship and files_loop
+ *   - the intro, the championship and files_loop
  *   - prog_main: the order in which the game goes through its screens
+ * What the debug build measures and logs in a race (the timeline, the statistics, the marks, the benchmark)
+ * is in racedebug.c; main.c calls it through racedebug.h and has no code of its own for it.
  */
 
 uint32_t frames_shown;            /* frames swapped in so far; trap.c prints it */
@@ -579,10 +581,11 @@ struct race_frame {
     /* The simulation's race (tools/sim.sh: SIM_RACE_FRAMES, and the keys in SIM_KEYS). The testbench offers
        data slot RACE_SLOT with the size sim_race. core/data.json does not have this slot, so on the Pocket
        sim_race is 0 and the race is an ordinary one. With sim_race set, the countdown of the start lights
-       runs at once before the first picture, and the sim_race-th picture after the green light is the one
-       that is checked and reported (check_at) instead of the third. On the Pocket check_at is only logged. */
+       runs at once before the first picture, and the sim_race-th frame after the green light is checked and
+       reported instead of the third. */
     uint32_t sim_race;
-    uint32_t check_at;                  /* the picture that is checked against the C models */
+    uint32_t check_at;                  /* the picture that is checked against the C models (on the Pocket:
+                                           only logged) */
     uint32_t keys, joy, trig;           /* the buttons, the stick and the triggers */
     uint32_t press;                     /* the buttons that went down since the last physics step */
     uint32_t t_frame;                   /* the cycle count at the start of the pass */
@@ -1643,8 +1646,25 @@ static void __attribute__((noreturn)) files_loop(int failed)
     }
 }
 
-/* The entry point, called by the start code (start_prog.S) with the boot results and the state of the debug
-   log (dlog.h). It never returns: the game runs for ever, or the list of files is shown. */
+/*
+ * The entry point, called by the start code (start_prog.S) with the boot results and the state of the debug
+ * log (dlog.h). It never returns: the game runs for ever, or the list of files is shown.
+ *
+ * After the start-up it loads the game's files that stay (data slots 4, 6 and 7, which are deferload slots in
+ * core/data.json) and the menu's. Then the screens follow each other for ever. The variable `at` says which
+ * one comes next:
+ *   - AT_PAGES: the main menu. At the start, and after 30 s on it without a key, the intro runs before it
+ *     (original: STARTL.EXE 0x10020: intro, menu, intro, ...). A track of the VIEW RECORDS page shows its
+ *     records; A or SELECT there goes back to the page (0x28a7c).
+ *   - AT_NAME: ENTER YOUR NAME, after a game's line of the main menu. A or SELECT there shows the page
+ *     again (0x293e8(4)). After the name the championship (champ.h) is played, or the game goes on:
+ *   - AT_TRACKS: the track screen. A or SELECT there shows the name again (0x281c2).
+ *   - AT_CARS: the car screen. A or SELECT there shows the track screen again.
+ * Then the race on the track chosen, with the car chosen and the laps, difficulty and speech of the options
+ * page, and the main menu again (0x2a114 -> 0x29ea0).
+ * The simulation races the testbench's track with the first car at once, or shows the screen that
+ * MENU_CHECK_SLOT names.
+ */
 void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
 {
     results = boot_results;
@@ -1661,22 +1681,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     int sim = (SYS_FLAGS & FLAG_SIM) != 0;
     const uint32_t *shown = sim ? 0 : first_picture(intro_track());    /* the simulation's race has none */
 
-    /*
-     * Load the game's files that stay (data slots 4, 6 and 7, which are deferload slots in core/data.json)
-     * and the menu's. Then the screens follow each other for ever. The variable `at` says which one comes
-     * next:
-     *   - AT_PAGES: the main menu. At the start, and after 30 s on it without a key, the intro runs before it
-     *     (original: STARTL.EXE 0x10020: intro, menu, intro, ...). A track of the VIEW RECORDS page shows its
-     *     records; A or SELECT there goes back to the page (0x28a7c).
-     *   - AT_NAME: ENTER YOUR NAME, after a game's line of the main menu. A or SELECT there shows the page
-     *     again (0x293e8(4)). After the name the championship (champ.h) is played, or the game goes on:
-     *   - AT_TRACKS: the track screen. A or SELECT there shows the name again (0x281c2).
-     *   - AT_CARS: the car screen. A or SELECT there shows the track screen again.
-     * Then the race on the track chosen, with the car chosen and the laps, difficulty and speech of the
-     * options page, and the main menu again (0x2a114 -> 0x29ea0).
-     * The simulation races the testbench's track with the first car at once, or shows the screen that
-     * MENU_CHECK_SLOT names.
-     */
+    /* The files that stay, the menu's files and the sounds; then the screens. */
     if (load_containers(0, game.local_size ? FIXED_FILES & ~LOCAL_FILES : FIXED_FILES)) {
         music_init(game.gen, game.gen_size);
         if (!hud_cd_init(game.game, game.game_size, CD_MEM, CD_SIZE, (uint8_t *)BUILD_SCRATCH,
