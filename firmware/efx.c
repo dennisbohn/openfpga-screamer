@@ -5,6 +5,7 @@
  * the getters efx_shadow(), efx_smoke(), efx_darken() and efx_table().
  */
 #include "efx.h"
+#include "bytes.h"
 #include "dat.h"
 #include "hw.h"
 #include "raster.h"
@@ -39,38 +40,13 @@ uint32_t efx_cyc_objects, efx_cyc_radar, efx_radar_lines;
 static const uint8_t *shadow, *smoke, *radar, *smg_kept;
 static int table;
 
-static void wr16(uint8_t *p, int32_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-}
-
-static void wr32(uint8_t *p, int32_t v)
-{
-    wr16(p, v);
-    wr16(p + 2, v >> 16);
-}
-
-static int32_t rd32(const uint8_t *p)
-{
-    return (int32_t)(p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24);
-}
-
-/* Extracts the entry `name` of the container into out (at most max bytes). Returns its size,
-   or 0 if it is missing. */
-static uint32_t entry(const uint8_t *gfx, uint32_t size, const char *name, uint8_t *out, uint32_t max)
-{
-    struct dat_entry e;
-    return dat_find(gfx, size, name, &e) ? dat_extract(gfx, size, &e, out, max) : 0;
-}
-
 /* Extracts the .3DX file `name` into out. Returns out, or 0 if the file is missing or its first
    block does not lie inside it. */
 static const uint8_t *mesh(const uint8_t *gfx, uint32_t size, const char *name, uint8_t *out)
 {
-    uint32_t n = entry(gfx, size, name, out, MESH_MAX);
-    if(n < 0x340 || rd32(out + 0x14) < 1) return 0;
-    int32_t blk = rd32(out + 0x18);
+    uint32_t n = dat_unpack(gfx, size, name, out, MESH_MAX);
+    if(n < 0x340 || le32s(out + 0x14) < 1) return 0;
+    int32_t blk = le32s(out + 0x18);
     return blk > 0 && (uint32_t)blk + 0x80 <= n ? out : 0;
 }
 
@@ -116,34 +92,34 @@ static const uint8_t *radar_mesh(uint8_t *m, uint8_t *tex, uint8_t *end, const u
     for(int i = 0; i < 0x100; i++) m[i] = 0;
     for(int y = 0; y < TEX_SIZE; y++)
         for(int x = 0; x < TEX_SIZE; x++) tex[256 * y + x] = SMG_RADAR;
-    wr32(rec, 1);                                       /* frames */
-    wr32(rec + 4, SMG_RADAR);
-    wr32(rec + 8, (int32_t)(tex - mlb));                /* frame 0 */
-    wr32(mat, 224);                                     /* the routine */
-    wr32(mat + 4, (int32_t)(rec - mlb));
-    wr32(mat + 8, TEX_SIZE);
-    wr32(mat + 12, TEX_SIZE);
+    put_le32s(rec, 1);                                  /* frames */
+    put_le32s(rec + 4, SMG_RADAR);
+    put_le32s(rec + 8, (int32_t)(tex - mlb));           /* frame 0 */
+    put_le32s(mat, 224);                                /* the routine */
+    put_le32s(mat + 4, (int32_t)(rec - mlb));
+    put_le32s(mat + 8, TEX_SIZE);
+    put_le32s(mat + 12, TEX_SIZE);
 
-    wr32(m, R_SIDE);                                    /* the bounding radius */
-    wr32(m + 0x10, 4);                                  /* vertices */
-    wr32(m + 0x14, 1);                                  /* faces */
-    wr32(m + 0x1C, R_VERTS);
-    wr32(m + 0x24, R_UVS);
-    for(int k = 0; k < 16; k++) wr32(m + 0x28 + 4 * k, R_ROW);
+    put_le32s(m, R_SIDE);                               /* the bounding radius */
+    put_le32s(m + 0x10, 4);                             /* vertices */
+    put_le32s(m + 0x14, 1);                             /* faces */
+    put_le32s(m + 0x1C, R_VERTS);
+    put_le32s(m + 0x24, R_UVS);
+    for(int k = 0; k < 16; k++) put_le32s(m + 0x28 + 4 * k, R_ROW);
     static const int16_t xy[4][2] = { { 0, 0 }, { R_SIDE, 0 }, { R_SIDE, -R_SIDE }, { 0, -R_SIDE } };
     static const int16_t uv[4][2] = { { 0, 0 }, { 255, 0 }, { 255, 255 }, { 0, 255 } };
     for(int i = 0; i < 4; i++) {
-        wr16(m + R_VERTS + 6 * i, xy[i][0]);
-        wr16(m + R_VERTS + 6 * i + 2, xy[i][1]);
-        wr16(m + R_UVS + 6 * i, uv[i][0]);
-        wr16(m + R_UVS + 6 * i + 2, uv[i][1]);
-        wr16(m + R_FACE + 8 + 2 * i, 6 * i);            /* the corners' vertex offsets */
+        put_le16s(m + R_VERTS + 6 * i, xy[i][0]);
+        put_le16s(m + R_VERTS + 6 * i + 2, xy[i][1]);
+        put_le16s(m + R_UVS + 6 * i, uv[i][0]);
+        put_le16s(m + R_UVS + 6 * i + 2, uv[i][1]);
+        put_le16s(m + R_FACE + 8 + 2 * i, 6 * i);       /* the corners' vertex offsets */
     }
-    wr16(m + R_ROW, R_FACE);
-    wr16(m + R_ROW + 2, 0xFFFF);
-    wr16(m + R_FACE + 4, off);                          /* the material */
-    wr16(m + R_FACE + 6, 4);                            /* corners */
-    wr32(m + R_FACE + 0x1C, 16383);                     /* the normal (0, 0, 1) */
+    put_le16s(m + R_ROW, R_FACE);
+    put_le16s(m + R_ROW + 2, 0xFFFF);
+    put_le16s(m + R_FACE + 4, off);                     /* the material */
+    put_le16s(m + R_FACE + 6, 4);                       /* corners */
+    put_le32s(m + R_FACE + 0x1C, 16383);                /* the normal (0, 0, 1) */
     return m;
 }
 
@@ -161,18 +137,18 @@ static void glass(uint8_t *tex, uint8_t *rec, const uint8_t *mlb)
 {
     for(int y = 0; y < 2 * TEX_SIZE; y++)
         for(int x = 0; x < 256; x++) tex[256 * y + x] = SMG_GLASS;
-    wr32(rec, 1);                                       /* frames */
-    wr32(rec + 4, SMG_GLASS);
-    wr32(rec + 8, (int32_t)(tex - mlb));                /* frame 0 */
+    put_le32s(rec, 1);                                  /* frames */
+    put_le32s(rec + 4, SMG_GLASS);
+    put_le32s(rec + 8, (int32_t)(tex - mlb));           /* frame 0 */
     uint8_t *m = (uint8_t *)mlb;
     int32_t first = 0x7FFFFFFF;
     for(int32_t k = 0; 16 * (k + 1) <= first; k++) {
-        int32_t routine = rd32(m + 16 * k), ro = rd32(m + 16 * k + 4);
+        int32_t routine = le32s(m + 16 * k), ro = le32s(m + 16 * k + 4);
         if(routine == 192) {
-            wr32(m + 16 * k, 224);
-            wr32(m + 16 * k + 4, (int32_t)(rec - mlb));
-            wr32(m + 16 * k + 8, TEX_SIZE);
-            wr32(m + 16 * k + 12, TEX_SIZE);
+            put_le32s(m + 16 * k, 224);
+            put_le32s(m + 16 * k + 4, (int32_t)(rec - mlb));
+            put_le32s(m + 16 * k + 8, TEX_SIZE);
+            put_le32s(m + 16 * k + 12, TEX_SIZE);
         } else if(ro > 0 && ro < first)
             first = ro;
     }
@@ -188,7 +164,7 @@ int efx_init(const uint8_t *gfx, uint32_t gfx_size, int n, const uint8_t *mlb, c
     if(cap < AT_TEX + 256 * TEX_SIZE + 32) return 0;
     uint8_t *smg = mem + AT_SMG;
     smg_kept = smg;
-    int ok = table = entry(gfx, gfx_size, name, smg, SMG_SIZE) == SMG_SIZE;
+    int ok = table = dat_unpack(gfx, gfx_size, name, smg, SMG_SIZE) == SMG_SIZE;
     if(ok) {
         efx_darken_table(pal, smg + SMG_RADAR * 256, 0.75f);
         efx_darken_table(pal, smg + SMG_GLASS * 256, 0.6f);

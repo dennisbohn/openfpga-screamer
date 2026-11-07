@@ -10,6 +10,16 @@
 #pragma once
 #include <stdint.h>
 
+#define PI          3.14159265f
+
+/* Brings the angle a into -PI .. PI. */
+static inline float wrap_pi(float a)
+{
+    while(a > PI) a -= 2.0f * PI;
+    while(a < -PI) a += 2.0f * PI;
+    return a;
+}
+
 /* One row of CARS_DATA in the CARS.DTR of GEN.DAT (tools/make_track.py writes them like this). */
 struct car_spec {
     char  name[12];         /* "AUTO00" */

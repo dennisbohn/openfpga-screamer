@@ -14,6 +14,7 @@
  * (str.splitlines()) of that range.
  */
 #include "tb_spl.h"
+#include "bytes.h"
 #include "tb_mmp.h"
 #include <math.h>
 #include <string.h>
@@ -23,21 +24,8 @@
    not used. */
 #define NODE    56
 
-static uint32_t rd32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
-}
-
 /* An int32 of the file as Python's float() of it, which is exact. */
-static double rdd(const uint8_t *p) { return (int32_t)rd32(p); }
-
-static void wr32(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-    p[2] = (uint8_t)(v >> 16);
-    p[3] = (uint8_t)(v >> 24);
-}
+static double rdd(const uint8_t *p) { return (int32_t)le32u(p); }
 
 /* Writes struct.pack('<f', d): d rounded to float32. Returns 1, or 0 where Python finds d too
    large. A NaN is written as x86 converts it: quiet, with its sign kept. */
@@ -47,7 +35,7 @@ static int put_f32(uint8_t *p, double d)
     v.f = (float)d;
     if (isnan(d)) v.u = signbit(d) ? 0xFFC00000u : 0x7FC00000u;
     else if ((v.u & 0x7FFFFFFFu) == 0x7F800000u && !isinf(d)) return 0;
-    wr32(p, v.u);
+    put_le32(p, v.u);
     return 1;
 }
 
@@ -56,7 +44,7 @@ static int put_round(uint8_t *p, double v)
 {
     double r = rint(v);
     if (!(r >= -2147483648.0 && r <= 2147483647.0)) return 0;
-    wr32(p, (uint32_t)(int32_t)r);
+    put_le32(p, (uint32_t)(int32_t)r);
     return 1;
 }
 
@@ -71,7 +59,7 @@ static int spl_scan(const uint8_t *spl, uint32_t size, int k, uint32_t *at)
     uint32_t p = 0;
     int n = 0;
     while (size - p >= 8) {
-        int32_t count = (int32_t)rd32(spl + p);
+        int32_t count = (int32_t)le32u(spl + p);
         if (count < 0 || (uint32_t)count > (size - p - 8) / NODE) return -1;
         if (n == k) *at = p;
         p += 8 + NODE * (uint32_t)count;
@@ -105,10 +93,10 @@ uint32_t tb_path(const uint8_t *spl, uint32_t size, uint8_t *out, uint32_t cap)
     uint32_t at = 0, w = 0;
     if (spl_scan(spl, size, 9, &at) < 10) return 0;
     const uint8_t *nodes = spl + at + 8;
-    int32_t n = (int32_t)rd32(spl + at), k = (int32_t)rd32(spl + at + 4);
+    int32_t n = (int32_t)le32u(spl + at), k = (int32_t)le32u(spl + at + 4);
     for (int32_t i = 0; i < n; i++) {
         int32_t a = node_index(k, n);
-        int32_t b = a < 0 ? -1 : node_index((int32_t)rd32(nodes + NODE * (uint32_t)a + 16), n);
+        int32_t b = a < 0 ? -1 : node_index((int32_t)le32u(nodes + NODE * (uint32_t)a + 16), n);
         if (b < 0) return 0;
         const uint8_t *na = nodes + NODE * (uint32_t)a, *nb = nodes + NODE * (uint32_t)b;
         /* The handles of the two pieces:
@@ -132,7 +120,7 @@ uint32_t tb_path(const uint8_t *spl, uint32_t size, uint8_t *out, uint32_t cap)
                 w += 12;
             }
         }
-        k = (int32_t)rd32(na + 16);
+        k = (int32_t)le32u(na + 16);
     }
     return w;
 }
@@ -145,10 +133,10 @@ uint32_t tb_grid_pose(const uint8_t *spl, uint32_t size, const uint8_t *mmp, uin
     uint32_t at = 0;
     float yaw;
     if (cap < 12 || spl_scan(spl, size, 9, &at) < 10) return 0;
-    int32_t k = node_index((int32_t)rd32(spl + at + 4), (int32_t)rd32(spl + at));
+    int32_t k = node_index((int32_t)le32u(spl + at + 4), (int32_t)le32u(spl + at));
     if (k < 0) return 0;
     const uint8_t *nd = spl + at + 8 + NODE * (uint32_t)k;
-    if (!tb_mmp_road_angle(mmp, mmp_size, (int32_t)rd32(nd + 4), (int32_t)rd32(nd + 8), &yaw) ||
+    if (!tb_mmp_road_angle(mmp, mmp_size, (int32_t)le32u(nd + 4), (int32_t)le32u(nd + 8), &yaw) ||
         !put_f32(out + 8, (double)yaw)) return 0;
     memcpy(out, nd + 4, 8);
     return 12;
@@ -157,7 +145,7 @@ uint32_t tb_grid_pose(const uint8_t *spl, uint32_t size, const uint8_t *mmp, uin
 uint32_t tb_markers(const uint8_t *mrk, uint32_t size, uint8_t *out, uint32_t cap)
 {
     if (size < 4) return 0;
-    int32_t n = (int32_t)rd32(mrk);
+    int32_t n = (int32_t)le32u(mrk);
     if (n <= 0 || (uint32_t)n > (size - 4) / 32 || (uint32_t)n > cap / 32) return 0;
     memcpy(out, mrk + 4, 32 * (uint32_t)n);
     return 32 * (uint32_t)n;
@@ -365,11 +353,11 @@ static int put_int(uint8_t *p, const struct num *v)
 {
     if (v->is_int) {
         if (v->i < INT32_MIN || v->i > INT32_MAX) return 0;
-        wr32(p, (uint32_t)v->i);
+        put_le32(p, (uint32_t)v->i);
         return 1;
     }
     if (!(v->d > -2147483649.0 && v->d < 2147483648.0)) return 0;
-    wr32(p, (uint32_t)(int32_t)v->d);
+    put_le32(p, (uint32_t)(int32_t)v->d);
     return 1;
 }
 
@@ -451,11 +439,11 @@ uint32_t tb_track_data(const uint8_t *dtr, uint32_t size, uint8_t *out, uint32_t
         }
         if (v[0] < 0 || v[0] > UINT32_MAX || v[1] < INT32_MIN || v[1] > INT32_MAX ||
             v[2] < INT32_MIN || v[2] > INT32_MAX) return 0;
-        wr32(out, (uint32_t)v[2]);
-        wr32(out + 4, (uint32_t)v[1]);
-        wr32(out + 8, (uint32_t)v[0]);
+        put_le32(out, (uint32_t)v[2]);
+        put_le32(out + 4, (uint32_t)v[1]);
+        put_le32(out + 8, (uint32_t)v[0]);
         if (cap < 16) return 12;
-        wr32(out + 12, v[3] < 0 || v[3] > INT32_MAX ? 0u : (uint32_t)v[3]);    /* carnage */
+        put_le32(out + 12, v[3] < 0 || v[3] > INT32_MAX ? 0u : (uint32_t)v[3]);    /* carnage */
         return 16;
     }
     return 0;
@@ -488,15 +476,15 @@ uint32_t tb_opponents(const uint8_t *spl, uint32_t spl_size, const uint8_t *dtr,
         w += 20;
         rows++;
     }
-    wr32(out, (uint32_t)nsp);
-    wr32(out + 4, rows);
+    put_le32(out, (uint32_t)nsp);
+    put_le32(out + 4, rows);
     uint32_t q = 0;
     for (int s = 0; s < nsp; s++) {
-        uint32_t count = rd32(spl + q);
-        int32_t start = (int32_t)rd32(spl + q + 4);
+        uint32_t count = le32u(spl + q);
+        int32_t start = (int32_t)le32u(spl + q + 4);
         if (start < 0 || cap - w < 8 || (cap - w - 8) / 32 < count) return 0;
-        wr32(out + w, (uint32_t)start);
-        wr32(out + w + 4, count);
+        put_le32(out + w, (uint32_t)start);
+        put_le32(out + w + 4, count);
         w += 8;
         for (uint32_t j = 0; j < count; j++) {
             const uint8_t *nd = spl + q + 8 + NODE * j;

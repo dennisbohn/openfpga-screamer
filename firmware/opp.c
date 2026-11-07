@@ -25,8 +25,6 @@
 #include "hw.h"
 #include "sound.h"
 
-#define PI          3.14159265f
-
 /* Scheduling aids for the CPU's FPU. The answer to a comparison comes back late, and a use
    right after the question waits for it. If all comparisons are asked for before any answer is
    used, the answers come back side by side and the CPU waits only once (as track.c's INT_NOW).
@@ -72,14 +70,6 @@ static int engine[OPP_MAX];             /* the engines' voices (sound.h) and the
 static float engine_last[OPP_MAX];      /* the ear in the previous step */
 static int touch;                       /* the player touched one in this step's contact */
 static float hitcar;                    /* the player's +0x7c4 (opp_hitcar) */
-
-/* Brings the angle a into -PI .. PI. */
-static float wrap_pi(float a)
-{
-    while(a > PI) a -= 2.0f * PI;
-    while(a < -PI) a += 2.0f * PI;
-    return a;
-}
 
 /* Gives the three control points a, b and c (x, y) of the piece that opponent k is on: node
    and half of its curve (see the top of this file). */

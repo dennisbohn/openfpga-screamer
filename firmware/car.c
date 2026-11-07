@@ -25,7 +25,6 @@
 #include "speech.h"
 #include "tb_spl.h"
 
-#define PI          3.14159265f
 /* The bumper cam's height over the car: camera_hi in TRACK_DATA of MAPnA.DTR. */
 #define CAMERA_HI   ((float)track_camera_hi())
 
@@ -105,7 +104,6 @@ static struct { int on, bounces, view; float height, vy, pitch, roll, pitch_rate
    sideways it is at the wheels. [k][0] is to the right and [k][1] forward. The order of k is
    front-left, rear-left, front-right, rear-right. */
 static float corner[4][2];
-#define MAX_WALLS   1024
 /* Which side of each wall the track is on: +1 on the side of the wall's normal, else -1. */
 static float wall_in[MAX_WALLS];
 
@@ -167,14 +165,6 @@ static float puff_clock;                /* +0x304 */
    heading slightly past pi. Our car moves in floats (drive.c); this place follows those moves.
    fx and fy are the float place that it took last. */
 static struct { int32_t x, y; float fx, fy; } whole;
-
-/* Wraps an angle into -pi .. pi. */
-static float wrap_pi(float a)
-{
-    while(a > PI) a -= 2.0f * PI;
-    while(a < -PI) a += 2.0f * PI;
-    return a;
-}
 
 /* Stands the car on the drivable surface (OpenScreamer's player_contact;
    original: STARTL.EXE 0x11a30, 0x16698). One call changes pc.z, pc.pitch, pc.roll, pc.rough,
@@ -804,9 +794,9 @@ void car_init(int which, int replay)
         /* The place of the last opponent on the grid (original: STARTL.EXE 0x13ded). In time
            attack ghost_slot() is added to the opponent index, too. */
         int rows, ns = track_opp_count(&rows), start = 0, nn = 0;
-        int k = (ns - 1 < rows ? ns - 1 : rows) - 1 + (car_mode == CAR_ATTACK ? ghost_slot() : 0);
-        if(k > ns - 1) k = ns - 1;
-        const struct track_spline_node *s = k >= 0 ? track_opp_spline(k, &start, &nn) : 0;
+        int last = (ns - 1 < rows ? ns - 1 : rows) - 1 + (car_mode == CAR_ATTACK ? ghost_slot() : 0);
+        if(last > ns - 1) last = ns - 1;
+        const struct track_spline_node *s = last >= 0 ? track_opp_spline(last, &start, &nn) : 0;
         const struct track_dir *d = s && start >= 0 && start < nn
                                     ? nearest_dir((float)s[start].x, (float)s[start].y) : 0;
         if(d) {                                         /* the road's heading there, as the grid's */
@@ -822,8 +812,8 @@ void car_init(int which, int replay)
     mark_at = 0;
     progress = 0.0f;
     ct.ready = 0;
-    for(int k = 0; k < MAX_MODELS; k++)         /* each track's image has its own car models */
-        cmodels[k].ready = 0;
+    for(int i = 0; i < MAX_MODELS; i++)         /* each track's image has its own car models */
+        cmodels[i].ready = 0;
     /* Stand the car on the ground, and put the chase camera and the shadow where they belong. */
     contact();
     chase.init = 0;
@@ -1088,6 +1078,16 @@ float car_speed_needle(void)
     return needle_speed;
 }
 
+/* Finds block b of the mesh: sets q->blk, and q->t to the block's place in the mesh (x, y and z of
+   the record that the block's +0x0C points to; 0 for a block without one). */
+static void cblock_find(struct cblock *q, const uint8_t *mesh, int b)
+{
+    q->blk = mesh + *(const int32_t *)(mesh + 0x18 + 4 * b);
+    int32_t so = *(const int32_t *)(q->blk + 0x0C);
+    for(int j = 0; j < 3; j++)
+        q->t[j] = so > 0 ? (float)*(const int32_t *)(mesh + so + 0x10 + 4 * j) : 0.0f;
+}
+
 /* Makes the model (struct cmodel) of a car's mesh from its blocks, as car_draw() takes it. */
 static void cmodel_build(struct cmodel *m, const uint8_t *mesh)
 {
@@ -1098,10 +1098,7 @@ static void cmodel_build(struct cmodel *m, const uint8_t *mesh)
     m->ncb = 0;
     for(int b = 0; b < *(const int32_t *)(m->mesh + 0x14) && m->ncb < MAX_BLOCKS; b++) {
         struct cblock *q = &m->cb[m->ncb++];
-        q->blk = m->mesh + *(const int32_t *)(m->mesh + 0x18 + 4 * b);
-        int32_t so = *(const int32_t *)(q->blk + 0x0C);
-        for(int j = 0; j < 3; j++)
-            q->t[j] = so > 0 ? (float)*(const int32_t *)(m->mesh + so + 0x10 + 4 * j) : 0.0f;
+        cblock_find(q, m->mesh, b);
         for(int j = 0; j < 3; j++) q->mid[j] = (float)*(const int16_t *)(q->blk + 4 + 2 * j) + q->t[j];
         const uint8_t *nmz = q->blk + 0x68;
         int named = nmz[0] != 'A' && nmz[0] != 'a' && nmz[3] == 0;
@@ -1236,12 +1233,12 @@ static int draw_model(const struct cmodel *m, const struct car_look *lk, float d
     return n;
 }
 
-/* Fills obj and out for car model `model` as lk says (draw_model), with the body dropped by
+/* Fills obj and out for car model k as lk says (draw_model), with the body dropped by
    `drop`. Returns 0 if the model has no blocks. */
-static int draw_car(int model, const struct car_look *lk, float drop, const struct track_cam *cam,
+static int draw_car(int k, const struct car_look *lk, float drop, const struct track_cam *cam,
                     struct track_block *out, struct track_object *obj)
 {
-    const struct cmodel *m = cmodel(model);
+    const struct cmodel *m = cmodel(k);
     if(!m->ncb) return 0;
     obj->n = draw_model(m, lk, drop, cam, out);
     obj->x = lk->x;
@@ -1252,10 +1249,10 @@ static int draw_car(int model, const struct car_look *lk, float drop, const stru
     return 1;
 }
 
-int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, struct track_block *out,
+int car_draw(int k, const struct car_look *lk, const struct track_cam *cam, struct track_block *out,
              struct track_object *obj)
 {
-    return draw_car(model, lk, 0.0f, cam, out, obj);
+    return draw_car(k, lk, 0.0f, cam, out, obj);
 }
 
 int car_mesh_draw(const uint8_t *mesh, const struct car_look *lk, const struct track_cam *cam,
@@ -1322,17 +1319,25 @@ static void sin_cos(float a, float *s, float *c)
     *c = 1.0f - a2 * (0.5f - a2 * (1.0f / 24.0f - a2 * (1.0f / 720.0f - a2 * (1.0f / 40320.0f))));
 }
 
+/* Sets ps to the pose of a mesh placed as one body at (x, y, z) with the heading yaw, the pitch and the
+   roll: no wheels turned and no lean. */
+static inline void flat_pose(struct pose *ps, float x, float y, float z, float yaw, float pitch, float roll)
+{
+    *ps = (struct pose){ { 1.0f, 0.0f, 1.0f, 0.0f }, { 0 }, { 1.0f, 0.0f, 1.0f, 0.0f }, 0, x, y, z, 0.0f };
+    sin_cos(pitch, &ps->car[1], &ps->car[0]);
+    sin_cos(roll, &ps->car[3], &ps->car[2]);
+    ps->car[4] = cosf(yaw);
+    ps->car[5] = sinf(yaw);
+}
+
 /* Makes the first block of the flat mesh `file` and places it as a car's body is placed
    (car.h). The pose has no wheels turned and no lean. */
 void car_flat_block(const uint8_t *file, float x, float y, float z, float yaw, float pitch, float roll,
                     struct track_block *out)
 {
     const struct cblock q = { 0 };
-    struct pose ps = { { 1.0f, 0.0f, 1.0f, 0.0f }, { 0 }, { 1.0f, 0.0f, 1.0f, 0.0f }, 0, x, y, z, 0.0f };
-    sin_cos(pitch, &ps.car[1], &ps.car[0]);
-    sin_cos(roll, &ps.car[3], &ps.car[2]);
-    ps.car[4] = cosf(yaw);
-    ps.car[5] = sinf(yaw);
+    struct pose ps;
+    flat_pose(&ps, x, y, z, yaw, pitch, roll);
     place_block(&q, &ps, out);
     out->file = file;
     out->blk = file + *(const int32_t *)(file + 0x18);
@@ -1344,19 +1349,13 @@ void car_flat_block(const uint8_t *file, float x, float y, float z, float yaw, f
 int car_mesh_blocks(const uint8_t *file, float x, float y, float z, float yaw, float pitch, float roll,
                     const struct track_cam *cam, struct track_block *out, int max)
 {
-    struct pose ps = { { 1.0f, 0.0f, 1.0f, 0.0f }, { 0 }, { 1.0f, 0.0f, 1.0f, 0.0f }, 0, x, y, z, 0.0f };
-    sin_cos(pitch, &ps.car[1], &ps.car[0]);
-    sin_cos(roll, &ps.car[3], &ps.car[2]);
-    ps.car[4] = cosf(yaw);
-    ps.car[5] = sinf(yaw);
+    struct pose ps;
+    flat_pose(&ps, x, y, z, yaw, pitch, roll);
     int nb = *(const int32_t *)(file + 0x14), n = 0;
     float key[MAX_BLOCKS];
     for(int b = 0; b < nb && n < max && n < MAX_BLOCKS; b++, n++) {
         struct cblock q = { 0 };
-        q.blk = file + *(const int32_t *)(file + 0x18 + 4 * b);
-        int32_t so = *(const int32_t *)(q.blk + 0x0C);         /* its place in the mesh, as cmodel() */
-        for(int j = 0; j < 3; j++)
-            q.t[j] = so > 0 ? (float)*(const int32_t *)(file + so + 0x10 + 4 * j) : 0.0f;
+        cblock_find(&q, file, b);
         place_block(&q, &ps, &out[n]);
         out[n].file = file;
         out[n].blk = q.blk;

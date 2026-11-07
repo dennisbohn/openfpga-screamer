@@ -12,6 +12,7 @@
  * - the 2D layouts: 0x2df38, 0x2e08c and 0x2e384.
  */
 #include "menu.h"
+#include "bytes.h"
 #include "hw.h"
 #include "dat.h"
 #include "track.h"
@@ -35,7 +36,6 @@
 #define TAKE        0.8f
 #define LIT         0.6f
 #define DT          0.02f           /* a step */
-#define PI          3.1415927f
 #define TWO_PI      6.2831853f
 #define PIC_W       320             /* MENU1L.PCX, MENU3L.PCX, MENU4L.PCX */
 #define PIC_H       200
@@ -244,15 +244,10 @@ static void records_enter(int n);
 static void name_enter(void);
 static void room(const char *file, int x0, int y0, int w, int h);
 
-/* Little-endian reads from the data files. */
-static uint32_t rd16(const uint8_t *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8;
-}
-
+/* The int32 at p, little-endian, from two 16 bit halves. */
 static int32_t rd32(const uint8_t *p)
 {
-    return (int32_t)(rd16(p) | rd16(p + 2) << 16);
+    return (int32_t)(le16u(p) | le16u(p + 2) << 16);
 }
 
 /* Returns the entry n of the container `file` where it lies in the container, if it is stored
@@ -266,14 +261,6 @@ static const uint8_t *in_place(const uint8_t *file, uint32_t size, const char *n
         return 0;
     *len = e.size;
     return file + e.offset;
-}
-
-/* Unpacks the entry n of the container into out (at most max bytes). Returns its size, or 0 if
-   it is missing. */
-static uint32_t unpack(const uint8_t *file, uint32_t size, const char *n, uint8_t *out, uint32_t max)
-{
-    struct dat_entry e;
-    return dat_find(file, size, n, &e) ? dat_extract(file, size, &e, out, max) : 0;
 }
 
 /* Copies line k of the text file t (n bytes) into out, at most max - 1 characters. Lines that
@@ -318,12 +305,13 @@ static int text_number(const uint8_t *t, uint32_t n, int k)
 }
 
 /* Decodes a 320 x 200 PCX picture (8 bits, RLE, the 256 colours after the byte 12 at its end)
-   into out, and its palette into pal. A run does not go on into the next line (the port's
+   into out, and its palette into colours. A run does not go on into the next line (the port's
    pcx_load). Returns 1 on success, 0 if the picture is not of this kind. */
-static int pcx(const uint8_t *d, uint32_t n, uint8_t *out, uint32_t *pal)
+static int pcx(const uint8_t *d, uint32_t n, uint8_t *out, uint32_t *colours)
 {
     if(n < 128 + 769 || d[0] != 10 || d[2] != 1 || d[3] != 8 || d[65] != 1 || d[n - 769] != 12) return 0;
-    uint32_t w = rd16(d + 8) - rd16(d + 4) + 1, h = rd16(d + 10) - rd16(d + 6) + 1, stride = rd16(d + 66);
+    uint32_t w = le16u(d + 8) - le16u(d + 4) + 1, h = le16u(d + 10) - le16u(d + 6) + 1,
+             stride = le16u(d + 66);
     if(w != PIC_W || h != PIC_H || stride < w) return 0;
     uint32_t p = 128, end = n - 769;
     for(uint32_t y = 0; y < h; y++)
@@ -340,7 +328,7 @@ static int pcx(const uint8_t *d, uint32_t n, uint8_t *out, uint32_t *pal)
         }
     const uint8_t *q = d + end + 1;
     for(int i = 0; i < 256; i++)
-        pal[i] = (uint32_t)q[3 * i] << 16 | (uint32_t)q[3 * i + 1] << 8 | q[3 * i + 2];
+        colours[i] = (uint32_t)q[3 * i] << 16 | (uint32_t)q[3 * i + 1] << 8 | q[3 * i + 2];
     return 1;
 }
 
@@ -355,10 +343,10 @@ int menu_loading_init(const uint8_t *graf, uint32_t graf_size, const uint8_t *lo
     graf_dat = graf;
     graf_len = graf_size;
     uint8_t *at = mem + 4 * PIC_W * PIC_H;
-    uint32_t spr_n = unpack(graf, graf_size, "MENUL.SPR", scratch, scratch_cap);
+    uint32_t spr_n = dat_unpack(graf, graf_size, "MENUL.SPR", scratch, scratch_cap);
     uint32_t used = (spr_n + 3) & ~3u;
     uint32_t fnt_n = used < scratch_cap
-                     ? unpack(graf, graf_size, "MENUL.FNT", scratch + used, scratch_cap - used) : 0;
+                     ? dat_unpack(graf, graf_size, "MENUL.FNT", scratch + used, scratch_cap - used) : 0;
     if(!spr_n || !fnt_n ||
        !tb_hud_build(scratch, spr_n, scratch + used, fnt_n, scratch, 0, scratch, 0, scratch, 0, at,
                      cap - 4 * PIC_W * PIC_H)) return 0;
@@ -367,7 +355,7 @@ int menu_loading_init(const uint8_t *graf, uint32_t graf_size, const uint8_t *lo
     nfont = (uint32_t)rd32(hud + 4);
     img = (const struct blit_image *)(hud + 8);
     font = (const struct blit_font *)(hud + 8 + 12 * nimg);
-    uint32_t tn = unpack(local, local_size, "MENU.TXT", scratch, scratch_cap);
+    uint32_t tn = dat_unpack(local, local_size, "MENU.TXT", scratch, scratch_cap);
     return text_line(scratch, tn, LINE_LOADING, loading, sizeof loading) && nfont > FONT_TITLE;
 }
 
@@ -403,7 +391,7 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
         if(!p || !pcx(p, len, (uint8_t *)pic[k], pal[k])) return 0;
     }
     /* The texts. */
-    uint32_t tn = unpack(local, local_size, "MENU.TXT", scratch, scratch_cap);
+    uint32_t tn = dat_unpack(local, local_size, "MENU.TXT", scratch, scratch_cap);
     int ok = text_line(scratch, tn, LINE_TRACKS, title[0], sizeof title[0]) &
              text_line(scratch, tn, LINE_CARS, title[1], sizeof title[1]);
     for(int k = 0; k < 2; k++) ok &= text_line(scratch, tn, LINE_GEARS + k, gears[k], sizeof gears[k]);
@@ -416,7 +404,7 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
     ok &= in_place(graf, graf_size, "MENU2L.PCX", 0, &len) != 0;
     /* CHAMP.TXT's blocks, as the original splits it (STARTL.EXE 0x2c698): each runs up to a
        line with a '#'. block[b] is the index of the block's first line. */
-    tn = unpack(local, local_size, "CHAMP.TXT", scratch, scratch_cap);
+    tn = dat_unpack(local, local_size, "CHAMP.TXT", scratch, scratch_cap);
     int nb = 0;
     for(int k = 0; k < CHAMP_LINES && nb < CHAMP_BLOCKS
                    && text_line(scratch, tn, k, champ_text[k], sizeof champ_text[k]); k++)
@@ -427,11 +415,11 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
         n[5] = (char)('0' + k);
         ok &= in_place(graf, graf_size, n, 0, &len) != 0;
     }
-    tn = unpack(local, local_size, "TRACKDAT.TXT", scratch, scratch_cap);
+    tn = dat_unpack(local, local_size, "TRACKDAT.TXT", scratch, scratch_cap);
     for(int k = 0; k < MENU_TRACKS; k++) ok &= text_line(scratch, tn, 4 * k, name[k], sizeof name[k]);
     /* The cars: CARS.DTR's rows as the track image has them (tb_spl.h; 68 bytes each), then
        CARDAT.TXT's lines. */
-    uint32_t dn = unpack(gen, gen_size, "CARS.DTR", scratch, scratch_cap), rows_at = (dn + 3) & ~3u;
+    uint32_t dn = dat_unpack(gen, gen_size, "CARS.DTR", scratch, scratch_cap), rows_at = (dn + 3) & ~3u;
     uint32_t rn = dn && rows_at < scratch_cap
                   ? tb_cars(scratch, dn, scratch + rows_at, scratch_cap - rows_at) / 68 : 0;
     const struct car_spec *row = (const struct car_spec *)(scratch + rows_at);
@@ -440,7 +428,7 @@ int menu_init(const uint8_t *menu_dat, uint32_t menu_size, const uint8_t *graf, 
         car[ncars].mesh = cars[m >= 0 && m < CAR_MODELS ? m : 0];
         car[ncars].livery = (uint32_t)row[ncars].livery;
     }
-    tn = unpack(local, local_size, "CARDAT.TXT", scratch, scratch_cap);
+    tn = dat_unpack(local, local_size, "CARDAT.TXT", scratch, scratch_cap);
     for(int k = 0; k < ncars; k++) {
         struct car *c = &car[k];
         if(!text_line(scratch, tn, 6 * k, c->name, sizeof c->name)) {
@@ -887,8 +875,8 @@ static int map_blocks(const struct track_cam *cam, struct track_block *b)
             float pz = so > 0 ? (float)rd32(obj + so + 0x18) : 0.0f;
             struct track_block t = { obj, blk, { c, 0.0f, -s, s, 0.0f, c, 0.0f, 1.0f, 0.0f },
                                      { x + c * px - s * pz, ROW_Z + s * px + c * pz, py }, 0 };
-            float mx = (float)(int16_t)rd16(blk + 4), my = (float)(int16_t)rd16(blk + 6);
-            float mz = (float)(int16_t)rd16(blk + 8);
+            float mx = (float)(int16_t)le16u(blk + 4), my = (float)(int16_t)le16u(blk + 6);
+            float mz = (float)(int16_t)le16u(blk + 8);
             float dx = t.o[0] + c * mx - s * mz - cam->x, dy = t.o[1] + s * mx + c * mz - cam->y,
                   dh = t.o[2] + my - cam->h;
             float d = dx * dx + dy * dy + dh * dh;      /* the squared distance of the middle */

@@ -27,8 +27,6 @@
  */
 #include "raster.h"
 
-#define FB_STRIDE 320
-
 struct edge { int64_t x, slope; };
 
 /* The edge from (x0, y0) to (x1, y1), with y0 < y1, at the top of row r. The corners are in

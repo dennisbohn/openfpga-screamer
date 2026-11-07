@@ -63,6 +63,8 @@ struct track_dir { float angle; int32_t x, y; };
 struct track_wall { float angle; int32_t x, y, x1, y1, x2, y2; };
 const struct track_dir *track_dirs(int *n);
 const struct track_wall *track_walls(int *n);
+/* The car's wall test and the radar use at most this many walls of the list; the rest are left out. */
+#define MAX_WALLS   1024
 
 /* The animation clock (original: STARTL.EXE 0x1fcc4) runs 0.3 a second, one turn in 3.33 s. The
    track's textures play their frames by it. track_clock advances it by steps (of 0.02 s each). */
@@ -145,6 +147,8 @@ float track_far(void);
    a lower level, or 0 if the mesh has none at that level (the block is not drawn). Without the
    level of detail (LOD_SCALE 0) the result is always the block itself. */
 const uint8_t *track_lod_block(const uint8_t *mesh, int b, float dist, int moving);
+
+#define TRACK_CRC_BLOCK 0x40000         /* bytes per CRC block (tools/make_track.py) */
 
 /* The file's blocks of 256 KB from offset 0x100 on, each with a CRC-32 in the header. track_block_ok
    tells whether block k (0 .. track_blocks() - 1) arrived as written. */

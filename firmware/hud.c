@@ -21,7 +21,6 @@
    1 (0x1bc3e sets 0x20810, 0x27775 takes it). The core always uses that zoom, 24. One pixel
    is then 32768 / 24 units. */
 #define RADAR_ZOOM  24
-#define MAX_WALLS   1024
 
 static const uint8_t *base;
 static const struct blit_image *img;

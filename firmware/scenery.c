@@ -8,6 +8,7 @@
 #include <math.h>
 #include <string.h>
 #include "scenery.h"
+#include "bytes.h"
 #include "car.h"
 #include "dat.h"
 #include "drive.h"
@@ -49,19 +50,6 @@ static struct prop props[PROPS_MAX];
 static struct moving moving[MOVING_MAX];
 static int nprops, nmoving, hits;
 static uint8_t *at, *end;               /* mem handed out up to at: the meshes, MAPnANM.SPL */
-
-static int32_t rd32(const uint8_t *p)
-{
-    return (int32_t)(p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24);
-}
-
-/* Extracts the entry `name` of the container into out (at most max bytes). Returns its size,
-   or 0 if it is missing. */
-static uint32_t entry(const uint8_t *file, uint32_t size, const char *name, uint8_t *out, uint32_t max)
-{
-    struct dat_entry e;
-    return dat_find(file, size, name, &e) ? dat_extract(file, size, &e, out, max) : 0;
-}
 
 /*
  * Reads the rows of section sec (OSTACLES or ANIMATIONS) of a DTR text t (n bytes). A row has
@@ -118,8 +106,8 @@ static const uint8_t *mesh(const uint8_t *gfx, uint32_t gfx_size, const char *ce
     for(const char *c = cell + 1; *c && k < 11; c++)
         name[k++] = (char)(*c >= 'a' && *c <= 'z' ? *c - 32 : *c);
     memcpy(name + k, ".3DX", 5);
-    uint32_t m = entry(gfx, gfx_size, name, at, (uint32_t)(end - at));
-    int32_t blk = m >= 0x340 && rd32(at + 0x14) >= 1 ? rd32(at + 0x18) : 0;
+    uint32_t m = dat_unpack(gfx, gfx_size, name, at, (uint32_t)(end - at));
+    int32_t blk = m >= 0x340 && le32s(at + 0x14) >= 1 ? le32s(at + 0x18) : 0;
     if(blk <= 0 || (uint32_t)blk + 0x80 > m) return 0;
     const uint8_t *out = at;
     at += (m + 3) & ~3u;
@@ -169,8 +157,8 @@ static const uint8_t *node(const struct moving *m, int k)
 /* The node after node k, or node 0 if the file names none that exists. */
 static int next(const struct moving *m, int k)
 {
-    int nx = rd32(node(m, k) + 16);
-    return nx >= 0 && nx < rd32(m->spl) ? nx : 0;
+    int nx = le32s(node(m, k) + 16);
+    return nx >= 0 && nx < le32s(m->spl) ? nx : 0;
 }
 
 /*
@@ -188,11 +176,11 @@ static void moving_place(struct moving *m, float *len)
     float u = m->u, w0 = (1.0f - u) * (1.0f - u) * 0.5f, w2 = u * u * 0.5f, w1 = 1.0f - w0 - w2, der[2];
     float p[2];
     for(int j = 0; j < 2; j++) {
-        float a = (float)rd32(pa + 4 * j), b = (float)rd32(pb + 4 * j), c = (float)rd32(pc + 4 * j);
+        float a = (float)le32s(pa + 4 * j), b = (float)le32s(pb + 4 * j), c = (float)le32s(pc + 4 * j);
         p[j] = a * w0 + b * w1 + c * w2;
         der[j] = (1.0f - u) * (b - a) + u * (c - b);
     }
-    float z0 = (float)rd32(n + 12), z1 = (float)rd32(nn + 12);
+    float z0 = (float)le32s(n + 12), z1 = (float)le32s(nn + 12);
     m->x = p[0];
     m->y = p[1];
     m->h = z0 + ((float)m->half + u) * (z1 - z0) * 0.5f;
@@ -224,7 +212,7 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
     end = scratch;
     char name[16] = "MAPnDAT.DTR";
     name[3] = (char)('0' + n);
-    uint32_t dtr = entry(dat, dat_size, name, scratch, SCRATCH);
+    uint32_t dtr = dat_unpack(dat, dat_size, name, scratch, SCRATCH);
 
     /* The props: the first column of OSTACLES names each kind's mesh. */
     const uint8_t *kind_mesh[KINDS];
@@ -238,26 +226,26 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
     int sounds = snd_add_list(scratch, dtr);
     memcpy(name + 4, "ANM.SPL", 8);
     uint8_t *anm = at;
-    uint32_t anm_len = entry(dat, dat_size, name, anm, (uint32_t)(end - at));
+    uint32_t anm_len = dat_unpack(dat, dat_size, name, anm, (uint32_t)(end - at));
     at += (anm_len + 3) & ~3u;
     const uint8_t *spline[MOVING_MAX];
     int ns = 0;
     for(uint32_t p = 0; p + 8 <= anm_len && ns < MOVING_MAX; ) {        /* cut the file into splines */
-        int32_t count = rd32(anm + p);
+        int32_t count = le32s(anm + p);
         if(count < 1 || p + 8 + 56 * (uint32_t)count > anm_len) break;
         spline[ns++] = anm + p;
         p += 8 + 56 * (uint32_t)count;
     }
     for(int k = 0; k < na && nmoving < MOVING_MAX; k++) {
         int s = (int)number(cell[k][2]);        /* the third column: the spline's number */
-        if(s < 0 || s >= ns || rd32(spline[s]) < 2) continue;
+        if(s < 0 || s >= ns || le32s(spline[s]) < 2) continue;
         const uint8_t *ms = mesh(gfx, gfx_size, cell[k][0]);
         if(!ms) continue;
         struct moving *m = &moving[nmoving++];
         memset(m, 0, sizeof *m);
         m->spl = spline[s];
         m->mesh = ms;
-        m->node = rd32(m->spl + 4) >= 0 && rd32(m->spl + 4) < rd32(m->spl) ? rd32(m->spl + 4) : 0;
+        m->node = le32s(m->spl + 4) >= 0 && le32s(m->spl + 4) < le32s(m->spl) ? le32s(m->spl + 4) : 0;
         m->key = track_class_key(ms);
         m->speed = number(cell[k][1]);          /* the second column: the speed */
         m->sound = sounds >= 0 && cell[k][3][0] ? sounds + (int)number(cell[k][3]) : -1;
@@ -268,12 +256,12 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
     /* The props' places: one spline, each node a prop. The file is MAPnOST.SPL, in cone
        carnage MAPnCNG.SPL and in slalom MAPnSLA.SPL (original: STARTL.EXE 0x14fb4). */
     memcpy(name + 4, car_mode == CAR_CONES ? "CNG.SPL" : car_mode == CAR_SLALOM ? "SLA.SPL" : "OST.SPL", 8);
-    uint32_t len = entry(dat, dat_size, name, scratch, SCRATCH);
-    int32_t count = len >= 8 ? rd32(scratch) : 0;
+    uint32_t len = dat_unpack(dat, dat_size, name, scratch, SCRATCH);
+    int32_t count = len >= 8 ? le32s(scratch) : 0;
     for(int32_t i = 0; i < count && nprops < PROPS_MAX && 8 + 56 * (uint32_t)(i + 1) <= len; i++) {
         const uint8_t *nd = scratch + 8 + 56 * i;
-        int32_t kind = rd32(nd + 12);
-        float x = (float)rd32(nd + 4), y = (float)rd32(nd + 8), h;
+        int32_t kind = le32s(nd + 12);
+        float x = (float)le32s(nd + 4), y = (float)le32s(nd + 8), h;
         int grass;
         if(kind < 0 || kind >= nk || !kind_mesh[kind] || !track_under(x, y, &h, &grass)) continue;
         struct prop *p = &props[nprops++];

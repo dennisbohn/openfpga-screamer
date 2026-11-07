@@ -25,7 +25,10 @@
  * MAPnA/B/C.DTR (0x70, 0x74, 0x7C: tb_track_data).
  */
 #include "track_build.h"
+#include "bytes.h"
 #include "dat.h"
+#include "hw.h"
+#include "track.h"
 #include "tb_mmp.h"
 #include "tb_spl.h"
 #include "tb_gfx.h"
@@ -36,22 +39,9 @@
 int track_build_difficulty = 1;         /* NORMAL, as make_track.py */
 
 #define FIRST       0x100       /* the first section, after the header */
-#define BLOCK       0x40000     /* bytes per CRC block */
 #define MAX_BLOCKS  28          /* the CRCs that fit into the header (0x90 .. 0x100) */
 #define SECTIONS    14          /* the sections in offs[] and counts[], in the order of the table above */
 #define MODELS      7           /* AUTO00.3DX .. AUTO06.3DX */
-
-/* The CPU's cycle counter, for the cycles in track_build_info. It is 0 on the PC. */
-#ifdef __riscv
-static inline uint32_t now(void)
-{
-    uint32_t c;
-    __asm__ volatile ("csrr %0, cycle" : "=r"(c));
-    return c;
-}
-#else
-static inline uint32_t now(void) { return 0; }
-#endif
 
 /* The state of one build: out (cap bytes, pos the next free byte) takes the image, scratch
    (scratch_cap bytes, used of them taken) the unpacked entries. */
@@ -63,14 +53,6 @@ struct build {
     char track[8];                          /* "MAPn" */
     struct track_build_info *info;
 };
-
-static void wr32(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-    p[2] = (uint8_t)(v >> 16);
-    p[3] = (uint8_t)(v >> 24);
-}
 
 /* Records what stopped the build, for the log (info->fail). Returns 0, so that a caller can
    write `return fail(...)`. */
@@ -98,9 +80,9 @@ static const char *name(struct build *b, const char *end, char buf[16])
 static int extract(struct build *b, const uint8_t *file, uint32_t size, const struct dat_entry *e,
                    uint8_t *to, uint32_t room)
 {
-    uint32_t t0 = now();
+    uint32_t t0 = rdcycle();
     int ok = e->size > 0 && dat_extract(file, size, e, to, room) == e->size;
-    b->info->unpack_cycles += now() - t0;
+    b->info->unpack_cycles += rdcycle() - t0;
     return ok || fail(b, e->name);
 }
 
@@ -180,7 +162,7 @@ static int models(struct build *b, const struct track_files *f)
 uint32_t track_build(const struct track_files *f, int n, uint8_t *out, uint32_t cap,
                      uint8_t *scratch, uint32_t scratch_cap, struct track_build_info *info)
 {
-    uint32_t t0 = now();
+    uint32_t t0 = rdcycle();
     struct build b = { .out = out, .scratch = scratch, .cap = cap, .pos = FIRST, .scratch_cap = scratch_cap,
                        .track = "MAP0", .info = info };
     info->fail[0] = 0;
@@ -238,32 +220,32 @@ uint32_t track_build(const struct track_files *f, int n, uint8_t *out, uint32_t 
 
     /* The header: the offsets and counts as make_track.py packs them (the layout is at the top
        of track.c), then the CRC of each block. */
-    uint32_t size = b.pos, blocks = (size - FIRST + BLOCK - 1) / BLOCK;
+    uint32_t size = b.pos, blocks = (size - FIRST + TRACK_CRC_BLOCK - 1) / TRACK_CRC_BLOCK;
     if(blocks > MAX_BLOCKS) return (uint32_t)fail(&b, "image size");
     memcpy(out, "SCRK", 4);
-    wr32(out + 0x04, 6);
-    wr32(out + 0x08, b.offs[0]);
-    wr32(out + 0x0C, b.counts[0]);
-    wr32(out + 0x10, b.offs[1]);
-    wr32(out + 0x14, b.counts[1]);
-    wr32(out + 0x18, b.offs[2]);
+    put_le32(out + 0x04, 6);
+    put_le32(out + 0x08, b.offs[0]);
+    put_le32(out + 0x0C, b.counts[0]);
+    put_le32(out + 0x10, b.offs[1]);
+    put_le32(out + 0x14, b.counts[1]);
+    put_le32(out + 0x18, b.offs[2]);
     for(int k = 3; k <= 10; k++) {          /* placements to walls: offset, count */
-        wr32(out + 0x1C + 8 * (k - 3), b.offs[k]);
-        wr32(out + 0x20 + 8 * (k - 3), b.counts[k]);
+        put_le32(out + 0x1C + 8 * (k - 3), b.offs[k]);
+        put_le32(out + 0x20 + 8 * (k - 3), b.counts[k]);
     }
-    wr32(out + 0x68, b.offs[11]);
-    wr32(out + 0x6C, b.counts[11]);
+    put_le32(out + 0x68, b.offs[11]);
+    put_le32(out + 0x6C, b.counts[11]);
     memcpy(out + 0x70, td, 8);              /* bonus_time, camera_hi */
-    wr32(out + 0x78, b.offs[12]);
+    put_le32(out + 0x78, b.offs[12]);
     memcpy(out + 0x7C, td + 8, 4);          /* the ground colour */
-    wr32(out + 0x80, b.offs[13]);
-    wr32(out + 0x84, b.counts[13]);
-    wr32(out + 0x88, size);
-    wr32(out + 0x8C, blocks);
+    put_le32(out + 0x80, b.offs[13]);
+    put_le32(out + 0x84, b.counts[13]);
+    put_le32(out + 0x88, size);
+    put_le32(out + 0x8C, blocks);
     for(uint32_t k = 0; k < blocks; k++) {  /* the last block may be shorter */
-        uint32_t o = FIRST + k * BLOCK, e = size - o < BLOCK ? size : o + BLOCK;
-        wr32(out + 0x90 + 4 * k, crc32(out + o, out + e));
+        uint32_t o = FIRST + k * TRACK_CRC_BLOCK, e = size - o < TRACK_CRC_BLOCK ? size : o + TRACK_CRC_BLOCK;
+        put_le32(out + 0x90 + 4 * k, crc32(out + o, out + e));
     }
-    info->cycles = now() - t0;
+    info->cycles = rdcycle() - t0;
     return size;
 }

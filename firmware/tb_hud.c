@@ -20,28 +20,12 @@
  *    8 empty columns lie between.
  */
 #include "tb_hud.h"
+#include "bytes.h"
 #include <string.h>
 
 #define PKC_W   320             /* a .PKC picture's size */
 #define PKC_H   200
 #define LINES   26              /* GAME.TXT's lines in the section, 32 bytes each */
-
-static uint32_t rd32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
-}
-
-static void wr16(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-}
-
-static void wr32(uint8_t *p, uint32_t v)
-{
-    wr16(p, v);
-    wr16(p + 2, v >> 16);
-}
 
 /* Where the section goes. out is the section (cap bytes), entry is the offset of the next image's
    table entry, and at is the offset where the next image's pixels go. */
@@ -56,11 +40,11 @@ static uint8_t *image(struct sink *s, int32_t w, int32_t h, int32_t x, int32_t y
     uint32_t n = (uint32_t)w * (uint32_t)h;
     if(n > s->cap - s->at) return NULL;
     uint8_t *e = s->out + s->entry, *px = s->out + s->at;
-    wr32(e, s->at);
-    wr16(e + 4, (uint32_t)w);
-    wr16(e + 6, (uint32_t)h);
-    wr16(e + 8, (uint32_t)x);
-    wr16(e + 10, (uint32_t)y);
+    put_le32(e, s->at);
+    put_le16(e + 4, (uint32_t)w);
+    put_le16(e + 6, (uint32_t)h);
+    put_le16(e + 8, (uint32_t)x);
+    put_le16(e + 10, (uint32_t)y);
     s->entry += 12;
     s->at += n;
     return px;
@@ -79,7 +63,7 @@ static int next(struct walk *k, uint32_t *y, uint32_t *x, uint32_t *n, const uin
 {
     while(!k->left) {
         if(k->size - k->p < 4 || k->at >= PKC_W * PKC_H) return 0;
-        uint32_t v = rd32(k->d + k->p);
+        uint32_t v = le32u(k->d + k->p);
         k->p += 4;
         if(v & 0x80000000u) {
             k->at += 0u - v;
@@ -177,7 +161,7 @@ uint32_t tb_hud_picture(const uint8_t *d, uint32_t size, uint8_t *out, uint32_t 
     if(n < 0 || cap < 4 || 4 + 12 * (uint64_t)n > cap) return 0;
     struct sink s = { out, cap, 4, 4 + 12 * (uint32_t)n };
     if(pkc(d, size, &s) != n) return 0;
-    wr32(out, (uint32_t)n);
+    put_le32(out, (uint32_t)n);
     return s.at;
 }
 
@@ -201,14 +185,14 @@ uint32_t tb_hud_build(const uint8_t *spr, uint32_t spr_size, const uint8_t *fnt,
 {
     /* The counts come first: the size of the tables places the pixels. */
     if(spr_size < 8 || fnt_size < 1) return 0;
-    uint32_t nspr = rd32(spr);
+    uint32_t nspr = le32u(spr);
     if(nspr > (spr_size - 8) / 20) return 0;
     uint32_t nf = fnt[0] + 1u, glyphs = 1 + 12 * nf, pixels = glyphs, nglyph = 0;
     if(glyphs > fnt_size) return 0;
     for(uint32_t f = 0; f < nf; f++) {
         const uint8_t *h = fnt + 1 + 12 * f;
-        uint32_t count = rd32(h + 8);
-        if((rd32(h) | rd32(h + 4) | count) & 0x80000000u || count > (fnt_size - pixels) / 8) return 0;
+        uint32_t count = le32u(h + 8);
+        if((le32u(h) | le32u(h + 4) | count) & 0x80000000u || count > (fnt_size - pixels) / 8) return 0;
         pixels += 8 * count;
         nglyph += count;
     }
@@ -219,17 +203,17 @@ uint32_t tb_hud_build(const uint8_t *spr, uint32_t spr_size, const uint8_t *fnt,
     uint64_t head = 8 + 12 * (uint64_t)nimg + 20 * nf + 16 + 32 * LINES;
     if(head > cap) return 0;
     struct sink s = { out, cap, 8, (uint32_t)head };
-    wr32(out, nimg);
-    wr32(out + 4, nf);
+    put_le32(out, nimg);
+    put_le32(out + 4, nf);
 
     /* The sprites. The record's x and y go into the table as the image's place. */
     const uint8_t *base = spr + 8 + 20 * nspr;
     uint32_t left = spr_size - 8 - 20 * nspr;
     for(uint32_t i = 0; i < nspr; i++) {
         const uint8_t *r = spr + 8 + 20 * i;
-        int32_t w = (int32_t)rd32(r + 8), h = (int32_t)rd32(r + 12);
-        uint32_t at = rd32(r + 16);
-        uint8_t *px = image(&s, w, h, (int32_t)rd32(r), (int32_t)rd32(r + 4));
+        int32_t w = (int32_t)le32u(r + 8), h = (int32_t)le32u(r + 12);
+        uint32_t at = le32u(r + 16);
+        uint8_t *px = image(&s, w, h, (int32_t)le32u(r), (int32_t)le32u(r + 4));
         if(!px) return 0;
         uint32_t n = (uint32_t)w * (uint32_t)h;
         if(!n) continue;
@@ -242,10 +226,10 @@ uint32_t tb_hud_build(const uint8_t *spr, uint32_t spr_size, const uint8_t *fnt,
     uint8_t *ft = out + 8 + 12 * nimg;
     for(uint32_t f = 0, first = nspr; f < nf; f++) {
         const uint8_t *hd = fnt + 1 + 12 * f;
-        int32_t h = (int32_t)rd32(hd);
-        uint32_t count = rd32(hd + 8), widest = 1;
+        int32_t h = (int32_t)le32u(hd);
+        uint32_t count = le32u(hd + 8), widest = 1;
         for(uint32_t i = 0; i < count; i++, glyphs += 8) {
-            int32_t w = (int32_t)rd32(fnt + glyphs), at = (int32_t)rd32(fnt + glyphs + 4);
+            int32_t w = (int32_t)le32u(fnt + glyphs), at = (int32_t)le32u(fnt + glyphs + 4);
             uint8_t *px = image(&s, w, h, 0, 0);
             if(!px) return 0;
             if((uint32_t)w > widest) widest = (uint32_t)w;
@@ -257,11 +241,11 @@ uint32_t tb_hud_build(const uint8_t *spr, uint32_t spr_size, const uint8_t *fnt,
             for(int32_t r = 0; r < h; r++, row += bw)
                 for(int32_t c = 0; c < w; c++) *px++ = (uint8_t)(row[c >> 1] >> (c & 1 ? 0 : 4) & 15);
         }
-        wr32(ft, (uint32_t)h);
-        wr32(ft + 4, rd32(hd + 4));
-        wr32(ft + 8, count);
-        wr32(ft + 12, widest);
-        wr32(ft + 16, first);
+        put_le32(ft, (uint32_t)h);
+        put_le32(ft + 4, le32u(hd + 4));
+        put_le32(ft + 8, count);
+        put_le32(ft + 12, widest);
+        put_le32(ft + 16, first);
         ft += 20;
         first += count;
     }
@@ -269,10 +253,10 @@ uint32_t tb_hud_build(const uint8_t *spr, uint32_t spr_size, const uint8_t *fnt,
     /* The two pictures, as boxes at their places. Then the table of their ranges: for each
        picture the number of its first box and the box count. */
     if(pkc(implet, implet_size, &s) != nlet || pkc(impres, impres_size, &s) != nres) return 0;
-    wr32(ft, nspr + nglyph);
-    wr32(ft + 4, (uint32_t)nlet);
-    wr32(ft + 8, nspr + nglyph + (uint32_t)nlet);
-    wr32(ft + 12, (uint32_t)nres);
+    put_le32(ft, nspr + nglyph);
+    put_le32(ft + 4, (uint32_t)nlet);
+    put_le32(ft + 8, nspr + nglyph + (uint32_t)nlet);
+    put_le32(ft + 12, (uint32_t)nres);
     ft += 16;
 
     /* GAME.TXT's first LINES lines, cut as Python's splitlines() cuts them. A line is stored in 32

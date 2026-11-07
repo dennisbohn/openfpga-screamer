@@ -294,11 +294,15 @@ static inline void icache_sync(void)
 #define csr_read(csr)   ({ uint32_t v_; __asm__ volatile ("csrr %0, " #csr : "=r"(v_)); v_; })
 
 /* Cycle counter. It returns the low 32 bits, which wrap after 58 s at 74.25 MHz; that is fine
-   for differences. */
+   for differences. It is 0 on the PC, where track.c and track_build.c run in the host tests. */
 static inline uint32_t rdcycle(void)
 {
     uint32_t c;
+#ifdef __riscv
     __asm__ volatile ("csrr %0, cycle" : "=r"(c));
+#else
+    c = 0;
+#endif
     return c;
 }
 

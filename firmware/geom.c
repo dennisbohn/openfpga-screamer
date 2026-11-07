@@ -6,10 +6,7 @@
  * when GU_REFL_FLOAT is defined.
  */
 #include "geom.h"
-
-static int32_t rd32(const uint8_t *p) { return *(const int32_t *)p; }
-static int16_t rd16(const uint8_t *p) { return *(const int16_t *)p; }
-static uint16_t ru16(const uint8_t *p) { return *(const uint16_t *)p; }
+#include "bytes.h"
 
 static int32_t clamp_size(int32_t v)
 {
@@ -75,7 +72,7 @@ static int64_t sx(int64_t v, int bits)
 static void reflection(const struct gu_piece *p, const struct su_fixed *vt, const uint8_t *nrm, int i)
 {
     int64_t q[3], n[3], pv[3], pn[3];
-    for(int k = 0; k < 3; k++) q[k] = q14((uint32_t)rd32(nrm + 12 * i + 4 * k));
+    for(int k = 0; k < 3; k++) q[k] = q14((uint32_t)ld32s(nrm + 12 * i + 4 * k));
     for(int k = 0; k < 3; k++)                  /* the normal into view space: Q16, 18 bits */
         n[k] = sx((sx(p->m[3 * k], 18) * q[0] + sx(p->m[3 * k + 1], 18) * q[1] +
                    sx(p->m[3 * k + 2], 18) * q[2]) >> 14, 18);
@@ -124,12 +121,12 @@ uint32_t gu_draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
 {
     uint32_t pixels = 0;
     static struct su_fixed vt[GU_MAX_VERT];     /* the vertices in view space */
-    const uint8_t *verts = p->obj + rd32(p->blk + 0x1C), *uvs = p->obj + rd32(p->blk + 0x24);
-    int32_t nvert = rd32(p->blk + 0x10), ro = rd32(p->blk + 0x28 + 4 * p->row);
+    const uint8_t *verts = p->obj + ld32s(p->blk + 0x1C), *uvs = p->obj + ld32s(p->blk + 0x24);
+    int32_t nvert = ld32s(p->blk + 0x10), ro = ld32s(p->blk + 0x28 + 4 * p->row);
     if(nvert < 0 || nvert > GU_MAX_VERT || ro <= 0) return 0;
 
     for(int i = 0; i < nvert; i++) {
-        int64_t x = rd16(verts + 6 * i), y = rd16(verts + 6 * i + 2), z = rd16(verts + 6 * i + 4);
+        int64_t x = ld16s(verts + 6 * i), y = ld16s(verts + 6 * i + 2), z = ld16s(verts + 6 * i + 4);
         for(int k = 0; k < 3; k++) {
             int64_t s = x * p->m[3 * k] + y * p->m[3 * k + 1] + z * p->m[3 * k + 2];
             int32_t w = (int32_t)(p->t[k] + (s >> 8));
@@ -139,51 +136,51 @@ uint32_t gu_draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         }
     }
     st->vertices += (uint32_t)nvert;
-    if(rd32(p->blk + 0x18) & 0x2000) {          /* the reflections, for the vertices with a normal */
-        const uint8_t *nrm = p->obj + rd32(p->blk + 0x20);
-        int32_t cnt = rd32(nrm);
+    if(ld32s(p->blk + 0x18) & 0x2000) {         /* the reflections, for the vertices with a normal */
+        const uint8_t *nrm = p->obj + ld32s(p->blk + 0x20);
+        int32_t cnt = ld32s(nrm);
         for(int i = 0; i < nvert && i < cnt; i++) reflection(p, vt, nrm + 4, i);
     }
 
     const uint8_t *e = p->blk + ro;
     for(int nf = 0; nf < GU_MAX_FACES; nf++, e += 2) {
-        uint16_t fo = ru16(e);
+        uint16_t fo = ld16u(e);
         if(fo == 0xFFFF) break;
         const uint8_t *fc = p->blk + fo;
-        int nc = rd16(fc + 6);
+        int nc = ld16s(fc + 6);
         if(nc < 3 || nc > 4) continue;
 
         /* Facing test (docs/original_geometry.md 6.2): leave out a face that is turned away
            from the eye. A mirrored piece turns the test round. */
-        const uint8_t *c0 = verts + ru16(fc + 8);
-        int64_t bx = ((int64_t)rd16(c0) << 8) - p->e[0], by = ((int64_t)rd16(c0 + 2) << 8) - p->e[1];
-        int64_t bz = ((int64_t)rd16(c0 + 4) << 8) - p->e[2];
-        if((bx * rd16(fc + 0x14) + by * rd16(fc + 0x18) + bz * rd16(fc + 0x1C) < 0) != (p->mirror != 0))
+        const uint8_t *c0 = verts + ld16u(fc + 8);
+        int64_t bx = ((int64_t)ld16s(c0) << 8) - p->e[0], by = ((int64_t)ld16s(c0 + 2) << 8) - p->e[1];
+        int64_t bz = ((int64_t)ld16s(c0 + 4) << 8) - p->e[2];
+        if((bx * ld16s(fc + 0x14) + by * ld16s(fc + 0x18) + bz * ld16s(fc + 0x1C) < 0) != (p->mirror != 0))
             continue;
 
         /* The material. */
-        const uint8_t *mat = mlb + rd16(fc + 4);
-        int32_t routine = rd32(mat), tw = 0, th = 0;
+        const uint8_t *mat = mlb + ld16s(fc + 4);
+        int32_t routine = ld32s(mat), tw = 0, th = 0;
         /* Routine 192 (original: STARTL.EXE 0xcae84, the bridge of track 5) takes the face's
            colour and corners like routine 128: one colour and no texture record. */
         int flat = routine == 128 || routine == 192;
         if(routine == 224) st->see_through++;   /* drawn through the see-through table (raster.h) */
         struct rs_texture tex;
         if(!flat) {
-            tw = clamp_size(rd32(mat + 8));
-            th = clamp_size(rd32(mat + 12));
+            tw = clamp_size(ld32s(mat + 8));
+            th = clamp_size(ld32s(mat + 12));
             /* The texture frame (original: STARTL.EXE 0xd5980, docs/original_geometry.md 8.3):
                n x phase >> 14, where n is the number of frames in the texture record. Only the
                low 16 bits of n count, and only when n is above 0. */
-            const uint8_t *trec = mlb + rd32(mat + 4);
-            int32_t n = rd32(trec);
+            const uint8_t *trec = mlb + ld32s(mat + 4);
+            int32_t n = ld32s(trec);
             /* Routine 160 (a car's windows) takes its phase from the object's reflection
                picture (original: STARTL.EXE [0x84288], record +0x3c) and uses n x phase >> 16.
                The other routines use the paint job's phase, which includes the brake lights
                (original: STARTL.EXE [0x84284]). */
             uint32_t ph = routine == 160 ? p->refl & 0xFFFF : (p->phase & 0x3FFF) << 2;
             uint32_t frame = n > 0 ? ((uint32_t)n & 0xFFFF) * ph >> 16 : 0;
-            tex.data = mlb + rd32(trec + 8 + 4 * frame);
+            tex.data = mlb + ld32s(trec + 8 + 4 * frame);
             tex.width = tw;
             tex.height = th;
             /* Routine 48 is drawn as routine 64, texel 0 see-through. Any routine other than 64,
@@ -196,13 +193,13 @@ uint32_t gu_draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         struct su_fixed c[4];
         int ok = 1;
         for(int j = 0; j < nc; j++) {
-            uint16_t vo = ru16(fc + 8 + 2 * j);
+            uint16_t vo = ld16u(fc + 8 + 2 * j);
             int vi = vo / 6;
             if(vi >= nvert) ok = 0;             /* a corner beyond the vertices leaves the face out */
             c[j].r = vt[vi % GU_MAX_VERT].r;    /* the modulo only keeps the read inside vt[] */
             c[j].u = vt[vi % GU_MAX_VERT].u;
             c[j].f = vt[vi % GU_MAX_VERT].f;
-            int32_t s = rd16(uvs + vo) * tw, t = rd16(uvs + vo + 2) * th;
+            int32_t s = ld16s(uvs + vo) * tw, t = ld16s(uvs + vo + 2) * th;
             /* Routine 160: the reflection in whole texels (original: STARTL.EXE 0xdb310, u << 3). */
             if(routine == 160) {
                 s = refl_u[vi % GU_MAX_VERT] * 256;
@@ -214,7 +211,7 @@ uint32_t gu_draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         if(!ok) continue;
         st->faces++;
         st->triangles += (uint32_t)(nc - 2);
-        pixels += su_polygon8(fb, clip, v, c, nc, flat ? 0 : &tex, (uint8_t)(rd16(fc + 2) & 255));
+        pixels += su_polygon8(fb, clip, v, c, nc, flat ? 0 : &tex, (uint8_t)(ld16s(fc + 2) & 255));
     }
     return pixels;
 }
