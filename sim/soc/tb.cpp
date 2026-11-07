@@ -486,9 +486,10 @@ int main(int argc, char **argv) {
             std::string path = std::string(game) + "/" + slot.name;
             if (slot.name == "screamer.cfg") {          // not a game file: the player's settings, loaded if there, not counted
                 std::vector<uint8_t> f;
-                if (read_file(path, f) && !f.empty()) {
+                const char *own = getenv("SIM_CFG");    // SIM_CFG=<file>: this one, so that runs side by side can differ
+                if (read_file(own && *own ? std::string(own) : path, f) && !f.empty()) {
                     s.files[slot.id] = f;
-                    printf("%s/%s: %zu bytes (slot %u, optional)\n", game, slot.name.c_str(), f.size(), slot.id);
+                    printf("%s: %zu bytes (slot %u, optional)\n", own && *own ? own : path.c_str(), f.size(), slot.id);
                 }
                 continue;
             }

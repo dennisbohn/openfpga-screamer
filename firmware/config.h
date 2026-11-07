@@ -4,6 +4,8 @@
  *     far = 1.5      the far plane, the reach, the cell window; 1.0 is the original's picture
  *     lod = 1.5      where a block takes the next lower level of detail; 0 (or "off"): none
  *     tiny = 1       placements projected smaller than this many pixels across are not drawn; 0 (or "off"): all are
+ *     bench = 1      the benchmark (bench.h): the core races every track once at the start, with the gas held, and
+ *                    writes avg, worst frame, late frames, faces and pieces of each to debug.txt and to the screen
  * One line each, "name = number" (a comma works as the decimal point, a trailing x is ignored), # or ; starts a
  * comment. Without the file, or for a line that is not understood, the constants of track.h stay. The numbers are
  * kept within far 0.5 .. 4.0, lod 0, 0.5 .. 4.0 and tiny 0 .. 8; what is above 2.0 has not been measured.
@@ -20,9 +22,12 @@
 #define CFG_CLAMPED     4u          /* a number was outside its range and kept to it */
 #define CFG_BAD         8u          /* a line was not understood (an unknown name, no number) and left out */
 #define CFG_TINY        16u         /* tiny was set */
+#define CFG_BENCH       32u         /* bench was set */
 
 /* The text s of n bytes: the values it gives replace *far_scale, *lod_scale and *tiny_px, the others stay. Returns CFG_* */
-unsigned config_parse(const char *s, uint32_t n, float *far_scale, float *lod_scale, float *tiny_px);
+unsigned config_parse(const char *s, uint32_t n, float *far_scale, float *lod_scale, float *tiny_px, int *bench);
 
 /* Read the file, if there is one, set the factors (track_set_scales) and write what happened to debug.txt */
 void config_load(void);
+/* "bench = 1" was read */
+int config_bench(void);

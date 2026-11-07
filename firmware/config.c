@@ -45,7 +45,7 @@ static int number(const char **p, const char *end, float *v)
     return 1;
 }
 
-unsigned config_parse(const char *s, uint32_t n, float *far_scale, float *lod_scale, float *tiny_px)
+unsigned config_parse(const char *s, uint32_t n, float *far_scale, float *lod_scale, float *tiny_px, int *bench)
 {
     unsigned found = 0;
     const char *end = s + n;
@@ -56,18 +56,19 @@ unsigned config_parse(const char *s, uint32_t n, float *far_scale, float *lod_sc
         while (s < end && (*s == '\n' || *s == '\r')) s++;
         while (line < le && (*line == ' ' || *line == '\t')) line++;
         if (line == le || *line == '#' || *line == ';') continue;
-        char name[5] = { 0 };
+        char name[6] = { 0 };
         int k = 0;
         while (line < le && lower(*line) >= 'a' && lower(*line) <= 'z') {
-            if (k < 4) name[k] = (char)lower(*line);
+            if (k < 5) name[k] = (char)lower(*line);
             k++;
             line++;
         }
         int is_far = k == 3 && name[0] == 'f' && name[1] == 'a' && name[2] == 'r';
         int is_lod = k == 3 && name[0] == 'l' && name[1] == 'o' && name[2] == 'd';
         int is_tiny = k == 4 && name[0] == 't' && name[1] == 'i' && name[2] == 'n' && name[3] == 'y';
+        int is_bench = k == 5 && name[0] == 'b' && name[1] == 'e' && name[2] == 'n' && name[3] == 'c' && name[4] == 'h';
         while (line < le && (*line == ' ' || *line == '\t')) line++;
-        if (!(is_far || is_lod || is_tiny) || line == le || (*line != '=' && *line != ':')) {
+        if (!(is_far || is_lod || is_tiny || is_bench) || line == le || (*line != '=' && *line != ':')) {
             found |= CFG_BAD;
             continue;
         }
@@ -97,6 +98,9 @@ unsigned config_parse(const char *s, uint32_t n, float *far_scale, float *lod_sc
             if (v < FAR_MIN || v > FAR_MAX) found |= CFG_CLAMPED;
             *far_scale = v < FAR_MIN ? FAR_MIN : v > FAR_MAX ? FAR_MAX : v;
             found |= CFG_FAR;
+        } else if (is_bench) {
+            *bench = v != 0.0f;
+            found |= CFG_BENCH;
         } else if (is_tiny) {
             if (v > TINY_MAX) found |= CFG_CLAMPED;
             *tiny_px = v > TINY_MAX ? TINY_MAX : v;
@@ -120,6 +124,12 @@ static void log_scale(float v)
 }
 
 static uint32_t buf[CONFIG_MAX / 4];
+static int bench_on;
+
+int config_bench(void)
+{
+    return bench_on;
+}
 
 void config_load(void)
 {
@@ -133,7 +143,7 @@ void config_load(void)
     } else if (slot_read(CONFIG_SLOT, 0, (uint32_t)(uintptr_t)buf, SLOT_REST) != 0) {
         dlog_str("config: screamer.cfg could not be read, ");
     } else {
-        found = config_parse((const char *)buf, size, &far, &lod, &tiny);
+        found = config_parse((const char *)buf, size, &far, &lod, &tiny, &bench_on);
         dlog_str("config: screamer.cfg");
         dlog_str(found & CFG_BAD ? " (a line left out)" : "");
         dlog_str(found & CFG_CLAMPED ? " (a number kept within its range)" : "");
@@ -146,5 +156,6 @@ void config_load(void)
     dlog_str(" lod ");
     if (lod == 0.0f) dlog_str("off"); else log_scale(lod);
     dlog_str(" tiny ");
-    if (tiny == 0.0f) dlog_str("off\n"); else { log_scale(tiny); dlog_str("\n"); }
+    if (tiny == 0.0f) dlog_str("off"); else log_scale(tiny);
+    dlog_str(bench_on ? ", benchmark\n" : "\n");
 }

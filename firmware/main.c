@@ -37,6 +37,7 @@
 #include "intro.h"
 #include "ftime.h"
 #include "config.h"
+#include "bench.h"
 
 uint32_t frames_shown;            /* read by the trap handler */
 
@@ -545,6 +546,7 @@ enum { RACE_LEAVE, RACE_AGAIN, RACE_REPLAY };   /* how a race ends: NO, YES, its
 static struct car_input rec[REC_MAX];
 static uint32_t rec_n;
 static int rec_full;
+static uint32_t bench_frames;           /* the benchmark's race (bench.h): the pictures to count, 0 an ordinary race */
 
 /* The race on track n with the car of CARS.DTR row car until SELECT, or OVER_STEPS after its end
    once the commentary has said all it queued (0x21048 asks 0x24740; never in the simulation,
@@ -592,12 +594,13 @@ static int run_track(int n, int car, int replay)
     uint32_t check_at = 2 + sim_race;           /* the frame checked against the C models (in the
                                                    simulation; on the Pocket only logged) */
     for (;;) {
-        uint32_t st = next_frame(), keys = IN_KEY, t_frame = rdcycle();
-        uint32_t joy = IN_JOY, trig = IN_TRIG;  /* a docked controller's stick and triggers */
+        uint32_t st = next_frame(), keys = bench_frames ? KEY_B : IN_KEY, t_frame = rdcycle();    /* the benchmark: the gas held */
+        uint32_t joy = bench_frames ? 0 : IN_JOY, trig = bench_frames ? 0 : IN_TRIG;   /* a docked controller's stick and triggers */
         tl_begin(t_frame);
         music_frame();                          /* the ring kept filled (music.h) */
         tl_mark(TL_MUSIC);
         frames_shown = drawn;
+        if (bench_frames && drawn > bench_frames) return RACE_LEAVE;       /* the benchmark has its pictures */
         if (drawn == check_at + 1) {
             dlog_str("stack used ");
             dlog_dec((int32_t)stack_used());
@@ -672,7 +675,7 @@ static int run_track(int n, int car, int replay)
             opp_step();
             scenery_step();
             keys_before = keys;
-            if (sim_race && !car_race()->on && k == steps_now - 1) steps_now++;    /* the simulation's countdown at once */
+            if ((sim_race || bench_frames) && !car_race()->on && k == steps_now - 1) steps_now++;    /* the simulation's countdown at once */
             if (car_race()->finished || car_race()->game_over) over++;
         }
         t_phys = rdcycle() - t_phys;
@@ -774,7 +777,7 @@ static int run_track(int n, int car, int replay)
         /* the frame's work for the statistics and the timing overlay (ftime.h): the overlay shows the frames up to this one; the
            question's picture is not a frame of the race, the simulation's check is not the frame's work, and the first frame
            of the simulation's race (the start lights' countdown run at once, 300 steps) is not a frame at all */
-        if (!ask && !(sim_race && drawn == 0)) {
+        if (!ask && !((sim_race || bench_frames) && drawn == 0)) {
             if (ft_overlay_on()) ft_draw(fb, ov_fg, ov_bg, track_far_scale(), track_lod_scale(), track_tiny());
             struct ft_frame ff = { rdcycle() - t_frame - t_check, t_pre, ts.cyc_cull, ts.cyc_piece + ts.cyc_out, 0, rdcycle() - t_wait,
                                    ts.faces, ts.pieces, (uint32_t)car_marker(), ts.tiny };
@@ -787,7 +790,7 @@ static int run_track(int n, int car, int replay)
             fps_drawn = drawn;
             fps_frame = VID_FRAME(st);
         }
-        if ((drawn % 250 == 2 && !sim_race) || drawn == check_at) {     /* (the 4 KB log has room for one big line) */
+        if (!bench_frames && ((drawn % 250 == 2 && !sim_race) || drawn == check_at)) {     /* (the 4 KB log has room for one big line) */
             dlog_str("track frame ");
             dlog_dec((int32_t)drawn);
             dlog_str(": car ");
@@ -1389,6 +1392,68 @@ static int race(int n, int car)
     }
 }
 
+/* The benchmark's result on the screen (bench.h), until a button is pressed */
+static void bench_show(const struct ft_summary *rows, const int *ok)
+{
+    static const uint32_t pal[5] = { 0x000000, 0xFFFFFF, 0x40D070, 0xF04848, 0x909090 };
+    enum { BG, FG, GREEN_, RED_, GREY_ };
+    char line[CON_COLS + 1], *p;
+    uint32_t drawn = 0, keys_before = IN_KEY;
+    for (;;) {
+        uint32_t st = wait_swap_done();
+        volatile uint8_t *fb = FB(!(st & VID_FRONT));
+        for (int i = 0; i < 5; i++) VID_PAL[i] = pal[i];
+        fb_fill(fb, 0, 0, FB_W, FB_H, BG);
+        fb_fill(fb, 0, 0, FB_W, 8, FG);
+        con_text(fb, 1, 0, "SCREAMER - BENCHMARK", BG, FG);
+        p = ft_scale(fmt_str(line, "far "), track_far_scale());
+        p = ft_scale(fmt_str(p, "  lod "), track_lod_scale());
+        ft_scale(fmt_str(p, "  tiny "), track_tiny());
+        con_text(fb, 1, 2, line, GREEN_, BG);
+        con_text(fb, 1, 4, BENCH_SCREEN_HEAD, GREY_, BG);
+        for (int t = 0; t < BENCH_TRACKS; t++) {
+            bench_screen_row(line, t + 1, ok[t] ? &rows[t] : 0);
+            con_text(fb, 1, 5 + t, line, ok[t] && rows[t].late ? RED_ : FG, BG);
+        }
+        con_text(fb, 1, 12, "avg, max: ms a frame; late: over 20 ms", GREY_, BG);
+        con_text(fb, 1, 13, "faces, pieces, tiny: mean a frame", GREY_, BG);
+        con_text(fb, 1, 15, "More in debug.txt (Saves folder).", GREY_, BG);
+        con_text(fb, 1, 17, "Press a button to go on.", FG, BG);
+        VID_SWAP = 1;
+        uint32_t keys = IN_KEY;
+        if (++drawn > 25 && (keys & ~keys_before)) return;
+        keys_before = keys;
+    }
+}
+
+/* The benchmark (bench.h): each track raced once for BENCH_FRAMES pictures with the gas held, the first car, the options as
+   they are; the result into debug.txt and onto the screen. The races write little to the log, and the room for the
+   result is kept (dlog_keep) */
+static void bench_run(void)
+{
+    struct ft_summary rows[BENCH_TRACKS];
+    int ok[BENCH_TRACKS] = { 0 };
+    struct menu_options opt;
+    menu_options(&opt);
+    car_laps = opt.laps;
+    car_mode = CAR_NORMAL;
+    track_build_difficulty = opt.difficulty == 3 ? 4 : opt.difficulty;
+    opp_bullet = track_build_difficulty > 2;
+    speech_on = 0;
+    dlog_keep(BENCH_LOG_BYTES);
+    for (int n = 1; n <= BENCH_TRACKS; n++) {
+        bench_frames = BENCH_FRAMES;
+        if (race(n, 0)) {
+            ft_summary(&rows[n - 1]);
+            ok[n - 1] = rows[n - 1].frames > 0;
+        }
+        bench_frames = 0;
+    }
+    dlog_keep(0);
+    bench_log(rows, ok, track_far_scale(), track_lod_scale(), track_tiny());
+    bench_show(rows, ok);
+}
+
 /* The intro's race on track n, set up (intro.h): each frame the opponents, the scenery and the
    intro's camera (0x2780c), the logos and credits over the picture (0x279d4). It fades in from
    black as a race does (0x21e50), the cars go once it is all there (as the original looks);
@@ -1628,6 +1693,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         int screen = (!sim || check) && menus();
         int n = sim && slot_size(TRACK_SLOT) ? (int)slot_size(TRACK_SLOT) : choice.track % MENU_TRACKS + 1;
         int car = choice.car;                   /* the last track and car, as CHOICE.DAT keeps them */
+        if (config_bench()) bench_run();        /* screamer.cfg: "bench = 1" */
         if (screen) menu_sounds();
         enum { AT_PAGES, AT_NAME, AT_TRACKS, AT_CARS };     /* the screen to go on with */
         const int first = !check ? AT_PAGES : check == 2 ? AT_CARS : AT_TRACKS;

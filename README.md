@@ -64,13 +64,18 @@ factors on the original's distances (1.0 is the original's picture; the default 
 far = 1.5
 lod = 1.5
 tiny = 0
+bench = 0
 ```
 
 `far` is the view distance, `lod` the distance at which things switch to a coarser mesh (`lod = off` turns that
 off), `tiny` the size in pixels below which a thing is not drawn at all (`0`: everything is drawn, `1`: what would be
 under one pixel across is left out). Larger `far` and `lod` show more, and more far away, but take more time per frame;
 the frame time display (hold A, then press L and R) shows the settings in use and how many things `tiny` left out.
-`#` starts a comment. Without the file, the defaults apply.
+`bench = 1` runs a benchmark at the start: the core races every track once with the gas held (ten cars, the first
+car, about 5 seconds each) and shows, and writes to `debug.txt` when the core is quit, one line per track with the
+settings, the mean and the longest frame time, the late frames (over 20 ms), and the faces and pieces drawn. The whole
+run takes one or two minutes; change the settings and run it again to compare. `#` starts a comment. Without the file,
+the defaults apply.
 
 Saves and the debug log go to `Saves/screamer/Chainy.Screamer/`. `debug.txt` helps when
 something goes wrong; the Pocket writes it when the core is quit.

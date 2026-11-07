@@ -20,7 +20,8 @@ static int fails;
 static void tt(const char *text, float tiny0, float tiny1, unsigned flags)
 {
     float f = 1.5f, l = 1.5f, ti = tiny0;
-    unsigned got = config_parse(text, (uint32_t)strlen(text), &f, &l, &ti);
+    int b = 0;
+    unsigned got = config_parse(text, (uint32_t)strlen(text), &f, &l, &ti, &b);
     int ok = ti > tiny1 - 0.0005f && ti < tiny1 + 0.0005f && got == flags;
     printf("%-4s tiny %.3f flags %u  <- \"%s\"\n", ok ? "ok" : "FAIL", ti, got, text);
     fails += !ok;
@@ -29,7 +30,8 @@ static void tt(const char *text, float tiny0, float tiny1, unsigned flags)
 static void t(const char *text, float far0, float lod0, float far1, float lod1, unsigned flags)
 {
     float f = far0, l = lod0, ti = 0.0f;
-    unsigned got = config_parse(text, (uint32_t)strlen(text), &f, &l, &ti);
+    int b = 0;
+    unsigned got = config_parse(text, (uint32_t)strlen(text), &f, &l, &ti, &b);
     int ok = f > far1 - 0.0005f && f < far1 + 0.0005f && l > lod1 - 0.0005f && l < lod1 + 0.0005f && got == flags;
     printf("%-4s far %.3f lod %.3f flags %u  <- \"%s\"%s\n", ok ? "ok" : "FAIL", f, l, got,
            strchr(text, '\n') ? "(lines)" : text, ok ? "" : "  (expected far/lod/flags differ)");
@@ -57,5 +59,22 @@ int main(void)
     tt("tiny = 20", 0.0f, 8.0f, CFG_TINY | CFG_CLAMPED);
     tt("tin = 1\ntinyx = 2", 3.0f, 3.0f, CFG_BAD);
     tt("far = 2\ntiny = 1", 0.0f, 1.0f, CFG_FAR | CFG_TINY);
+    {   /* bench */
+        float f = 1.5f, l = 1.5f, ti = 0.0f;
+        int b = 0;
+        unsigned got = config_parse("bench = 1\n", 10, &f, &l, &ti, &b);
+        int ok = got == CFG_BENCH && b == 1;
+        printf("%-4s bench = 1 -> %d flags %u\n", ok ? "ok" : "FAIL", b, got);
+        fails += !ok;
+        got = config_parse("Bench:0 # off", 13, &f, &l, &ti, &b);
+        ok = got == CFG_BENCH && b == 0;
+        printf("%-4s Bench:0 -> %d flags %u\n", ok ? "ok" : "FAIL", b, got);
+        fails += !ok;
+        b = 5;
+        got = config_parse("bench\nbenchx = 1\n", 17, &f, &l, &ti, &b);
+        ok = got == CFG_BAD && b == 5;
+        printf("%-4s bench without a number, benchx -> flags %u\n", ok ? "ok" : "FAIL", got);
+        fails += !ok;
+    }
     return fails ? 1 : 0;
 }

@@ -24,6 +24,11 @@ void dlog_init(void)
     limit = DLOG_SIZE - DLOG_RESERVE;
 }
 
+void dlog_keep(uint32_t bytes)
+{
+    if (limit) limit = DLOG_SIZE - DLOG_RESERVE - bytes;
+}
+
 void dlog_state(uint32_t *p, uint32_t *c)
 {
     *p = pos;
