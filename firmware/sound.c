@@ -1,3 +1,10 @@
+/*
+ * Sound effects (interface and volume rules: sound.h). This file has three parts:
+ *   - the effect table: rows read from DTR texts (lists of effects in GEN.DAT and the track's
+ *     MAPnDAT.DTR), each pointing at a sample inside SOUND.DAT, which stays in the SDRAM;
+ *   - the voices: snd_play and the calls after it write the mixer's registers (hw.h AU_*);
+ *   - the ear: sounds with a place get volume, pan and pitch from the camera (snd_at).
+ */
 #include "sound.h"
 #include <math.h>
 #include "hw.h"
@@ -5,25 +12,32 @@
 #include "track.h"
 
 #define SND_MAX     72                  /* the 12 effects, the 58 recordings, a track's 2 */
-#define MASTER      0x4000              /* the effects' master volume at the game's 0x6000 (sound.h) */
-#define SPEECH_MASTER 0x3000            /* the commentary's (sound.h) */
+#define MASTER      0x4000              /* the effects' master volume; the game's is 0x6000 (sound.h) */
+#define SPEECH_MASTER 0x3000            /* the commentary's master volume (sound.h) */
 
-/* a row: SDRAM byte address and length, where it ends or loops (from the start), back by how
-   much and how often (AU_LOOP), its volume */
+/* One row of the effect table, all values ready for the mixer:
+   addr, len   SDRAM byte address and length of the sample;
+   end         where the sample ends, or where its loop ends (bytes from the start);
+   back, times at the end, jump back by this many bytes, so often (AU_LOOP);
+   vol         the row's volume, 0..0x7fff. */
 static struct snd { uint32_t addr, len, end, back, times, vol; } fx[SND_MAX];
 static int nfx;
 static int speech_end;                  /* the rows from SND_SPEECH up to here are the commentary */
-static const uint8_t *dat;             /* SOUND.DAT */
+static const uint8_t *dat;              /* SOUND.DAT */
 static uint32_t dat_size;
 
-/* per voice: which start of it a handle names, its effect, loudness and pan */
+/* Per voice:
+   serial   counts the starts on the voice, so that a handle names one start only;
+   voice_fx the effect it plays;
+   voice_vol, voice_pan  its own loudness and pan (snd_volume). */
 static uint32_t serial[AU_VOICES];
 static int voice_fx[AU_VOICES];
 static int32_t voice_vol[AU_VOICES], voice_pan[AU_VOICES];
-static int32_t fade = 0x8000;           /* snd_fade: all of them at this of 0x8000 */
-static uint32_t level = 0x8000;         /* snd_master: the game's digital master, 0x8000 at its 0x6000 */
+static int32_t fade = 0x8000;           /* snd_fade: every voice is at this of 0x8000 */
+static uint32_t level = 0x8000;         /* snd_master: the game's digital master; 0x8000 at its 0x6000 */
 
-/* the next token of the text from *p up to the line's end (spaces and tabs between): its length */
+/* The next token of the text, from *p to the end of the line; spaces and tabs before it are
+   skipped. Sets *tok to its start and moves *p behind it. Returns its length. */
 static uint32_t token(const char **p, const char *end, const char **tok)
 {
     const char *s = *p;
@@ -36,7 +50,7 @@ static uint32_t token(const char **p, const char *end, const char **tok)
     return (uint32_t)(s - *tok);
 }
 
-/* a field: x and hex digits, or d and a decimal number (maybe negative) */
+/* Value of a field of a row: 'x' and hex digits, or 'd' and a decimal number (maybe negative). */
 static int32_t field(const char *t, uint32_t n)
 {
     uint32_t v = 0, i = 1;
@@ -57,9 +71,12 @@ static int32_t field(const char *t, uint32_t n)
     return neg ? -(int32_t)v : (int32_t)v;
 }
 
-/* row k: its sample NAME.RAW in SOUND.DAT and the loop as the game's driver plays it: with
-   loops and a loop length, from the start to the loop's end, then the loop; else to the end
-   (a loop length of 0 loops the whole sample) */
+/* Adds the next row of the table: the sample NAME.RAW in SOUND.DAT and its loop, as the game's
+   driver plays it. f[0..3] are the row's volume, loop count, loop start and loop length.
+   With a loop count and a loop length, the sample plays from its start to the loop's end and
+   then jumps back by the loop length, so often. Otherwise it plays to its end; with a loop count
+   but a loop length of 0 the whole sample loops. If the sample is missing, the row gets
+   len = 0 and snd_play refuses it. */
 static void row(const char *name, uint32_t n, const int32_t f[6])
 {
     char file[24];
@@ -87,8 +104,9 @@ static void row(const char *name, uint32_t n, const int32_t f[6])
     s->vol = (uint32_t)f[0] & 0x7FFF;
 }
 
-/* the rows of the first SOUND_FX section of a DTR text after the ones there are: how many have
-   their sample */
+/* Appends the rows of the first SOUND_FX section of a DTR text to the table. A row is a line
+   "sNAME" and six fields; the section ends at END_LIST. Returns how many of the new rows found
+   their sample. */
 static int list(const char *p, const char *end)
 {
     int in = 0, ok = 0;
@@ -118,17 +136,18 @@ static int list(const char *p, const char *end)
     return ok;
 }
 
-/* the rows of GEN.DAT's list name after the ones there are: how many have their sample */
+/* Appends the rows of the DTR text `name` in GEN.DAT to the table (see list). Returns how many
+   of the new rows found their sample. */
 static int gen_list(const uint8_t *gen, uint32_t gen_size, const char *name)
 {
-    static uint8_t text[2560];          /* the longest, SPFXFULL.DTR, has 2356 bytes */
+    static uint8_t text[2560];          /* the longest text, SPFXFULL.DTR, has 2356 bytes */
     struct dat_entry e;
     if (!dat_find(gen, gen_size, name, &e) || e.size >= sizeof text) return 0;
     uint32_t size = dat_extract(gen, gen_size, &e, text, sizeof text);
     return list((const char *)text, (const char *)text + size);
 }
 
-/* every voice stopped, the table emptied, SOUND.DAT from now on (no commentary in it yet) */
+/* Stops every voice, empties the table and takes this SOUND.DAT. The commentary has no rows yet. */
 static void restart(const uint8_t *sound, uint32_t sound_size)
 {
     AU_STOP = 0xFFFFFFFFu;
@@ -141,7 +160,7 @@ int snd_init(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint
 {
     restart(sound, sound_size);
     int n = gen_list(gen, gen_size, "SFXSBASE.DTR");
-    if (nfx == SND_SPEECH) {
+    if (nfx == SND_SPEECH) {            /* the commentary's numbers must start at SND_SPEECH */
         n += gen_list(gen, gen_size, "SPFXBASE.DTR");
         n += gen_list(gen, gen_size, "SPFXFULL.DTR");
     }
@@ -162,7 +181,8 @@ int snd_add_list(const uint8_t *text, uint32_t size)
     return first;
 }
 
-/* the voice of handle h while it plays that start, else -1 */
+/* A handle is the voice number in its low 5 bits and the voice's start counter (serial) above
+   them. Returns the voice of handle h while it plays that start, else -1. */
 static int voice_of(int h)
 {
     if (h < 0) return -1;
@@ -170,18 +190,23 @@ static int voice_of(int h)
     return serial[v] == (uint32_t)h >> 5 && (AU_PLAY & 1u << v) ? v : -1;
 }
 
-/* AU_VOL from the row's volume, the voice's own and its pan, times the master volume (the
-   effects' or the commentary's): a centred byte times up to 127 */
+/* The value for AU_VOL: the left side in bits 7..0, the right side in bits 15..8, each a byte.
+   A voice in the middle at full volume gets 127 per side while snd_master is at the game's
+   0x6000. The loudness t is the row's volume times the voice's own, times the master volume
+   (the effects' or the commentary's), times snd_fade and snd_master; after each product the
+   result is shifted right by 15 bits. The pan then fades the far side (0 is full left, 0xffff
+   full right). */
 static uint32_t vol_reg(const struct snd *s, int32_t vol, int32_t pan)
 {
     int id = (int)(s - fx);
     uint32_t master = id >= SND_SPEECH && id < speech_end ? SPEECH_MASTER : MASTER;
     uint32_t t = (((s->vol * (uint32_t)vol) >> 15) * master >> 15) * ((uint32_t)fade * level >> 15) >> 15;
-    uint32_t fl = pan <= 0x8000 ? 0x7FFF : (uint32_t)(0xFFFF - pan), fr = pan >= 0x8000 ? 0x7FFF : (uint32_t)pan;
+    uint32_t fl = pan <= 0x8000 ? 0x7FFF : (uint32_t)(0xFFFF - pan),
+             fr = pan >= 0x8000 ? 0x7FFF : (uint32_t)pan;
     return (t * fl >> 22) | (t * fr >> 22) << 8;
 }
 
-/* the effect's sample and loop on voice v, (re)started */
+/* Starts (or restarts) effect id on voice v: its sample, loop and volume. */
 static void start(int v, int id)
 {
     const struct snd *s = &fx[id];
@@ -218,7 +243,9 @@ int snd_playing(int h)
     return voice_of(h) >= 0;
 }
 
-/* the step per output frame: pitch x 11025 / 48000 = pitch x 147 / 640, below 4 samples */
+/* The mixer's step per output frame (AU_STEP, 2.16) is the pitch (16.16) x 11025 / 48000, that
+   is pitch x 147 / 640. The pitch is limited to 1..0xfffff so that the step stays below 4
+   samples. */
 void snd_pitch(int h, int32_t pitch)
 {
     int v = voice_of(h);
@@ -264,8 +291,11 @@ int snd_play_once(int id, int h)
     return v >= 0 && voice_fx[v] == id ? h : snd_play(id);
 }
 
-/* the ear (snd_ear): where the sounds with a place are heard from, the camera's level right
-   (track_cam_axes), and whether it has just jumped */
+/* The ear, set by snd_ear: where the sounds with a place are heard from.
+   ear_x, ear_y   the camera's position;
+   ear_rx, ear_ry the camera's right direction, level (track_cam_axes);
+   ear_ok         1 once snd_ear has been called;
+   ear_cut        1 if the camera jumped in the last step (the first call counts as a jump). */
 static float ear_x, ear_y, ear_rx, ear_ry;
 static int ear_ok, ear_cut;
 
@@ -286,9 +316,11 @@ float snd_dist(float x, float y)
     return sqrtf(dx * dx + dy * dy);
 }
 
-/* the pan (0x21cfb, 0x1dffc): the line to the source in the ear's frame, 0x8000 +- 32767 x
-   sqrt(|sideways| / distance); the Doppler shift is the game's per frame of a 30 fps PC, here
-   per step of 1/50 s, so x 50 / 30 */
+/* Plays or stops the sound of a source at (x, y); the arguments are described in sound.h.
+   The pan is the line to the source in the ear's frame: 0x8000 +- 32767 x sqrt(|sideways| /
+   distance) (original: STARTL.EXE 0x21cfb, 0x1dffc). The Doppler shift is the game's: 9 per
+   unit of approach in a frame of a 30 fps PC. Here a step is 1/50 s, so it is multiplied by
+   50 / 30. A camera cut sets *last to the new distance, so that step has no shift. */
 int snd_at(int h, int id, float x, float y, float range, float loud, float pitch, float *last)
 {
     float dx = x - ear_x, dy = y - ear_y, d = sqrtf(dx * dx + dy * dy);
