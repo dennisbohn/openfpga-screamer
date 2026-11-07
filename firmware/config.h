@@ -5,7 +5,7 @@
  *     lod = 1.5      where a block takes the next lower level of detail; 0 (or "off"): none
  * One line each, "name = number" (a comma works as the decimal point, a trailing x is ignored), # or ; starts a
  * comment. Without the file, or for a line that is not understood, the constants of track.h stay. The numbers are
- * kept within far 0.5 .. 3.0 and lod 0, 0.5 .. 4.0; what is above 2.0 has not been measured.
+ * kept within far 0.5 .. 4.0 and lod 0, 0.5 .. 4.0; what is above 2.0 has not been measured.
  */
 #pragma once
 #include <stdint.h>

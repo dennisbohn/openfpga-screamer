@@ -100,8 +100,9 @@ const char *track_hud_text(int k);
    FAR_SCALE: the far plane (faces are cut at 43,808 units from the camera), the reach (a placement is
    looked at while its place is within 52,000), the box of the game's cell window (57,433 sideways, 56,096
    ahead, 8192 round the camera: the cells it covers are the only ones looked at, also cut to the view box
-   of the cell the camera is in, which the map's data gives and the factor does not change) and the reach of
-   the props and the moving scenery.
+   of the cell the camera is in, which the map's data gives and which the factor scales round the cell's
+   middle, so that a cell with a box does not show less far than one without) and the reach of the props and
+   the moving scenery.
    LOD_SCALE: the distances at which a block takes the next lower level of detail. The original's (STARTL.EXE
    0x8a504 .. 0x8a554, constants of its image that nothing writes): a placed block (its middle from the camera)
    at 12,000 units level 1 and at 16,000 level 2, a car's or another moving object's block at 4,000 and 7,000;

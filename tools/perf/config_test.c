@@ -32,7 +32,7 @@ int main(void)
     t("# comment\n; another\n\n   FAR=1,25  # comma\r\nLod : 3x\r\n", 1.5f, 1.5f, 1.25f, 3.0f, CFG_FAR | CFG_LOD);
     t("lod = 0", 1.5f, 1.5f, 1.5f, 0.0f, CFG_LOD);
     t("lod = off", 1.5f, 1.5f, 1.5f, 0.0f, CFG_LOD);
-    t("far = 9", 1.5f, 1.5f, 3.0f, 1.5f, CFG_FAR | CFG_CLAMPED);
+    t("far = 9", 1.5f, 1.5f, 4.0f, 1.5f, CFG_FAR | CFG_CLAMPED);
     t("far = 0.1\nlod = 0.2", 1.5f, 1.5f, 0.5f, 0.5f, CFG_FAR | CFG_LOD | CFG_CLAMPED);
     t("lod = 12", 1.5f, 1.5f, 1.5f, 4.0f, CFG_LOD | CFG_CLAMPED);
     t("speed = 3\nfar = 2", 1.5f, 1.5f, 2.0f, 1.5f, CFG_FAR | CFG_BAD);

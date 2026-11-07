@@ -8,7 +8,7 @@
 #include "track.h"
 
 #define FAR_MIN     0.5f
-#define FAR_MAX     3.0f
+#define FAR_MAX     4.0f
 #define LOD_MIN     0.5f
 #define LOD_MAX     4.0f
 
