@@ -1,32 +1,44 @@
 //
-// Setup unit: polygons in view space from the CPU, cut at the near plane, the far plane
-// and a guard band (clipper.v), projected, split into a fan of triangles (corner 0 with each
-// pair of neighbours), each with what the rasterizer needs, started there. Bit for bit the
-// C model firmware/setup.c (setup.h has the arithmetic):
-//   polygon: values to 8 fraction bits as they are written (s, t saturated at 24 bits);
-//     cut (clipper.v)
-//   corner: rc = 2^(16 + l) / f from the
-//     reciprocal table and one Newton step (l = bit length of f); x = centre + scale r / f,
-//     y = centre - scale u / f in 1/16 pixel; s rc, t rc kept
-//   triangle: d = twice the area (none if 0, textured), 1/|d| from the table; Q, U, V at the
-//     corners scaled by the triangle's largest Q; per value the change per pixel in x and y
-//     (8 fraction bits) and the value at the reference pixel's centre
-// After the clipper two parts, each with one multiplier (operands registered, two stages,
-// the result three clocks after it was issued) and a fixed schedule: the corner part (about
-// 20 clocks a corner) and the triangle part (about 40 clocks a textured triangle, 1 a flat
-// one). While the rasterizer draws a triangle, the triangle part works out the next one,
-// the corner part the corner after it, the clipper the next polygon, and the CPU writes the
-// polygon after that.
-// The wide values are kept in block RAM where a clock of read latency fits the schedule: the
-// corner in the corner part, rc, s rc and t rc of the triangle's corners (the corner part
-// writes them as they come, the triangle part reads one a clock through one shifter), and
-// the triangle's Q, U, V at corner 0, their differences and the changes per pixel. Sums of two products are added up in the multiplier's second stage.
-// The operands come from small selects on the step, without holding; wide registers are
-// written through explicit enables (a register held in most states of a case would become
-// a wide mux of the state). Each output changes in the same clock to the same value as it
-// always did; the CPU's registers are read at the clocks they always were.
+// Setup unit (SU): turns polygons in view space into triangles with everything that the
+// rasterizer (raster.v) needs, and starts them there. It is bit for bit the C model
+// firmware/setup.c; setup.h has the arithmetic.
 //
-// Registers (soc.v maps them at 0xF000_3080 + 4 * wr_addr):
+// Input is a polygon from the CPU (the registers below) or from the geometry unit (the gu_*
+// ports, geom.v). Its values have 8 fraction bits as they are written; s and t are saturated
+// at 24 bits. Output is one triangle at a time (the t_* ports; go and rs_accept are the
+// handshake).
+//
+// Stages
+//   clipper   Cuts the polygon at the near plane, the far plane and a guard band
+//             (clipper.v).
+//   corner    rc = 2^(16 + l) / f from the reciprocal table and one Newton step (l = bit
+//             length of f). x = centre + scale r / f and y = centre - scale u / f, in 1/16
+//             pixel. s rc and t rc are kept.
+//   triangle  The polygon is split into a fan of triangles: corner 0 with each pair of
+//             neighbours. For a textured triangle: d = twice the area (a triangle with
+//             d = 0 is left out) and 1/|d| from the table; Q, U, V at the corners scaled by
+//             the triangle's largest Q; per value the change per pixel in x and y (8
+//             fraction bits) and the value at the reference pixel's centre.
+//
+// Schedule
+//   After the clipper there are two parts, each with one multiplier (operands registered, two
+//   stages, the result three clocks after it was issued) and a fixed schedule: the corner
+//   part (about 20 clocks a corner) and the triangle part (about 40 clocks for a textured
+//   triangle, 1 clock for a flat one). They work in parallel. While the rasterizer draws a
+//   triangle, the triangle part works out the next one, the corner part the corner after it,
+//   the clipper the next polygon, and the CPU writes the polygon after that.
+//
+// Storage
+//   Wide values are kept in block RAM where a clock of read latency fits the schedule:
+//   the corner in the corner part; rc, s rc and t rc of the triangle's corners (the corner
+//   part writes them as they come, the triangle part reads one a clock through one
+//   shifter); and the triangle's Q, U, V at corner 0, their differences and the changes per
+//   pixel. Sums of two products are added in the multiplier's second stage.
+//   The operands come from small selects on the step, without holding. Wide registers are
+//   written through explicit enables: a register held in most states of a case would become
+//   a wide mux of the state.
+//
+// Registers (soc.v maps them at 0xF000_3080 + 4 * wr_addr, docs/soc.md):
 //   0   centre of the view: [15:0] x, [31:16] y in 1/16 pixel
 //   1   [15:0] focal length in pixels times 16
 //   2   mode: [7:0] colour, [8] buffer, [9] textured,    } taken with the first
@@ -46,11 +58,18 @@ module setup (
     input   wire            wr,
     input   wire    [3:0]   wr_addr,
     input   wire    [31:0]  wr_data,
-    output  wire            ready,                  // a corner (9, 10) is taken
-    output  wire            busy,                   // corners or triangles in work
+    output  wire            ready,                  // the unit can take a corner write (registers 9, 10)
+    output  wire            busy,                   // polygons, corners or triangles are in work
     output  reg     [31:0]  busy_clocks = 0,        // clocks computing since the last clear
 
-    // a triangle for the rasterizer: taken in a clock with go and rs_accept
+    // A triangle for the rasterizer (raster.v). go is raised when the t_* values are valid and
+    // stays high until the rasterizer takes the triangle in a clock with go and rs_accept.
+    // The values are those of raster.v's registers:
+    //   t_v0..t_v2  corners, [15:0] x, [31:16] y, in 1/16 pixel on whole pixels
+    //   t_ref       reference pixel, [9:0] x, [25:16] y, in pixels
+    //   t_tex       texture address, t_size texture size, t_draw colour, buffer and mode
+    //   t_a0..t_a2  Q, U, V at the reference pixel's centre
+    //   t_dx*, t_dy*  the change of Q, U, V per pixel in x and in y, 8 fraction bits
     output  reg             go = 0,
     input   wire            rs_accept,
     output  reg     [31:0]  t_v0, t_v1, t_v2,       // [15:0] x, [31:16] y
@@ -61,8 +80,9 @@ module setup (
     output  reg     [31:0]  t_dx0, t_dx1, t_dx2,
     output  reg     [31:0]  t_dy0, t_dy1, t_dy2,
 
-    // a polygon from the geometry unit (geom.v), taken instead of the CPU's corners in a
-    // clock with gu_valid and gu_ready (the CPU writes none meanwhile)
+    // A polygon from the geometry unit (geom.v), taken instead of the CPU's corners in a
+    // clock with gu_valid and gu_ready (the CPU writes none meanwhile). The formats are in
+    // geom.v.
     input   wire            gu_valid,
     output  wire            gu_ready,
     input   wire    [2:0]   gu_n,
@@ -72,8 +92,9 @@ module setup (
 );
 
 //
-// reciprocal table, as in raster_tex.v: r0[i] = floor((2^32 - 1) / (2^15 + 32 i + 16));
-// one read port for each part
+// Reciprocal table, the same as in raster_tex.v: 1024 entries, r0[i] = floor((2^32 - 1) /
+// (2^15 + 32 i + 16)). It has one read port for each part: ra_* for the corner part, rb_* for
+// the triangle part.
 //
     reg  [16:0] rtab [0:1023];
     integer     ti;
@@ -87,13 +108,15 @@ module setup (
     end
     reg  [9:0]  ra_addr, rb_addr;
     reg  [16:0] ra_q, rb_q;
+    // both read ports, one clock after the address
 always @(posedge clk) begin
     ra_q <= rtab[ra_addr];
     rb_q <= rtab[rb_addr];
 end
 
-    // float to 8 fraction bits (su_fix8): the mantissa m shifted by e - 142, here m << 7
-    // shifted right by 149 - e (0..30 for the exponents 119..149, nothing lost)
+    // Converts a float to a fixed-point value with 8 fraction bits (su_fix8): the mantissa m
+    // shifted by e - 142. Here m << 7 is shifted right by 149 - e (0..30 for the exponents
+    // 119..149, so nothing is lost).
     function signed [31:0] fix8(input [31:0] b);
         reg [31:0] a;
         reg [4:0]  sh;
@@ -106,7 +129,8 @@ end
         end
     endfunction
 
-    // bit length of a number below 2^31; the highest one of a number below 2^27
+    // bitlen31: the bit length of a number below 2^31.
+    // msb27: the position of the highest set bit of a number below 2^27.
     function [4:0] bitlen31(input [30:0] v);
         integer i;
         begin
@@ -122,13 +146,14 @@ end
         end
     endfunction
 
-    // saturated to fewer bits: the value where the bits above are its sign, else the largest
-    // of its sign
+    // Saturation to fewer bits: the value itself where the bits above are its sign, else the
+    // largest value of its sign.
     function signed [15:0] sat16(input signed [21:0] v);
         sat16 = v[21:15] == {7{v[21]}} ? v[15:0] : {v[21], {15{!v[21]}}};
     endfunction
     function signed [20:0] sat21(input signed [49:0] v);      // +-(2^20 - 1): -2^20 too
-        sat21 = v[49:20] == {30{v[49]}} && !(v[49] && v[19:0] == 20'd0) ? v[20:0] : {v[49], {19{!v[49]}}, 1'b1};
+        sat21 = v[49:20] == {30{v[49]}} && !(v[49] && v[19:0] == 20'd0) ? v[20:0] :
+                {v[49], {19{!v[49]}}, 1'b1};
     endfunction
     function signed [26:0] sat27(input signed [30:0] v);
         sat27 = v[30:26] == {5{v[30]}} ? v[26:0] : {v[30], {26{!v[30]}}};
@@ -138,19 +163,21 @@ end
     endfunction
 
 //
-// registers the CPU writes
+// The registers the CPU writes. Floats are converted to 8 fraction bits as they are written.
 //
-    reg  signed [15:0] cen_x, cen_y;
-    reg  [15:0] scale;
-    reg  [12:0] in_mode;
-    reg  [31:0] in_tex, in_size, far8;
-    reg  signed [31:0] in_r, in_u, in_f;
+    reg  signed [15:0] cen_x, cen_y;            // register 0
+    reg  [15:0] scale;                          // register 1
+    reg  [12:0] in_mode;                        // register 2
+    reg  [31:0] in_tex, in_size, far8;          // registers 3, 4, 12
+    reg  signed [31:0] in_r, in_u, in_f;        // registers 5, 6, 7
     reg  [23:0] in_s, in_t;                     // saturated to 24 bits as they are written
     wire signed [31:0] wr_fix = fix8(wr_data);
     // to 24 bits: from 2^23 on (e >= 142) saturated
     wire [23:0] wr_fix24 = wr_data[30:23] >= 8'd142 ? {wr_data[31], {23{!wr_data[31]}}} : wr_fix[23:0];
+    // a write of register 9 or 10 hands a corner over
     wire        trigger = wr && (wr_addr == 4'd9 || wr_addr == 4'd10) && !reset;
 
+    // register writes (the corner's t and the hand-over are in the next block)
 always @(posedge clk) begin
     if(wr && wr_addr == 4'd0) begin cen_x <= wr_data[15:0]; cen_y <= wr_data[31:16]; end
     if(wr && wr_addr == 4'd1) scale <= wr_data[15:0];
@@ -165,23 +192,28 @@ always @(posedge clk) begin
 end
 
 //
-// the polygon being written: a corner goes in one clock after its last write; complete,
-// the clipper copies it out (in registers: block RAM would save logic but is the scarcer
-// resource)
+// The polygon being written (ib). A corner goes in one clock after its last write
+// (register 9 or 10). When the polygon is complete, the clipper copies it out. ib is in
+// registers: block RAM would save logic but is the scarcer resource.
 //
     reg  [575:0] ib;
-    reg  [2:0]  ib_n, ib_cnt;
+    reg  [2:0]  ib_n, ib_cnt;                   // corners of the polygon; corners so far
     reg  [9:0]  ib_mode;
     reg  [31:0] ib_tex, ib_size;
-    reg         ib_full = 0, tw = 0, tw_first;
+    reg         ib_full = 0, tw = 0, tw_first;  // ib_full: a polygon waits for the clipper;
+                                                // tw: a corner goes in now, tw_first: it is the first
     reg  [9:0]  cl_mode;                        // the polygon in the clipper
     reg  [31:0] cl_tex, cl_size;
     wire        cl_idle, cl_taken, co_valid, co_first;
     wire [143:0] co_c;
     wire        co_take;                        // the corner part takes a corner
     wire [2:0]  tw_idx = tw_first ? 3'd0 : ib_cnt;
-    wire [2:0]  tw_n = tw_first ? (in_mode[12:10] < 3'd3 ? 3'd3 : in_mode[12:10] > 3'd4 ? 3'd4 : in_mode[12:10]) : ib_n;
+    // the number of corners, limited to 3..4, taken from the mode with the first corner
+    wire [2:0]  tw_n = tw_first ? (in_mode[12:10] < 3'd3 ? 3'd3 :
+                                   in_mode[12:10] > 3'd4 ? 3'd4 : in_mode[12:10]) : ib_n;
 
+    // corners into ib, from the CPU or the geometry unit, and the polygon's data into the
+    // clipper's stage (cl_*)
 always @(posedge clk) begin
     if(trigger && ready) begin
         in_t <= wr_fix24;
@@ -236,16 +268,19 @@ clipper cl (
 );
 
 //
-// corner part: one multiplier and one shifter, right by l: f to 16 bits for the table (steps
-// 2 and 4), and r rc, u rc to r / f, u / f where those products come back. Of the corner, f
-// is kept in a register, r, u, s, t in a block RAM, read from step 1 on. rc, s rc and t rc go
-// into the corner store (slot cs_w) as they come.
+// Corner part: one multiplier and one shifter, right by l. The shifter brings f to 16 bits
+// for the table (steps 2 and 4), and r rc, u rc to r / f, u / f where those products come
+// back. Of the corner, f is kept in a register, and r, u, s, t in a block RAM, read from
+// step 1 on. rc, s rc and t rc go into the corner store (slot cs_w) as they come.
+// A corner takes about 20 clocks: cu_step runs from 0 to 20.
 //
     reg         cu_busy = 0, cu_done = 0;
     reg  [4:0]  cu_step;
     (* ramstyle = "no_rw_check, M10K" *) reg  [111:0] cin [0:1];    // two words: one is read
     reg  [111:0] cin_q;
     reg         cin_w = 0;                      // the word written last
+    // Input of the corner part: the clipper's corner (r, u, s, t) in two words that are
+    // written alternately. The corner part reads the word written last.
 always @(posedge clk) begin
     if(co_take) begin
         cin[!cin_w] <= {co_c[143:96], co_c[63:0]};
@@ -256,15 +291,20 @@ end
     wire signed [31:0] c_r = cin_q[31:0], c_u = cin_q[63:32];
     wire signed [23:0] c_s = cin_q[87:64], c_t = cin_q[111:88];
     reg  [30:0] c_f;                            // at least 1, so l <= 31
-    reg         c_first;
-    reg  [4:0]  c_l;
-    reg  [16:0] c_rc;
-    reg  signed [15:0] c_x, c_y;
+    reg         c_first;                        // the corner starts a polygon
+    reg  [4:0]  c_l;                            // the bit length of c_f
+    reg  [16:0] c_rc;                           // rc
+    reg  signed [15:0] c_x, c_y;                // the projected corner, 1/16 pixel on whole pixels
 
-    // its multiplier and the work the result is for: step 4 m x r0 (no tag, read at step 7),
-    // 7 e x r0 (R2), 11..14 s, r, u, t x rc (SR, P, P, TR), 15, 16 the projections x scale
-    // (X, Y; scale and the centre are read at the clocks they always were), 17 rc x 2^16 (Q):
-    // the corner store takes bits 40..10 of SR, TR, Q
+    // The corner part's multiplier and the work that its result is for (cm_t). The steps
+    // cu_step that issue a product are:
+    //   4       m x r0 (no tag, the product is read at step 7)
+    //   7       e x r0 (C_R2)
+    //   11..14  s, r, u, t x rc (C_SR, C_P, C_P, C_TR)
+    //   15, 16  the projections x and y: r / f and u / f times scale (C_X, C_Y). The scale
+    //           is read at these steps, the centre when the result comes back.
+    //   17      rc x 2^16 (C_Q)
+    // The corner store takes bits 40..10 of the results C_SR, C_TR and C_Q.
     localparam  [2:0]   C_R2 = 3'd1, C_P = 3'd2, C_SR = 3'd3, C_TR = 3'd4, C_Q = 3'd5,
                         C_X = 3'd6, C_Y = 3'd7;
     reg  signed [31:0] cm_a;
@@ -289,6 +329,7 @@ end
 
     wire        cu_take;                        // the triangle part takes the corner
 
+    // the tag of the product that the current step issues
 always @* begin
     case(cu_step)
     5'd7:  cm_t = C_R2;
@@ -303,6 +344,9 @@ always @* begin
     endcase
 end
 
+    // The corner part's multiplier operands and tags (cm_t0 .. cm_t2 follow the product through
+    // the two stages), the start of a corner, the step counter and the results that are
+    // kept: c_rc, c_x, c_y.
 always @(posedge clk) begin
     case(cu_step)
     5'd4:  cm_a <= {16'd0, c_m};
@@ -314,7 +358,8 @@ always @(posedge clk) begin
     5'd17: cm_a <= 32'sd65536;
     default: cm_a <= {{11{c_p[20]}}, c_p};
     endcase
-    cm_b <= !cu_step[4] && !cu_step[3] ? {1'b0, ra_q} : cu_step == 5'd15 || cu_step == 5'd16 ? {2'd0, scale} : {1'b0, c_rc};
+    cm_b <= !cu_step[4] && !cu_step[3] ? {1'b0, ra_q} :
+            cu_step == 5'd15 || cu_step == 5'd16 ? {2'd0, scale} : {1'b0, c_rc};
     cm_t0 <= cu_busy ? cm_t : 3'd0;
     cm_p1 <= cm_a * cm_b;
     cm_p2 <= cm_p1;
@@ -350,13 +395,25 @@ always @(posedge clk) begin
 end
 
 //
-// triangle part: corner 0 (the polygon's first), 1 (the one before) and 2 (the new one)
+// Triangle part: corner 0 (the polygon's first), corner 1 (the one before) and corner 2
+// (the new one). The corner part hands over a corner (cu_take) when the triangle part is
+// idle and the rasterizer has taken the previous triangle (go is low). The third corner
+// starts a triangle. The step tu_step runs while tu_busy:
+//   0         The corners and the draw word go to the t_* outputs. A flat triangle is
+//             done here (go).
+//   1         The reference pixel.
+//   1..10     Q, U, V of the corners are read from the corner store, shifted to a common
+//             scale and stored as differences from corner 0 in the operand store.
+//   6         A textured triangle without area (d = 0) is left out.
+//   1..36     The multiplier works out d, 1/|d| and, for each of Q, U, V, the changes per
+//             pixel and the value at the reference pixel (see the list below).
+//   40        A textured triangle is done (go).
 //
     reg  signed [15:0] px0, py0, px1, py1, px2, py2;
     reg  [4:0]  pl0, pl1, pl2;
-    // the corner store's slots of corners 0, 1, 2 and of the corner in the corner part: a
-    // corner taken swaps slots with the corner it replaces, corner 2 becoming corner 1 swaps
-    // the two
+    // The corner store's slots of corners 0, 1, 2 and of the corner in the corner part. A
+    // corner taken swaps slots with the corner it replaces. Corner 2 becoming corner 1 swaps
+    // the two.
     reg  [1:0]  cs_0 = 2'd0, cs_1 = 2'd1, cs_2 = 2'd2, cs_w = 2'd3;
     reg  [9:0]  p_mode;                         // the polygon's, from the clipper: it holds
     reg  [31:0] p_tex, p_size;                  // the polygon while its first corner is taken
@@ -370,16 +427,19 @@ end
     assign gu_ready = !ib_full && !tw;
     assign busy = tw || ib_full || !cl_idle || cu_busy || cu_done || tu_busy || go;
 
-    // the corner store: at {kind, slot} rc << 6, s rc >> 10, t rc >> 10 (kind 0, 1, 2; the
-    // shifter drops 10 bits of s rc and t rc anyway), read one clock after the address
+    // The corner store (cst): at {kind, slot} rc << 6, s rc >> 10, t rc >> 10 (kind 0, 1, 2; the
+    // shifter drops 10 bits of s rc and t rc anyway). It is read one clock after the address.
     (* ramstyle = "no_rw_check, M10K" *) reg  [30:0] cst [0:15];
     wire        cst_we = cm_t2 == C_Q || cm_t2 == C_SR || cm_t2 == C_TR;
     wire [1:0]  cst_wk = cm_t2 == C_Q ? 2'd0 : cm_t2 == C_SR ? 2'd1 : 2'd2;
     reg  [30:0] cst_q;
 
-    // Q, U, V at corners 0, 1, 2 through one shifter, one value a clock: read at step 0..8,
-    // shifted into sv a clock later, into the operand store one more clock later
+    // Q, U, V at corners 0, 1, 2 through one shifter, one value a clock. A value is read at
+    // steps 1..8, shifted into sv a clock later, and written into the operand store one more
+    // clock later. All values are shifted right to the scale of the smallest l (the nearest
+    // corner), which is the scaling by the triangle's largest Q.
     reg  [1:0]  rd_k, rd_c;                     // kind and corner of the value read
+    // which value (Q, U or V of which corner) the corner store reads in each step
     always @(*) begin
         case(tu_step)
         6'd1: begin rd_k = 2'd0; rd_c = 2'd1; end
@@ -397,6 +457,7 @@ end
     wire [4:0]  rd_l = rd_c == 2'd0 ? pl0 : rd_c == 2'd1 ? pl1 : pl2;
     wire [4:0]  lm01 = pl0 < pl1 ? pl0 : pl1;
     wire [4:0]  lmin = pl2 < lm01 ? pl2 : lm01;
+    // corner store: write from the corner part's results, read for the triangle part
 always @(posedge clk) begin
     if(cst_we) cst[{cst_wk, cs_w}] <= cm_p2[40:10];
     cst_q <= cst[{rd_k, rd_slot}];
@@ -407,19 +468,20 @@ end
     wire        sv_0 = tu_step == 6'd2 || tu_step == 6'd5 || tu_step == 6'd8;
     wire [27:0] sv_d = {sv[26], sv} - (sv_0 ? 28'd0 : {sv0[26], sv0});
 
-    // per triangle
+    // Values per triangle. dx1 = x1 - x0, dx2 = x2 - x0, dy2 = y2 - y0 and dy1 = y1 - y0 are
+    // the edges from corner 0 in 1/16 pixel.
     reg  signed [16:0] dx1, dx2, dy2, ndx2, ndy1;   // ndx2 = -dx2, ndy1 = -dy1
-    reg  signed [17:0] fx, fy;
+    reg  signed [17:0] fx, fy;                  // reference pixel's centre less corner 0, 1/16 pixel
     reg  [26:0] tad;                            // |d| / 256 (d, of multiples of 16, is one of 256)
     reg         d_neg;
     reg  [4:0]  lds;                            // ld - 8, ld the bit length of |d| (9..35)
     reg  signed [17:0] trcd;                    // 2^(16 + ld) / |d| with the sign of d
-    // the plane's normal of the value being done, bits 44..4 (dx, dy are multiples of 16 as
-    // the corners are on whole pixels, so are nx and ny)
+    // The plane's normal of the value being done, bits 44..4. dx and dy are multiples of 16
+    // because the corners are on whole pixels, so are nx and ny.
     reg  signed [40:0] t_nx, t_ny;
 
-    // the multiplier; the work a result is for (a step without a tag: a product only added
-    // to the next one, or read directly)
+    // The triangle part's multiplier, and the work that a result is for (tm_t). A step
+    // without a tag issues a product that is only added to the next one, or read directly.
     localparam  [3:0]   T_D2 = 4'd1, T_R2 = 4'd2, T_NX2 = 4'd3, T_NY2 = 4'd4, T_GX = 4'd5,
                         T_GY = 4'd6, T_A1 = 4'd7, T_A2 = 4'd8;
     reg  signed [44:0] tm_a;
@@ -428,27 +490,30 @@ end
     reg  [3:0]  tm_t0 = 0, tm_t1 = 0, tm_t2 = 0;
     reg  [1:0]  tm_k0, tm_k1, tm_k2;
 
-    // the operand store, block RAM read a clock after its address: Q, U, V (k) at corner 0
-    // at OA_A0 + k, corner 1 minus corner 0 at OA_D1 + k, corner 2 minus corner 0 at
-    // OA_D2 + k (from the shifter, steps 2..10), the change per pixel in x at OA_GX + k, in
-    // y at OA_GY + k (from the results)
+    // The operand store, block RAM, read a clock after its address. It holds, for Q, U, V
+    // (k = 0, 1, 2):
+    //   OA_A0 + k  the value at corner 0                        (from the shifter, steps 2..10)
+    //   OA_D1 + k  the value at corner 1 minus that at corner 0 (from the shifter)
+    //   OA_D2 + k  the value at corner 2 minus that at corner 0 (from the shifter)
+    //   OA_GX + k  the change per pixel in x                    (from the results)
+    //   OA_GY + k  the change per pixel in y                    (from the results)
     localparam  [4:0]   OA_A0 = 5'd0, OA_D1 = 5'd4, OA_D2 = 5'd8, OA_GX = 5'd12, OA_GY = 5'd16;
     (* ramstyle = "no_rw_check, M10K" *) reg  [31:0] opa [0:31];
     reg  [31:0] opa_q;
     reg  [4:0]  opa_ra, opa_ws;
 
-    // one shifter for the results, right by ld + 4 (the changes per pixel; the rounding is in
-    // tm_p2) or 12 (the values at the reference pixel), and at steps 7 and 9 |d| to 16 bits
-    // (norm16) for the table: ld >= 9 (d is a multiple of 256), so 12 bits are always dropped
-    // and lds is the rest
+    // One shifter for the results, right by ld + 4 (the changes per pixel; the rounding is
+    // in tm_p2) or by 12 (the values at the reference pixel). At steps 7 and 9 it also brings
+    // |d| to 16 bits (norm16) for the table. ld >= 9 (d is a multiple of 256), so 12 bits
+    // are always dropped and lds is the rest.
     wire        tg_res = tm_t2 == T_GX || tm_t2 == T_GY || tm_t2 == T_A2;
     wire [50:0] tg_in = tg_res ? tm_p2[62:12] : {8'd0, tad, 16'd0};
     wire signed [50:0] tg_sh = $signed(tg_in) >>> (tm_t2 == T_A2 ? 5'd0 : lds);
     wire signed [31:0] tg_sat = sat32(tg_sh);
 
-    // added to the product in the second stage: the rounding 2^(ld + 3) of the changes per
-    // pixel, 4096 a0 + 2048 to the first product of a value at the reference pixel, the
-    // product before to the second of a sum
+    // Added to the product in the second stage: the rounding 2^(ld + 3) of the changes per
+    // pixel; 4096 a0 + 2048 to the first product of a value at the reference pixel; for the
+    // second product of a sum, the product before.
     wire [62:0] t_rnd = 63'd2048 << lds;
     wire [62:0] tm_add = tm_t1 == T_GX || tm_t1 == T_GY ? t_rnd :
                          tm_t1 == T_A1 ? {{19{opa_q[31]}}, opa_q, 12'h800} :
@@ -458,15 +523,19 @@ end
     wire        opa_we = opa_wg || (tu_busy && tu_step >= 6'd2 && tu_step <= 6'd10);
     wire [4:0]  opa_wa = opa_wg ? (tm_t2 == T_GY ? OA_GY : OA_GX) + {3'd0, tm_k2} : opa_ws;
     wire [31:0] opa_wd = opa_wg ? tg_sat : {{4{sv_d[27]}}, sv_d};
+    // operand store: write port (shifter value or result) and read port (opa_q)
 always @(posedge clk) begin
     if(opa_we) opa[opa_wa] <= opa_wd;
     opa_q <= opa[opa_ra];
 end
 
-    // the work of a step: d = dx1 dy2 + dx2 (-dy1) (1, 2); R1, R2 the reciprocal of |d| (9,
-    // 12); per value k (Q, U, V) nx = da1 dy2 + da2 (-dy1), ny = da2 dx1 + da1 (-dx2), then
-    // GX = nx rcd, GY = ny rcd (rcd with the sign of d), the value at the reference pixel
-    // a0 + (gx fx + gy fy + 2048) >> 12 (A1, A2); the results go out at the old clocks
+    // The work of a step (op_t, op_k, op_a, op_b choose the multiplier's operands and tag):
+    //   steps 1, 2   d = dx1 dy2 + dx2 (-dy1)
+    //   steps 9, 12  R1, R2: the reciprocal of |d|
+    //   per value k (Q, U, V)  nx = da1 dy2 + da2 (-dy1), ny = da2 dx1 + da1 (-dx2), then
+    //                GX = nx rcd and GY = ny rcd (rcd is 1/|d| with the sign of d), and the
+    //                value at the reference pixel a0 + (gx fx + gy fy + 2048) >> 12 (A1, A2)
+    // da1 and da2 are the differences of the value at corners 1 and 2 from corner 0.
     localparam  [2:0]   A_DX1 = 3'd0, A_DX2 = 3'd1, A_MD = 3'd2, A_R2 = 3'd3, A_OPA = 3'd4,
                         A_NX = 3'd5, A_NY = 3'd6, A_GY2 = 3'd7;
     localparam  [2:0]   B_DY2 = 3'd0, B_NDY1 = 3'd1, B_DX1 = 3'd2, B_NDX2 = 3'd3, B_R0 = 3'd4,
@@ -474,6 +543,7 @@ end
     reg  [3:0]  op_t;
     reg  [1:0]  op_k;
     reg  [2:0]  op_a, op_b;
+    // the tag and operands of the multiplier in each step
     always @(*) begin
         op_t = 4'd0; op_k = 2'd0; op_a = A_OPA; op_b = B_DY2;
         case(tu_step)
@@ -509,7 +579,7 @@ end
         endcase
     end
 
-    // what the next step reads from the operand store
+    // what the next step reads from the operand store (opa_ra)
     always @(*) begin
         case(tu_step)
         6'd9:  opa_ra = OA_D1 + 5'd0;
@@ -536,7 +606,7 @@ end
         endcase
     end
 
-    // where the shifter's value goes at steps 2..10
+    // where the shifter's value goes at steps 2..10 (opa_ws)
     always @(*) begin
         case(tu_step)
         6'd3:  opa_ws = OA_D1 + 5'd0;
@@ -551,14 +621,18 @@ end
         endcase
     end
 
-    // the reference pixel: corner 0's, on the screen
+    // The reference pixel: corner 0's, limited to the screen (320 x 200).
     wire [9:0]  xr = px0[15] ? 10'd0 : px0[15:4] > 12'd319 ? 10'd319 : {1'b0, px0[12:4]};
     wire [9:0]  yr = py0[15] ? 10'd0 : py0[15:4] > 12'd199 ? 10'd199 : {1'b0, py0[12:4]};
 
 `ifdef GEOM_STATS
+    // counters for the simulation: where the clocks go (printed below)
     integer     st_cl = 0, st_cu = 0, st_tu = 0, st_rs = 0, st_cw = 0, st_tri = 0;
 `endif
 
+    // The triangle part's multiplier (operands from the lists above), the tags through the
+    // two stages, the busy counter, and the triangle part's control: taking a corner,
+    // running the steps, collecting the results into the t_* outputs.
 always @(posedge clk) begin
     case(op_a)
     A_DX1: tm_a <= {{28{dx1[16]}}, dx1};
@@ -592,7 +666,7 @@ always @(posedge clk) begin
     if(!cl_idle || cu_busy || tu_busy) busy_clocks <= busy_clocks + 1'b1;
     if(wr && wr_addr == 4'd11) busy_clocks <= 0;
 `ifdef GEOM_STATS
-    // (the simulation only) where the clocks go, printed when the CPU clears busy_clocks
+    // For the simulation only: where the clocks go, printed when the CPU clears busy_clocks.
     if(wr && wr_addr == 4'd11) begin
         $display("su: busy %0d, clipper %0d, corners %0d, triangles %0d, a triangle waiting for the rasterizer %0d, a corner waiting for the triangle part %0d, triangles out %0d",
                  busy_clocks, st_cl, st_cu, st_tu, st_rs, st_cw, st_tri);
@@ -607,7 +681,8 @@ always @(posedge clk) begin
     end
 `endif
 
-    // a corner from the corner part
+    // A corner from the corner part. The first corner of a polygon becomes corner 0, the
+    // next one corner 1, and the third one corner 2, which starts a triangle.
     if(cu_take) begin
         if(c_first || p_have == 2'd0) begin
             px0 <= c_x; py0 <= c_y; pl0 <= c_l;
@@ -626,7 +701,8 @@ always @(posedge clk) begin
         end
     end
 
-    // the triangle: positions for every triangle, the planes for a textured one
+    // The triangle: the corners and the draw word for every triangle, the planes for a
+    // textured one.
     sv <= sat27(sh_out);
     if(tu_busy) begin
         tu_step <= tu_step + 1'b1;
@@ -647,7 +723,7 @@ always @(posedge clk) begin
             dx1 <= px1 - px0; dx2 <= px2 - px0; dy2 <= py2 - py0;
             ndx2 <= px0 - px2; ndy1 <= py0 - py1;
         end
-        6'd1: begin
+        6'd1: begin                             // the reference pixel and its centre
             fx <= $signed({5'd0, xr[8:0], 4'd8}) - {{2{px0[15]}}, px0};
             fy <= $signed({5'd0, yr[8:0], 4'd8}) - {{2{py0[15]}}, py0};
             t_ref <= {{6{yr[9]}}, yr, {6{xr[9]}}, xr};
@@ -694,7 +770,8 @@ always @(posedge clk) begin
     default: ;
     endcase
 
-    // the rasterizer takes the triangle; the new corner is the next triangle's corner 1
+    // The rasterizer takes the triangle, or a textured triangle without area is left out.
+    // Either way the new corner is the next triangle's corner 1.
     if(go && rs_accept) go <= 0;
     if((go && rs_accept) || (tu_busy && tu_step == 6'd6 && tad == 0)) begin
         px1 <= px2; py1 <= py2; pl1 <= pl2;

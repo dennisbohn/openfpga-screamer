@@ -1,7 +1,10 @@
 //
-// The rasterizer's texture path: one pixel a clock through a pipeline, the same result as
-// the C model firmware/raster.c (span_texfx). Per pixel, from acc = Q, U, V with 8
-// fraction bits:
+// The rasterizer's texture path (used by raster.v). It turns the Q, U, V of a pixel into a
+// texel and writes it into the framebuffer, one pixel a clock. The result is the same as the
+// C model firmware/raster.c (span_texfx).
+//
+// Front: eleven pipeline stages (flags v1 .. v9, va, vt). Per pixel, from acc = Q, U, V
+// with 8 fraction bits:
 //   S1  Q = acc_Q >> 8 limited to [1, 2^31 - 1]; U, V = acc >> 8 limited to 27 bits signed
 //   S2  e = bit length of Q - 16, m = Q shifted to 16 bits
 //   S3  table address m[14:5]                  S4  p = m r0, r0 = floor((2^32-1) / (2^15 + 32 i + 16))
@@ -9,34 +12,46 @@
 //   S7  U r, V r                               S8  u = U r >> (24 + e), v the same, clamped to the texture
 //                                                  (routine 160: their low 8 bits, wrapping)
 //   A   texel address, tag read                T   tag compare, into the queue
-// then a queue of 64 pixels and the back end: texel out of the cache, byte into the
-// framebuffer unless the texel is 0 and the texture see-through.
 //
-// Blended pixels (routine 224): the texel t is a strength, the pixel becomes smg[t[5:0],
-// pixel], the pixel already in the framebuffer through row t of the see-through table
-// (16384 bytes, the track's MAPn.SMG, written by the CPU). The drawing port reads or writes
-// in a clock, so a blended pixel takes it twice, in four stages behind B2:
-//   B2  texel (as for any pixel): the word is read (out_word, no write)
-//   B3  the read                               B4  the pixel's byte out of the word
-//   B5  table read                             B6  its byte into the write registers
-// and the write a clock later. Both port accesses come from the write registers, loaded at
-// B2 or at B6, so a pixel does not leave the queue while a blended one is in B5 (it would
-// reach B2 with that one at B6): in a row of blended pixels four go, then four clocks
-// none, half a pixel a clock. Within a triangle every pixel comes once; the first pixel of
-// the next one waits until no blended pixel is in B2 .. B5, so their writes come before its
-// read or write. Others go one a clock as before.
+// Back end: after the front there is a queue of 64 pixels. The back end takes the texel out of
+// the cache and writes the byte into the framebuffer, unless the texel is 0 and the texture
+// is see-through.
 //
-// Texture cache with prefetch (Igehy, Eldridge, Proudfoot: "Prefetching in a Texture
-// Cache Architecture", 1998): 16 KB direct mapped, lines of 32 bytes (index =
-// address[13:5], tag = address[25:14]). The tags are checked at T, ahead of the queue: a
-// miss writes the new tag at once and asks for the line (up to 16 lines under way, read
-// from the SDRAM one after the other into a line buffer); the pixel goes into the queue
-// marked; two lines may be asked for at once (the line port starts the second while the
-// words of the first come in). The back end takes the pixels in order: a marked one waits
-// until its line is in, writes it into the cache and takes its texel from the line buffer. So a line is
-// replaced only after every pixel before it has used the old one, and the loading runs
-// while the pixels before it are drawn. Invalidated after a reset and on request (512
-// clocks).
+// Blended pixels (routine 224)
+//   The texel t is a strength: the pixel becomes smg[t[5:0], pixel]. That is the pixel
+//   already in the framebuffer, passed through row t of the see-through table (16384 bytes,
+//   the track's MAPn.SMG, written by the CPU). The drawing port reads or writes in a clock,
+//   so a blended pixel uses it twice, in four stages behind B2:
+//     B2  texel (as for any pixel): the word is read (out_word, no write)
+//     B3  the read                               B4  the pixel's byte out of the word
+//     B5  table read                             B6  its byte into the write registers
+//   and the write comes a clock later. Both port accesses come from the write registers,
+//   loaded at B2 or at B6. So a pixel does not leave the queue while a blended one is in B5
+//   (it would reach B2 with that one at B6). In a row of blended pixels four go, then four
+//   clocks none: half a pixel a clock. Within a triangle every pixel comes once. The first
+//   pixel of the next triangle waits until no blended pixel is in B2 .. B5, so their writes
+//   come before its read or write. Other pixels go one a clock.
+//
+// Texture cache with prefetch (Igehy, Eldridge, Proudfoot: "Prefetching in a Texture Cache
+// Architecture", 1998)
+//   16 KB, direct mapped, lines of 32 bytes (index = address[13:5], tag = address[25:14]).
+//   The tags are checked at T, ahead of the queue. A miss writes the new tag at once and asks
+//   for the line. Up to 16 lines are under way; they are read from the SDRAM one after the
+//   other into a line buffer. Two lines may be asked for at once (the line port starts the
+//   second while the words of the first come in). The pixel goes into the queue marked.
+//   The back end takes the pixels in order. A marked one waits until its line is in, writes
+//   it into the cache and takes its texel from the line buffer. So a line is replaced only
+//   after every pixel before it has used the old one, and the loading runs while the pixels
+//   before it are drawn.
+//   The cache is invalidated after a reset and on request (512 clocks).
+//
+// Interface in short
+//   Pixels in: in_valid, in_ready (a pixel is taken in a clock with both), the Q, U, V and
+//   the framebuffer word and lane of the pixel. The texture's values and tri_start are
+//   per triangle.
+//   Framebuffer out: out_wr with out_word, out_be and out_texel, one pixel each.
+//   Line reads: mem_valid stays high with mem_addr (the 32-byte line) until mem_ready. The
+//   line then comes as 8 words in order, each with mem_rsp_valid.
 //
 
 module raster_tex (
@@ -44,7 +59,8 @@ module raster_tex (
     input   wire            reset,
     input   wire            invalidate,         // one clock: forget every cached line
 
-    // pixels in: Q, U, V with 8 fraction bits, framebuffer word and pixel in it
+    // Pixels in: Q, U, V with 8 fraction bits (signed), the framebuffer word and the pixel
+    // (lane) in it. A pixel is taken in a clock with in_valid and in_ready.
     input   wire            in_valid,
     output  wire            in_ready,
     input   wire    [43:0]  in_q,
@@ -53,8 +69,8 @@ module raster_tex (
     input   wire    [13:0]  in_word,
     input   wire    [1:0]   in_lane,
 
-    // the triangle's texture: SDRAM byte address of texel (0, 0), rows of 256 bytes; used
-    // up to T, so they may change once front_busy is low
+    // The triangle's texture: SDRAM byte address of texel (0, 0), rows of 256 bytes. These
+    // inputs are used up to T, so they may change once front_busy is low.
     input   wire    [25:0]  tex_base,
     input   wire    [8:0]   tex_w,              // 1..256
     input   wire    [8:0]   tex_h,
@@ -63,26 +79,27 @@ module raster_tex (
     input   wire            tex_wrap,           // u, v wrap at 256 (not clamped)
     input   wire            tri_start,          // a triangle starts: the next pixel is its first
 
-    output  wire            busy,
+    output  wire            busy,               // any pixel or line is still in the unit
     output  wire            front_busy,         // pixels before the queue
     output  reg     [31:0]  misses = 0,         // lines fetched since the last clear
     output  wire            stalled,            // the back end waits for a line
     input   wire            clear_misses,
 
-    // framebuffer writes, one pixel each; out_word is the address of a blended pixel's read
-    // too, in a clock without out_wr; fb_q is the word read the clock before
+    // Framebuffer writes, one pixel each (out_be selects its lane). out_word is the address
+    // of a blended pixel's read too, in a clock without out_wr. fb_q is the word read in the
+    // clock before.
     output  reg             out_wr = 0,
     output  reg     [13:0]  out_word,
     output  reg     [3:0]   out_be,
     output  reg     [7:0]   out_texel,
     input   wire    [31:0]  fb_q,
 
-    // the see-through table: smg_data at row << 8 | old pixel
+    // Write port of the see-through table: smg_data at the address row << 8 | old pixel.
     input   wire            smg_wr,
     input   wire    [13:0]  smg_addr,
     input   wire    [7:0]   smg_data,
 
-    // line reads from the SDRAM (sdram_port)
+    // line reads from the SDRAM (through sdram_port)
     output  reg             mem_valid = 0,
     input   wire            mem_ready,
     output  reg     [25:5]  mem_addr,
@@ -91,7 +108,8 @@ module raster_tex (
 );
 
 //
-// reciprocal table: r0[i] = floor((2^32 - 1) / (2^15 + 32 i + 16))
+// Reciprocal table: r0[i] = floor((2^32 - 1) / (2^15 + 32 i + 16)). The same table is in
+// setup.v and clipper.v.
 //
     reg  [16:0] rtab [0:1023];
     integer     ti;
@@ -105,7 +123,8 @@ module raster_tex (
     end
 
 //
-// front: pipeline registers
+// Front: the pipeline registers. A name ends with the stage it belongs to (q2 is Q in S2);
+// v<n> is the stage's valid flag and w<n> the pixel's {framebuffer word, lane}.
 //
     reg         v1 = 0, v2 = 0, v3 = 0, v4 = 0, v5 = 0, v6 = 0, v7 = 0, v8 = 0, v9 = 0, va = 0, vt = 0;
     reg  [15:0] w1, w2, w3, w4, w5, w6, w7, w8, w9, wa, wt;    // {framebuffer word, lane}
@@ -128,8 +147,10 @@ module raster_tex (
     wire signed [35:0] u1s = u1[43:8];
     wire signed [35:0] v1s = va1[43:8];
     wire [30:0] q_lim = q1s < 36'sd1 ? 31'd1 : q1s > 36'sh7FFFFFFF ? 31'h7FFFFFFF : q1s[30:0];
-    wire signed [26:0] u_lim = u1s < -36'sd67108864 ? -27'sd67108864 : u1s > 36'sd67108863 ? 27'sd67108863 : u1s[26:0];
-    wire signed [26:0] v_lim = v1s < -36'sd67108864 ? -27'sd67108864 : v1s > 36'sd67108863 ? 27'sd67108863 : v1s[26:0];
+    wire signed [26:0] u_lim = u1s < -36'sd67108864 ? -27'sd67108864 :
+                               u1s > 36'sd67108863 ? 27'sd67108863 : u1s[26:0];
+    wire signed [26:0] v_lim = v1s < -36'sd67108864 ? -27'sd67108864 :
+                               v1s > 36'sd67108863 ? 27'sd67108863 : v1s[26:0];
 
     // S2 -> S3: m = q2 shifted to 16 bits (its bits [len-1 .. len-16], len its bit length):
     // q2 shifted left by 16, 8, 4, 2, 1 places where the bits shifted out are all 0, so by
@@ -175,14 +196,17 @@ module raster_tex (
     endfunction
     wire [9:0]  tu_win = win9(up8[44:8], ~z8, tex_wrap && up8[45]);
     wire [9:0]  tv_win = win9(vp8[44:8], ~z8, tex_wrap && vp8[45]);
-    wire [7:0]  tu_lim = tex_wrap ? tu_win[7:0] : up8[45] ? 8'd0 : tu_win[9] || tu_win[8:0] >= tex_w ? tex_w[7:0] - 8'd1 : tu_win[7:0];
-    wire [7:0]  tv_lim = tex_wrap ? tv_win[7:0] : vp8[45] ? 8'd0 : tv_win[9] || tv_win[8:0] >= tex_h ? tex_h[7:0] - 8'd1 : tv_win[7:0];
+    wire [7:0]  tu_lim = tex_wrap ? tu_win[7:0] : up8[45] ? 8'd0 :
+                         tu_win[9] || tu_win[8:0] >= tex_w ? tex_w[7:0] - 8'd1 : tu_win[7:0];
+    wire [7:0]  tv_lim = tex_wrap ? tv_win[7:0] : vp8[45] ? 8'd0 :
+                         tv_win[9] || tv_win[8:0] >= tex_h ? tex_h[7:0] - 8'd1 : tv_win[7:0];
 
     assign front_busy = v1 || v2 || v3 || v4 || v5 || v6 || v7 || v8 || v9 || va || vt;
 
 //
-// tags: read when the pixel moves from A to T (held while T waits), written at T on a
-// miss; the pixel right behind gets that write forwarded (the RAM would give the old tag)
+// Tags: 512 entries {valid, tag}, one per cache line. A tag is read when the pixel moves from
+// A to T (held while T waits) and written at T on a miss. The pixel right behind gets that
+// write forwarded, because the RAM would give the old tag.
 //
     (* ramstyle = "no_rw_check, M10K" *) reg  [12:0] tags [0:511];    // {valid, tag}
     reg  [12:0] t_q;
@@ -195,8 +219,10 @@ module raster_tex (
     wire        hit_t = !t_stale && tag_t[12] && tag_t[11:0] == a_t[25:14];
 
 //
-// line slots: the lines asked for, in order, each a line address and its 8 words (one
-// small RAM per word, so a whole line reads in one clock)
+// Line slots: the lines asked for, in order, each a line address and its 8 words (one small
+// RAM per word, so a whole line reads in one clock). There are 16 slots. A slot is allocated
+// at a miss (s_alloc), its line is requested (s_req), its words come in (s_fetch) and the
+// back end uses it (s_use). The counters have a wrap bit over the slot number.
 //
     reg  [20:0] s_addr [0:15];
     reg  [15:0] s_ready = 0;
@@ -214,6 +240,7 @@ module raster_tex (
 generate for(gi = 0; gi < 8; gi = gi + 1) begin : lbuf
     (* ramstyle = "MLAB, no_rw_check" *) reg  [31:0] words [0:15];
     reg  [31:0] q;
+    // word gi of the slots: written as the line comes in, read for the slot s_use
     always @(posedge clk) begin
         if(f_we && f_lane[gi]) words[s_fetch[3:0]] <= mem_rsp_data;
         q <= words[s_ru];
@@ -222,15 +249,17 @@ end endgenerate
     wire [255:0] line_q = {lbuf[7].q, lbuf[6].q, lbuf[5].q, lbuf[4].q,
                            lbuf[3].q, lbuf[2].q, lbuf[1].q, lbuf[0].q};
     reg         lq_ok = 0;                      // line_q holds the slot s_use
-    // the same words once more, a word a read: a marked pixel's word of slot s_use, read when
-    // it leaves the queue (B1, the slot is complete) for its byte at B2
+    // The same words once more, now one word a read: the word of slot s_use that a marked
+    // pixel needs. It is read when the pixel leaves the queue (B1, the slot is complete) and
+    // gives the pixel's byte at B2.
     (* ramstyle = "no_rw_check, M10K" *) reg  [31:0] lbw [0:127];
     reg  [31:0] lbw_q;
 
 //
-// the queue: 64 x {a triangle's first, blended, marked, index, offset in the line,
-// framebuffer word and pixel, see-through}; its head read a clock ahead (a pixel written
-// into the empty queue waits one clock more)
+// The queue: 64 entries of {first [33], blended [32], marked [31], index [30:22], offset in
+// the line [21:17], framebuffer word and pixel [16:1], see-through [0]}. first: the pixel is
+// a triangle's first. marked: the pixel missed and waits for its line. The head is read a
+// clock ahead; a pixel written into the empty queue waits one clock more.
 //
     (* ramstyle = "no_rw_check, M10K" *) reg  [33:0] pq [0:63];
     reg  [33:0] pq_q;
@@ -246,14 +275,14 @@ end endgenerate
     wire [15:0] h_w = pq_q[16:1];
     wire        h_cut = pq_q[0];
 
-    // T goes into the queue when there is room and, for a miss, a free slot
+    // The pixel at T goes into the queue when there is room and, for a miss, a free slot.
     wire        t_commit = vt && !inval && pq_n != 7'd64 && (hit_t || s_free);
     wire        t_miss = t_commit && !hit_t;
     wire        adv = !inval && (!vt || t_commit);
     assign in_ready = adv;
 
-    // the back end takes the head when it is not marked or its line is in, and (above) no
-    // blended pixel is in B5, and a triangle's first none in B2 .. B4
+    // The back end takes the head when it is not marked or its line is in, and no blended
+    // pixel is in B5 (above), and, for a triangle's first pixel, none in B2 .. B4.
     reg         b2 = 0, b2_blend;
     reg         rd3 = 0, rd4 = 0, rd5 = 0, rd6 = 0;     // a blended pixel in B3 .. B6
     wire        h_go = q_ok && pq_n != 7'd0 && (!h_fill || (s_ready[s_ru] && lq_ok)) &&
@@ -261,6 +290,7 @@ end endgenerate
     wire [5:0]  pq_ra = h_go ? pq_rp[5:0] + 6'd1 : pq_rp[5:0];
     assign stalled = pq_n != 7'd0 && h_fill && !s_ready[s_ru];
 
+    // tag RAM (clear, write on a miss, read), and the queue's write and read ports
 always @(posedge clk) begin
     if(inval) tags[inval_cnt] <= 13'd0;
     else if(t_miss) tags[a_t[13:5]] <= {1'b1, a_t[25:14]};
@@ -270,10 +300,11 @@ always @(posedge clk) begin
 end
 
 //
-// cache lines: 512 x 32 bytes; a marked pixel writes its line
+// Cache lines: 512 x 32 bytes. A marked pixel writes its line when it leaves the queue.
 //
     (* ramstyle = "no_rw_check, M10K" *) reg  [255:0] lines [0:511];
     reg  [255:0] l_q;
+    // cache line RAM (write by a marked pixel, read at the head) and the line buffer's word RAM
 always @(posedge clk) begin
     if(h_go && h_fill) lines[h_index] <= line_q;
     l_q <= lines[h_index];
@@ -281,15 +312,16 @@ always @(posedge clk) begin
     lbw_q <= lbw[{s_ru, h_off[4:2]}];
 end
 
-    // B2: the byte, from the line buffer for a marked pixel, else from the cache
+    // B2: the texel byte, from the line buffer for a marked pixel, else from the cache
     reg         b2_fill, b2_cut;
     reg  [4:0]  b2_off;
     reg  [15:0] b2_w;
     wire [7:0]  texel = b2_fill ? lbw_q[8 * b2_off[1:0] +: 8] : l_q[8 * b2_off +: 8];
     wire        b2_draw = !(b2_cut && texel == 8'd0);
 
-    // a blended pixel behind B2: strength, pixel in the word, the word, the old pixel (in
-    // registers: Quartus would make a block RAM shift register of them)
+    // A blended pixel behind B2: its strength (bt), its lane in the word (bl), the word (bw)
+    // and the old pixel (old5). They are kept in registers: Quartus would make a block RAM
+    // shift register of them.
     (* altera_attribute = "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF" *) reg  [5:0]  bt3, bt4, bt5;
     (* altera_attribute = "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF" *) reg  [1:0]  bl3, bl4, bl5, bl6;
     (* altera_attribute = "-name AUTO_SHIFT_REGISTER_RECOGNITION OFF" *) reg  [13:0] bw4, bw5, bw6;
@@ -297,8 +329,9 @@ end
     (* ramstyle = "no_rw_check, M10K" *) reg  [7:0] smg [0:16383];
     reg  [7:0]  smg_q;
 `ifdef VERILATOR
-    initial for(ti = 0; ti < 16384; ti = ti + 1) smg[ti] = 8'd0;   // (the FPGA's after configuration)
+    initial for(ti = 0; ti < 16384; ti = ti + 1) smg[ti] = 8'd0;   // the simulation starts with 0 as well
 `endif
+    // see-through table: write port (the CPU) and read port (B5)
 always @(posedge clk) begin
     if(smg_wr) smg[smg_addr] <= smg_data;
     smg_q <= smg[{bt5, old5}];
@@ -307,6 +340,8 @@ end
     assign busy = inval || front_busy || pq_n != 7'd0 || b2 || out_wr || rd3 || rd4 || rd5 || rd6 ||
                   s_used != 5'd0 || f_last;
 
+    // The pipeline: the front stages (they advance together when adv is set), the queue
+    // pointers, the line requests and fills, the back end B1 to B6 and the invalidation.
 always @(posedge clk) begin
     out_wr <= 0;
 
@@ -367,8 +402,8 @@ always @(posedge clk) begin
     end
     q_ok <= !(t_commit && pq_wp[5:0] == pq_ra);
 
-    // memory: the slots' lines asked for in order, up to two under way; a slot is ready a clock
-    // after its last word, when line_q can show it
+    // Memory: the slots' lines are asked for in order, up to two under way. A slot is ready
+    // a clock after its last word, when line_q can show it.
     f_last <= 0;
     if(f_last) s_ready[f_slot] <= 1;
     if(!mem_valid && s_req != s_alloc && s_req - s_fetch < 5'd2) begin
@@ -405,7 +440,7 @@ always @(posedge clk) begin
             s_use <= s_use + 1'b1;
         end
     end
-    // B2: the byte into the framebuffer, or a blended pixel's word read
+    // B2: the byte into the framebuffer, or the read of a blended pixel's word
     rd3 <= b2 && b2_blend && b2_draw;
     if(b2) begin
         out_wr <= b2_draw && !b2_blend;
@@ -429,7 +464,7 @@ always @(posedge clk) begin
         out_texel <= smg_q;
     end
 
-    // invalidation: every tag cleared; lines under way still come in
+    // Invalidation: every tag is cleared; lines under way still come in.
     if(inval) begin
         inval_cnt <= inval_cnt + 1'b1;
         if(inval_cnt == 9'd511) inval <= 0;

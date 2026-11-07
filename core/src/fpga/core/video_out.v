@@ -1,12 +1,18 @@
 //
-// 320x200 video out of the front framebuffer through its palette, at 50 Hz
+// Video out: 320x200 pixels from the front framebuffer through its palette, at 50 Hz.
 //
-// There are two framebuffers (framebuffer.v) and two palettes, one for each. The
-// front one is shown; a writer draws the other and then asks for a swap by flipping
-// swap_req_toggle. The swap happens at the start of the next line of the vertical
-// blanking (312 of the 512 lines), at most once per blanking so no drawn frame is
-// skipped; a frame never mixes the two buffers. swap_ack_toggle then follows
-// swap_req_toggle, and the old front buffer is free to draw.
+// Buffers and swap
+//   There are two framebuffers (framebuffer.v) and two palettes, one for each. The front one
+//   is shown. A writer draws the other and then asks for a swap by flipping swap_req_toggle.
+//   The swap happens at the start of the next line of the vertical blanking (312 of the 512
+//   lines), at most once per blanking so no drawn frame is skipped. A frame never mixes the
+//   two buffers. swap_ack_toggle then follows swap_req_toggle, and the old front buffer is
+//   free to draw. swap_req_toggle crosses into clk_vid through a two-flop synchroniser here;
+//   soc.v synchronises swap_ack_toggle back.
+//
+// Palettes
+//   The CPU writes palette entries (pal_wr, pal_buf, pal_addr, pal_data) on clk_74a. An entry
+//   is 24 bits, 0x00RRGGBB; 256 entries for each buffer.
 //
 // Video timing at the 12.288 MHz pixel clock: 480 clocks x 512 lines = 50 Hz, 320 x 200
 // of it visible. 50 Hz is the game's own step: its physics never takes less than 20 ms a
@@ -48,29 +54,31 @@ module video_out (
     localparam  V_BPORCH = 'd10;
     localparam  V_TOTAL  = 'd512;
 
-    reg [23:0]  pal [0:511];
+    reg [23:0]  pal [0:511];                    // 256 entries for each buffer
 
+    // palette write port (clk_74a)
 always @(posedge clk_74a) begin
     if(pal_wr) pal[{pal_buf, pal_addr}] <= pal_data;
 end
 
 //
-// counters, swap, then a 4-stage pipeline
-// (framebuffer word -> byte -> palette entry -> output)
+// Counters and swap, then a 4-stage pipeline: framebuffer word -> byte -> palette entry ->
+// output. The syncs and the data enable are delayed to match it.
 //
-    reg [9:0]   x_count;
-    reg [9:0]   y_count;
-    reg [15:0]  pix_addr;
-    reg [1:0]   swap_s;
+    reg [9:0]   x_count;                        // clock in the line, 0..479
+    reg [9:0]   y_count;                        // line in the frame, 0..511
+    reg [15:0]  pix_addr;                       // pixel number; [15:2] is the framebuffer word
+    reg [1:0]   swap_s;                         // swap_req_toggle through the synchroniser
 
     wire        active = x_count >= H_BPORCH && x_count < H_BPORCH + H_ACTIVE &&
                          y_count >= V_BPORCH && y_count < V_BPORCH + V_ACTIVE;
     wire        frame_start = x_count == 0 && y_count == 0;
     wire        blank_line = y_count < V_BPORCH || y_count >= V_BPORCH + V_ACTIVE;
-    reg         swap_armed;
+    reg         swap_armed;                     // a swap may happen in this blanking
 
     // reset_n comes from clk_74a: it takes effect at once but ends on a clk_vid edge
     reg         rst_meta = 0, rst_n = 0;
+    // reset synchroniser: asserted at once by reset_n, released through two flops
 always @(posedge clk_vid or negedge reset_n) begin
     if(~reset_n) begin
         rst_meta <= 0;
@@ -86,11 +94,12 @@ end
     assign fb_rd_buf = swap_ack_toggle;
     assign fb_rd_addr = pix_addr[15:2];
 
-    reg [1:0]   sel_a;
-    reg [7:0]   index;
-    reg [23:0]  pal_q;
-    reg [2:0]   de_d, hs_d, vs_d;
+    reg [1:0]   sel_a;                          // the pixel's byte in the framebuffer word
+    reg [7:0]   index;                          // the pixel's palette index
+    reg [23:0]  pal_q;                          // its palette entry
+    reg [2:0]   de_d, hs_d, vs_d;               // data enable and syncs, delayed with the pipeline
 
+    // counters, address, swap and the output registers (reset by rst_n)
 always @(posedge clk_vid or negedge rst_n) begin
     if(~rst_n) begin
         x_count <= 0;
@@ -142,7 +151,8 @@ always @(posedge clk_vid or negedge rst_n) begin
     end
 end
 
-// the RAM reads stay out of the reset block so they map onto M10K blocks
+// The synchroniser and the RAM reads stay out of the reset block so that the palette maps
+// onto M10K blocks.
 always @(posedge clk_vid) begin
     swap_s <= {swap_s[0], swap_req_toggle};
     // stage 1: framebuffer word arrives (read in framebuffer.v)

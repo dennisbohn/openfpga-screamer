@@ -1,14 +1,20 @@
 //
-// SDRAM controller for the Pocket's AS4C32M16MSA (64 MB, 16 bit) on clk_74a
-// (docs/memory.md)
+// SDRAM controller for the Pocket's AS4C32M16MSA (64 MB, 16 bit) on clk_74a (docs/memory.md,
+// "SDRAM controller"). sdram_port.v is its front end.
 //
-// One job at a time: a read of one 32-bit word or of a 32-byte line (8 words), or a
-// write of one 32-bit word with a byte mask. CL2, burst length 2, single-location writes,
-// one open row per bank. A READ fetches one word from the even column {addr[10:2], 0};
-// its halfwords are taken by the IO input register READ_LATENCY and READ_LATENCY + 1
-// clocks after the READ left the IO output register, and the word goes out one clock
-// later with the job's tag. A WRITE writes one halfword; halves without mask bits are
-// skipped. The next job may start while the data of the previous one is still coming in.
+// Jobs
+//   The controller does one job at a time: a read of one 32-bit word or of a 32-byte line
+//   (8 words), or a write of one 32-bit word with a byte mask. A job is taken in a clock with
+//   job_valid and job_ready. The words of a read come back on rd_* in job order, each valid
+//   for one clock with the job's tag; rd_last marks the job's last word.
+//   The next job may start while the data of the previous one is still coming in.
+//
+// Mode and accesses
+//   CL2, burst length 2, single-location writes, one open row per bank. A READ fetches one
+//   word from the even column {addr[10:2], 0}. Its halfwords are taken by the IO input
+//   register READ_LATENCY and READ_LATENCY + 1 clocks after the READ left the IO output
+//   register, and the word goes out one clock later with the job's tag. A WRITE writes one
+//   halfword. Halves without mask bits are skipped.
 //
 // Command spacing, counted in clocks between the edges at which commands leave:
 //   ACTIVATE -> READ/WRITE  T_RCD      ACTIVATE -> PRECHARGE (same bank)  T_RAS
@@ -17,12 +23,17 @@
 //   READ -> WRITE           T_R2W      SDRAM cuts off the burst's second halfword)
 //   AUTO REFRESH -> any     T_RFC      LOAD MODE -> any                   T_MRD
 //
-// Not reset by the core's reset_n: the APF loads data slots while it holds the core in
-// reset. The initialisation runs after the SDRAM PLL has locked and again after a loss of
-// lock; on request (after the clock phase was moved) a short one with the clock running:
-// PRECHARGE ALL, two AUTO REFRESH, the mode registers, while jobs wait. While the SDRAM
-// is not ready otherwise, jobs are answered at once: reads with error words, writes
-// dropped.
+// Reset and initialisation
+//   The controller is not reset by the core's reset_n: the APF loads data slots while it holds
+//   the core in reset. The initialisation runs after the SDRAM PLL has locked, and again after
+//   a loss of lock. On request (reinit, after the clock phase was moved) a short one runs with
+//   the clock on: PRECHARGE ALL, two AUTO REFRESH, the mode registers, while jobs wait.
+//   While the SDRAM is not ready otherwise, jobs are answered at once: reads with error words
+//   (rd_error), writes dropped.
+//
+// Refresh
+//   An AUTO REFRESH is due every REFRESH_EVERY clocks and runs between two jobs. A counter
+//   (refresh_count) counts every AUTO REFRESH.
 //
 
 module sdram #(
@@ -45,7 +56,8 @@ module sdram #(
     input   wire            pll_locked,         // from the SDRAM PLL, asynchronous
     input   wire            reinit,             // one clock: initialise again when idle
 
-    // jobs: taken in a clock with job_valid and job_ready
+    // Jobs: taken in a clock with job_valid and job_ready. job_addr is the word address;
+    // a line read starts at the line that holds it.
     input   wire            job_valid,
     output  wire            job_ready,
     input   wire            job_write,
@@ -55,7 +67,7 @@ module sdram #(
     input   wire    [3:0]   job_mask,
     input   wire    [2:0]   job_tag,            // comes back with every word of a read
 
-    // read words, in job order, one clock each
+    // Read words, in job order, each valid for one clock. A read job gives 1 word, a line job 8.
     output  reg             rd_valid = 0,
     output  reg     [31:0]  rd_data,
     output  reg     [2:0]   rd_tag,
@@ -65,7 +77,7 @@ module sdram #(
     output  reg             ready = 0,          // initialised, jobs go to the SDRAM
     output  wire            locked,             // pll_locked, synchronised
     output  wire            writing,            // a write job is taken and not yet done
-    output  reg     [31:0]  refresh_count = 0,
+    output  reg     [31:0]  refresh_count = 0,  // AUTO REFRESH commands sent since power-up
 
     // pins; every one straight from a register, so they can sit in the IO cells
     output  reg     [12:0]  dram_a = 0,
@@ -80,10 +92,11 @@ module sdram #(
     output  reg             dram_we_n = 1
 );
 
+    // states of the controller
     localparam  S_OFF   = 3'd0;                 // no clock yet: CKE low
     localparam  S_WAIT  = 3'd1;                 // CKE high, NOPs
     localparam  S_INIT  = 3'd2;                 // PRECHARGE ALL, 2 x REFRESH, MRS, EMRS
-    localparam  S_RUN   = 3'd3;
+    localparam  S_RUN   = 3'd3;                 // initialised: jobs and refresh
 
     // {ras_n, cas_n, we_n}
     localparam  [2:0]   C_NOP = 3'b111;
@@ -95,22 +108,23 @@ module sdram #(
     localparam  [2:0]   C_MRS = 3'b000;
 
     reg  [2:0]  state = S_OFF;
-    reg  [1:0]  lock_s = 0;
-    reg  [10:0] lock_cnt = 0;
-    reg  [14:0] wait_cnt = 0;
-    reg  [2:0]  init_step = 0;
+    reg  [1:0]  lock_s = 0;                     // pll_locked through two flops
+    reg  [10:0] lock_cnt = 0;                   // clocks of stable lock, up to LOCK_WAIT
+    reg  [14:0] wait_cnt = 0;                   // NOP clocks left in S_WAIT
+    reg  [2:0]  init_step = 0;                  // 0 PRECHARGE ALL, 1 and 2 REFRESH, 3 MRS, 4 EMRS, 5 done
     reg         stop = 0;                       // lock lost: power down when idle
     reg         redo = 0;                       // reinit asked: initialise again when idle
     reg         warm = 0;                       // the initialisation runs with the clock on
 
     assign locked = lock_s[1];
 
+    // synchronise the PLL's lock flag
 always @(posedge clk) begin
     lock_s <= {lock_s[0], pll_locked};
 end
 
 //
-// the job being worked on
+// The job being worked on (j_*): a copy of the job taken, until its last command has gone out
 //
     reg         j_valid = 0;
     reg         j_write;
@@ -120,22 +134,25 @@ end
     reg  [3:0]  j_mask;
     reg  [2:0]  j_tag;
     reg  [2:0]  j_word;                         // line read: next word
-    reg         j_half;                         // write: next halfword
+    reg         j_half;                         // write: next halfword (0 lower, 1 upper)
 
     wire [1:0]  j_bank = j_addr[12:11];
     wire [12:0] j_row = j_addr[25:13];
     wire [9:0]  j_col_rd = {j_addr[10:5], j_line ? j_word : j_addr[4:2], 1'b0};
     wire [9:0]  j_col_wr = {j_addr[10:2], j_half};
 
-    // answers without the SDRAM
+    // Answers without the SDRAM (while it is not ready)
     reg  [3:0]  err_left = 0;                   // error words still to send
     reg  [2:0]  err_tag;
 
     assign writing = j_valid && j_write;
 
 //
-// banks and command spacing; counters hold the clocks still to wait
+// Banks and command spacing. For each bank the counters hold the clocks that must still pass
+// since the command (ras: since ACTIVATE for PRECHARGE, rc: for the next ACTIVATE, rcd: for
+// READ/WRITE, rp: since PRECHARGE for ACTIVATE, wr: since WRITE for PRECHARGE).
 //
+    // open: one bit per bank, row: the row open in it
     reg  [3:0]  open = 0;
     reg  [12:0] row [0:3];
     reg  [2:0]  ras_cnt [0:3];
@@ -145,7 +162,7 @@ end
     reg  [1:0]  wr_cnt [0:3];
     reg  [3:0]  busy_cnt = 0;                   // after REFRESH, LOAD MODE, PRECHARGE ALL
     reg         rd_hold = 0;                    // the clock after a READ
-    reg  [2:0]  r2w_cnt = 0;
+    reg  [2:0]  r2w_cnt = 0;                    // clocks before a WRITE may follow a READ
 
     integer     b;
     initial begin
@@ -159,11 +176,13 @@ end
         end
     end
 
+    // what the job's bank may do now
     wire        can_pre = ras_cnt[j_bank] == 0 && wr_cnt[j_bank] == 0;
     wire        can_act = rp_cnt[j_bank] == 0 && rc_cnt[j_bank] == 0;
     wire        can_rw = rcd_cnt[j_bank] == 0;
     reg         can_prea;                       // every open bank may be precharged
     reg         all_rp;                         // every bank has finished its precharge
+    // PRECHARGE ALL and AUTO REFRESH conditions over the four banks
 always @(*) begin
     can_prea = 1;
     all_rp = 1;
@@ -181,7 +200,7 @@ end
     wire        wr_lo = j_mask[1:0] != 2'b00;
     wire        wr_hi = j_mask[3:2] != 2'b00;
 
-    // a job is taken whenever there is room for it; its first command may wait. While the
+    // A job is taken whenever there is room for it; its first command may wait. While the
     // mode registers are written again (warm), jobs wait instead of getting error words.
     assign job_ready = state == S_RUN ? !j_valid && !rf_due && !stop && !redo && err_left == 0
                      : state == S_INIT && warm ? 1'b0
@@ -189,7 +208,8 @@ end
     wire        take = state == S_RUN && job_valid && job_ready;
 
 //
-// read data: a mark per READ travels READ_LATENCY clocks, then two halfwords come in
+// Read data. A mark per READ (valid flag, tag and last flag) travels READ_LATENCY clocks;
+// then two halfwords come in, and the mark is one stage further when the word goes out.
 //
     reg  [15:0] dq_in;                          // the IO input register
     reg  [15:0] lo;
@@ -201,13 +221,17 @@ end
     initial begin
         for(m = 0; m <= READ_LATENCY + 1; m = m + 1) mk_valid[m] = 0;
     end
+    // any read still in flight
 always @(*) begin
     mk_any = 0;
     for(m = 0; m <= READ_LATENCY + 1; m = m + 1) if(mk_valid[m]) mk_any = 1;
 end
 
 //
-// the command for the next clock edge
+// The command for the next clock edge. In S_INIT it is the next step of the initialisation.
+// In S_RUN, with a job, it is the job's next command: ACTIVATE if its bank is closed,
+// PRECHARGE if another row is open, READ or WRITE if the row is open. Without a job and when
+// a refresh is due it is PRECHARGE ALL while a bank is open, then AUTO REFRESH.
 //
     reg  [2:0]  cmd;
     reg  [1:0]  cmd_ba;
@@ -215,6 +239,7 @@ end
     reg         cmd_wr_data;                    // drive the write halfword
     reg         mark;                           // a READ goes out: start a mark
 
+    // choose the command from the state and the job
 always @(*) begin
     cmd = C_NOP;
     cmd_ba = dram_ba;
@@ -261,6 +286,8 @@ always @(*) begin
     end
 end
 
+    // The registers: the pins, the spacing counters, the job, the read marks and the
+    // initialisation state machine.
 always @(posedge clk) begin
     // defaults: NOP, data bus released, DQM low except during init
     {dram_ras_n, dram_cas_n, dram_we_n} <= cmd;
@@ -273,7 +300,7 @@ always @(posedge clk) begin
         dram_dqm <= j_half ? ~j_mask[3:2] : ~j_mask[1:0];
     end
 
-    // counters run down
+    // The counters run down.
     for(b = 0; b < 4; b = b + 1) begin
         if(ras_cnt[b] != 0) ras_cnt[b] <= ras_cnt[b] - 1'b1;
         if(rc_cnt[b] != 0) rc_cnt[b] <= rc_cnt[b] - 1'b1;
@@ -285,7 +312,7 @@ always @(posedge clk) begin
     if(r2w_cnt != 0) r2w_cnt <= r2w_cnt - 1'b1;
     rd_hold <= cmd == C_RD;
 
-    // what the command does to the banks and the job
+    // What the command does to the banks and the job.
     case(cmd)
     C_ACT: begin
         open[cmd_ba] <= 1;
@@ -323,7 +350,7 @@ always @(posedge clk) begin
     endcase
     if(state == S_RUN && !(cmd == C_REF) && !rf_due) rf_timer <= rf_timer + 1'b1;
 
-    // a new job
+    // A new job. A write with only the upper half starts with the upper halfword.
     if(take) begin
         j_valid <= 1;
         j_write <= job_write;
@@ -333,10 +360,10 @@ always @(posedge clk) begin
         j_mask <= job_mask;
         j_tag <= job_tag;
         j_word <= 0;
-        j_half <= job_mask[1:0] == 2'b00;   // a write with only the upper half
+        j_half <= job_mask[1:0] == 2'b00;
     end
 
-    // marks and read data
+    // Marks and read data: the first halfword is kept in lo, the second one completes the word.
     mk_valid[0] <= mark;
     mk_tag[0] <= j_tag;
     mk_last[0] <= !j_line || j_word == 3'd7;
@@ -364,15 +391,15 @@ always @(posedge clk) begin
         err_left <= err_left - 1'b1;
     end
 
-    // jobs while the SDRAM is not ready: reads get error words, writes are dropped
+    // Jobs while the SDRAM is not ready: reads get error words, writes are dropped.
     if(state != S_RUN && job_valid && job_ready && !job_write) begin
         err_left <= job_line ? 4'd8 : 4'd1;
         err_tag <= job_tag;
     end
 
-    // initialisation and lock: a lost lock powers the SDRAM down and up again; a reinit
+    // Initialisation and lock. A lost lock powers the SDRAM down and up again. A reinit
     // (after the clock phase was moved) keeps the clock and CKE and writes PRECHARGE ALL,
-    // two AUTO REFRESH and the mode registers again
+    // two AUTO REFRESH and the mode registers again.
     if(!lock_s[1]) stop <= 1;
     if(reinit) redo <= 1;
     case(state)

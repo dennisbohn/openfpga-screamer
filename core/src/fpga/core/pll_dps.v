@@ -1,11 +1,14 @@
 //
 // One dynamic phase shift step of a PLL output counter at a time (Cyclone V altera_pll,
-// pll_subtype "DPS"; docs/memory.md)
+// pll_subtype "DPS"; docs/memory.md, "Clock and IO timing")
 //
 // A step moves the phase by one eighth of a VCO period (168 ps for pll_sdram's 742.5 MHz
 // VCO). cntsel and updn are set first, phase_en is held for 4 scan clocks, then the PLL
 // pulls phase_done low until the step is done. count follows the steps made since the
 // bitstream was loaded (signed, positive = later).
+//
+// Interface: step is a one-clock request, later is its direction (1 later, 0 earlier); busy
+// is high from the request until the step is done. Requests while busy are not taken.
 //
 
 module pll_dps #(
@@ -23,6 +26,7 @@ module pll_dps #(
     input   wire            phase_done
 );
 
+    // states of a step
     localparam  S_IDLE = 3'd0;
     localparam  S_SET  = 3'd1;                  // cntsel and updn settle
     localparam  S_EN   = 3'd2;                  // phase_en high
@@ -30,11 +34,12 @@ module pll_dps #(
     localparam  S_HIGH = 3'd4;                  // until it is high again
 
     reg  [2:0]  state = S_IDLE;
-    reg  [9:0]  cnt;
-    reg  [1:0]  done_s = 2'b11;
+    reg  [9:0]  cnt;                            // clocks in the state
+    reg  [1:0]  done_s = 2'b11;                 // phase_done through two flops
 
     assign busy = state != S_IDLE;
 
+    // the step sequence; S_LOW waits at most 64 clocks and S_HIGH at most 1024
 always @(posedge clk) begin
     done_s <= {done_s[0], phase_done};
     cnt <= cnt + 1'b1;
