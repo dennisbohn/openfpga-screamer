@@ -1,14 +1,16 @@
 /*
- * The player's car: engine, gearbox, brakes, steering, skidding. Ported from OpenScreamer
- * (github.com/ItsDanik/openscreamer, GPL-3.0, port/src/drive.h and drive.c), which ported
- * it from the game (STARTL.EXE, the player record at 0xf918); the field comments give the
- * offset in that record. Units are the game's: distance in world units, speed in units a
- * second, angles in radians; km/h = speed * 340 / 21000.
+ * The player's car: engine, gearbox, brakes, steering and skidding (drive.c). One call of
+ * drive_step() is one physics step of 1/50 s.
+ * Ported from OpenScreamer (github.com/ItsDanik/openscreamer, GPL-3.0, port/src/drive.h and
+ * drive.c), which ported it from the game (STARTL.EXE, the player record at 0xf918). The field
+ * comments give the field's offset in that record.
+ * Units are the game's: distance in world units, speed in units a second, angles in radians.
+ * km/h = speed * 340 / 21000.
  */
 #pragma once
 #include <stdint.h>
 
-/* one row of CARS_DATA in GEN.DAT's CARS.DTR (tools/make_track.py writes them like this) */
+/* One row of CARS_DATA in the CARS.DTR of GEN.DAT (tools/make_track.py writes them like this). */
 struct car_spec {
     char  name[12];         /* "AUTO00" */
     int32_t livery;         /* 0 or 0x8000: the second paint job */
@@ -21,15 +23,22 @@ struct car_spec {
     float ratio[7];         /* +0x498.. gear 1..nshift (index 0 unused) */
 };
 
+/* The controls of one step, as the caller sets them. */
 struct drive_input {
     float throttle;         /* 0..1 */
     float brake;            /* 0..1 */
     float steer;            /* -1 = full right .. +1 = full left */
     int   shift;            /* +1 / -1 on the frame a gear key goes down */
-    int   brake_axis;       /* the brake is an axis's, taken as it is (0x16174); else a key's */
-    int   steer_axis;       /* the wheel is an axis's, taken as it is unless sliding (0x163bb) */
+    /* brake_axis: 1 if the brake comes from a stick axis and is taken as it is
+       (original: STARTL.EXE 0x16174); 0 if a key gives it. */
+    int   brake_axis;
+    /* steer_axis: 1 if the wheel comes from a stick axis and is taken as it is, unless the car
+       is sliding (original: STARTL.EXE 0x163bb). */
+    int   steer_axis;
 };
 
+/* The whole state of the player's car. drive_step() does not work out the fields that are
+   marked "set by the caller". */
 struct car_state {
     struct car_spec spec;
 
@@ -57,8 +66,10 @@ struct car_state {
     float slide;            /* +0x4fc  sideways speed while skidding */
     float drift;            /* +0x128  angle between the body and its heading */
     int   spin;             /* +0x170  1 = lost it */
-    int   skid_lock;        /* this step took 0x17d04's branch for locked wheels, which turns
-                               on the skid sound and the smoke (0x17e29) */
+    /* skid_lock: 1 if this step took the branch for locked wheels of the skid routine
+       (original: STARTL.EXE 0x17d04). It turns on the skid sound and the smoke
+       (original: STARTL.EXE 0x17e29). */
+    int   skid_lock;
 
     float yaw_rate;         /* +0x548  knocked sideways by a wall */
     float shove, shove_x, shove_y;      /* +0x54c, +0x550, +0x558 */
@@ -67,10 +78,11 @@ struct car_state {
     float surface;          /* +0x670  grip of the surface under the car, 1 = tarmac */
     int   rough;            /* +0x2f0  a front wheel is on rough ground (grass) */
     float slide_dx, slide_dy;           /* +0x500, +0x508  which way a slide carries the car */
-    int   grass[4];         /* wheel +0x2c: this wheel is on grass (front-left, rear-left,
-                               front-right, rear-right) */
+    /* grass: wheel record +0x2c, 1 if this wheel is on grass. The order is front-left,
+       rear-left, front-right, rear-right. */
+    int   grass[4];
 
-    /* derived once from the spec, as the game does when the race loads */
+    /* Constants derived once from the spec, as the game does when the race loads. */
     float k_rpm;            /* +0x174 */
     float k_engine_brake;   /* +0x178 */
     float k_brake;          /* +0x17c */
@@ -81,17 +93,27 @@ struct car_state {
     float grip_lock;        /* +0x190 */
 };
 
-/* the physics runs at a fixed 50 steps a second, the game's own reference rate */
+/* The physics runs at a fixed 50 steps a second, the game's own reference rate. */
 #define DRIVE_DT 0.02f
 
+/* Resets *c for a new race: the spec's row and the wheelbase (distance between the axles) go in,
+   the constants are derived from the spec, everything else is zero (the surface is tarmac). */
 void  drive_init(struct car_state *c, const struct car_spec *spec, float wheelbase);
+/* One physics step of DRIVE_DT: moves the car, then runs engine, pedals, steering and skid with
+   the controls *in. */
 void  drive_step(struct car_state *c, const struct drive_input *in);
-/* the car ran into something whose face lies wall_angle radians off its heading */
+/* The car ran into something whose face lies wall_angle radians off its heading. The caller has
+   put the car back by (push_x, push_y). side is (front-right corner out) - (front-left corner
+   out), each 1 if the corner was off the surface and 0 if not. The call scrubs speed, turns the
+   nose and starts the shove away from the wall. */
 void  drive_hit_wall(struct car_state *c, float push_x, float push_y, float side, float wall_angle);
+/* The speed in km/h. */
 float drive_kmh(const struct car_state *c);
-/* the game's per-step smoothing factor for stiffness i: v = (v - target) * damp + target */
+/* The game's smoothing factor for stiffness i (0 .. 99), per step. Use it as
+   v = (v - target) * damp + target. */
 float drive_damp(int i);
-/* sinf and cosf, the last few angles' values kept: a step asks for the heading's, pitch's and
-   roll's in several places, the frame for the camera's again; for the same bits the same values */
+/* sinf and cosf. The values of the last few angles are kept: one step asks for the heading's,
+   pitch's and roll's several times, and the frame for the camera's again. The same bits of an
+   angle always give the same value. */
 float drive_sin(float a);
 float drive_cos(float a);
