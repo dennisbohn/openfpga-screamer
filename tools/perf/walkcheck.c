@@ -7,8 +7,8 @@
  * it then prints the placements of those cells whose place is within the reach, in the order the
  * game lists them. The reach test is the game's own integer test, in 64 bits:
  * dist^2 >> 2 < 676000000 (original: STARTL.EXE 0x83164).
- * Not part of the firmware. tools/perf/framestats.sh (the walk command) runs it, built into the
- * counting copy of the firmware.
+ * Not part of the firmware. tools/perf/framestats.sh builds it into the counting copy of the
+ * firmware (the build command) and runs it (the walk command).
  *
  * Usage: walkcheck <track image> < lines "x height z yaw"
  *   Each line is a camera: the view's position and the camera's heading in radians.

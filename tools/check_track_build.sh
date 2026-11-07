@@ -1,13 +1,14 @@
 #!/bin/sh
-# Host test of the track build on the Pocket (firmware/track_build.c and its parts): the
-# image built natively in Docker from the five original containers must be byte-identical
-# with the one tools/make_track.py builds from the same files (the reference), for each of
-# the six tracks.
+# Host test of the track build on the Pocket (firmware/track_build.c and its parts). For each of
+# the six tracks, the image that the firmware's code builds natively in Docker from the five
+# original containers must be byte-identical with the one that tools/make_track.py builds from
+# the same files (the reference). tools/check_track_build.c is the test program.
 # Usage: tools/check_track_build.sh [game folder] [reference image of track 1]
 #   game folder   the original game, default $GAME_DIR or "C:/GOG Games/Screamer"
-#   reference     default: made here by tools/make_track.py into build/check/trackn.bin; given,
-#                 only track 1 is checked, against it
-# Everything it writes stays in build/check/ (game data, never committed).
+#   reference     default: the reference images are made here by tools/make_track.py into
+#                 build/check/track<n>.bin. If a file is given, only track 1 is checked, against it.
+# Needs: Docker and Python. Everything the script writes stays in build/check/ (game data, never
+# committed).
 set -e
 root=$(cd "$(dirname "$0")/.." && pwd)
 game=${1:-${GAME_DIR:-C:/GOG Games/Screamer}}

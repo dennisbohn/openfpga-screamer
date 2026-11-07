@@ -1,4 +1,4 @@
-"""Adds the counters of tools/perf/perf.h to COPIES of the firmware's track.c, car.c, geom.c, setup.c, raster.c.
+"""Adds the counters of perf.h to COPIES of the firmware's track.c, car.c, geom.c, setup.c and raster.c.
 
 Usage: python -I tools/perf/perf_patch.py <dir with the copies> [--ref]
   tools/perf/framestats.sh build copies the firmware to a directory and calls this script on it.

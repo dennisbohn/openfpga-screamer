@@ -1,10 +1,13 @@
 #!/bin/sh
-# Generate the VexRiscv CPUs of tools/vexriscv/PocketVex.scala (im, imf, imfc) as Verilog with
-# sbt in Docker and copy the core's CPU to core/src/fpga/core/cpu/VexPocketIMFC.v.
-# Usage: tools/vexriscv/gen.sh
+# Generates the VexRiscv CPUs of tools/vexriscv/PocketVex.scala (im, imf, imfc) as Verilog with
+# sbt in Docker, and copies the core's CPU to core/src/fpga/core/cpu/VexPocketIMFC.v.
+# Usage: tools/vexriscv/gen.sh      (no arguments)
+# Needs: Docker and git; the first run also needs the network.
 # The first run clones VexRiscv at the pinned commit into build/vexriscv/src and downloads sbt,
-# Scala and SpinalHDL into build/vexriscv/cache; later runs work offline.
+# Scala and SpinalHDL into build/vexriscv/cache. Later runs work offline.
 # Output: build/vexriscv/out/<variant>/<Module>.v (+ .yaml), full log in build/vexriscv/gen.log.
+# The script stops if the clone has local changes. tools/vexriscv/gen_in_container.sh does the
+# work inside the container.
 set -e
 root=$(cd "$(dirname "$0")/../.." && pwd)
 work="$root/build/vexriscv"

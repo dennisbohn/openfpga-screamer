@@ -1,6 +1,7 @@
-"""Turn a raw 320x200 RGB frame from a testbench into a PNG.
+"""Turns a raw RGB frame (3 bytes a pixel, 320 x 200 unless told otherwise) into a PNG.
 
-Usage: python rgb2png.py <in.rgb> <out.png> [width height]
+Usage: python -I tools/rgb2png.py <in.rgb> <out.png> [width height]
+The frames come from the testbenches (tools/sim.sh) and from tools/render.sh.
 """
 import struct
 import sys
@@ -8,6 +9,7 @@ import zlib
 
 
 def main():
+    """Reads the raw file, checks its size and writes the PNG."""
     src, dst = sys.argv[1], sys.argv[2]
     w, h = (int(sys.argv[3]), int(sys.argv[4])) if len(sys.argv) > 4 else (320, 200)
     raw = open(src, "rb").read()

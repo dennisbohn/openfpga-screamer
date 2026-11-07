@@ -1,15 +1,16 @@
-"""Check per-entity block RAM use and the IO registers of the memory pins in a Quartus fit report.
+"""Checks the block RAM use per entity and the IO registers of the memory pins in a Quartus fit report.
 
-Usage: python check_budget.py <ap_core.fit.rpt>
+Usage: python -I tools/check_budget.py <ap_core.fit.rpt>      (tools/build.sh calls it)
+Exit status 1 if a check fails.
 
-Quartus can silently map a memory onto registers (0 M10K) or duplicate it (twice the
-blocks) when the code is changed. This fails the build when an entity listed in
-EXPECTED does not use exactly that many M10K.
+Quartus can silently map a memory onto registers (0 M10K) or duplicate it (twice the blocks)
+when the code is changed. The first check fails when an entity listed in EXPECTED does not use
+exactly that many M10K.
 
-The SDRAM, SRAM and PSRAM cram0 pins must take their signals straight from registers in
-the IO cells (docs/memory.md); otherwise their timing depends on the placement. Quartus
-ignores a FAST_*_REGISTER assignment it cannot honour with only a warning, so this also
-fails the build when a pin in IO_REGS lacks one of its registers in the pin tables.
+The SDRAM, SRAM and PSRAM cram0 pins must take their signals straight from registers in the IO
+cells (docs/memory.md); otherwise their timing depends on the placement. Quartus ignores a
+FAST_*_REGISTER assignment that it cannot honour, with only a warning. The second check therefore
+fails when a pin in IO_REGS lacks one of its registers in the pin tables.
 """
 import sys
 
@@ -26,7 +27,9 @@ COLUMNS = {"in": "Input Register", "out": "Output Register", "oe": "Output Enabl
 
 
 def check_m10k(lines):
-    start = next(i for i, l in enumerate(lines) if l.startswith("; Fitter Resource Utilization by Entity"))
+    """Prints the M10K count of each entity in EXPECTED; returns true if all are as expected."""
+    start = next(i for i, l in enumerate(lines)
+                 if l.startswith("; Fitter Resource Utilization by Entity"))
     header = next(l for l in lines[start:] if l.startswith("; Compilation Hierarchy Node"))
     cols = [c.strip() for c in header.split(";")]
     m10k = cols.index("M10Ks")
@@ -61,6 +64,7 @@ def pin_rows(lines, title):
 
 
 def check_io(lines):
+    """Prints a line for each memory pin that lacks an IO register in IO_REGS; returns true if none does."""
     ok, seen = True, {}
     for row in pin_rows(lines, "Output Pins") + pin_rows(lines, "Bidir Pins"):
         name = row.get("Name", "")
@@ -81,6 +85,7 @@ def check_io(lines):
 
 
 def main():
+    """Runs both checks on the report named by the first argument."""
     lines = open(sys.argv[1], encoding="utf-8", errors="replace").read().splitlines()
     ok = check_m10k(lines)
     ok &= check_io(lines)

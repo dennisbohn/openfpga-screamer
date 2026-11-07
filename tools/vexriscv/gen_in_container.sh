@@ -1,7 +1,7 @@
 #!/bin/sh
-# Runs inside the sbt image, started by tools/vexriscv/gen.sh: copies what sbt needs from the
-# read-only VexRiscv clone (/src) to /tmp/vex, adds PocketVex.scala as package "pocket" and
-# generates the given variants (none: all) into /out/<variant>/.
+# Runs inside the sbt image, started by tools/vexriscv/gen.sh. It copies what sbt needs from the
+# read-only VexRiscv clone (/src) to /tmp/vex, adds PocketVex.scala as the package "pocket" and
+# generates the variants named as arguments (none: all) into /out/<variant>/.
 set -e
 mkdir -p /tmp/vex/src
 cp -r /src/build.sbt /src/project /tmp/vex/

@@ -1,8 +1,13 @@
-"""The last Quartus build in a few lines: build time, logic, block RAM and DSP, the worst slack
-of each timing check and the logic of each unit, each with its change against the build before
-(kept in build/last_build.json). tools/build.sh prints it at the end.
+"""Summarises the last Quartus build in a few lines. tools/build.sh prints it at the end.
 
-Usage: python tools/buildsum.py [--keep]     (--keep: do not replace build/last_build.json)
+Usage: python -I tools/buildsum.py [--keep]
+  --keep  do not replace build/last_build.json with this build
+
+It prints the build time, the logic, block RAM and DSP use, the worst slack of each timing check
+and the logic of each unit. Each number is followed by its change against the build before, which
+is kept in build/last_build.json. It reads the reports in core/src/fpga/output_files/
+(ap_core.fit.rpt, ap_core.sta.summary, ap_core.flow.rpt) and uses tools/make_budget_svg.py to
+read the fitter report.
 """
 import json
 import os
@@ -19,7 +24,7 @@ CHECKS = ("Setup", "Hold", "Recovery", "Removal", "Minimum Pulse Width")
 
 
 def slacks(path):
-    """{check: worst slack in ns} over all clocks and corners of the timing summary"""
+    """{check: worst slack in ns} over all clocks and corners of the timing summary."""
     worst, kind = {}, None
     for line in open(path, encoding="utf-8", errors="replace"):
         m = re.match(r"Type\s*:.*?Model\s+(.+?)\s+'", line)
@@ -32,27 +37,30 @@ def slacks(path):
 
 
 def elapsed(path):
-    """the whole flow's time in seconds, from the flow report's elapsed time table"""
+    """The whole flow's time in seconds, from the flow report's elapsed time table."""
     secs = 0
     for line in open(path, encoding="utf-8", errors="replace"):
-        m = re.match(r";\s*(Analysis & Synthesis|Fitter|Assembler|Timing Analyzer)\s*;\s*(\d+):(\d+):(\d+)", line)
+        m = re.match(r";\s*(Analysis & Synthesis|Fitter|Assembler|Timing Analyzer)\s*;\s*(\d+):(\d+):(\d+)",
+                     line)
         if m:
             secs += int(m.group(2)) * 3600 + int(m.group(3)) * 60 + int(m.group(4))
     return secs
 
 
 def de(n, sign=False):
-    """an integer with thousands separators"""
+    """An integer with thousands separators, and a sign if sign is true."""
     return (f"{n:+,}" if sign else f"{n:,}")
 
 
 def delta(now, before, fmt=None):
+    """The change from before to now as " (+n)", or "" if there is no earlier value or no change."""
     if before is None or now == before:
         return ""
     return " (" + (fmt.format(now - before) if fmt else de(now - before, True)) + ")"
 
 
 def main():
+    """Prints the three summary lines (build, slack, units) and keeps the numbers for the next build."""
     sys.stdout.reconfigure(encoding="utf-8")
     nodes = mb.read_report(os.path.join(OUT, "ap_core.fit.rpt"))
     units = {c[0]: c[2] for c in mb.components(nodes)}
@@ -66,7 +74,8 @@ def main():
     print(f"build {t // 60}:{t % 60:02d} min" + (f" ({(t - lt):+d} s)" if lt and lt != t else "") +
           f" | logic {de(now['alm'])} ALMs ({round(100 * now['alm'] / cap['alm'])} %)" +
           delta(now["alm"], last.get("alm")) +
-          f" | M10K {now['m10k']} ({round(100 * now['m10k'] / cap['m10k'])} %)" + delta(now["m10k"], last.get("m10k")) +
+          f" | M10K {now['m10k']} ({round(100 * now['m10k'] / cap['m10k'])} %)" +
+          delta(now["m10k"], last.get("m10k")) +
           f" | DSP {now['dsp']}" + delta(now["dsp"], last.get("dsp")))
     ls = last.get("slack", {})
     print("slack " + ", ".join(f"{k.split()[0].lower()} {v:+.3f}" + delta(v, ls.get(k), "{:+.3f}")

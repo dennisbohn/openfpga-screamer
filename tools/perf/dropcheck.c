@@ -12,8 +12,8 @@
  *   V  drawn
  * A block that has no mesh at the level of detail of its distance still shows as V: the program
  * does not look at the level of detail.
- * Not part of the firmware. tools/perf/framestats.sh (the drop command) builds it in the counting
- * copy, like walkcheck.
+ * Not part of the firmware. tools/perf/framestats.sh builds it in the counting copy, like walkcheck
+ * (the build command), and runs it (the drop command).
  *
  * Usage: dropcheck <track image> <lines of the screen's height> [radius] < cameras
  *   The cameras are lines "x y h yaw pitch" on the standard input: the mark lines of debug.txt.

@@ -3,23 +3,26 @@
 Usage: python -I tools/platform_image.py <in.png> <out.bin>      PNG -> .bin
        python -I tools/platform_image.py --show <in.bin> <out.png>  .bin -> PNG (as the Pocket shows it)
 
-The format (Analogue's "Graphical Asset Formats", checked against the images on the SD card):
-521 x 165 pixels, 2 bytes a pixel, the brightness in the first byte and 0 in the second; the
-picture turned 90 degrees counter-clockwise, so the file is 165 pixels wide and 521 high; and the
-brightness stored inverted (the cores' images are negatives of what the Pocket shows: 255 is
-black on the screen). The PNG may be grey, palette or RGB(A), 8 bits a sample; colour is turned
-into grey (0.299 R + 0.587 G + 0.114 B). Draw it as it should look on the Pocket.
+The format is Analogue's "Graphical Asset Formats", checked against the images on the SD card:
+  - 521 x 165 pixels, 2 bytes a pixel: the brightness in the first byte and 0 in the second.
+  - The picture is turned 90 degrees counter-clockwise, so the file is 165 pixels wide and 521 high.
+  - The brightness is stored inverted. The images of the cores are negatives of what the Pocket
+    shows: 255 is black on the screen.
+The PNG may be grey, palette or RGB(A), 8 bits a sample; colour is turned into grey
+(0.299 R + 0.587 G + 0.114 B). Draw the PNG as it should look on the Pocket.
 """
 import os
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))     # (python -I leaves it out)
+# python -I leaves the script's folder out of the path; cmpframe.py lives there.
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from cmpframe import read_png, write_png
 
 W, H = 521, 165
 
 
 def to_bin(png, out):
+    """Converts a 521 x 165 PNG to the platform image format."""
     w, h, px = read_png(png)
     if (w, h) != (W, H):
         sys.exit(f"{png}: {w} x {h}, the Pocket wants {W} x {H}")
@@ -34,6 +37,7 @@ def to_bin(png, out):
 
 
 def to_png(binfile, out):
+    """Converts a platform image back to a PNG, as the Pocket shows it."""
     d = open(binfile, "rb").read()
     if len(d) != W * H * 2:
         sys.exit(f"{binfile}: {len(d)} bytes, not {W * H * 2}")

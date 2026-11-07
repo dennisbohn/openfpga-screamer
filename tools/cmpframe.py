@@ -21,6 +21,9 @@ W, H = 320, 200
 
 
 def read_png(path, index=False):
+    """Reads an 8-bit PNG file; returns (width, height, pixels).
+
+    The pixels are RGB tuples, or the colour numbers if the picture has a palette and index is true."""
     d = open(path, "rb").read()
     i, idat, pal = 8, b"", None
     while i < len(d):
@@ -58,6 +61,7 @@ def read_png(path, index=False):
 
 
 def read_any(path):
+    """Reads a .rgb file (320 x 200, 3 bytes a pixel) or a PNG file, as read_png does."""
     if path.lower().endswith(".rgb"):
         d = open(path, "rb").read()
         assert len(d) == W * H * 3, "%s: not 320 x 200 RGB" % path
@@ -66,6 +70,7 @@ def read_any(path):
 
 
 def write_png(path, w, h, rgb):
+    """Writes the RGB bytes rgb as a w x h PNG file."""
     raw = b"".join(b"\0" + rgb[y * w * 3:(y + 1) * w * 3] for y in range(h))
     chunk = lambda k, b: struct.pack(">I", len(b)) + k + b + struct.pack(">I", zlib.crc32(k + b))
     open(path, "wb").write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
@@ -73,6 +78,7 @@ def write_png(path, w, h, rgb):
 
 
 def main():
+    """Compares the two pictures: equal share, tile map and (on request) a picture of the differences."""
     a, b = read_png(sys.argv[1], index=True), read_any(sys.argv[2])
     assert a[:2] == (W, H) and b[:2] == (W, H), "both must be 320 x 200"
     if isinstance(a[2][0], int):        # colour numbers: the track's palette, 6 bits
@@ -83,7 +89,7 @@ def main():
         col = datfile.extract(datfile.read(game + "/GFX/MAP%sH.DAT" % track), "MAP%s.COL" % track)
         a = a[:2] + ([tuple(c << 2 for c in col[3 * i:3 * i + 3]) for i in a[2]],)
     same = [all(p >> 2 == q >> 2 for p, q in zip(pa, pb)) for pa, pb in zip(a[2], b[2])]
-    # the race screen's corners: lap and times, position, the rev counter, the radar
+    # The race screen's corners are left out of the 3D view: lap and times, position, rev counter, radar.
     hud = lambda x, y: (x < 90 and y < 110) or (x >= 250 and y < 45) or (x >= 200 and y >= 125) \
         or (x < 80 and y >= 120) or (110 <= x < 210 and y < 40)
     view = [same[y * W + x] for y in range(H) for x in range(W) if not hud(x, y)]

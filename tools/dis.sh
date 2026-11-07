@@ -1,11 +1,12 @@
 #!/bin/sh
-# Disassemble a stretch of the game's program, at the addresses openscreamer docs/NOTES.md uses.
+# Disassembles a stretch of the game's program, at the addresses that openscreamer docs/NOTES.md uses.
 # Usage: tools/dis.sh [-h] [-f] <from> <to>     e.g. tools/dis.sh 0x8a598 0x8a628
 #   -h  STARTH.EXE (the SVGA version) instead of STARTL.EXE
 #   -f  the image with the LE fixups applied (pointers are flat addresses)
+# Needs: Docker (objdump of the simulation's image) and Python.
 # The flat images are made once by tools/unle.py from the game folder ($GAME_DIR, default
-# "C:/GOG Games/Screamer") into build/exe/, never into the repository. Prints objdump's lines
-# without its header; the object bases are printed by tools/unle.py.
+# "C:/GOG Games/Screamer") into build/exe/, never into the repository. The script prints objdump's
+# lines without its header. The object bases are printed by tools/unle.py.
 set -e
 root=$(cd "$(dirname "$0")/.." && pwd)
 game=${GAME_DIR:-C:/GOG Games/Screamer}

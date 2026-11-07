@@ -1,15 +1,16 @@
-"""Draw docs/frame_timeline.svg: one frame of the race over time, from the firmware's timeline.
+"""Draws docs/frame_timeline.svg: one frame of the race over time, from the firmware's timeline.
 
-Usage: python tools/make_timeline_svg.py [log] [out.svg]
-  log: a simulation log (build/sim/check.log, the default) or the Pocket's debug.txt; the last
-  "timeline" block in it is drawn (main.c tl_log: the last whole frame before the logged one).
+Usage: python -I tools/make_timeline_svg.py [log] [out.svg]      (run from the repository root)
+  log      a simulation log (default build/sim/check.log) or the Pocket's debug.txt. The last
+           "timeline" block in it is drawn (main.c tl_log: the last whole frame before the logged one).
+  out.svg  the picture (default docs/frame_timeline.svg)
 
-Each mark holds the cycles since the frame began and the counters as they stood (the block's
-first line names them): the busy clocks of the geometry unit (gu), the setup unit (su, if
-there is one), the rasterizer (rs) and the blitter (bl) and the CPU's cycles writing to them
-(wait). The counters are cleared during the frame (main.c): all but the blitter's just before
-the mark "prep" (before it they still hold the last frame's values), the blitter's before the
-backdrop (before "prep") and just before the mark "clear".
+Each mark holds the cycles since the frame began and the counters as they stood (the block's first
+line names them): the busy clocks of the geometry unit (gu), the setup unit (su, if there is one),
+the rasterizer (rs) and the blitter (bl), and the CPU's cycles spent writing to them (wait).
+The counters are cleared during the frame (main.c). All but the blitter's are cleared just before
+the mark "prep"; before it they still hold the last frame's values. The blitter's are cleared
+before the backdrop (before "prep") and just before the mark "clear".
 """
 import re
 import sys
@@ -21,8 +22,8 @@ STAMP = "2026-10-30"
 
 T_START, T_PHYS, T_PREP, T_CULL, T_PIECES, T_SCENE, T_CLEAR, T_HUD, T_WAIT, T_END, T_MUSIC = range(11)
 
-# the CPU's phases: the mark that ends a stretch names it (categorical slots of the dataviz
-# reference palette, light and dark)
+# The CPU's phases: the mark that ends a stretch names it. The colours are categorical slots of the
+# dataviz reference palette, for light and dark.
 PHASES = [
     ("music", "Music (read command to the SD card)", "#008300", "#008300", (T_MUSIC,)),
     ("phys", "Physics (car, opponents)", "#2a78d6", "#3987e5", (T_PHYS,)),
@@ -73,7 +74,8 @@ def deltas(marks, counters):
         d = {}
         for name in counters:
             if name == "bl":
-                d[name] = 0 if tag in (T_MUSIC, T_PHYS, T_CLEAR) else cur[name] if tag == T_PREP else cur[name] - prev[name]
+                d[name] = (0 if tag in (T_MUSIC, T_PHYS, T_CLEAR)
+                           else cur[name] if tag == T_PREP else cur[name] - prev[name])
             else:
                 d[name] = 0 if tag in (T_MUSIC, T_PHYS, T_PREP) else cur[name] - prev[name]
             d[name] = max(0, d[name])
@@ -145,7 +147,8 @@ def main():
     for m in range(0, 22, 2):
         c = m * CPU_HZ // 1000
         x = px(c)
-        parts.append(f'<line x1="{x:.1f}" y1="{top + 12}" x2="{x:.1f}" y2="{bottom - gap + 4}" class="grid"/>')
+        parts.append(f'<line x1="{x:.1f}" y1="{top + 12}" x2="{x:.1f}" y2="{bottom - gap + 4}" '
+                     f'class="grid"/>')
         text(x, top + 4, f"{m} ms", "m", "middle")
 
     # lanes

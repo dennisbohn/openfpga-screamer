@@ -1,6 +1,8 @@
-"""List Screamer .DAT container entries with stored and uncompressed sizes.
+"""Lists Screamer .DAT containers with their stored and uncompressed sizes.
 
-Usage: python dat_sizes.py [-v] <file.DAT>...
+Usage: python tools/dat_sizes.py [-v] <file.DAT>...      (without -I: it imports datfile.py from its folder)
+  Per container: the number of entries, the unpacked size, and the unpacked size per file type.
+  -v  also lists every entry with its unpacked size, its stored size and its method.
 """
 import sys
 from collections import defaultdict
@@ -9,6 +11,7 @@ import datfile
 
 
 def main():
+    """Prints the summary of each container named on the command line."""
     verbose = sys.argv[1] == "-v"
     for path in sys.argv[2 if verbose else 1:]:
         ents = datfile.entries(datfile.read(path))
