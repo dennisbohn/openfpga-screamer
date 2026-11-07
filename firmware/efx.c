@@ -40,19 +40,11 @@ uint32_t efx_cyc_objects, efx_cyc_radar, efx_radar_lines;
 static const uint8_t *shadow, *smoke, *radar, *smg_kept;
 static int table;
 
-/* Extracts the entry `name` of the container into out (at most max bytes). Returns its size,
-   or 0 if it is missing. */
-static uint32_t entry(const uint8_t *gfx, uint32_t size, const char *name, uint8_t *out, uint32_t max)
-{
-    struct dat_entry e;
-    return dat_find(gfx, size, name, &e) ? dat_extract(gfx, size, &e, out, max) : 0;
-}
-
 /* Extracts the .3DX file `name` into out. Returns out, or 0 if the file is missing or its first
    block does not lie inside it. */
 static const uint8_t *mesh(const uint8_t *gfx, uint32_t size, const char *name, uint8_t *out)
 {
-    uint32_t n = entry(gfx, size, name, out, MESH_MAX);
+    uint32_t n = dat_unpack(gfx, size, name, out, MESH_MAX);
     if(n < 0x340 || le32s(out + 0x14) < 1) return 0;
     int32_t blk = le32s(out + 0x18);
     return blk > 0 && (uint32_t)blk + 0x80 <= n ? out : 0;
@@ -172,7 +164,7 @@ int efx_init(const uint8_t *gfx, uint32_t gfx_size, int n, const uint8_t *mlb, c
     if(cap < AT_TEX + 256 * TEX_SIZE + 32) return 0;
     uint8_t *smg = mem + AT_SMG;
     smg_kept = smg;
-    int ok = table = entry(gfx, gfx_size, name, smg, SMG_SIZE) == SMG_SIZE;
+    int ok = table = dat_unpack(gfx, gfx_size, name, smg, SMG_SIZE) == SMG_SIZE;
     if(ok) {
         efx_darken_table(pal, smg + SMG_RADAR * 256, 0.75f);
         efx_darken_table(pal, smg + SMG_GLASS * 256, 0.6f);

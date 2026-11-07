@@ -29,6 +29,14 @@ int dat_find(const uint8_t *file, uint32_t file_size, const char *name, struct d
    entry gives 0 as well. */
 uint32_t dat_extract(const uint8_t *file, uint32_t file_size, const struct dat_entry *e, uint8_t *out,
                      uint32_t out_max);
+/* Unpacks the entry called name into out (at most out_max bytes): dat_find and dat_extract in one call.
+   Returns the entry's size, or 0 if it is missing or dat_extract gives 0. */
+static inline uint32_t dat_unpack(const uint8_t *file, uint32_t file_size, const char *name,
+                                  uint8_t *out, uint32_t out_max)
+{
+    struct dat_entry e;
+    return dat_find(file, file_size, name, &e) ? dat_extract(file, file_size, &e, out, out_max) : 0;
+}
 /* Decodes one LZW stream of src_size bytes into exactly size bytes of out. Returns size, or 0 if
    the stream is too short, ends early, or uses a code that is not defined yet. out is read back
    as well: a code's string is copied from where it was written earlier. */
