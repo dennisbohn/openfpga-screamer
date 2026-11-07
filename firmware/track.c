@@ -843,7 +843,7 @@ static int first_cell(uint32_t key)
    two points ahead of the camera and to its sides, WINDOW_X and WINDOW_Z times FAR_SCALE, turned by the view's
    heading (the camera's heading in 2048ths of a turn, cut towards 0; the matrix of 0x7ff - h, whose sines the
    game's table has), their box with the 8192 round the camera, cut to the part of the map the camera's cell
-   gives (the box of its array 4, if it has one, scaled by FAR_SCALE round the cell's middle: each edge is clamped
+   gives (the box of its array 4, if it has one, and only at FAR_SCALE 1.0 or less: each edge is clamped
    to the window and the two take its place only if they differ, x first), in the map's cells of 8192 units: from row0 and col0 on, the rows and columns
    n further, n one more if the first and the n-th stay below 0xfe. Rows and columns row0 .. row1, col0 .. col1. */
 static __attribute__((noinline)) void cell_window(float cx, float cy, float yaw, int *row0, int *row1, int *col0, int *col1)
@@ -869,19 +869,17 @@ static __attribute__((noinline)) void cell_window(float cx, float cy, float yaw,
     if(ix >= -0x100000 && ix < 0x100000 && iz >= -0x100000 && iz < 0x100000) {      /* the camera's cell */
         uint32_t key = (uint32_t)((iz + 0x100000) >> 13) << 8 | (uint32_t)((ix + 0x100000) >> 13);
         int g = first_cell(key);
-        if(g < nvcells && vcells[g].key == key && vcells[g].has_box) {
+        /* The box is the game's cut for its own far plane, and its edge lies within the far plane we draw to when that is
+           farther (and moves in steps of a cell as the camera crosses cells, and the window's rows round it by the length
+           of the window: a building at the edge was drawn on one frame and not on the next). So only the original's own
+           distance, FAR_SCALE 1.0 or less, keeps it; farther the window is the whole box of the view */
+        if(far_scale <= 1.0f && g < nvcells && vcells[g].key == key && vcells[g].has_box) {
             const int32_t *b = vcells[g].box;
-            /* the box is the game's cut for its own far plane: it is scaled round the middle of the camera's cell by
-               FAR_SCALE like the window (1.0: the box as it is), so that a cell with a box does not show less far than
-               the cells next to it without one */
-            const int64_t mx = (int64_t)(key & 0xFF) * 8192 + 4096, mz = (int64_t)(key >> 8) * 8192 + 4096;
-            int64_t ex0 = mx + (int64_t)((float)(b[0] + 0x100000 - mx) * far_scale);
-            int64_t ex1 = mx + (int64_t)((float)(b[2] + 0x100000 - mx) * far_scale);
+            int64_t ex0 = b[0] + 0x100000, ex1 = b[2] + 0x100000;
             ex0 = ex0 < x0 ? x0 : ex0 > x1 ? x1 : ex0;
             ex1 = ex1 < x0 ? x0 : ex1 > x1 ? x1 : ex1;
             if(ex0 != ex1) {
-                int64_t ez0 = mz + (int64_t)((float)(b[1] + 0x100000 - mz) * far_scale);
-                int64_t ez1 = mz + (int64_t)((float)(b[3] + 0x100000 - mz) * far_scale);
+                int64_t ez0 = b[1] + 0x100000, ez1 = b[3] + 0x100000;
                 ez0 = ez0 < z0 ? z0 : ez0 > z1 ? z1 : ez0;
                 ez1 = ez1 < z0 ? z0 : ez1 > z1 ? z1 : ez1;
                 x0 = ex0;

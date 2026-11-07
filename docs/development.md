@@ -126,7 +126,12 @@ For hunting what the picture did at one place (a building that is gone for a fra
 that picture and of 15, 30 and 45 frames before (a press comes late; view 9 is the free camera) and `MARK 3` on the screen (the log keeps 1,600 bytes for them, about ten; the race's long status block with the timeline goes to the log once a session on the Pocket, it had filled the 4 KB in the first race). Hold A and press Y for the
 free camera: the cars, the clock and the scenery stand still, the camera flies (D-pad forward / back / turn, L R down / up,
 Y X tilt, B fast), A with X marks the place, Start gives the car's camera back. `tools/perf/mark_test.c` tests the lines and the
-camera's directions on the host. The marks are for the PC: the walk tools (`tools/perf`) take their cameras from them.
+camera's directions on the host. The marks are for the PC: `CAM="x y h yaw pitch 0" TRACK=n DEFS="-DFAR_SCALE=... -DLOD_SCALE=..." tools/render.sh out.rgb`
+draws the C model's picture from a mark (with the settings the Pocket had: the first lines of `debug.txt`), and
+`tools/perf/framestats.sh drop <track image> <screen lines> <file of marks "x y h yaw pitch"> [radius]` (`dropcheck.c`, with
+`DROP_ALL=1`, `DROP_ROWS=1`, `DROP_DRAW=1` for more) says for each placement why it is drawn from one mark and not from the next
+(its cell outside the window, out of reach, a view plane, or what it draws): that is how the far buildings that came and went on
+track 5 were found, in the window's edge.
 
 ### Draw distance and level of detail
 

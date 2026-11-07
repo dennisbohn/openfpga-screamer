@@ -274,10 +274,11 @@ block takes level 1 from 12,000 units and level 2 from 16,000, a car's or other 
 read -6000, -8000, -4000, -7000 in the running game at DETAIL HI; the reach is three immediates of the code.
 
 The core does the same with two factors (`firmware/track.h`, each a single constant): `FAR_SCALE` (default 1.5)
-on the far plane, the reach, the window's points, the camera cell's view box (scaled round the cell's middle: left
-as it is, a cell with a box would show only what the original showed, however large the factor, and its neighbours
-without one the full scaled window, so that the far things came and went with the camera's cell; found on track 5,
-where tripling the factor changed the cells walked by 3 %) and the props' reach, `LOD_SCALE` (default 1.5, 0 = no level of
+on the far plane, the reach, the window's points, the props' reach (the camera cell's view box is kept only at 1.0
+or less: a box cut the window to what the original showed however large the factor, tripling it changed the cells walked
+by 3 % on track 5; scaled with the factor its edge, which moves by a cell as the camera crosses cells and by a row with the
+window's length, put the far buildings of track 5, 50,000 units away, in and out of the picture from frame to frame, found
+with the marks of `docs/development.md`, "Marks and the free camera"), `LOD_SCALE` (default 1.5, 0 = no level of
 detail) on the distances of the levels. At 1.0 and 1.0 it is the original's picture. The image carries the
 map's cell table (`tools/make_track.py`, `tb_mmp.c`: key, placements, view box of every cell) so that the walk
 takes the game's cells in the game's order. Against the running original (DOSBox, track 1, two runs: the grid and

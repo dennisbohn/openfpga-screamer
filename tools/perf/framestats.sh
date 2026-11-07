@@ -9,6 +9,9 @@
 #       the frames along the road, see framestats.c (FARSCALE, LODSCALE in the environment; TAG=name)
 #   tools/perf/framestats.sh walk <track image> <camera lines file>
 #       the cell window and the placements in reach for cameras "x height z yaw" (walkcheck.c), written to <file>.result
+#   tools/perf/framestats.sh drop <track image> <lines> <cameras file> [radius]
+#       why a placement is drawn from one camera and not from the next (dropcheck.c): cameras "x y h yaw pitch" (the marks of
+#       debug.txt), lines the screen's height (132 in the cockpit view, else 200); prints the placements whose state differs
 #   tools/perf/framestats.sh race <track n> <label> <out.csv> <steps> <every> [car]
 #       a race on the PC with a robot at the keys, a frame every <every> steps, see racestats.c
 # The firmware is never changed; the counters live in the copies. Game data only under build/.
@@ -33,7 +36,7 @@ build)
     rm -rf "$src"
     mkdir -p "$src"
     cp "$from"/firmware/*.c "$from"/firmware/*.h "$root"/tools/perf/perf.h "$root"/tools/perf/perf.c \
-       "$root"/tools/perf/framestats.c "$root"/tools/perf/racestats.c "$root"/tools/perf/walkcheck.c "$src/"
+       "$root"/tools/perf/framestats.c "$root"/tools/perf/racestats.c "$root"/tools/perf/walkcheck.c "$root"/tools/perf/dropcheck.c "$src/"
     python -I - "$src/hw.h" <<'PY'
 import sys
 p = sys.argv[1]
@@ -52,7 +55,8 @@ PY
     docker_sh -v "$mount:/b" --entrypoint sh $img -c "
         cd /b/stats/src$tag && gcc -O2 -w -include perf.h -DRS_TRACE $DEFS -o ../framestats$tag framestats.c perf.c track.c $LIST -lm &&
         gcc -O2 -w -include perf.h -DRS_TRACE $DEFS -o ../racestats$tag racestats.c perf.c track.c $LIST -lm &&
-        gcc -O2 -w -include perf.h -DRS_TRACE $DEFS -o ../walkcheck$tag walkcheck.c perf.c $LIST -lm"
+        gcc -O2 -w -include perf.h -DRS_TRACE $DEFS -o ../walkcheck$tag walkcheck.c perf.c $LIST -lm &&
+        gcc -O2 -w -include perf.h -DRS_TRACE $DEFS -o ../dropcheck$tag dropcheck.c perf.c $LIST -lm"
     ;;
 sweep)
     image=$1; label=$2; out=$3; step=$4; cars=$5; grid=$6
@@ -60,6 +64,11 @@ sweep)
     docker_sh ${FARSCALE:+-e FARSCALE=$FARSCALE} ${LODSCALE:+-e LODSCALE=$LODSCALE} ${POPIN:+-e POPIN=$POPIN} ${POPIN_DUMP:+-e POPIN_DUMP=$POPIN_DUMP} -v "$mount:/b" --entrypoint sh $img -c \
         "cd /b/stats && ./framestats$tag $(basename "$image") $label $(basename "$out") $step $cars $grid"
     mv "$st/$(basename "$out")" "$out"
+    ;;
+drop)
+    image=$1; lines=$2; cams=$3; radius=$4
+    cp "$image" "$st/$(basename "$image")"
+    docker_sh -i ${DROP_ALL:+-e DROP_ALL=1} ${DROP_ROWS:+-e DROP_ROWS=1} ${DROP_DRAW:+-e DROP_DRAW=1} -v "$mount:/b" --entrypoint sh $img -c "cd /b/stats && ./dropcheck$tag $(basename "$image") $lines $radius" < "$cams"
     ;;
 walk)
     image=$1; out=$2
