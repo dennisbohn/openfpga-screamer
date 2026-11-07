@@ -305,9 +305,9 @@ static int text_number(const uint8_t *t, uint32_t n, int k)
 }
 
 /* Decodes a 320 x 200 PCX picture (8 bits, RLE, the 256 colours after the byte 12 at its end)
-   into out, and its palette into pal. A run does not go on into the next line (the port's
+   into out, and its palette into colours. A run does not go on into the next line (the port's
    pcx_load). Returns 1 on success, 0 if the picture is not of this kind. */
-static int pcx(const uint8_t *d, uint32_t n, uint8_t *out, uint32_t *pal)
+static int pcx(const uint8_t *d, uint32_t n, uint8_t *out, uint32_t *colours)
 {
     if(n < 128 + 769 || d[0] != 10 || d[2] != 1 || d[3] != 8 || d[65] != 1 || d[n - 769] != 12) return 0;
     uint32_t w = le16u(d + 8) - le16u(d + 4) + 1, h = le16u(d + 10) - le16u(d + 6) + 1,
@@ -328,7 +328,7 @@ static int pcx(const uint8_t *d, uint32_t n, uint8_t *out, uint32_t *pal)
         }
     const uint8_t *q = d + end + 1;
     for(int i = 0; i < 256; i++)
-        pal[i] = (uint32_t)q[3 * i] << 16 | (uint32_t)q[3 * i + 1] << 8 | q[3 * i + 2];
+        colours[i] = (uint32_t)q[3 * i] << 16 | (uint32_t)q[3 * i + 1] << 8 | q[3 * i + 2];
     return 1;
 }
 

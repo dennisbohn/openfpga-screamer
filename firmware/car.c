@@ -794,9 +794,9 @@ void car_init(int which, int replay)
         /* The place of the last opponent on the grid (original: STARTL.EXE 0x13ded). In time
            attack ghost_slot() is added to the opponent index, too. */
         int rows, ns = track_opp_count(&rows), start = 0, nn = 0;
-        int k = (ns - 1 < rows ? ns - 1 : rows) - 1 + (car_mode == CAR_ATTACK ? ghost_slot() : 0);
-        if(k > ns - 1) k = ns - 1;
-        const struct track_spline_node *s = k >= 0 ? track_opp_spline(k, &start, &nn) : 0;
+        int last = (ns - 1 < rows ? ns - 1 : rows) - 1 + (car_mode == CAR_ATTACK ? ghost_slot() : 0);
+        if(last > ns - 1) last = ns - 1;
+        const struct track_spline_node *s = last >= 0 ? track_opp_spline(last, &start, &nn) : 0;
         const struct track_dir *d = s && start >= 0 && start < nn
                                     ? nearest_dir((float)s[start].x, (float)s[start].y) : 0;
         if(d) {                                         /* the road's heading there, as the grid's */
@@ -812,8 +812,8 @@ void car_init(int which, int replay)
     mark_at = 0;
     progress = 0.0f;
     ct.ready = 0;
-    for(int k = 0; k < MAX_MODELS; k++)         /* each track's image has its own car models */
-        cmodels[k].ready = 0;
+    for(int i = 0; i < MAX_MODELS; i++)         /* each track's image has its own car models */
+        cmodels[i].ready = 0;
     /* Stand the car on the ground, and put the chase camera and the shadow where they belong. */
     contact();
     chase.init = 0;
@@ -1233,12 +1233,12 @@ static int draw_model(const struct cmodel *m, const struct car_look *lk, float d
     return n;
 }
 
-/* Fills obj and out for car model `model` as lk says (draw_model), with the body dropped by
+/* Fills obj and out for car model k as lk says (draw_model), with the body dropped by
    `drop`. Returns 0 if the model has no blocks. */
-static int draw_car(int model, const struct car_look *lk, float drop, const struct track_cam *cam,
+static int draw_car(int k, const struct car_look *lk, float drop, const struct track_cam *cam,
                     struct track_block *out, struct track_object *obj)
 {
-    const struct cmodel *m = cmodel(model);
+    const struct cmodel *m = cmodel(k);
     if(!m->ncb) return 0;
     obj->n = draw_model(m, lk, drop, cam, out);
     obj->x = lk->x;
@@ -1249,10 +1249,10 @@ static int draw_car(int model, const struct car_look *lk, float drop, const stru
     return 1;
 }
 
-int car_draw(int model, const struct car_look *lk, const struct track_cam *cam, struct track_block *out,
+int car_draw(int k, const struct car_look *lk, const struct track_cam *cam, struct track_block *out,
              struct track_object *obj)
 {
-    return draw_car(model, lk, 0.0f, cam, out, obj);
+    return draw_car(k, lk, 0.0f, cam, out, obj);
 }
 
 int car_mesh_draw(const uint8_t *mesh, const struct car_look *lk, const struct track_cam *cam,

@@ -446,14 +446,14 @@ int track_init(void)
     unr_off = (const int32_t *)(unr + 8);
     unr_blob = unr + 8 + 4 * unr_count;
 
-    /* 1. The sine table, by rotating (c, s) by one step of 2 pi / 2048 at a time. */
+    /* 1. The sine table, by rotating (cosine, sine) by one step of 2 pi / 2048 at a time. */
     const float dc = 0.99999529380957617f, ds = 0.0030679567629659761f;  /* cos, sin of 2 pi / 2048 */
-    float c = 1.0f, s = 0.0f;
+    float cosine = 1.0f, sine = 0.0f;
     for(int i = 0; i <= 512; i++) {
-        sin_q[i] = s;
-        float t = c * dc - s * ds;
-        s = s * dc + c * ds;
-        c = t;
+        sin_q[i] = sine;
+        float t = cosine * dc - sine * ds;
+        sine = sine * dc + cosine * ds;
+        cosine = t;
     }
 
     /* 2. The faces of each drivable mesh, once per mesh: the first face row, in its order. The mesh
@@ -848,11 +848,11 @@ const struct track_opp_row *track_opp_rows(void)
     return (const struct track_opp_row *)(file_start + ld32s(file_start + 0x80) + 8);
 }
 
-const struct track_spline_node *track_opp_spline(int k, int *start, int *n)
+const struct track_spline_node *track_opp_spline(int k, int *first, int *n)
 {
     const uint8_t *o = file_start + ld32s(file_start + 0x80), *p = o + 8 + 20 * ld32s(o + 4);
     for(int j = 0; j < k; j++) p += 8 + 32 * ld32s(p + 4);
-    *start = ld32s(p);
+    *first = ld32s(p);
     *n = ld32s(p + 4);
     return (const struct track_spline_node *)(p + 8);
 }
@@ -1336,9 +1336,9 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
        no memset (picolibc's goes byte by byte). */
     static int cnt[2][256];
     for(int n = 0; n < nv; n++) {
-        uint32_t u = (uint32_t)vis[n] ^ 0x80000000u;
-        cnt[0][u >> 16 & 255]++;
-        cnt[1][u >> 24]++;
+        uint32_t e = (uint32_t)vis[n] ^ 0x80000000u;
+        cnt[0][e >> 16 & 255]++;
+        cnt[1][e >> 24]++;
     }
     for(int pass = 0; pass < 2; pass++) {
         const int sh = 16 + 8 * pass;
