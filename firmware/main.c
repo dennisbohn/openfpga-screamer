@@ -771,8 +771,9 @@ static int run_track(int n, int car, int replay)
         t_check = rdcycle() - t_check;
 
         /* the frame's work for the statistics and the timing overlay (ftime.h): the overlay shows the frames up to this one; the
-           question's picture is not a frame of the race, and the simulation's check is not the frame's work */
-        if (!ask) {
+           question's picture is not a frame of the race, the simulation's check is not the frame's work, and the first frame
+           of the simulation's race (the start lights' countdown run at once, 300 steps) is not a frame at all */
+        if (!ask && !(sim_race && drawn == 0)) {
             if (ft_overlay_on()) ft_draw(fb, ov_fg, ov_bg);
             struct ft_frame ff = { rdcycle() - t_frame - t_check, t_pre, ts.cyc_cull, ts.cyc_piece + ts.cyc_out, 0, rdcycle() - t_wait,
                                    ts.faces, ts.pieces, (uint32_t)car_marker() };
