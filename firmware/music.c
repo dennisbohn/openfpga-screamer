@@ -1,3 +1,12 @@
+/*
+ * The music: the CD source, the choice between it and the FM songs, and the pause (interface,
+ * data flow and timing rules: music.h). The parts of this file:
+ *   - the cue sheet and CD_TRACKS parsers (cue, cd_tracks), run once by music_init;
+ *   - the choice of source (fm_available, choose), made whenever a song starts;
+ *   - the ring (next, done, cd_start, music_frame): reads from SCREAM.gog go into the ring in
+ *     the SDRAM that the mixer plays from;
+ *   - the calls of the game (music_play and the following), which start and stop either source.
+ */
 #include "music.h"
 #include "hw.h"
 #include "dat.h"
@@ -12,36 +21,44 @@
 #define MARGIN      0x400u                  /* left free behind the mixer's place (it holds 64 bytes) */
 #define MASTER      0x4000                  /* the CD master volume at the game's 0x6000 (music.h) */
 #define FM_SLOT     25                      /* DATA/MUSIC.DAT, core/data.json */
-#define FM_MEM      (SDRAM_BASE + 0x1F40000)    /* up to 256 KB (its 200 KB), after the ring */
+#define FM_MEM      (SDRAM_BASE + 0x1F40000)    /* MUSIC.DAT: up to 256 KB (it has 200 KB), after the ring */
 #define FM_MAX      0x40000u
-#define SECTOR      2352u
+#define SECTOR      2352u                   /* bytes in a sector of the image */
 #define MAX_TRACKS  99
 
 static int32_t first[MAX_TRACKS + 2];       /* per CD track its first sector (INDEX 01), -1 none */
 static uint8_t audio[MAX_TRACKS + 2];       /* 1 for an AUDIO track */
-static uint32_t sectors;                    /* the image's */
-/* CD_TRACKS: [0] a mode, [1] the track screen's song, [2..7] tracks 1-6'; these are MENU.DTR's,
-   kept for a GEN.DAT without it */
+static uint32_t sectors;                    /* sectors in the image */
+/* CD_TRACKS of MENU.DTR: [0] a mode (not used here), [1] the song of the track screen, [2..7] the
+   songs of race tracks 1 to 6. The defaults are MENU.DTR's values, used if GEN.DAT has none. */
 static int songs[8] = { 1, 2, 5, 3, 4, 6, 7, 1 };
 
 static int playing;                         /* the CD track playing, 0 none */
-static int paused;                          /* the track music_pause stopped, 0 none */
-static int paused_fm;                       /* the FM song music_pause paused */
+static int paused;                          /* the CD track music_pause stopped, 0 none */
+static int paused_fm;                       /* 1 if music_pause paused an FM song */
 static int cd_count;                        /* the audio tracks the image has */
-static int fm_state;                        /* MUSIC.DAT: 0 not read yet, 1 read and usable, -1 missing or not usable */
+/* MUSIC.DAT: 0 not read yet, 1 read and usable, -1 missing or not usable */
+static int fm_state;
 static int last_source;                     /* the source of the last song: 0 none yet, SRC_CD, SRC_FM */
-static int opt_seen;                        /* the Pocket menu's Music Source as music_frame saw it last: 0 Auto, 1 FM Synth */
-static int paused_song;                     /* the song music_pause paused, CD or FM (0 none) */
+/* the Pocket menu's Music Source as music_frame saw it last: 0 Auto, 1 FM Synth */
+static int opt_seen;
+static int paused_song;                     /* the song music_pause paused, CD or FM, 0 none */
 enum { SRC_CD = 1, SRC_FM };
-static uint32_t paused_at;                  /* its place: bytes into it, whole sectors */
+static uint32_t paused_at;                  /* the paused track's place: bytes into it, whole sectors */
 static uint32_t master = MASTER;            /* music_master */
 int music_on = 1;
-static uint32_t from, to, at;               /* its bytes in the image; the next byte to read */
-static uint32_t written, played, place;     /* frames into the ring, frames played, the mixer's place */
+/* The track playing, in the image: its first byte (from), the byte after its last (to), and the
+   next byte to read (at). */
+static uint32_t from, to, at;
+/* The ring counts in frames (4 bytes): frames written into it, frames the mixer has played, and
+   the mixer's place (16 bits, the frame in the ring) as music_frame saw it last. */
+static uint32_t written, played, place;
 static uint32_t reading;                    /* bytes of the read running, 0 none */
-static uint32_t short_frames;               /* frames in which the mixer had less than 16 frames ahead */
+/* CPU frames in which the ring held less than 16 audio frames ahead of the mixer (for the log) */
+static uint32_t short_frames;
 
-/* the text's next line from *p, without its line break: 0 at the end */
+/* Gets the next line of the text from *p: sets *s and *e to its start and end, without the line
+   break, and moves *p behind it. Returns 0 at the end of the text. */
 static int line(const char **p, const char *end, const char **s, const char **e)
 {
     if (*p >= end) return 0;
@@ -53,7 +70,8 @@ static int line(const char **p, const char *end, const char **s, const char **e)
     return 1;
 }
 
-/* the line's next token from *p (spaces, tabs and CRs between): its length, 0 at the end */
+/* Gets the next token of the line from *p to end: spaces, tabs and CRs before it are skipped.
+   Sets *t to its start and moves *p behind it. Returns its length, 0 at the end of the line. */
 static uint32_t token(const char **p, const char *end, const char **t)
 {
     while (*p < end && (**p == ' ' || **p == '\t' || **p == '\r'))
@@ -64,6 +82,7 @@ static uint32_t token(const char **p, const char *end, const char **t)
     return (uint32_t)(*p - *t);
 }
 
+/* 1 if the token t of length n is exactly the word. */
 static int is(const char *t, uint32_t n, const char *word)
 {
     uint32_t i = 0;
@@ -72,6 +91,8 @@ static int is(const char *t, uint32_t n, const char *word)
     return i == n && !word[i];
 }
 
+/* The decimal number at the start of the token t of length n; reading stops at the first
+   character that is not a digit. */
 static uint32_t dec(const char *t, uint32_t n)
 {
     uint32_t v = 0;
@@ -80,7 +101,9 @@ static uint32_t dec(const char *t, uint32_t n)
     return v;
 }
 
-/* the cue sheet: TRACK nn type, INDEX 01 mm:ss:ff (75 frames, that is sectors, a second) */
+/* Reads the cue sheet into audio[] and first[]. It has lines "TRACK nn type" and, for each
+   track, "INDEX 01 mm:ss:ff". A second has 75 frames, which are sectors, so the first sector of
+   the track is (mm x 60 + ss) x 75 + ff. */
 static void cue(const char *p, const char *end)
 {
     const char *s, *e, *t;
@@ -107,7 +130,8 @@ static void cue(const char *p, const char *end)
     }
 }
 
-/* CD_TRACKS of GEN.DAT's MENU.DTR: eight numbers dN */
+/* Reads the section CD_TRACKS of GEN.DAT's MENU.DTR into songs[]: eight numbers, written dN.
+   If the section is not there or does not have eight, songs[] keeps its defaults. */
 static void cd_tracks(const uint8_t *gen, uint32_t gen_size)
 {
     static uint8_t text[1024];
@@ -131,16 +155,20 @@ static void cd_tracks(const uint8_t *gen, uint32_t gen_size)
             songs[i] = v[i];
 }
 
-/* MUSIC.DAT into the SDRAM and its banks into the driver, once; 1 if the FM music can play. No
-   CD read may be running (slot calls take turns). */
+/* Reads MUSIC.DAT into the SDRAM and gives it to the FM driver (fm_init), once; the result stays
+   in fm_state. Returns 1 if the FM music can play. No CD read may be running, because slot
+   calls take turns. */
 static int fm_available(void)
 {
     if (fm_state == 0) {
         uint32_t size = slot_size(FM_SLOT);
         fm_state = -1;
-        if (!size) dlog_str("music: no MUSIC.DAT (DATA/MUSIC.DAT)\n");
-        else if (size > FM_MAX || slot_read(FM_SLOT, 0, FM_MEM, SLOT_REST) != 0) dlog_str("music: MUSIC.DAT could not be read\n");
-        else if (!fm_init((const uint8_t *)FM_MEM, size)) dlog_str("music: MUSIC.DAT has no usable banks and songs\n");
+        if (!size)
+            dlog_str("music: no MUSIC.DAT (DATA/MUSIC.DAT)\n");
+        else if (size > FM_MAX || slot_read(FM_SLOT, 0, FM_MEM, SLOT_REST) != 0)
+            dlog_str("music: MUSIC.DAT could not be read\n");
+        else if (!fm_init((const uint8_t *)FM_MEM, size))
+            dlog_str("music: MUSIC.DAT has no usable banks and songs\n");
         else {
             fm_state = 1;
             dlog_str("music: MUSIC.DAT read (");
@@ -151,14 +179,17 @@ static int fm_available(void)
     return fm_state > 0;
 }
 
-/* The source for a song that starts now: the Pocket menu's Music Source forces FM Synth when
-   it can; Auto (or no MUSIC.DAT) takes the CD image if its tracks are there, else FM if
-   MUSIC.DAT is; 0 for silence. The choice goes into the log when it changes. */
+/* Chooses the source for a song that starts now. The Pocket menu's Music Source FM Synth takes
+   the FM songs when it can. Auto (or FM Synth without a usable MUSIC.DAT) takes the CD image if
+   its tracks are there, else the FM songs if MUSIC.DAT is usable. Returns SRC_CD, SRC_FM, or 0
+   for silence. The choice goes into the log when it changes. */
 static int choose(void)
 {
     int src = OPT_MUSIC && fm_available() ? SRC_FM : cd_count ? SRC_CD : fm_available() ? SRC_FM : 0;
     if (src != last_source) {
-        dlog_str(src == SRC_FM ? "music: FM synth plays (MUSIC.DAT)\n" : src == SRC_CD ? "music: the CD image plays\n" : "music: silence (no CD image, no MUSIC.DAT)\n");
+        dlog_str(src == SRC_FM ? "music: FM synth plays (MUSIC.DAT)\n" :
+                 src == SRC_CD ? "music: the CD image plays\n" :
+                 "music: silence (no CD image, no MUSIC.DAT)\n");
         last_source = src;
     }
     return src;
@@ -174,22 +205,28 @@ int music_init(const uint8_t *gen, uint32_t gen_size)
         audio[i] = 0;
     }
     cd_tracks(gen, gen_size);
+    /* The cue sheet (at most 4096 bytes) is read into the ring's memory, which no song uses yet. */
     if (size && size <= 4096 && sectors && slot_read(CUE_SLOT, 0, RING_MEM, SLOT_REST) == 0) {
         cue((const char *)RING_MEM, (const char *)RING_MEM + size);
         for (int i = 1; i <= MAX_TRACKS; i++)
             n += audio[i] && first[i] >= 0 && (uint32_t)first[i] < sectors;
     }
     cd_count = n;
-    if (!n) dlog_str("music: no audio tracks (SCREAM.gog, SCREAM.DAT)\n");     /* (the log has 4 KB) */
+    /* The debug log has only 4 KB; this message is written only if there are no audio tracks. */
+    if (!n) dlog_str("music: no audio tracks (SCREAM.gog, SCREAM.DAT)\n");
     dlog_str("music: Music Source option ");
     dlog_hex(OPT_MUSIC);
     dlog_str(OPT_MUSIC ? " (FM Synth)\n" : " (Auto)\n");
     opt_seen = OPT_MUSIC != 0;
-    if (OPT_MUSIC || !n) fm_available();        /* needed from the first song on; else when it is */
+    /* MUSIC.DAT is needed from the first song on if FM Synth is chosen or there is no CD image.
+       Otherwise it is read when a song first needs it. */
+    if (OPT_MUSIC || !n) fm_available();
     return n || fm_state > 0;
 }
 
-/* the next read into the ring, if there is room for it: its bytes, else 0 */
+/* Returns the size of the next read into the ring in bytes, or 0 if the ring has no room for it
+   now. A read is CHUNK bytes, cut short at the end of the ring (it is written from the ring's
+   start again after that) and at the end of the track. */
 static uint32_t next(void)
 {
     uint32_t off = written * 4 % AU_MUSIC_RING, len = CHUNK;
@@ -199,7 +236,8 @@ static uint32_t next(void)
     return len <= room ? len : 0;
 }
 
-/* a read of len bytes is done, with the APF's result r */
+/* Takes a finished read of len bytes, with the APF's result r. On an error the music stops. At
+   the end of the track the next read starts at its beginning again. */
 static void done(uint32_t len, int r)
 {
     if (r) {
@@ -215,12 +253,16 @@ static void done(uint32_t len, int r)
     if (at == to) at = from;                /* the song again, as the drive's poll plays it */
 }
 
-/* CD track n from byte off of it on (a whole sector), the music before stopped */
+/* Starts CD track n at byte off of it, which is a whole sector. Any music playing is stopped
+   first. The ring is filled with reads, waiting for each, before the mixer is started. Nothing
+   plays if music is off or the track is not an audio track inside the image. */
 static void cd_start(int n, uint32_t off)
 {
     int m = n + 1;
     music_stop();
-    if (!music_on || n < 1 || n > MAX_TRACKS || !audio[n] || first[n] < 0 || (uint32_t)first[n] >= sectors) return;
+    if (!music_on || n < 1 || n > MAX_TRACKS || !audio[n] || first[n] < 0 || (uint32_t)first[n] >= sectors)
+        return;
+    /* The track ends where the next one in the cue sheet begins, the last at the image's end. */
     while (m <= MAX_TRACKS && first[m] < 0)
         m++;
     uint32_t last = m <= MAX_TRACKS && (uint32_t)first[m] < sectors ? (uint32_t)first[m] : sectors;
@@ -237,8 +279,8 @@ static void cd_start(int n, uint32_t off)
     AU_MUSIC = 1;
 }
 
-/* Song n (MUSICn.HMP, CD track n + 1) from its start, the music before stopped: from the source
-   choose() says */
+/* Starts song n (MUSICn.HMP, or CD track n + 1) from its start, on the source that choose()
+   gives. Any music playing is stopped first. */
 static void begin(int n)
 {
     music_stop();
@@ -259,6 +301,9 @@ void music_cd(int n)
     begin(n - 1);
 }
 
+/* Pause (see music.h). An FM song is paused in the driver. A CD track is stopped: the frames
+   played up to the mixer's place are counted, and the place is kept as a whole number of
+   sectors in paused_at. */
 void music_pause(void)
 {
     int n = playing;
@@ -275,6 +320,9 @@ void music_pause(void)
     paused_at = off;
 }
 
+/* Resume (see music.h). If the Music Source option was changed during the pause, the song starts
+   from its beginning on the other source. Otherwise the FM song goes on, and the CD track starts
+   again at paused_at. */
 void music_resume(void)
 {
     int song = paused_song;
@@ -282,7 +330,7 @@ void music_resume(void)
     if (song && music_on && (paused || paused_fm)) {
         int old = last_source;
         opt_seen = OPT_MUSIC != 0;
-        if (choose() != old) {              /* Music Source was changed in the pause: the song from its start, on the other source */
+        if (choose() != old) {
             begin(song);
             return;
         }
@@ -313,7 +361,8 @@ void music_master_mu(int32_t v)
 int music_disc(int *lo, int *hi)
 {
     *lo = *hi = 0;
-    if (fm_playing() || paused_fm || (!cd_count && fm_state > 0)) {    /* the songs stand for tracks 2 .. 8 */
+    /* With FM music the songs stand for the CD tracks 2 to 8: song n is CD track n + 1. */
+    if (fm_playing() || paused_fm || (!cd_count && fm_state > 0)) {
         *lo = 2;
         *hi = FM_SONGS + 1;
         return fm_playing() ? fm_playing() + 1 : 0;
@@ -326,10 +375,16 @@ int music_disc(int *lo, int *hi)
     return playing;
 }
 
+/* Once a frame. First it follows the Pocket menu's Music Source: if the option changed, the song
+   starts again from its beginning on the other source. Then the FM driver gets its turn
+   (fm_frame). For a CD track it counts the frames the mixer has played, from its place. The
+   place has 16 bits and wraps with the ring (65536 frames, 1.5 s of music), so it must be read
+   at least once a lap. Then the frame takes a finished read and starts the next one if the ring
+   has room. While a read runs, it does nothing more. */
 void music_frame(void)
 {
     int opt = OPT_MUSIC != 0;
-    if (opt != opt_seen) {                  /* the Pocket menu's Music Source changed: the song goes on from its start on the other source */
+    if (opt != opt_seen) {
         opt_seen = opt;
         int n = playing ? playing - 1 : fm_playing();
         if (n) begin(n);
@@ -354,6 +409,9 @@ void music_frame(void)
     }
 }
 
+/* Stops the music. The mixer is stopped first. A read still running is waited for, for 20 s at
+   most. Then the log gets a note if the track ran short of data, or if the FM song lost notes
+   (see fm_stats), and the FM driver is stopped. */
 void music_stop(void)
 {
     AU_MUSIC = 0;
