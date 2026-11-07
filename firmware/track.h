@@ -240,6 +240,6 @@ void track_cam_axes(const struct track_cam *cam, float f[3], float r[3], float u
      lawn under the road) by 6000, class 1 by 1500, class 2 by 800, class 4 by 200 (a shadow: it is
      drawn before its car). This holds for an object as well (track_object.key).
    The order is far first. On a tie the order is that of the game: the pieces as in the file (each
-   cell's scenery before its road), then the objects. Up to 32 objects. */
+   cell's scenery before its road), then the objects. Up to 64 objects (MAX_OBJS in track.c). */
 void track_draw_cam(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam,
                     struct track_object *objs, int nobj, struct track_stats *st);

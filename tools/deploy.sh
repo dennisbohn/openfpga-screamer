@@ -30,10 +30,10 @@ for f in $files; do
     mkdir -p "$(dirname "$dst")"
     [ -f "$dst" ] && [ "$(stat -c %s "$game/$f")" = "$(stat -c %s "$dst")" ] || cp "$game/$f" "$dst"
     # A file of DATA/ or GFX/ belongs in its folder only: remove a copy directly in common/.
-    case "$f" in */*) rm -f "$card/Assets/screamer/common/${f#*/}" ;; esac   # deployed flat for a while on 2026-10-28
+    case "$f" in */*) rm -f "$card/Assets/screamer/common/${f#*/}" ;; esac
 done
 # The core builds the track image itself, so a track1.bin on the card is not used: remove it.
-rm -f "$card/Assets/screamer/Chainy.Screamer/track1.bin"     # made on the PC until 2026-10, now built by the core
+rm -f "$card/Assets/screamer/Chainy.Screamer/track1.bin"
 sync
 
 # With set -e the script stops here, without a message, if the card holds another bitstream.

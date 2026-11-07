@@ -123,7 +123,7 @@ static const float far_depth[3] = { 27808.0f, 27808.0f, 43808.0f };     /* LOW, 
 #define FOCAL       128.0f
 #define EYE_BACK    128.0f
 #define EYE_LINE(h) ((h) * 65 / 100)
-#define LOOK        12          /* path points ahead for the direction of view */
+#define LOOK        12          /* a track's camera path has at least LOOK + 2 points (checked in track_init) */
 #define PI          3.14159265f
 
 /* The game's view angles (original: STARTL.EXE 0x829e3).
