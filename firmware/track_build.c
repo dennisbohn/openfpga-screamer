@@ -1,7 +1,28 @@
 /*
- * The track image from the game's containers (track_build.h), as tools/make_track.py main()
- * assembles it. The sections go straight into out one after the other; each section's
- * offset and count wait in offs[] and counts[] for the header, which is written last.
+ * Builds the track image (the layout is at the top of track.c) from the game's five .DAT
+ * containers (track_build.h), as tools/make_track.py main() assembles it. Entry point: track_build.
+ * The sections go straight into out, one after the other. Each section's offset and count wait in
+ * offs[] and counts[] for the header, which is written last, with the CRC of each 256 KB block.
+ *
+ * Which entry of which container makes which section (n is the track number):
+ *   section (header offset)  entry                                        made by
+ *   MLB (0x08)               MAPn.MLB, GFX/MAPnH.DAT                      copied unchanged
+ *   UNR (0x10)               MAPn.UNR, GFX/MAPnH.DAT                      copied unchanged
+ *   palette (0x18)           MAPn.COL, GFX/MAPnH.DAT                      tb_palette
+ *   placements (0x1C)        MAPn.MMP, GFX/MAPnH.DAT                      tb_mmp_placements
+ *   camera path (0x24)       MAPnOPP.SPL, DATA/MAPn.DAT                   tb_path
+ *   ground index (0x2C)      MAPn.MMP                                     tb_mmp_ground
+ *   markers (0x34)           MAPn.MRK, DATA/MAPn.DAT                      tb_markers
+ *   cars (0x3C)              CARS.DTR, DATA/GEN.DAT                       tb_cars
+ *   car models (0x44)        AUTO00.3DX .. AUTO06.3DX, GFX/MAPnH.DAT      tb_car_models
+ *   road points (0x4C)       MAPn.MMP                                     tb_mmp_dirs
+ *   walls (0x54)             MAPn.MMP                                     tb_mmp_walls
+ *   race screen (0x68)       GAMEL.SPR, GAMEL.FNT, IMPLET_L.PKC, IMPRES_L.PKC (GFX/GAME.DAT),
+ *                            GAME.TXT (DATA/LOCAL.DAT)                    tb_hud_build
+ *   backdrop (0x78)          MAPn.BCK, GFX/MAPnH.DAT                      tb_backdrop
+ *   opponents (0x80)         MAPnOPP.SPL and MAPnA/B/C.DTR (DATA/MAPn.DAT) tb_opponents
+ * The header also holds the start (0x5C: MAPnOPP.SPL and MAPn.MMP, tb_grid_pose) and TRACK_DATA from
+ * MAPnA/B/C.DTR (0x70, 0x74, 0x7C: tb_track_data).
  */
 #include "track_build.h"
 #include "dat.h"
@@ -17,9 +38,10 @@ int track_build_difficulty = 1;         /* NORMAL, as make_track.py */
 #define FIRST       0x100       /* the first section, after the header */
 #define BLOCK       0x40000     /* bytes per CRC block */
 #define MAX_BLOCKS  28          /* the CRCs that fit into the header (0x90 .. 0x100) */
-#define SECTIONS    14
+#define SECTIONS    14          /* the sections in offs[] and counts[], in the order of the table above */
 #define MODELS      7           /* AUTO00.3DX .. AUTO06.3DX */
 
+/* The CPU's cycle counter, for the cycles in track_build_info. It is 0 on the PC. */
 #ifdef __riscv
 static inline uint32_t now(void)
 {
@@ -31,10 +53,12 @@ static inline uint32_t now(void)
 static inline uint32_t now(void) { return 0; }
 #endif
 
+/* The state of one build: out (cap bytes, pos the next free byte) takes the image, scratch
+   (scratch_cap bytes, used of them taken) the unpacked entries. */
 struct build {
     uint8_t *out, *scratch;
     uint32_t cap, pos, scratch_cap, used;
-    int sections;                           /* written so far */
+    int sections;                           /* the number of sections written so far */
     uint32_t offs[SECTIONS], counts[SECTIONS];
     char track[8];                          /* "MAPn" */
     struct track_build_info *info;
@@ -48,7 +72,8 @@ static void wr32(uint8_t *p, uint32_t v)
     p[3] = (uint8_t)(v >> 24);
 }
 
-/* what stopped the build, for the log; returns 0 */
+/* Records what stopped the build, for the log (info->fail). Returns 0, so that a caller can
+   write `return fail(...)`. */
 static int fail(struct build *b, const char *what)
 {
     size_t n = strlen(what);
@@ -58,7 +83,7 @@ static int fail(struct build *b, const char *what)
     return 0;
 }
 
-/* the track's name with an ending: "MAP1" + ".MMP" */
+/* The track's name with an ending, for example "MAP1" + ".MMP". The result is buf. */
 static const char *name(struct build *b, const char *end, char buf[16])
 {
     size_t n = strlen(b->track);
@@ -67,8 +92,9 @@ static const char *name(struct build *b, const char *end, char buf[16])
     return buf;
 }
 
-/* entry e of the container (file, size) into to (room bytes): 1, or 0 if it does not fit or
-   is malformed (an empty entry as well) */
+/* Unpacks entry e of the container (file, size) into `to` (room bytes) and adds the cycles to the
+   statistics. Returns 1. Returns 0, and records the entry's name as the failure, if the entry does
+   not fit, is malformed, or is empty. */
 static int extract(struct build *b, const uint8_t *file, uint32_t size, const struct dat_entry *e,
                    uint8_t *to, uint32_t room)
 {
@@ -78,7 +104,8 @@ static int extract(struct build *b, const uint8_t *file, uint32_t size, const st
     return ok || fail(b, e->name);
 }
 
-/* the entry called what into the scratch: its start, *size its bytes; 0 if missing or malformed */
+/* Unpacks the entry called `what` into the scratch. Returns where it starts, and *size is its
+   size in bytes. Returns 0 if the entry is missing or malformed. */
 static const uint8_t *unpack(struct build *b, const uint8_t *file, uint32_t file_size, const char *what,
                              uint32_t *size)
 {
@@ -90,17 +117,19 @@ static const uint8_t *unpack(struct build *b, const uint8_t *file, uint32_t file
         return 0;
     }
     if(!extract(b, file, file_size, &e, p, room)) return 0;
-    b->used += e.size + 3 > room ? room : (e.size + 3) & ~3u;   /* the next one word-aligned */
+    b->used += e.size + 3 > room ? room : (e.size + 3) & ~3u;   /* the next entry starts word-aligned */
     *size = e.size;
     return p;
 }
 
-/* where the next section goes, and its room */
+/* Where the next section goes, and the room it has. */
 static uint8_t *at(const struct build *b) { return b->out + b->pos; }
 static uint32_t room(const struct build *b) { return b->cap - b->pos; }
 
-/* the next section is n bytes (0: it could not be made) with count for the header; the gap to
-   the next 256-byte boundary zeroed */
+/* Closes the section that has been written at at(b): it is n bytes long, and `count` goes to the
+   header. n is 0 if the section could not be made; then this fails with `what` as the failure. The
+   gap to the next 256-byte boundary is zeroed, and the next section starts there. Returns 1, or 0
+   on failure. */
 static int section(struct build *b, uint32_t n, uint32_t count, const char *what)
 {
     if(n == 0 || n > room(b)) return fail(b, what);
@@ -113,7 +142,8 @@ static int section(struct build *b, uint32_t n, uint32_t count, const char *what
     return 1;
 }
 
-/* an entry of the graphics container unchanged as the next section (MLB, UNR) */
+/* Takes an entry of the graphics container, MAPn plus `end`, unchanged as the next section. Used
+   for the MLB and the UNR. */
 static int raw(struct build *b, const struct track_files *f, const char *end)
 {
     char buf[16];
@@ -122,7 +152,8 @@ static int raw(struct build *b, const struct track_files *f, const char *end)
     return extract(b, f->gfx, f->gfx_size, &e, at(b), room(b)) && section(b, e.size, e.size, buf);
 }
 
-/* the car models: each .3DX unpacked straight to its place in the section */
+/* The car models section. Each .3DX is unpacked straight to its place in the section (the place
+   comes from tb_car_models_at), then tb_car_models writes the records in front of the files. */
 static int models(struct build *b, const struct track_files *f)
 {
     struct dat_entry e[MODELS];
@@ -142,6 +173,10 @@ static int models(struct build *b, const struct track_files *f)
     return section(b, tb_car_models(x3d, size, MODELS, at(b), room(b)), MODELS, "car models");
 }
 
+/* Builds track n into out and returns the image's size, or 0 on failure (see track_build.h). The
+   sections are written in the order of the table at the top of the file. Each small entry is
+   unpacked into the scratch and then turned into its section; the MLB, the UNR and the car models
+   are unpacked straight into out. */
 uint32_t track_build(const struct track_files *f, int n, uint8_t *out, uint32_t cap,
                      uint8_t *scratch, uint32_t scratch_cap, struct track_build_info *info)
 {
@@ -155,8 +190,10 @@ uint32_t track_build(const struct track_files *f, int n, uint8_t *out, uint32_t 
     memset(out, 0, FIRST);
 
     char buf[16];
-    uint32_t col_n = 0, mmp_n = 0, spl_n = 0, mrk_n = 0, cars_n = 0, spr_n = 0, fnt_n = 0, let_n = 0, res_n = 0,
-             txt_n = 0, bck_n = 0, dtr_n = 0, len, count = 0;
+    /* The unpacked entries (col, mmp, ...) with their sizes (col_n, ...). len is the size of the
+       section just made, and count its count for the header. */
+    uint32_t col_n = 0, mmp_n = 0, spl_n = 0, mrk_n = 0, cars_n = 0, spr_n = 0, fnt_n = 0, let_n = 0,
+             res_n = 0, txt_n = 0, bck_n = 0, dtr_n = 0, len, count = 0;
     const uint8_t *col, *mmp, *spl, *mrk, *cars, *spr, *fnt, *let, *res, *txt, *bck, *dtr;
     uint8_t td[12];                         /* TRACK_DATA: bonus_time, camera_hi, colour */
     if(!raw(&b, f, ".MLB") || !raw(&b, f, ".UNR")) return 0;
@@ -189,15 +226,18 @@ uint32_t track_build(const struct track_files *f, int n, uint8_t *out, uint32_t 
     if(!section(&b, len, len, "race screen")) return 0;
     if(!(bck = unpack(&b, f->gfx, f->gfx_size, name(&b, ".BCK", buf), &bck_n)) ||
        !section(&b, tb_backdrop(bck, bck_n, at(&b), room(&b)), 0, "backdrop")) return 0;
-    char dtr_end[8] = "A.DTR";                  /* MAPn + 'A' + the difficulty + .DTR (0x13251) */
+    /* The name is MAPn, then 'A' plus the difficulty, then .DTR (original: STARTL.EXE 0x13251). */
+    char dtr_end[8] = "A.DTR";
     dtr_end[0] = (char)('A' + track_build_difficulty);
     if(!(dtr = unpack(&b, f->data, f->data_size, name(&b, dtr_end, buf), &dtr_n))) return 0;
     len = tb_opponents(spl, spl_n, dtr, dtr_n, at(&b), room(&b));
     if(!section(&b, len, len, "opponents")) return 0;
+    /* The start goes into the header itself, at 0x5C (12 bytes). */
     if(tb_grid_pose(spl, spl_n, mmp, mmp_n, out + 0x5C, 12) != 12) return (uint32_t)fail(&b, "grid pose");
     if(tb_track_data(dtr, dtr_n, td, sizeof td) != sizeof td) return (uint32_t)fail(&b, "TRACK_DATA");
 
-    /* the header: offsets and counts as make_track.py packs them, then the block CRCs */
+    /* The header: the offsets and counts as make_track.py packs them (the layout is at the top
+       of track.c), then the CRC of each block. */
     uint32_t size = b.pos, blocks = (size - FIRST + BLOCK - 1) / BLOCK;
     if(blocks > MAX_BLOCKS) return (uint32_t)fail(&b, "image size");
     memcpy(out, "SCRK", 4);
@@ -207,7 +247,7 @@ uint32_t track_build(const struct track_files *f, int n, uint8_t *out, uint32_t 
     wr32(out + 0x10, b.offs[1]);
     wr32(out + 0x14, b.counts[1]);
     wr32(out + 0x18, b.offs[2]);
-    for(int k = 3; k <= 10; k++) {
+    for(int k = 3; k <= 10; k++) {          /* placements to walls: offset, count */
         wr32(out + 0x1C + 8 * (k - 3), b.offs[k]);
         wr32(out + 0x20 + 8 * (k - 3), b.counts[k]);
     }
@@ -220,7 +260,7 @@ uint32_t track_build(const struct track_files *f, int n, uint8_t *out, uint32_t 
     wr32(out + 0x84, b.counts[13]);
     wr32(out + 0x88, size);
     wr32(out + 0x8C, blocks);
-    for(uint32_t k = 0; k < blocks; k++) {
+    for(uint32_t k = 0; k < blocks; k++) {  /* the last block may be shorter */
         uint32_t o = FIRST + k * BLOCK, e = size - o < BLOCK ? size : o + BLOCK;
         wr32(out + 0x90 + 4 * k, crc32(out + o, out + e));
     }

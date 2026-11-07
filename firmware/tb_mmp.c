@@ -1,14 +1,22 @@
 /*
- * The track file's sections from MAPn.MMP (tb_mmp.h). Every offset and count read from the
- * file is checked against its size before anything behind it is read.
+ * The track image's map sections, made from MAPn.MMP (tb_mmp.h; the file is in GFX/MAPnH.DAT).
+ * MAPn.MMP is the map: a grid of 256 x 256 cells, each cell with its placements (the records),
+ * road points, walls and view box. Entry points:
+ *   tb_mmp_placements   the placements, and the cell table that ends them
+ *   tb_mmp_ground       the ground index of the drivable placements
+ *   tb_mmp_dirs         the road points
+ *   tb_mmp_walls        the walls
+ *   tb_mmp_road_angle   the heading of the road point nearest to a place (the start heading)
+ * Every offset and count read from the file is checked against its size before anything behind
+ * it is read.
  */
 #include "tb_mmp.h"
 #include <string.h>
 
 #define GRID        256                 /* cells a side, of the MMP and of the ground index */
 #define REC         64                  /* bytes of a cell's record */
-#define DIR_LEN     12                  /* array 2 entry */
-#define WALL_LEN    28                  /* array 3 entry */
+#define DIR_LEN     12                  /* an entry of array 2 (a road point) */
+#define WALL_LEN    28                  /* an entry of array 3 (a wall) */
 #define PL_LEN      20                  /* a placement in the track file */
 #define BOX_LEN     24                  /* a cell's view box (array 4): int32 x0, -, z0, x1, -, z1 */
 #define CELL_LEN    24                  /* an entry of the cell table that ends the placements */
@@ -32,25 +40,27 @@ static void put32(uint8_t *p, uint32_t v)
     put16(p + 2, v >> 16);
 }
 
-/* the int32 at off; beyond the end of the file 0 and *bad set */
+/* Reads the int32 at off. Beyond the end of the file it returns 0 and sets *bad. */
 static int32_t rd32(const uint8_t *p, uint32_t size, uint32_t off, int *bad)
 {
     if(size < 4 || off > size - 4) { *bad = 1; return 0; }
     return (int32_t)get32(p + off);
 }
 
-/* whether n entries of len bytes from off lie in the file */
+/* Whether n entries of len bytes, starting at off, lie in the file. */
 static int fits(uint32_t size, uint32_t off, uint32_t n, uint32_t len)
 {
     return off <= size && n <= (size - off) / len;
 }
 
-/* a cell that holds something: its records (from rec, n0 of run 0, then n1 of run 1), its arrays
-   2 and 3 (offset, entries) and its view box (array 4: the offset of its 24 bytes, 0 if the cell
-   has none) */
+/* A cell that holds something. It has:
+   - its records, from rec: n0 records of run 0, then n1 records of run 1;
+   - array 2 (the road points) and array 3 (the walls), each with an offset and a number of entries;
+   - its view box (array 4): the offset of its 24 bytes, or 0 if the cell has none. */
 struct cell { uint32_t rec, n0, n1, dirs, ndirs, walls, nwalls, box; };
 
-/* the header of the cell at a into c, checked against the file: 1, or 0 if malformed */
+/* Reads the header of the cell at offset a into c, and checks its offsets and counts against the
+   file. Returns 1, or 0 if the cell is malformed. */
 static int read_cell(const uint8_t *p, uint32_t size, uint32_t a, struct cell *c)
 {
     int bad = 0;
@@ -63,7 +73,7 @@ static int read_cell(const uint8_t *p, uint32_t size, uint32_t a, struct cell *c
     int32_t nbox = rd32(p, size, a + 0x24, &bad);
     int32_t box = rd32(p, size, a + 0x10, &bad);
     if(bad || n0 < 0 || n1 < 0 || ndirs < 0 || nwalls < 0) return 0;
-    /* an empty array's offset is never read (0 in the game's files) */
+    /* The offset of an empty array is never read. It is 0 in the game's files. */
     if((n0 || n1) && !fits(size, a + 0x28, (uint32_t)n0 + (uint32_t)n1, REC)) return 0;
     if(ndirs && (dirs < 0 || !fits(size, (uint32_t)dirs, (uint32_t)ndirs, DIR_LEN))) return 0;
     if(nwalls && (walls < 0 || !fits(size, (uint32_t)walls, (uint32_t)nwalls, WALL_LEN))) return 0;
@@ -79,11 +89,12 @@ static int read_cell(const uint8_t *p, uint32_t size, uint32_t a, struct cell *c
     return 1;
 }
 
-/* the walk over the grid as make_track.py's cells(): k the next grid cell (gy * 256 + gx) */
+/* A walk over the grid, as make_track.py's cells() does it. k is the next grid cell (gy * 256 + gx),
+   row the current row's offset, and bad is set when the data is malformed. */
 struct walk { const uint8_t *p; uint32_t size, k; int32_t row; int bad; };
 
-/* the next cell that holds something, row by row: 1 and its header in c, checked against the
-   file; 0 after the last cell, or with w->bad on malformed data */
+/* Gets the next cell that holds something, row by row. Returns 1 and its header in c, checked
+   against the file. Returns 0 after the last cell, or with w->bad set if the data is malformed. */
 static int next_cell(struct walk *w, struct cell *c)
 {
     while(w->k < GRID * GRID) {
@@ -104,9 +115,10 @@ bad:
     return 0;
 }
 
-/* the grid cell column or row of a coordinate, (v + 2^20) >> 13 as Python shifts */
+/* The grid cell column or row of a coordinate: (v + 2^20) >> 13, with the shift of Python. */
 static int32_t grid_of(int32_t v) { return (int32_t)(((int64_t)v + 0x100000) >> 13); }
 
+/* The angle of the road point nearest to (x, y); the rule is described in tb_mmp.h. */
 int tb_mmp_road_angle(const uint8_t *mmp, uint32_t size, int32_t x, int32_t y, float *angle)
 {
     int bad = 0, found = 0;
@@ -126,7 +138,7 @@ int tb_mmp_road_angle(const uint8_t *mmp, uint32_t size, int32_t x, int32_t y, f
             if(!read_cell(mmp, size, (uint32_t)at, &c)) return 0;
             for(uint32_t k = 0; k < c.ndirs; k++) {
                 const uint8_t *e = mmp + c.dirs + DIR_LEN * k;
-                /* the game's imul and add: int32, wrapping */
+                /* The game's imul and add: int32, and wrapping. */
                 uint32_t dx = get32(e + 4) - (uint32_t)x, dy = get32(e + 8) - (uint32_t)y;
                 int32_t d = (int32_t)(dx * dx + dy * dy);
                 if(d < best) {
@@ -138,17 +150,20 @@ int tb_mmp_road_angle(const uint8_t *mmp, uint32_t size, int32_t x, int32_t y, f
         }
     }
     if(!found) return 0;
-    if(a >= 6.28318548f) a -= 6.28318548f;      /* 2 pi in float32, the game's 0x100410 */
+    if(a >= 6.28318548f) a -= 6.28318548f;      /* 2 pi in float32 (original: STARTL.EXE 0x100410) */
     *angle = a;
     return 1;
 }
 
-/* the cell's j-th record in the game's draw-list order: run 1 first, then run 0 */
+/* The file offset of the cell's j-th record in the game's draw-list order: run 1 first, then run 0. */
 static uint32_t record(const struct cell *c, uint32_t j)
 {
     return c->rec + REC * (j < c->n1 ? c->n0 + j : j - c->n1);
 }
 
+/* Makes the placements section (the layout is at tb_mmp_placements in tb_mmp.h). The first walk
+   over the grid writes the placements, 20 bytes each. The second walk writes the cell table that
+   ends the section. */
 uint32_t tb_mmp_placements(const uint8_t *mmp, uint32_t size, uint8_t *out, uint32_t cap,
                            uint32_t *count)
 {
@@ -165,9 +180,9 @@ uint32_t tb_mmp_placements(const uint8_t *mmp, uint32_t size, uint8_t *out, uint
         }
     }
     if(w.bad) return 0;
-    /* and the cell table: every cell's key (row x 256 + column), its first placement and how many
-       it has, the flag and the 4 values of its view box (the game's 0x82e88 reads array 4 of the
-       cell the camera is in) */
+    /* The cell table. Per cell: its key (row x 256 + column), its first placement and how many it
+       has, the flag for a view box, and the box's 4 values. The game reads array 4 of the cell
+       that the camera is in (original: STARTL.EXE 0x82e88). */
     uint32_t cells = 0, at = PL_LEN * n, first = 0;
     struct walk w2 = { mmp, size, 0, 0, 0 };
     if(cap - at < 12) return 0;
@@ -180,7 +195,10 @@ uint32_t tb_mmp_placements(const uint8_t *mmp, uint32_t size, uint8_t *out, uint
         put16(out + at + 2, first);
         put16(out + at + 4, c.n0 + c.n1);
         put16(out + at + 6, c.box != 0);
-        for(int f = 0; f < 4; f++) put32(out + at + 8 + 4 * f, c.box ? get32(mmp + c.box + 4 * (f == 0 ? 0 : f == 1 ? 2 : f == 2 ? 3 : 5)) : 0);
+        /* The box's x0, z0, x1, z1 are the int32 numbers 0, 2, 3, 5 of the 24 bytes. */
+        for(int f = 0; f < 4; f++)
+            put32(out + at + 8 + 4 * f,
+                  c.box ? get32(mmp + c.box + 4 * (f == 0 ? 0 : f == 1 ? 2 : f == 2 ? 3 : 5)) : 0);
         first += c.n0 + c.n1;
         at += CELL_LEN;
         cells++;
