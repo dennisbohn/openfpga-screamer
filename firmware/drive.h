@@ -11,6 +11,8 @@
 #include <stdint.h>
 
 #define PI          3.14159265f
+#define HALF_PI     (PI / 2.0f)
+#define TWO_PI      (PI * 2.0f)
 
 /* Brings the angle a into -PI .. PI. */
 static inline float wrap_pi(float a)

@@ -44,10 +44,7 @@ static int table;
    block does not lie inside it. */
 static const uint8_t *mesh(const uint8_t *gfx, uint32_t size, const char *name, uint8_t *out)
 {
-    uint32_t n = dat_unpack(gfx, size, name, out, MESH_MAX);
-    if(n < 0x340 || le32s(out + 0x14) < 1) return 0;
-    int32_t blk = le32s(out + 0x18);
-    return blk > 0 && (uint32_t)blk + 0x80 <= n ? out : 0;
+    return dat_mesh_ok(out, dat_unpack(gfx, size, name, out, MESH_MAX)) ? out : 0;
 }
 
 /*

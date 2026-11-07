@@ -2,7 +2,7 @@
  * The player's car on the track (car.c). Every step of 1/50 s it runs the physics (drive.h),
  * keeps the car inside the walls, stands it on its four wheels on the drivable surface, follows
  * the lap's markers and the race clocks, and moves the camera that follows the car. It also
- * makes the car itself, an object of twelve blocks, for the drawing.
+ * makes the car itself, an object of up to CAR_BLOCKS blocks, for the drawing.
  * The logic is OpenScreamer's (port/src/main.c: player_reset, player_walls, player_contact,
  * markers_step, chase_step, view_pose, wheels_step, draw_object), which took it from the game.
  * Addresses in the form (original: STARTL.EXE 0x...) are places in the original's executable.

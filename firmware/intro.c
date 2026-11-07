@@ -61,12 +61,9 @@ static float change;
 int intro_init(const uint8_t *graf, uint32_t graf_size, const uint8_t *local, uint32_t local_size,
                uint8_t *mem, uint32_t cap, uint8_t *scratch, uint32_t scratch_cap)
 {
-    struct dat_entry e;
-    uint32_t spr_n = dat_find(graf, graf_size, "LOGOL.SPR", &e) ?
-                     dat_extract(graf, graf_size, &e, scratch, scratch_cap) : 0;
+    uint32_t spr_n = dat_unpack(graf, graf_size, "LOGOL.SPR", scratch, scratch_cap);
     uint32_t used = (spr_n + 3) & ~3u, fnt_n = 0;
-    if(used < scratch_cap && dat_find(graf, graf_size, "ATTRL.FNT", &e))
-        fnt_n = dat_extract(graf, graf_size, &e, scratch + used, scratch_cap - used);
+    if(used < scratch_cap) fnt_n = dat_unpack(graf, graf_size, "ATTRL.FNT", scratch + used, scratch_cap - used);
     if(!spr_n || !fnt_n ||
        !tb_hud_build(scratch, spr_n, scratch + used, fnt_n, scratch, 0, scratch, 0, scratch, 0, mem, cap))
         return 0;
@@ -77,8 +74,7 @@ int intro_init(const uint8_t *graf, uint32_t graf_size, const uint8_t *local, ui
     font = (const struct blit_font *)(hud + 8 + 12 * nimg);
     /* Cut ATTR.TXT into lines. Each line ends at its CR or LF, and a LF after that is skipped.
        A line that starts with '*' is a comment and is dropped. */
-    uint32_t n = dat_find(local, local_size, "ATTR.TXT", &e) ?
-                 dat_extract(local, local_size, &e, (uint8_t *)text, sizeof text - 1) : 0;
+    uint32_t n = dat_unpack(local, local_size, "ATTR.TXT", (uint8_t *)text, sizeof text - 1);
     nline = 0;
     for(uint32_t i = 0; i < n && nline < LINES;) {
         uint32_t end = i;
@@ -96,10 +92,8 @@ void intro_start(const uint8_t *dat, uint32_t dat_size, int n)
     /* The file: count, start, then nodes of 14 words (word 0 is not used, then x, y, height). */
     static int32_t spl[2 + 14 * POSTS];
     char name[16] = "MAPnCAM.SPL";
-    struct dat_entry e;
     name[3] = (char)('0' + n);
-    uint32_t len = dat && dat_find(dat, dat_size, name, &e) && e.size <= sizeof spl ?
-                   dat_extract(dat, dat_size, &e, (uint8_t *)spl, sizeof spl) : 0;
+    uint32_t len = dat ? dat_unpack(dat, dat_size, name, (uint8_t *)spl, sizeof spl) : 0;
     nposts = 0;
     for(int32_t k = 0; len >= 8 && k < spl[0] && k < POSTS && 8 + 56 * (uint32_t)(k + 1) <= len;
         k++, nposts++)

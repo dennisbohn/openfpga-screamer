@@ -97,10 +97,11 @@ static inline uint32_t in_keys(void)
 #define SDRAM_UBASE     0xF4000000u         /* the uncached view of the same memory */
 #define SDRAM_SIZE      (64u << 20)         /* 64 MB */
 /* The program in the SDRAM (program.bin, data slot 2): a 16-byte header that the boot loader
-   checks, then code and data. It lies above the 32 MB that the memory test writes in, and it
-   ends below the test's last window (the last 2 KB of the SDRAM). */
+   checks, then code and data. It lies above the 32 MB that the memory test writes in. The file
+   is at most PROG_MAX, the 1 MB of the data slot. Together with its bss the program may use the
+   15 MB up to the saved games (link_prog.ld, save.h). */
 #define PROG_BASE       (SDRAM_BASE + 0x3000000u)
-#define PROG_MAX        (0x1000000u - 0x800u)
+#define PROG_MAX        0x100000u
 #define PROG_MAGIC      0x50524353u         /* "SCRP" */
 
 #define SYS_FLAGS       REG32(0xF0000008u)  /* R, [0] FLAG_SIM */
@@ -208,23 +209,21 @@ static inline uint32_t in_keys(void)
 #define SU_FAR          REG32(0xF00030B0u)  /* W, 32 bits (8 fraction bits): depth of the far plane */
 #define SU_CORNERS(n)   ((uint32_t)(n) << 10)  /* SU_MODE [12:10]: corners of the polygon, 3 or 4 */
 
-/* The geometry unit (core/src/fpga/core/geom.v, C model geom.h): draws the pieces of the track.
-   The other registers of this unit are GU_PUSH, below the blitter's. */
+/* The geometry unit (core/src/fpga/core/geom.v, C model geom.h): draws the pieces of the track. */
 #define GU_MLB          REG32(0xF0003144u)  /* W, 32 bits: SDRAM byte address of the MLB file */
 #define GU_MODE         REG32(0xF0003148u)  /* W, [8] the buffer drawn into */
 #define GU_FACES        REG32(0xF0003150u)  /* R, 32 bits (faces): faces handed on. W: clears */
 #define GU_CLOCKS       REG32(0xF0003154u)  /* R, 32 bits (clocks): clocks busy. W: clears */
 #define GU_INVAL        REG32(0xF0003158u)  /* W, 32 bits: any value forgets the cached mesh lines */
-/* The blitter (core/src/fpga/core/blit.v, C model blit.h) */
-#define BL_PUSH         REG32(0xF0003180u)  /* W, 32 bits: next word of a command; waits while the
-                                               command buffer is full */
-#define BL_CLOCKS       REG32(0xF0003184u)  /* R, 32 bits (clocks): clocks busy. W: clears */
-/* Geometry unit: the piece buffer (listed after the blitter's registers) */
 #define GU_PUSH         REG32(0xF000315Cu)  /* W, 32 bits: next word of a piece; waits while the piece
                                                buffer is full. A piece is 19 words (struct gu_piece):
                                                m[9] matrix, t[3] origin, e[3] eye, mesh object and
                                                block (SDRAM byte addresses), face row and phase,
                                                reflection */
+/* The blitter (core/src/fpga/core/blit.v, C model blit.h) */
+#define BL_PUSH         REG32(0xF0003180u)  /* W, 32 bits: next word of a command; waits while the
+                                               command buffer is full */
+#define BL_CLOCKS       REG32(0xF0003184u)  /* R, 32 bits (clocks): clocks busy. W: clears */
 
 /* The sound mixer (core/src/fpga/core/audio.v, C model mixer.h): 32 voices of 8-bit unsigned
    samples in the SDRAM, 48 kHz stereo. A voice's registers take effect in the next pass. */

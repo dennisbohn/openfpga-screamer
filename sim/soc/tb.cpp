@@ -135,8 +135,11 @@ static std::vector<Slot> data_slots(const char *path) {
     while (p != std::string::npos && (p = s.find('{', p)) != std::string::npos) {
         size_t e = s.find('}', p);
         std::string o = s.substr(p, e - p);
-        Slot slot{0, "", o.find("\"nonvolatile\"") != std::string::npos};
-        size_t k = o.find("\"id\"");
+        Slot slot{0, "", false};
+        size_t k = o.find("\"nonvolatile\"");
+        if (k != std::string::npos)             // the value after the colon, "true" or "false"
+            slot.save = o.compare(o.find_first_not_of(" \t\r\n", o.find(':', k) + 1), 4, "true") == 0;
+        k = o.find("\"id\"");
         if (k != std::string::npos)
             slot.id = uint32_t(strtoul(o.c_str() + o.find(':', k) + 1, nullptr, 0));
         k = o.find("\"filename\"");
@@ -696,6 +699,7 @@ int main(int argc, char **argv) {
             s.bridge_write(0xF8002000u + 8 * uint32_t(extra), 27);
             s.bridge_write(0xF8002004u + 8 * uint32_t(extra), n);
             printf("the %s screen (slot 27)\n", n == 2 ? "car" : "track");
+            extra++;
         }
     }
     {

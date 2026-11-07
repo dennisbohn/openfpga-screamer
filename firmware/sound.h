@@ -42,7 +42,8 @@ enum { SND_SKID, SND_CRASH, SND_OPP_ENGINE, SND_ENGINE, SND_WALL, SND_HIT, SND_C
 int snd_init(const uint8_t *sound, uint32_t sound_size, const uint8_t *gen, uint32_t gen_size);
 
 /* Effect numbers of the menu's table. Each comment names the row and the places in STARTL.EXE
-   that play it (original: STARTL.EXE). */
+   that play it (original: STARTL.EXE). The table has nine rows (smenu1..9); these are the seven that the
+   menu code plays. */
 #define SND_MENU_PAGE   0       /* smenu1: a page opened or left (0x28b5f, 0x280ec) */
 #define SND_MENU_LINE   1       /* smenu2: up or down a line (0x283ca, 0x284ba) */
 #define SND_MENU_OPTION 2       /* smenu3: an option changed (0x28df0) */

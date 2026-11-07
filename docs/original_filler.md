@@ -199,8 +199,10 @@ If everything lies in `0 <= x <= 319`, `0 <= y <= B` (precisely: `minY >= 0`, `m
 `(maxX << 16 | maxY) <= 319 << 16`), the polygon goes straight to the edge walk. Otherwise it goes through the
 2D clipper first.
 
-### 2D clipper (`0xd4b60`; 64: `0xdbbe0`, 224: `0xccd50`, 160: `0xdaba4`, same code;
-128: `0xd8444` without u, v)
+### 2D clipper (`0xd4b60`)
+
+The same code is in routine 64 at `0xdbbe0`, in 224 at `0xccd50` and in 160 at `0xdaba4`; routine 128 has it
+at `0xd8444` without u, v.
 
 The 2D clipper is Sutherland-Hodgman in four stages, each only if needed:
 
@@ -229,10 +231,11 @@ The plane y = c is analogous with the roles swapped (`x = x_a + (x_i-x_a)*(c-y_a
 quotient must fit in 16 bit (otherwise #DE; unreachable for |coordinate| < 16000). Afterwards `imin` is
 determined again from the clipped list (same rule), and the same edge walk is used.
 
-## 5. Edge walk (routine 16: `0xd55ff`...; 64: `0xdc443`; 224: `0xcd5bf`; 160: `0xdb59b`;
-128: `0xd8958`)
+## 5. Edge walk (routine 16: `0xd55ff`...)
 
 This section answers how the original walks the edges of a polygon and stores the values for each column.
+The other routines have the same walk: 64 at `0xdc443`, 224 at `0xcd5bf`, 160 at `0xdb59b` and 128 at
+`0xd8958`.
 
 Two chains start at corner `imin`: **A forward** (corner imin, imin+1, ...) and **B backward** (imin,
 imin-1, ...). Edges with `dx <= 0` (16-bit difference) are skipped in both chains. A is the **upper** and B

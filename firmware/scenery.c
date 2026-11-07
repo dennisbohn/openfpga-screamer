@@ -27,7 +27,6 @@
 #define MOVING_RADIUS 12000.0f  /* round a vehicle's origin (the jet) */
 #define MOVING_BLOCKS 4           /* blocks of a moving thing's mesh (the helicopter has 2) */
 #define FRAMES      (DRIVE_DT * 30.0f)  /* the game's frames in a step; a frame is 1/30 s on a PC */
-#define HALF_PI     1.5707964f
 
 struct prop {
     float x, y, h, yaw, pitch, roll;    /* pitch and roll as car_flat_block() takes them */
@@ -107,8 +106,7 @@ static const uint8_t *mesh(const uint8_t *gfx, uint32_t gfx_size, const char *ce
         name[k++] = (char)(*c >= 'a' && *c <= 'z' ? *c - 32 : *c);
     memcpy(name + k, ".3DX", 5);
     uint32_t m = dat_unpack(gfx, gfx_size, name, at, (uint32_t)(end - at));
-    int32_t blk = m >= 0x340 && le32s(at + 0x14) >= 1 ? le32s(at + 0x18) : 0;
-    if(blk <= 0 || (uint32_t)blk + 0x80 > m) return 0;
+    if(!dat_mesh_ok(at, m)) return 0;
     const uint8_t *out = at;
     at += (m + 3) & ~3u;
     return out;

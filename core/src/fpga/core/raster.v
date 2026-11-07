@@ -14,7 +14,8 @@
 //   sorting by y (a.y <= b.y <= c.y); the rows are a.y .. c.y.
 //   An edge is evaluated from its upper end: slope = ((x1 - x0) << 16) / (y1 - y0), truncated
 //   towards zero, and x = (x0 << 12) + slope * (16 r - y0) / 16 in 16.16 pixels at the top of
-//   row r. One slope is added per row, and the corner's x is used at the edge's lower end.
+//   row r. The corners lie on whole pixels, so the edge unit below works in whole pixels
+//   (x = (X0 << 16) + slope (r - Y0)), which is the same. One slope is added per row, and the corner's x is used at the edge's lower end.
 //   In a row above c.y an edge from xt (top) to xb (bottom) gives the range
 //   [min(ceil xt, floor xb + 1), max(floor xt + 1, ceil xb)). The span of the row runs from
 //   the left edge's start to the right edge's end. Row c.y is the corners on it. Everything

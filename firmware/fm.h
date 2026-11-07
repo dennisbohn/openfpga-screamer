@@ -53,6 +53,6 @@ void fm_fade(int32_t f);
 /* Returns the song playing (not paused), 0 if none. */
 int fm_playing(void);
 /* For the log: the number of notes the driver had no voice for, of frames in which the hardware's
-   queue had no room, and of times the song's time ran behind the clock (the CPU did not come
-   for 120 ms). */
-void fm_stats(uint32_t *no_voice, uint32_t *full, uint32_t *behind);
+   queue had no room and the song waited, of register writes lost because the queue had no room,
+   and of times the song's time ran behind the clock (the CPU did not come for 120 ms). */
+void fm_stats(uint32_t *no_voice, uint32_t *full, uint32_t *lost, uint32_t *behind);

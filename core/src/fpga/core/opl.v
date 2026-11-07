@@ -19,7 +19,7 @@
 //   The queue holds 256 writes (one M10K). It releases the first when `now - time` has not
 //   gone negative (16 bits, so a time at most 0.65 s from `now`). Writes of the same time go
 //   one after the other.
-//   Between two writes the chip needs 128 of its clocks (36 us): it takes a register's value
+//   Between two writes the unit waits 129 of the chip's clocks (36 us): it takes a register's value
 //   into its operator when that comes round, once in 72 clocks, and forgets it at the next
 //   write (the original's driver waited about as long). A write that is late is made at
 //   once, the later ones after it: the music slips by what the firmware was late, no more.

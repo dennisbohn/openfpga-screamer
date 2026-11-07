@@ -5,7 +5,7 @@
 //
 // Work flow
 //   1. The CPU writes a piece (19 words, see the registers below) into a buffer of 2048
-//      words (107 pieces) and goes on with its work. soc.v holds a write back only while
+//      words (107 whole pieces) and goes on with its work. soc.v holds a write back only while
 //      the buffer is full.
 //   2. The unit takes a piece once all of it is in the buffer. It reads the mesh from the
 //      SDRAM itself: the block header, the vertices, the face row for the eye's side, the

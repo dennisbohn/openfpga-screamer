@@ -504,8 +504,10 @@ static void pause_race(uint32_t st)
  * end's texts, because the original draws the scene anew (0x81870) and nothing over it.
  * Up or left means YES, down or right means NO. Each press plays a click (SFXSBASE.DTR's row 6, 0x21b0e,
  * 0x21b47). B or START takes the answer, A or SELECT means NO (the original's ESC).
- * st is VID_STATUS of the frame in which the question starts. Returns 1 for YES.
+ * st is VID_STATUS of the frame in which the question starts. Returns RACE_AGAIN for YES and RACE_LEAVE for NO.
  */
+enum { RACE_LEAVE, RACE_AGAIN, RACE_REPLAY };   /* how a race ends: NO, YES, its replay next */
+
 static int play_again(uint32_t st)
 {
     uint32_t keys_before = in_keys(), last_frame = VID_FRAME(st), ticks = 0;
@@ -519,8 +521,8 @@ static int play_again(uint32_t st)
         if (press & (KEY_UP | KEY_LEFT | KEY_DOWN | KEY_RIGHT)) snd_play(SND_CLICK);
         if (press & (KEY_UP | KEY_LEFT)) no = 0;
         if (press & (KEY_DOWN | KEY_RIGHT)) no = 1;
-        if (press & (KEY_B | KEY_START)) return !no;
-        if (press & (KEY_A | KEY_SELECT)) return 0;
+        if (press & (KEY_B | KEY_START)) return no ? RACE_LEAVE : RACE_AGAIN;
+        if (press & (KEY_A | KEY_SELECT)) return RACE_LEAVE;
         keys_before = keys;
         still_steps(st, &last_frame, &ticks);
         draw_buf = !(st & VID_FRONT);
@@ -534,8 +536,6 @@ static int dashboard_init(void);
 /* The end screen shows for 5 s, then the replay or PLAY AGAIN? follows (original: STARTL.EXE 0x21048). */
 #define OVER_STEPS  250
 #define REC_MAX     60000       /* the most controls the replay can hold: 20 minutes of steps */
-
-enum { RACE_LEAVE, RACE_AGAIN, RACE_REPLAY };   /* how a race ends: NO, YES, its replay next */
 
 /* The controls of the race, one record for each step (from car_keys()). The original records its controls in
    every frame (original: STARTL.EXE 0x22f34). rec_n records are stored. rec_full is set when one more did not
@@ -1044,8 +1044,12 @@ static void sound_wait(void)
     uint32_t size = sound_reading, body = size & ~3u, t0 = rdcycle();
     if (!size) return;
     sound_reading = 0;
-    while (slot_busy())
-        if (rdcycle() - t0 > 20u * CPU_HZ) return;
+    while (slot_busy()) {
+        if (rdcycle() - t0 > 20u * CPU_HZ) {
+            dlog_str("sound: SOUND.DAT not read after 20 s, the race has no sound\n");
+            return;
+        }
+    }
     if (slot_result() == 0 &&
         (size == body || slot_read(SOUND_SLOT, body, SOUND_MEM + body, SLOT_REST) == 0))
         sound_size = size;

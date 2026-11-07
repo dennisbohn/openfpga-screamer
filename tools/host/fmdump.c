@@ -178,10 +178,11 @@ int main(int argc, char **argv)
         return 0;
     }
 
-    uint32_t lost, full, behind;
-    fm_stats(&lost, &full, &behind);
+    uint32_t no_voice, full, lost, behind;
+    fm_stats(&no_voice, &full, &lost, &behind);
+    (void)lost;     /* the writes lost are counted above as dropped_full */
     printf("song %d: %.1f s, %ld frames, %u ticks run, %u rounds, %u notes, %u without a voice\n",
-           song, seconds, frames, fm_host_tick, fm_host_rounds, fm_host_notes, lost);
+           song, seconds, frames, fm_host_tick, fm_host_rounds, fm_host_notes, no_voice);
     printf("  writes %ld (%.1f a tick), released %ld, dropped (full) %ld, queue at most %ld of %d\n",
            writes, (double)writes / (fm_host_tick ? fm_host_tick : 1), released, dropped_full, max_fill,
            QUEUE_LEN);

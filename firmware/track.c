@@ -686,7 +686,7 @@ void track_backdrop_blit(struct blit_list *l, const struct rs_clip *clip, const 
     int w = clip->x1 - clip->x0, h = clip->y1 - clip->y0, eye = EYE_LINE(h);
     int32_t s = view_sin16(view_angle(cam->pitch));             /* the game's sine (original: [0x8228c]) */
     int top = eye + 22 - 256 + ((-54152 * s) >> 7) / -54152;
-    int heading = (int)lrintf((cam->yaw + 1.5707964f) * (1024.0f / PI));
+    int heading = (int)lrintf((cam->yaw + HALF_PI) * (1024.0f / PI));
     int col = ((2047 - heading) >> 1) & 511;
     int rows = 256 + (top < 0 ? top : 0);
     if(top + 256 > h) rows -= top + 256 - h;

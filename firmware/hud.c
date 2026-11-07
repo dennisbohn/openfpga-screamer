@@ -162,8 +162,8 @@ static void radar(struct blit_list *l)
     }
     /* The heading in 2048ths of a turn (original: ds:0xe38, 0xe3c), with the fraction cut off,
        and its sine and cosine. */
-    int32_t a = (int32_t)(c->yaw * 1024.0f / 3.14159274f) & 0x7FF;
-    float ar = (float)a * (3.14159265f / 1024.0f);
+    int32_t a = (int32_t)(c->yaw * 1024.0f / PI) & 0x7FF;
+    float ar = (float)a * (PI / 1024.0f);
     int32_t sn = (int32_t)lrintf(sinf(ar) * 32768.0f), cs = (int32_t)lrintf(cosf(ar) * 32768.0f);
     if(sn > 32767) sn = 32767;
     if(cs > 32767) cs = 32767;
@@ -226,7 +226,7 @@ static void clock_text(char *p, float t)
    from a pixel to each side of it. len is its length; angle is in radians. */
 static void needle(struct blit_list *l, int px, int py, int len, float angle, int colour)
 {
-    float a = angle - 2.0f, b = a + 1.5707964f;
+    float a = angle - 2.0f, b = a + HALF_PI;
     int tx = (int)((float)px + (float)len * sinf(a)), ty = (int)((float)py - (float)len * cosf(a));
     blit_line(l, px, py, tx, ty, 0, 0, 320, 200, colour);
     blit_line(l, (int)((float)px + sinf(b)), (int)((float)py - cosf(b)), tx, ty, 0, 0, 320, 200, colour);

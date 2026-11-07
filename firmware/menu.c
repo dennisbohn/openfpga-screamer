@@ -36,7 +36,6 @@
 #define TAKE        0.8f
 #define LIT         0.6f
 #define DT          0.02f           /* a step */
-#define TWO_PI      6.2831853f
 #define PIC_W       320             /* MENU1L.PCX, MENU3L.PCX, MENU4L.PCX */
 #define PIC_H       200
 /* The most blocks that one frame draws: three models (the chosen one and its neighbours), or a
@@ -91,7 +90,7 @@
 #define LINE_NEW_TRACK 53           /* NEW TRACK AVAILABLE */
 /* MENUL.SPR: the logos 14 and 15 (original: STARTL.EXE 0x2df38). */
 #define SPR_LOGO    14
-#define FONT_MSG    0
+#define FONT_MSG    0               /* the same font as FONT_CAR */
 #define LINE_ENTER  56              /* PRESS ENTER TO CONTINUE */
 /* CHAMP.TXT's lines, not counting its '*' lines, and its blocks (each ends with a line with a
    '#'). */
@@ -132,7 +131,7 @@ static const struct row { float gap, cam_h, cam_z, pitch, turn; } rows[2] = {
     /* tracks (original: STARTL.EXE 0x2c078, 0x2cb88): 36 degrees down */
     { 40000.0f, 4800.0f, 13000.0f, -0.6283185f, 0.7853982f },
     /* cars (original: STARTL.EXE 0x2bdcc, 0x2ca10): 22.5 degrees down */
-    { 4000.0f, 500.0f, 4100.0f, -0.3926991f, 1.5707964f },
+    { 4000.0f, 500.0f, 4100.0f, -0.3926991f, HALF_PI },
 };
 
 /* The entries that menu_init() reads from GFX/MENU.DAT and from GFX/GRAF.DAT (menu.h). The
@@ -172,7 +171,7 @@ static char name_title[32];
 static char words[WORDS][16], enter_text[32], new_track[32], champ_text[CHAMP_LINES][24];
 /* on is the screen that is shown (MENU_*_SCREEN). */
 static int on, ncars, cars_on, pages_on, pick, way, block[CHAMP_BLOCKS + 1], idle;
-static float turn[2] = { 1.5707964f, 1.5707964f }, cam_x, from_x, to_x, slide;
+static float turn[2] = { HALF_PI, HALF_PI }, cam_x, from_x, to_x, slide;
 
 /* The game's pages (original: STARTL.EXE 0x2de4). In the game an item has 16 bytes: MENU.TXT's
    line, its id, its value and its highest value. An option (id 1234) shows its line + its
@@ -852,6 +851,19 @@ void menu_view(struct su_view *v)
     v->far8 = (int32_t)((43808.0f + 128.0f) * 256.0f);
 }
 
+/* Puts the block t, whose squared distance from the camera is d, into b[0 .. n] so that the furthest block
+   comes first. n blocks are in b already, and key[] holds their distances. */
+static void insert_by_distance(struct track_block *b, float *key, int n, const struct track_block *t, float d)
+{
+    int i = n;
+    for(; i > 0 && key[i - 1] < d; i--) {
+        b[i] = b[i - 1];
+        key[i] = key[i - 1];
+    }
+    b[i] = *t;
+    key[i] = d;
+}
+
 /* Makes the blocks of the chosen track and of its neighbours, as far as they are in view (half
    a gap to the camera's side), into b. They go block by block with the furthest block's middle
    first, as the game draws an object's blocks (original: STARTL.EXE 0x8ac58). Returns how many
@@ -880,13 +892,7 @@ static int map_blocks(const struct track_cam *cam, struct track_block *b)
             float dx = t.o[0] + c * mx - s * mz - cam->x, dy = t.o[1] + s * mx + c * mz - cam->y,
                   dh = t.o[2] + my - cam->h;
             float d = dx * dx + dy * dy + dh * dh;      /* the squared distance of the middle */
-            int i = n++;
-            for(; i > 0 && key[i - 1] < d; i--) {
-                b[i] = b[i - 1];
-                key[i] = key[i - 1];
-            }
-            b[i] = t;
-            key[i] = d;
+            insert_by_distance(b, key, n++, &t, d);
         }
     }
     return n;
@@ -934,13 +940,7 @@ static int letter_blocks(const struct track_cam *cam, struct track_block *b)
                                  (0x35Eu * (uint32_t)l->code + 0x226u) >> 2 };
         float dx = t.o[0] - cam->x, dy = t.o[1] - cam->y, dh = t.o[2] - cam->h,
               d = dx * dx + dy * dy + dh * dh;
-        int i = n++;
-        for(; i > 0 && key[i - 1] < d; i--) {
-            b[i] = b[i - 1];
-            key[i] = key[i - 1];
-        }
-        b[i] = t;
-        key[i] = d;
+        insert_by_distance(b, key, n++, &t, d);
     }
     return n;
 }

@@ -125,7 +125,7 @@ static void playback(void)
     float x = curve((float)a->x, (float)b->x, (float)c->x, (float)d->x, fa, fd, t);
     float y = curve((float)a->y, (float)b->y, (float)c->y, (float)d->y, fa, fd, t);
     float moved = sqrtf((x - look.x) * (x - look.x) + (y - look.y) * (y - look.y));
-    look.spin = fmodf(look.spin - moved / 108.6f, 6.2831853f);
+    look.spin = fmodf(look.spin - moved / 108.6f, TWO_PI);
     look.x = x;
     look.y = y;
     look.z = curve((float)a->z, (float)b->z, (float)c->z, (float)d->z, fa, fd, t);
@@ -147,7 +147,7 @@ void ghost_step(void)
         q->x = (int32_t)lk.x;
         q->y = (int32_t)lk.y;
         q->z = (int32_t)lk.z;
-        q->yaw = (int16_t)(int32_t)lrintf(fmodf(lk.yaw, 6.2831853f) * TO_ANGLE);
+        q->yaw = (int16_t)(int32_t)lrintf(fmodf(lk.yaw, TWO_PI) * TO_ANGLE);
         q->pitch = (int16_t)(int32_t)lrintf(lk.pitch * TO_ANGLE);
         q->roll = (int16_t)(int32_t)lrintf(lk.roll * TO_ANGLE);
         q->info = (uint16_t)(((lk.phase << 2) & 0x6000u) |

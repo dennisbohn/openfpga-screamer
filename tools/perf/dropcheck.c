@@ -112,11 +112,6 @@ int main(int argc, char **argv)
             else if (vr + rad < -half_w * (vf + rad)) s = "4";
             else if (vu - rad > up * (vf + rad)) s = "5";
             else if (vu + rad < -down * (vf + rad)) s = "6";
-            else {
-                const uint8_t *blk = track_lod_block(unr_blob + unr_off[pieces[i].obj], 0, dist[k], 0);
-                (void)blk;
-                s = "V";
-            }
             strcpy(st[k], s);
             count_v[k] += s[0] == 'V';
             count_near[k] += s[0] == 'V' && dist[k] < 12000.0f;

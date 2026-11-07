@@ -61,9 +61,9 @@ static int sim;                 /* 1 when running in the simulation */
 static const char *test;        /* the name of the running test, for the log */
 static void (*progress)(const char *what, uint32_t addr);   /* reports the test and the address (boot.c) */
 
-/* The results that memtest_rows() shows on the screen */
-/* the longest good run of phase steps: its first step and its length; the step settled on */
-static int phase_first = -1, phase_len, phase_centre;
+/* The results that memtest_rows() shows on the screen. The longest good run of phase steps: its length;
+   the step settled on. */
+static int phase_len, phase_centre;
 static uint32_t refresh_per_s, line_hit, line_miss, read_mbs, write_mbs;
 static uint8_t slot_state;      /* the program.bin test: 0 not run, 1 ok, 2 failed */
 static uint32_t prog_entry;     /* program.bin's entry address, set when its check passed */
@@ -297,12 +297,12 @@ static void t_patterns(const struct memory *m)
            second reads them back, each round in a different order (the multipliers are odd, so
            each order visits every line once). */
         uint32_t lines = WINDOW / 32;
-        for(int check = 0; check < 2; check++) {
+        for(int reading = 0; reading < 2; reading++) {
             for(uint32_t i = 0; i < lines; i++) {
-                uint32_t line = (i * (check ? 0x85EBCA77u : 0x9E3779B1u)) & (lines - 1);
+                uint32_t line = (i * (reading ? 0x85EBCA77u : 0x9E3779B1u)) & (lines - 1);
                 for(uint32_t o = line * 32; o < line * 32 + 32; o += 4) {
                     uint32_t v = o * 0x2545F491u, g;
-                    if(!check) V32(m->base + o) = v;
+                    if(!reading) V32(m->base + o) = v;
                     else if((g = V32(m->base + o)) != v) fail(m, o, v, g);
                 }
             }
@@ -461,7 +461,6 @@ static void t_phase(void)
     if(!sdram_reinit()) fail(sd, 0, MEM_READY, MEM_STATUS);
     /* The longest good run must have at least 8 steps (1 in the simulation) */
     if(best < (sim ? 1 : 8)) fail(sd, 0, 8, (uint32_t)best);
-    phase_first = first;
     phase_len = best;
     phase_centre = ((PHASE_STEPS(MEM_PHASE) % n) + n) % n;      /* the step settled on, from the hardware */
     dlog_str("phase map ");
@@ -699,7 +698,8 @@ int memtest_rows(char rows[][41], uint8_t fail[])
             p = fmt_str(p, slot_state == 1 ? "ok" : "FAIL");
             p = fmt_str(p, " Phase ");
             p = fmt_udec(p, (uint32_t)phase_len);
-            fmt_udec(fmt_str(p, "/80, step "), (uint32_t)phase_centre);
+            p = fmt_udec(fmt_str(p, "/"), PHASE_STEPS_MAX);
+            fmt_udec(fmt_str(p, ", step "), (uint32_t)phase_centre);
             fail[n++] = !((results >> B_SD_SLOT) & (results >> B_SD_PHASE) & 1);    /* both must pass */
             p = ok_word(fmt_str(rows[n], "     "), " Code", B_SD_CODE);
             p = ok_word(p, "Refresh", B_SD_REFRESH);

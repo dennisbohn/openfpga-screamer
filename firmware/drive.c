@@ -177,7 +177,7 @@ static void engine(struct car_state *c, const struct drive_input *in)
         } else {
             float a = (2.0f - (vgear - c->speed) / (vgear * 0.5f)) - 1.0f;
             if(c->gear == 1 && a < 0.0f) a = 0.2f;
-            curve = (1.0f + sinf(a * 1.5707964f)) * 0.5f;
+            curve = (1.0f + sinf(a * HALF_PI)) * 0.5f;
             pull  = s->accel * GEAR_PULL[c->gear];
         }
         if(c->rpm < c->throttle * M)
@@ -308,8 +308,8 @@ static void skid(struct car_state *c)
                     c->slip = (f < 0.0f ? -1.0f : 1.0f) * 1.53938f;
                 c->slide_want = c->radius != 0.0f
                               ? c->surface * 0.2f * (c->speed * c->speed / c->radius) : 0.0f;
-                c->slide_dx = sinf(c->yaw - 1.5707964f);
-                c->slide_dy = -cosf(c->yaw - 1.5707964f);
+                c->slide_dx = sinf(c->yaw - HALF_PI);
+                c->slide_dy = -cosf(c->yaw - HALF_PI);
             } else {
                 c->spin = 1;                            /* too much, especially braking */
             }
@@ -331,10 +331,10 @@ static void skid(struct car_state *c)
     if(c->spin == 1) {
         float dir = (c->turn < 0.0f) ? 1.0f : -1.0f;
         c->spin = dir > 0.0f ? 4 : 2;
-        c->drift += dir * 6.2831855f;
+        c->drift += dir * TWO_PI;
     } else if(c->spin > 1) {
         float dir = (float)(c->spin - 3);
-        float rate = (fabsf(c->drift) + 0.2f) / 3.1415927f * 3.0f * dt;
+        float rate = (fabsf(c->drift) + 0.2f) / PI * 3.0f * dt;
         int done = 0;
         if(dir > 0.0f) { c->drift -= rate; if(c->drift < 0.0f) done = 1; }
         if(dir < 0.0f) { c->drift += rate; if(c->drift > 0.0f) done = 1; }
@@ -371,8 +371,8 @@ static void integrate(struct car_state *c)
     c->x += k * dt * c->slide * c->slide_dx;
     c->y += k * dt * c->slide * c->slide_dy;
 
-    while(c->yaw < 0.0f)        c->yaw += 6.2831855f;
-    while(c->yaw > 6.2831855f)  c->yaw -= 6.2831855f;
+    while(c->yaw < 0.0f)        c->yaw += TWO_PI;
+    while(c->yaw > TWO_PI)  c->yaw -= TWO_PI;
 }
 
 /* The wall response (original: STARTL.EXE 0x16c90): glancing a wall scrubs speed by how

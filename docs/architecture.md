@@ -139,7 +139,7 @@ This section lists the main design choices and the reason for each.
   - The original takes its tracks from both sets: `MAPnL` at DETAIL LOW and `MAPnH` from MID (`STARTL.EXE`
     like `STARTH.EXE`, OpenScreamer `docs/NOTES.md` section 27).
   - The original's distances are set by DETAIL. Parts are drawn up to 52000 units. This limit is three
-    immediates of the code, `0x831cb`, `0x8322f` and `0x8a70e`, which nothing writes. Faces are clipped at
+    immediates of the code, at `0x831cc`, `0x83230` and `0x8a70f`, which nothing writes. Faces are clipped at
     depth 27808 (LOW, MID) or 43808 (HI).
   - The SVGA version draws just as far: it has the same table at `ds:0x21d8` in `STARTH.EXE` and the same
     comparison with 52000^2/4 at `0x8340b`. It only doubles the pixels (focal length 128, result x 2,
@@ -764,7 +764,8 @@ menu, and again when the main menu (page 0, no page open) has stood 30 s without
   each intro and wraps to 0 after 5 (`0x27f06`). The race is set up like a normal one, but directly
   (`0x128dc`, no loading picture: the screen stays black), with the menu music.
   - At the core's start only, the track's loading picture is shown. This deviates from the original, so that
-    start-up does not stay black for long (`first_picture` in `main.c`). Right after `CHOICE.DAT`, the
+    start-up does not stay black for long (`first_picture` in `main.c`). Until then the boot loader shows
+    the word LOADING in the small console font (`show_loading` in `boot.c`), from about 50 ms after the start. Right after `CHOICE.DAT`, the
     program loads `LOCAL.DAT` and from `GRAF.DAT` only the table of contents, `MENUL.SPR`, `MENUL.FNT` and
     `LOADnL.PCX` (about 100 KB). It shows the picture as before a race, loads the rest of the menus behind
     it, builds the track and loads the sounds. Then it fades out as before a race. The log gives the time
@@ -1385,4 +1386,5 @@ Quartus 18.1.1:
 | RV32IM with 2 x 8 KB cache | 1,268-1,278 | 19 | 4 | about 115 MHz |
 | with FPU | 3,052-3,061 | 24 | 8 | 98-111 MHz (median 105) |
 
-The FPU makes float calculations 13-32x faster than soft-float.
+The FPU makes float calculations 13-32x faster than soft-float. Another sweep of `imfc` (with the CFU) gave
+3,000-3,037 ALMs and 105-108.5 MHz (`tools/vexriscv/README.md`).

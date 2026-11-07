@@ -792,9 +792,10 @@ int fm_playing(void)
     return song && !paused ? song : 0;
 }
 
-void fm_stats(uint32_t *no_voice, uint32_t *full, uint32_t *behind)
+void fm_stats(uint32_t *no_voice, uint32_t *full, uint32_t *lost, uint32_t *behind)
 {
     *no_voice = d_dropped;
-    *full = full_frames + full_drops;
+    *full = full_frames;
+    *lost = full_drops;
     *behind = behind_count;
 }

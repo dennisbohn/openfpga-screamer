@@ -224,7 +224,7 @@ static void player_hits(struct opp *o, float nx, float ny, float pen)
         int left = rx * orx + ry * ory < 0.0f, behind = rx * ofx + ry * ofy < 0.0f;
         o->shove = c->speed * 0.5f;
         float turn = c->speed * 0.0001f;
-        if(turn > 1.5707964f) turn = 1.5707964f;
+        if(turn > HALF_PI) turn = HALF_PI;
         o->spin = (behind ? 1.0f : -1.0f) * (left ? 1.0f : -1.0f) * turn;
         car_rammed(nx, ny, left);
     } else

@@ -174,6 +174,8 @@ can drive it directly (`soc.v` instantiates it unchanged):
     spacing of the 8 READs instead of the full latency.
   - Words return in job order. A two-entry FIFO in `soc.v` remembers whom they belong to.
   - At the start with all cars, this cut the rasterizer's wait for textures from 299,000 to 188,000 clocks.
+    (`docs/architecture.md` gives 289,000 and 193,000 for the start frame with all the changes of its section.
+    The two pairs come from different runs.)
 - At every job boundary the arbiter picks: bridge buffer, then bridge read, then dBus register, then line
   port, then iBus register.
 - **Ordering rule:** Writes of one source run in the order of acceptance. Every read returns data that
@@ -250,21 +252,18 @@ The tests run in this order:
 
 1. **Ready:** Wait up to 0.5 s for `MEM_STATUS` bit 1. Log `SYS_FLAGS`, `MEM_STATUS` and
    `MEM_BRIDGE_WORDS`. If the SDRAM is not ready, the SDRAM tests are skipped.
-2. **program.bin:** This is the last SDRAM test in time. The loader requests the file from the Pocket
-   (header, then the file) and checks the header, the size and the CRC-32, plus the "overflowed" and
-   "dropped" bits.
-3. **Phase window:** 80 steps of 168 ps (simulation: 4). At each step the test reinitialises the SDRAM
+2. **Phase window:** 80 steps of 168 ps (simulation: 4). At each step the test reinitialises the SDRAM
    briefly and checks 4 KB pseudo-random through cache lines (simulation: 512 bytes) and 64 bytes of
    alternating pattern uncached. The longest run of good steps (on the Pocket it wraps around the circle)
    goes into the log as a map (`#` good, `.` bad), with start and length, and the middle is set. Fewer than
    8 good steps (simulation: 1) count as an error.
-4. **Data bus:** Walking one and zero on a word (uncached).
-5. **Byte lanes:** For each partial store (sb at 0-3, sh at 0 and 2), the test writes a fresh background word
+3. **Data bus:** Walking one and zero on a word (uncached).
+4. **Byte lanes:** For each partial store (sb at 0-3, sh at 0 and 2), the test writes a fresh background word
    and exactly one store with a different value. It reads back uncached and compares with the background in
    which only the target bytes are new. Then it reads a known word with lb, lbu, lh, lhu at every offset
    (sign checked).
-6. **Address bus:** Own values at `0` and every power of two. Write all first, then read all back uncached.
-7. **Patterns** over the first and the last window of 2 KB, with the D-cache flushed before every checking
+5. **Address bus:** Own values at `0` and every power of two. Write all first, then read all back uncached.
+6. **Patterns** over the first and the last window of 2 KB, with the D-cache flushed before every checking
    pass (`0x0000500F`), through cache lines:
    - address as data and inverted;
    - pseudo-random (xorshift, regenerated on checking);
@@ -273,21 +272,24 @@ The tests run in this order:
    - and 256 random words, each written and read back uncached at once (the old word restored afterwards).
 
    Only the first and last window are tested, so the data slots loaded into the SDRAM are left alone.
-8. **Code from the SDRAM:** The test copies in `auipc a0, 0; ret`, calls it and expects the address of the
+7. **Code from the SDRAM:** The test copies in `auipc a0, 0; ret`, calls it and expects the address of the
    copy. Then four times it overwrites the code with `li a0, K`, `fence.i` and three NOPs, calls it and
    expects K (the old line is still in the I-cache each time). Each instruction is read back as a cache line
    beforehand, the way the I-cache fetches it. What the SDRAM corrupted never runs (a stuck data line would
    otherwise turn `auipc a0` into `auipc s0`).
-9. **Refresh:** Count `MEM_REFRESH` over 2 frames starting at a frame change, and require at least 128,000
+8. **Refresh:** Count `MEM_REFRESH` over 2 frames starting at a frame change, and require at least 128,000
    per second (expected 74.25 MHz / 512 = 145,020).
-10. **Write status:** Open bank 0 row 0x800, then one `sw` to row 0xC00 (PRECHARGE, ACTIVATE, 2 x WRITE: 7
+9. **Write status:** Open bank 0 row 0x800, then one `sw` to row 0xC00 (PRECHARGE, ACTIVATE, 2 x WRITE: 7
     clocks). Read `MEM_STATUS` at once (bit 4 = 0 expected), wait until 1, and read the value back. The
     three accesses are in one function that sits exactly in one I-cache line. Otherwise a line refill
     between `sw` and `lw` would take 16 clocks, longer than the write, and make the test fail depending on
     code layout.
-11. **Measurement** (not a test): Clocks for a cache line with an open row and with another row in the bank
+10. **Measurement** (not a test): Clocks for a cache line with an open row and with another row in the bank
     (the fastest of four measurements), and MB/s read and write through the cache with an unrolled loop. The
     measured code is aligned to I-cache lines.
+11. **program.bin:** This is the last SDRAM test in time. The loader requests the file from the Pocket
+   (header, then the file) and checks the header, the size and the CRC-32, plus the "overflowed" and
+   "dropped" bits.
 
 In the simulation (`SYS_FLAGS` bit 0) only the window size shrinks, never the sequence. The log names the
 windows, and the testbench checks them. The firmware fills the stack with a pattern at start and logs the
@@ -296,7 +298,7 @@ high-water mark.
 The simulation result (all models, windows of 2 KB) is:
 
 ```
-SDRAM slot: ok, cycles 474618
+SDRAM program: ok, cycles 474618
 phase map ####
 SDRAM write status: ok, cycles 13600
 SDRAM line read: row hit 30 cycles, row miss 34; read 63 MB/s, write 95 MB/s

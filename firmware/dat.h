@@ -16,6 +16,7 @@
  */
 #pragma once
 #include <stdint.h>
+#include "bytes.h"
 
 struct dat_entry { char name[17]; uint32_t offset, stored, size, method; };
 
@@ -36,6 +37,14 @@ static inline uint32_t dat_unpack(const uint8_t *file, uint32_t file_size, const
 {
     struct dat_entry e;
     return dat_find(file, file_size, name, &e) ? dat_extract(file, file_size, &e, out, out_max) : 0;
+}
+/* Whether the n bytes at m, an unpacked .3DX file, are a mesh: at least 0x340 bytes, with at least one block
+   in its object, and the first block lies inside the file. */
+static inline int dat_mesh_ok(const uint8_t *m, uint32_t n)
+{
+    if(n < 0x340 || le32s(m + 0x14) < 1) return 0;
+    int32_t blk = le32s(m + 0x18);
+    return blk > 0 && (uint32_t)blk + 0x80 <= n;
 }
 /* Decodes one LZW stream of src_size bytes into exactly size bytes of out. Returns size, or 0 if
    the stream is too short, ends early, or uses a code that is not defined yet. out is read back

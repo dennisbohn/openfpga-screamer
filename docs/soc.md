@@ -47,8 +47,9 @@ This section answers what the CPU system consists of, how it starts, and how the
     begun word in the log.
   - The program sets its own `gp`, `tp` and `mtvec`. Its stack is at the top of the boot RAM (from `0x8000`
     downwards to `0x6000`; the loader stays below).
-  - Nothing is shown meanwhile except a swap with a black palette, so that a reset does not leave the
-    previous run's picture. The first frame is the program's loading screen.
+  - Meanwhile the loader shows LOADING in white on black (`show_loading`, drawn before the self-tests), so
+    that the screen is not black for about a second until the program's first picture, and a reset does not leave
+    the previous run's picture. The program's first frame is its loading screen.
   - If a self-test or a memory test fails, or `program.bin` is missing, the loader starts nothing and the
     results stay on the screen.
 
@@ -270,7 +271,7 @@ row by row over the shared line port. Fill takes one word (four pixels) per cloc
 | `0xF000_440C` | `AU_MUSIC_ADDR` | W | music: bits 25..18 the SDRAM byte address of its ring (256 KB, per word one stereo value of the CD, left in the lower half); set before the start |
 | `0xF000_4410` | `AU_MUSIC_VOL` | W | bits 15..0 volume of the music: sample * value >> 15 |
 | `0xF000_4414` | `AU_MUSIC` | R/W | Write: bit 0 = 1 plays the ring from its start (the two passes after that load its lines, the third plays the first value), 0 stops. Read: bits 15..0 the position (the value in the ring from which the next pass plays), bit 16 playing |
-| `0xF000_5000` | `FM_CTRL` | R/W | bit 0 run. 0 holds the chip in reset (silent, its registers cleared) and the queue empty; 1 starts it, ready 129 chip clocks (36 us) later. A reset of the CPU clears it |
+| `0xF000_5000` | `FM_CTRL` | R/W | bit 0 run. 0 holds the chip in reset (silent, its registers cleared) and the queue empty; 1 starts it, ready 128 chip clocks (36 us) later. A reset of the CPU clears it |
 | `0xF000_5004` | `FM_WRITE` | W | one register write for the chip into the queue: bits 31..16 the time at which it is to be made (the low 16 bits of the `FM_TIME` that has then been reached), bits 15..8 the chip's register, bits 7..0 the value. Ignored while the queue is full or run is 0 |
 | `0xF000_5008` | `FM_STATUS` | R | bits 8..0 writes in the queue (0..256), bit 16 the chip is ready (out of reset), bit 17 a write to the chip is going on |
 | `0xF000_500C` | `FM_TIME` | R | bits 15..0: the chip's samples since power-up, 3,579,545 / 72 = 49,715.9 a second; wraps after 1.3 s. A time is due when `FM_TIME - time`, 16 bits, is not negative: at most 0.65 s ahead |

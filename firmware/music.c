@@ -431,16 +431,18 @@ void music_stop(void)
         dlog_str(" frames\n");
     }
     if (fm_playing() || paused_fm) {
-        uint32_t lost, full, behind;
-        fm_stats(&lost, &full, &behind);
-        if (lost || full || behind) {
+        uint32_t no_voice, full, lost, behind;
+        fm_stats(&no_voice, &full, &lost, &behind);
+        if (no_voice || full || lost || behind) {
             dlog_str("music: FM song ");
             dlog_dec(fm_playing());
             dlog_str(": ");
-            dlog_dec((int32_t)lost);
+            dlog_dec((int32_t)no_voice);
             dlog_str(" notes without a voice, ");
             dlog_dec((int32_t)full);
-            dlog_str(" times the queue was full, ");
+            dlog_str(" frames with the queue full, ");
+            dlog_dec((int32_t)lost);
+            dlog_str(" writes lost, ");
             dlog_dec((int32_t)behind);
             dlog_str(" times behind\n");
         }

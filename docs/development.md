@@ -206,9 +206,9 @@ detail"). They are the defaults.
 **`screamer.cfg`.** The optional file `screamer.cfg` (data slot 26, `firmware/config.c`; `config.h` has the
 syntax: `far = 2.0`, `lod = 2.5`, `lod = off`) replaces the defaults at the start (`track_set_scales`).
 
-- The values are kept within far 0.5 .. 3.0 and lod 0, 0.5 .. 4.0.
+- The values are kept within far 0.5 .. 4.0 and lod 0, 0.5 .. 4.0.
 - The line of the file goes to `debug.txt` ("config: screamer.cfg: far 2.00 lod 2.50").
-- The numbers in force are on the frame time display's second line.
+- The numbers in force are on the frame time display's third line.
 - Values above 2.0 have not been measured. With 2.0 for both, 0 pixels differ from the C models on all six
   tracks, and a race's frames are 0.1 to 0.9 ms longer than at 1.5.
 

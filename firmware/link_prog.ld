@@ -10,7 +10,7 @@ ENTRY(prog_entry)
 
 MEMORY
 {
-    SDRAM (rwx) : ORIGIN = 0x13000000, LENGTH = 15M     /* the saved games start above it (save.h) */
+    SDRAM (rwx) : ORIGIN = 0x13000000, LENGTH = 15M     /* image and bss; the saved games start above (save.h) */
 }
 
 SECTIONS

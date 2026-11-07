@@ -1043,7 +1043,7 @@ void car_step(const struct car_input *ci)
     /* wheels_step: the wheels turn with the speed (108.6 units of travel per radian). The front
        ones steer by the share of the lock; the sign follows OpenScreamer, because the model's
        +x is the car's left. */
-    spin = fmodf(spin - pc.speed * DRIVE_DT / 108.6f, 6.2831853f);
+    spin = fmodf(spin - pc.speed * DRIVE_DT / 108.6f, TWO_PI);
     steer = -(pc.steer_max > 0.0f ? pc.steer / pc.steer_max : 0.0f) / 1.5f;
 
     /* dash_step: the race screen eases the needles each frame with stiffness 0x5a
@@ -1498,20 +1498,17 @@ void car_mode_init(const uint8_t *dat, uint32_t dat_size, int n, int difficulty)
 {
     static uint8_t dtr[0x800];
     char name[16] = "MAPnA.DTR";                        /* the difficulty's letter (original: 0x13251) */
-    struct dat_entry e;
     uint8_t td[16];
     name[3] = (char)('0' + n);
     name[4] = (char)('A' + difficulty);
     carnage = 0;
-    uint32_t len = dat && dat_find(dat, dat_size, name, &e) && e.size <= sizeof dtr ?
-                   dat_extract(dat, dat_size, &e, dtr, sizeof dtr) : 0;
+    uint32_t len = dat ? dat_unpack(dat, dat_size, name, dtr, sizeof dtr) : 0;
     if(len && tb_track_data(dtr, len, td, sizeof td) == sizeof td)
         carnage = (int)(td[12] | (uint32_t)td[13] << 8 | (uint32_t)td[14] << 16 | (uint32_t)td[15] << 24);
     static int32_t mrk[1 + 8 * GATES_MAX];              /* the gates: count, records of 8 words */
     char gates_name[16] = "MAPnSLA.MRK";
     gates_name[3] = name[3];
-    len = dat && dat_find(dat, dat_size, gates_name, &e) && e.size <= sizeof mrk ?
-          dat_extract(dat, dat_size, &e, (uint8_t *)mrk, sizeof mrk) : 0;
+    len = dat ? dat_unpack(dat, dat_size, gates_name, (uint8_t *)mrk, sizeof mrk) : 0;
     ngates = 0;
     for(int32_t k = 0; len >= 4 && k < mrk[0] && k < GATES_MAX && 4 + 32 * (uint32_t)(k + 1) <= len; k++) {
         const int32_t *g = mrk + 1 + 8 * k;
@@ -1549,11 +1546,9 @@ void car_trackside_init(const uint8_t *dat, uint32_t dat_size, int n)
 {
     static int32_t spl[2 + 14 * RPL_MAX];       /* count, start, nodes of 14 words */
     char name[16] = "MAPnRPL.SPL";
-    struct dat_entry e;
     name[3] = (char)('0' + n);
     rpl_n = 0;
-    uint32_t len = dat && dat_find(dat, dat_size, name, &e) && e.size <= sizeof spl ?
-                   dat_extract(dat, dat_size, &e, (uint8_t *)spl, sizeof spl) : 0;
+    uint32_t len = dat ? dat_unpack(dat, dat_size, name, (uint8_t *)spl, sizeof spl) : 0;
     int32_t count = len >= 8 ? spl[0] : 0;
     for(int32_t k = 0; k < count && k < RPL_MAX && 8 + 56 * (uint32_t)(k + 1) <= len; k++) {
         const int32_t *nd = spl + 2 + 14 * k;  /* ?, x, y, height, ... */

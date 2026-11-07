@@ -449,10 +449,6 @@ int main(int argc, char **argv)
                 if (make(t, a, b, c)) {
                     draw(t);
                     sent++, j++;
-                    if (shape < 3) {
-                        draw(t);
-                        sent++, j++;
-                    }
                 }
             }
         }

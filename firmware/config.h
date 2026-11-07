@@ -22,7 +22,7 @@
 #define CFG_LOD         2u          /* lod was set */
 #define CFG_CLAMPED     4u          /* a number was outside its range and was moved into it */
 #define CFG_BAD         8u          /* a line was not understood (unknown name, no number) and was left out */
-#define CFG_BENCH       32u         /* bench was set */
+#define CFG_BENCH       16u         /* bench was set */
 
 /* Parses the text s of n bytes. The values it finds replace *far_scale and *lod_scale, or set *bench; the
    others stay as they are. Returns a mask of CFG_* bits. */
