@@ -1,23 +1,34 @@
 /*
- * The track file's parts from MAPnOPP.SPL, MAPn.MRK and the .DTR texts (tb_spl.h), as
- * player_path(), grid_pose(), cars_data(), track_data() and opponents() of
- * tools/make_track.py make them. The maths in double as Python does it; the texts are
- * latin-1, one byte a character, with Python's whitespace (str.split(), strip()) and line
- * breaks (str.splitlines()) of that range.
+ * The track image's parts that come from the splines, the markers and the .DTR texts (tb_spl.h),
+ * as player_path(), grid_pose(), cars_data(), track_data() and opponents() of tools/make_track.py
+ * make them. The input files, all from DATA/MAPn.DAT except CARS.DTR:
+ *   tb_path        MAPnOPP.SPL, the splines          the camera path
+ *   tb_grid_pose   MAPnOPP.SPL and MAPn.MMP          the start
+ *   tb_markers     MAPn.MRK, the lap's markers       the markers
+ *   tb_cars        CARS.DTR (DATA/GEN.DAT)           the cars
+ *   tb_track_data  MAPnA/B/C.DTR, the difficulty's   bonus time, camera height, ground colour
+ *                  text
+ *   tb_opponents   MAPnOPP.SPL and MAPnA/B/C.DTR     the opponents' curves and numbers
+ * The maths is done in double as Python does it, so that the results are the same. The texts are
+ * latin-1, one byte a character, with Python's whitespace (str.split(), strip()) and line breaks
+ * (str.splitlines()) of that range.
  */
 #include "tb_spl.h"
 #include "tb_mmp.h"
 #include <math.h>
 #include <string.h>
 
-#define NODE    56      /* a spline node: int32 ?, x, y, z, next, in x, in y, ?, out x, out y, 4 x ? */
+/* A spline node is 56 bytes, 14 int32 numbers. The offsets used here: +4 x, +8 y, +12 z, +16 next
+   node, +20 in x, +24 in y, +32 out x, +36 out y. The other numbers (+0, +28 and +40 .. +55) are
+   not used. */
+#define NODE    56
 
 static uint32_t rd32(const uint8_t *p)
 {
     return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
 }
 
-/* an int32 of the file as Python's float() of it: exact */
+/* An int32 of the file as Python's float() of it, which is exact. */
 static double rdd(const uint8_t *p) { return (int32_t)rd32(p); }
 
 static void wr32(uint8_t *p, uint32_t v)
@@ -28,8 +39,8 @@ static void wr32(uint8_t *p, uint32_t v)
     p[3] = (uint8_t)(v >> 24);
 }
 
-/* struct.pack('<f', d): rounded to float32; 0 where Python finds it too large; a NaN as
-   x86 converts it (quiet, its sign kept) */
+/* Writes struct.pack('<f', d): d rounded to float32. Returns 1, or 0 where Python finds d too
+   large. A NaN is written as x86 converts it: quiet, with its sign kept. */
 static int put_f32(uint8_t *p, double d)
 {
     union { float f; uint32_t u; } v;
@@ -40,7 +51,7 @@ static int put_f32(uint8_t *p, double d)
     return 1;
 }
 
-/* Python's round() (half to even) packed as int32; 0 outside the int32 range */
+/* Writes Python's round() of v (half to even) as an int32. Returns 1, or 0 outside the int32 range. */
 static int put_round(uint8_t *p, double v)
 {
     double r = rint(v);
@@ -51,9 +62,10 @@ static int put_round(uint8_t *p, double v)
 
 /* ---- splines ---- */
 
-/* The splines of a .SPL file back to back (make_track.py splines()): int32 nodes, start
-   node, the nodes; up to 7 bytes after the last are left over. Returns how many, -1 if one
-   runs past the end or has a negative count; *at the offset of spline k. */
+/* Scans the splines of a .SPL file, which lie back to back (make_track.py splines()). Each
+   spline is int32 number of nodes, int32 start node, then the nodes. Up to 7 bytes after the last
+   spline are left over. Returns how many splines there are, or -1 if one runs past the end or has
+   a negative count. *at is set to the offset of spline k. */
 static int spl_scan(const uint8_t *spl, uint32_t size, int k, uint32_t *at)
 {
     uint32_t p = 0;
@@ -68,21 +80,26 @@ static int spl_scan(const uint8_t *spl, uint32_t size, int k, uint32_t *at)
     return n;
 }
 
-/* node k of n as Python indexes a list (negative from the end); -1 outside */
+/* Node k of n nodes as Python indexes a list (a negative k counts from the end). Returns -1 for a
+   node outside the list. */
 static int32_t node_index(int32_t k, int32_t n)
 {
     if (k < 0) k += n;
     return k >= 0 && k < n ? k : -1;
 }
 
-/* math.dist() of two handles (int32 x, y): the squares and their sum exact while the
-   differences stay below 2^26, then one correctly rounded root */
+/* math.dist() of two handles (int32 x, y). The squares and their sum are exact while the
+   differences stay below 2^26. Then there is one correctly rounded root. */
 static double dist(const uint8_t *a, const uint8_t *b)
 {
     double dx = rdd(a) - rdd(b), dy = rdd(a + 4) - rdd(b + 4);
     return sqrt(dx * dx + dy * dy);
 }
 
+/* Makes the camera path along the tenth spline (index 9) of spl, from its start node. Each node a
+   is followed by the node b that it names as next, and the path between them has two pieces. A
+   piece is a quadratic B-spline through three handles h0, h1, h2, cut into steps of about 100
+   units. Each step is a point (x, y, z), rounded half to even. */
 uint32_t tb_path(const uint8_t *spl, uint32_t size, uint8_t *out, uint32_t cap)
 {
     uint32_t at = 0, w = 0;
@@ -94,8 +111,9 @@ uint32_t tb_path(const uint8_t *spl, uint32_t size, uint8_t *out, uint32_t cap)
         int32_t b = a < 0 ? -1 : node_index((int32_t)rd32(nodes + NODE * (uint32_t)a + 16), n);
         if (b < 0) return 0;
         const uint8_t *na = nodes + NODE * (uint32_t)a, *nb = nodes + NODE * (uint32_t)b;
-        /* piece 0: a's in, a's out, b's in, at a's height; piece 1: a's out, b's in, b's out,
-           from a's height to b's */
+        /* The handles of the two pieces:
+           piece 0: a's in, a's out, b's in; the height stays a's.
+           piece 1: a's out, b's in, b's out; the height goes from a's to b's. */
         for (int piece = 0; piece < 2; piece++) {
             const uint8_t *h0 = piece ? na + 32 : na + 20, *h1 = piece ? nb + 20 : na + 32,
                           *h2 = piece ? nb + 32 : nb + 20;
@@ -119,6 +137,8 @@ uint32_t tb_path(const uint8_t *spl, uint32_t size, uint8_t *out, uint32_t cap)
     return w;
 }
 
+/* Makes the grid pose (12 bytes): the x and y of the tenth spline's start node, and the heading
+   of the road point of the map that is nearest to the node. */
 uint32_t tb_grid_pose(const uint8_t *spl, uint32_t size, const uint8_t *mmp, uint32_t mmp_size,
                       uint8_t *out, uint32_t cap)
 {
@@ -145,9 +165,15 @@ uint32_t tb_markers(const uint8_t *mrk, uint32_t size, uint8_t *out, uint32_t ca
 
 /* ---- text ---- */
 
+/* A token of a text: where it starts (at) and its length in bytes. */
 struct tok { uint32_t at, len; };
 
-static int is_space(uint8_t c) { return (c >= 9 && c <= 13) || (c >= 28 && c <= 32) || c == 0x85 || c == 0xA0; }
+/* is_space: the whitespace of str.split() in latin-1. is_break: the line breaks of str.splitlines()
+   in latin-1. */
+static int is_space(uint8_t c)
+{
+    return (c >= 9 && c <= 13) || (c >= 28 && c <= 32) || c == 0x85 || c == 0xA0;
+}
 static int is_break(uint8_t c) { return (c >= 10 && c <= 13) || (c >= 28 && c <= 30) || c == 0x85; }
 static int is_digit(uint8_t c) { return c >= '0' && c <= '9'; }
 
@@ -161,7 +187,8 @@ static uint32_t line_end(const uint8_t *t, uint32_t size, uint32_t *at)
     return e;
 }
 
-/* the next token (str.split()) of t from *at to end: 1 and its place, 0 if none is left */
+/* Gets the next token (as str.split() cuts them) of t from *at to end. Returns 1 and the token in k,
+   or 0 if none is left. */
 static int next_tok(const uint8_t *t, uint32_t end, uint32_t *at, struct tok *k)
 {
     uint32_t p = *at;
@@ -174,13 +201,14 @@ static int next_tok(const uint8_t *t, uint32_t end, uint32_t *at, struct tok *k)
     return 1;
 }
 
+/* Whether token k of the text t starts with the string s. */
 static int starts(const uint8_t *t, struct tok k, const char *s)
 {
     uint32_t n = strlen(s);
     return k.len >= n && !memcmp(t + k.at, s, n);
 }
 
-/* where s first occurs in t (str.index()): 1 and *at, 0 if nowhere */
+/* Finds where s first occurs in t (as str.index() does). Returns 1 and *at, or 0 if s is nowhere. */
 static int find(const uint8_t *t, uint32_t size, const char *s, uint32_t *at)
 {
     uint32_t n = strlen(s);
@@ -192,8 +220,10 @@ static int find(const uint8_t *t, uint32_t size, const char *s, uint32_t *at)
     return 0;
 }
 
-/* Python's int(s, base), base 10 or 16: sign, for 16 a "0x" (and one '_') may lead, '_'
-   only between digits. 1 and *v; 2 if valid but beyond 63 bits; 0 if Python refuses it. */
+/* Python's int(s, base) of s[0, n), for base 10 or 16. A sign may lead. For base 16 a "0x", and
+   then one '_', may follow the sign. An '_' is allowed only between digits.
+   Returns 1 and *v. Returns 2 if the number is valid but beyond 63 bits, and 0 if Python refuses
+   it. */
 static int parse_int(const uint8_t *s, uint32_t n, uint32_t base, int64_t *v)
 {
     uint32_t i = 0;
@@ -222,7 +252,7 @@ static int parse_int(const uint8_t *s, uint32_t n, uint32_t base, int64_t *v)
     return 1;
 }
 
-/* whether s[0, n) is the lower-case word w in any case */
+/* Whether s[0, n) is the lower-case word w, written in any case. */
 static int word(const uint8_t *s, uint32_t n, const char *w)
 {
     uint32_t i = 0;
@@ -236,10 +266,12 @@ static const double p10[23] = {
     1e12, 1e13, 1e14, 1e15, 1e16, 1e17, 1e18, 1e19, 1e20, 1e21, 1e22,
 };
 
-/* Python's float() of s[0, n): sign, digits with one '.', exponent, '_' only between
-   digits; inf, infinity, nan in any case. The decimal as integer m times 10^e, then one
-   multiplication or division by an exact power of ten: correctly rounded, as Python's.
-   1 and *d; 0 if Python refuses it or it lies beyond that (tb_spl.h). */
+/* Python's float() of s[0, n). It accepts a sign, digits with one '.', an exponent, and an '_' only
+   between digits. It also accepts inf, infinity and nan in any case.
+   The decimal is worked out as an integer m times 10^e, with one multiplication or division by an
+   exact power of ten. The result is correctly rounded, as Python's is.
+   Returns 1 and *d. Returns 0 if Python refuses the text, or if the number lies beyond what this
+   method gets exact (see tb_spl.h). */
 static int parse_float(const uint8_t *s, uint32_t n, double *d)
 {
     uint32_t i = 0;
@@ -303,7 +335,7 @@ static int parse_float(const uint8_t *s, uint32_t n, double *d)
     double v = (double)m;
     if (e < 0) v /= p10[-e];
     else if (e <= 22) v *= p10[e];
-    else {                                              /* m 10^(e - 22) still exact, then 10^22 */
+    else {                                              /* m x 10^(e - 22) is still exact; then x 10^22 */
         uint64_t f = 1;
         for (int64_t j = 22; j < e; j++) f *= 10;
         if (m > (1ull << 53) / f) return 0;
@@ -315,10 +347,11 @@ static int parse_float(const uint8_t *s, uint32_t n, double *d)
 
 /* ---- CARS.DTR ---- */
 
-/* make_track.py num() of a token: after its first letter a hex number if that is 'x', else
-   a float() */
+/* A number of a text, as make_track.py's num() reads a token. The token's first letter is a type
+   mark and is skipped. After an 'x' comes a hex integer (is_int, i), otherwise a float() (d). */
 struct num { int is_int; int64_t i; double d; };
 
+/* Reads token k of the text t as a num. Returns 1, or 0 if the number is refused. */
 static int num(const uint8_t *t, struct tok k, struct num *v)
 {
     v->is_int = t[k.at] == 'x';
@@ -326,7 +359,8 @@ static int num(const uint8_t *t, struct tok k, struct num *v)
     return parse_float(t + k.at + 1, k.len - 1, &v->d);
 }
 
-/* struct.pack('<i', int(v)): truncated toward zero, 0 outside the int32 range */
+/* Writes struct.pack('<i', int(v)): v truncated toward zero. Returns 1, or 0 outside the int32
+   range. */
 static int put_int(uint8_t *p, const struct num *v)
 {
     if (v->is_int) {
@@ -339,7 +373,9 @@ static int put_int(uint8_t *p, const struct num *v)
     return 1;
 }
 
-/* one row of 14 tokens as struct '<12si4f2i7f' */
+/* Writes one row of 14 tokens r as struct '<12si4f2i7f' (68 bytes) to o. Token 0 is the name, 1 the
+   livery, 2 .. 5 maxspd, maxrpm, grip and accel, 6 automatic, 7 nshift, and 8 .. 13 ratio[1..6].
+   Returns 1, or 0 if a number is refused. */
 static int car_row(const uint8_t *t, const struct tok *r, uint8_t *o)
 {
     uint32_t w = 0;
@@ -363,6 +399,9 @@ static int car_row(const uint8_t *t, const struct tok *r, uint8_t *o)
     return 1;
 }
 
+/* Makes the cars section. The text before the CARS_DATA line is skipped. After it, tokens are
+   collected into rows of 14, and a row may span lines. A token that starts with '*' begins a
+   comment to the end of the line. END_LIST at the start of a line ends the rows. */
 uint32_t tb_cars(const uint8_t *dtr, uint32_t size, uint8_t *out, uint32_t cap)
 {
     struct tok r[14], k;
@@ -390,6 +429,8 @@ uint32_t tb_cars(const uint8_t *dtr, uint32_t size, uint8_t *out, uint32_t cap)
 
 /* ---- MAPn?.DTR ---- */
 
+/* Makes TRACK_DATA: the numbers of the first line after the TRACK_DATA line that is not empty and
+   not a comment. */
 uint32_t tb_track_data(const uint8_t *dtr, uint32_t size, uint8_t *out, uint32_t cap)
 {
     uint32_t at;
@@ -401,7 +442,7 @@ uint32_t tb_track_data(const uint8_t *dtr, uint32_t size, uint8_t *out, uint32_t
         int nf = 0;
         while (nf < 4 && next_tok(dtr, end, &p, &f[nf])) nf++;
         if (nf == 0 || dtr[f[0].at] == '*') continue;
-        /* the first other line: color, camera_hi, bonus_time, carnage */
+        /* The line holds four numbers: color, camera_hi, bonus_time, carnage. */
         int64_t v[4] = { 0 };
         if (nf < 4) return 0;
         for (int j = 0; j < 4; j++) {
@@ -420,6 +461,9 @@ uint32_t tb_track_data(const uint8_t *dtr, uint32_t size, uint8_t *out, uint32_t
     return 0;
 }
 
+/* Makes the opponents section (the layout is at tb_opponents in tb_spl.h). The rows come first:
+   after the OPPONENTS line, every line that starts with five numbers marked 'f' is a row, until
+   END_LIST. Then every spline of spl is written with its start node and its nodes. */
 uint32_t tb_opponents(const uint8_t *spl, uint32_t spl_size, const uint8_t *dtr, uint32_t dtr_size,
                       uint8_t *out, uint32_t cap)
 {
@@ -434,11 +478,12 @@ uint32_t tb_opponents(const uint8_t *spl, uint32_t spl_size, const uint8_t *dtr,
         while (nf < 5 && next_tok(dtr, end, &p, &f[nf])) nf++;
         if (nf && starts(dtr, f[0], "END_LIST")) break;
         for (int j = 0; j < nf; j++) ok &= dtr[f[j].at] == 'f';
-        if (nf < 5 || !ok) continue;                            /* a row: five 'f' numbers first */
+        if (nf < 5 || !ok) continue;                            /* a row: five numbers marked 'f' */
         if (cap - w < 20) return 0;
         for (int j = 0; j < 5; j++) {
             double d;
-            if (!parse_float(dtr + f[j].at + 1, f[j].len - 1, &d) || !put_f32(out + w + 4 * j, d)) return 0;
+            if (!parse_float(dtr + f[j].at + 1, f[j].len - 1, &d) || !put_f32(out + w + 4 * j, d))
+                return 0;
         }
         w += 20;
         rows++;
