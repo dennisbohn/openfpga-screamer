@@ -6,7 +6,9 @@
 #       and racestats there. TAG=name builds into src_name / framestats_name (default: no tag);
 #       DEFS="-DLOD_SCALE=1.5f ..." are compile-time options for the firmware's constants
 #   tools/perf/framestats.sh sweep <track image> <label> <out.csv> <step> <cars,...> [grid]
-#       the frames along the road, see framestats.c (FAR, REACH, LODSCALE in the environment; TAG=name)
+#       the frames along the road, see framestats.c (FARSCALE, LODSCALE in the environment; TAG=name)
+#   tools/perf/framestats.sh walk <track image> <camera lines file>
+#       the cell window and the placements in reach for cameras "x height z yaw" (walkcheck.c), written to <file>.result
 #   tools/perf/framestats.sh race <track n> <label> <out.csv> <steps> <every> [car]
 #       a race on the PC with a robot at the keys, a frame every <every> steps, see racestats.c
 # The firmware is never changed; the counters live in the copies. Game data only under build/.
@@ -31,7 +33,7 @@ build)
     rm -rf "$src"
     mkdir -p "$src"
     cp "$from"/firmware/*.c "$from"/firmware/*.h "$root"/tools/perf/perf.h "$root"/tools/perf/perf.c \
-       "$root"/tools/perf/framestats.c "$root"/tools/perf/racestats.c "$src/"
+       "$root"/tools/perf/framestats.c "$root"/tools/perf/racestats.c "$root"/tools/perf/walkcheck.c "$src/"
     python -I - "$src/hw.h" <<'PY'
 import sys
 p = sys.argv[1]
@@ -49,21 +51,27 @@ PY
     python -I "$root/tools/perf/perf_patch.py" "$src" $REF
     docker_sh -v "$mount:/b" --entrypoint sh $img -c "
         cd /b/stats/src$tag && gcc -O2 -w -include perf.h -DRS_TRACE $DEFS -o ../framestats$tag framestats.c perf.c track.c $LIST -lm &&
-        gcc -O2 -w -include perf.h -DRS_TRACE $DEFS -o ../racestats$tag racestats.c perf.c track.c $LIST -lm"
+        gcc -O2 -w -include perf.h -DRS_TRACE $DEFS -o ../racestats$tag racestats.c perf.c track.c $LIST -lm &&
+        gcc -O2 -w -include perf.h -DRS_TRACE $DEFS -o ../walkcheck$tag walkcheck.c perf.c $LIST -lm"
     ;;
 sweep)
     image=$1; label=$2; out=$3; step=$4; cars=$5; grid=$6
     cp "$image" "$st/$(basename "$image")"
-    docker_sh ${FAR:+-e FAR=$FAR} ${REACH:+-e REACH=$REACH} ${LODSCALE:+-e LODSCALE=$LODSCALE} -v "$mount:/b" --entrypoint sh $img -c \
+    docker_sh ${FARSCALE:+-e FARSCALE=$FARSCALE} ${LODSCALE:+-e LODSCALE=$LODSCALE} ${POPIN:+-e POPIN=$POPIN} ${POPIN_DUMP:+-e POPIN_DUMP=$POPIN_DUMP} -v "$mount:/b" --entrypoint sh $img -c \
         "cd /b/stats && ./framestats$tag $(basename "$image") $label $(basename "$out") $step $cars $grid"
     mv "$st/$(basename "$out")" "$out"
+    ;;
+walk)
+    image=$1; out=$2
+    cp "$image" "$st/$(basename "$image")"
+    docker_sh -i -v "$mount:/b" --entrypoint sh $img -c "cd /b/stats && ./walkcheck$tag $(basename "$image")" < "$out" > "$out.result"
     ;;
 race)
     n=$1; label=$2; out=$3; steps=$4; every=$5; car=${6:-0}
     mkdir -p "$st/data"
     cp "$root/build/check/track$n.bin" "$st/data/track$n.bin"
     cp "$game/GFX/MAP${n}H.DAT" "$game/DATA/MAP$n.DAT" "$st/data/"
-    docker_sh ${FAR:+-e FAR=$FAR} ${REACH:+-e REACH=$REACH} ${LODSCALE:+-e LODSCALE=$LODSCALE} -v "$mount:/b" --entrypoint sh $img -c \
+    docker_sh ${FARSCALE:+-e FARSCALE=$FARSCALE} ${LODSCALE:+-e LODSCALE=$LODSCALE} -v "$mount:/b" --entrypoint sh $img -c \
         "cd /b/stats && ./racestats$tag data/track$n.bin data/MAP${n}H.DAT data/MAP$n.DAT $label $(basename "$out") $steps $every $n $car"
     mv "$st/$(basename "$out")" "$out"
     ;;

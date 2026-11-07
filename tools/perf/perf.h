@@ -11,7 +11,7 @@
 #include <stdio.h>
 
 #define PERF_FIELDS(X) \
-    X(groups) X(grp_skipped) X(grp_out_view) X(tested) X(tested_mesh) X(visible) X(obj_visible) \
+    X(cells_rows) X(cells) X(tested) X(tested_mesh) X(visible) X(obj_visible) \
     X(obj_blocks) X(multi_blocks) \
     X(gu_pieces) X(verts) X(refl_verts) X(faces_row) X(back) \
     X(polys) X(clip_out) X(clip_any) X(clip_near) X(clip_far) \

@@ -118,6 +118,23 @@ error 1.8 %, worst 3.4 %). `tools/perf/check_cull.sh <commit>` checks that a cha
 pieces to the geometry unit, in the same order, in every frame of road sweeps and races of all six tracks as
 the firmware of an earlier commit does.
 
+### Draw distance and level of detail
+
+`FAR_SCALE` and `LOD_SCALE` in `firmware/track.h` set how far the core draws and how far out its blocks keep their
+detail, each a factor on the original's distances (`docs/architecture.md`, "Draw distance and level of detail");
+`-DFAR_SCALE=1.25f` on the compiler's line overrides them for a test, e.g. `DEFS="-DFAR_SCALE=1.0f -DLOD_SCALE=0"
+tools/render.sh ...`. For the PC tools `FARSCALE` and `LODSCALE` in the environment do the same without compiling
+again. `tools/perf/study_sweeps.sh` runs the study's matrix (every combination of the far plane's factor 1.0 /
+1.25 / 1.5 and the level of detail's none / 1.0 / 1.25 / 1.5 over a robot's race on each track) and
+`tools/perf/study.py` prints its tables; `POPIN=d` for `framestats.sh sweep` counts the pixels that change when the
+levels' distances move by d (`POPIN_DUMP=n` keeps the pictures of such frames). `python -I tools/dosram.py walk 1
+14 6 6 6` starts a DOSBox of its own (it keys and reads no other), drives the original's race with the gas held
+and pauses and reads it every few seconds: the camera, the cell window, the list of pieces in reach and the
+level-of-detail constants, into `build/dosbox/walk1.json`; `python -I tools/perf/walkcheck.py build/dosbox/walk1.json
+build/check/track1.bin` compares them with the firmware's window and cell table. `dosram.py shots` takes the
+grid's picture in the game's four views (the camera of each as `CAM` for `tools/render.sh`). Set `GAME_DIR` to a
+private copy of the game for these: the game writes into its folder.
+
 ## Tools
 
 | Tool | What it does |
@@ -126,9 +143,9 @@ the firmware of an earlier commit does.
 | `tools/datfile.py` | reads the containers (shared by the other scripts) |
 | `tools/fmcheck.sh [song ...]`, `tools/fmsongs.py`, `tools/host/fmdump.c`, `tools/host/fmref.c` | the FM music on the PC: `fmsongs.py` reads the songs of `DATA/MUSIC.DAT` independently (tracks, messages, lengths); `fmdump.c` runs `firmware/fm.c` against a model of the hardware's write queue; `fmref.c` is openscreamer's driver with the chip replaced by a log; `fmcheck.sh` runs all of them (Docker) and compares the register writes tick by tick |
 | `tools/dis.sh [-h] [-f] <from> <to>` | disassembles part of `STARTL.EXE` (`-h`: `STARTH.EXE`) at the addresses of OpenScreamer's notes; `tools/unle.py` (from OpenScreamer) unpacks the program into `build/exe/` on first use |
-| `tools/dosram.py` | reads the memory of the original game running in DOSBox, to compare with the firmware |
+| `tools/dosram.py` | reads the memory of the original game running in DOSBox, to compare with the firmware (only a DOSBox it started itself, or `DOSBOX_PID`'s): `walk`, `shots`, see "Draw distance and level of detail" |
 | `tools/release_zip.py` | after `tools/package.sh`: the release archive `build/release/Chainy.Screamer_<version>.zip` (version from `core/core.json`), refusing to include game data |
-| `tools/perf/framestats.sh`, `perf_model.py`, `check_cull.sh` | frame statistics on the PC, the frame-time model, the check that a cull hands on the same pieces; see "Frame statistics" |
+| `tools/perf/framestats.sh`, `perf_model.py`, `check_cull.sh`, `study_sweeps.sh`, `study.py`, `walkcheck.py` | frame statistics on the PC, the frame-time model, the check that a cull hands on the same pieces, the draw-distance study, the check of the cell window against the original; see "Frame statistics" and "Draw distance and level of detail" |
 | `tools/pocketlog.py [debug.txt]` | reads the Pocket's debug log (default: the SD card at I:) as a short table |
 | `tools/platform_image.py` | makes the platform image (`.bin`) from a PNG and back |
 | `tools/gen_pll_sdram.sh` | regenerates the SDRAM clock PLL (Intel `ip-generate` in the Quartus image) |

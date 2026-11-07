@@ -9,7 +9,7 @@
  * Usage: racestats <track image> <MAPnH.DAT> <MAPn.DAT> <label> <out.csv> <steps> <every> <n> [car]
  *   steps  the race's length in game steps (1/50 s); it ends sooner 250 steps after the finish
  *   every  a frame every `every` steps (the first 300 steps are the start lights: the grid, 10 cars)
- * FAR, REACH, LODSCALE in the environment as framestats has them.
+ * FARSCALE, LODSCALE in the environment as framestats has them.
  */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -28,7 +28,7 @@
 #include "hud.h"
 #include "perf.h"
 
-void perf_set_view(float far, float reach, float lod_scale);
+void perf_set_scales(float far_scale, float lod_scale);     /* track.c's copy (perf_patch.py) */
 
 #define GFX_FILE    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2800000))
 #define TEX_FILE    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000))
@@ -96,9 +96,8 @@ int main(int argc, char **argv)
     MEM_STATUS = MEM_LOCKED | MEM_READY | MEM_WRITES_IDLE;
     load(argv[1], TEX_FILE, 0x700000);
     if (!track_open(TEX_FILE) || !track_init()) { fprintf(stderr, "track image not usable\n"); return 1; }
-    if (getenv("FAR") || getenv("REACH") || getenv("LODSCALE"))
-        perf_set_view(getenv("FAR") ? (float)atof(getenv("FAR")) : 0.0f, getenv("REACH") ? (float)atof(getenv("REACH")) : 0.0f,
-                      getenv("LODSCALE") ? (float)atof(getenv("LODSCALE")) : -1.0f);
+    if (getenv("FARSCALE") || getenv("LODSCALE"))
+        perf_set_scales(getenv("FARSCALE") ? (float)atof(getenv("FARSCALE")) : 0.0f, getenv("LODSCALE") ? (float)atof(getenv("LODSCALE")) : -1.0f);
     uint32_t gfx_size = load(argv[2], GFX_FILE, 0x400000);
     efx_init(GFX_FILE, gfx_size, n, track_mlb(), track_palette(), EFX_MEM, EFX_SIZE);
     uint32_t data_size = load(argv[3], DATA_FILE, 0x40000);

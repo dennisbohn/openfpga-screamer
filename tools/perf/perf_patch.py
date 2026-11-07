@@ -1,19 +1,19 @@
-"""Counters into COPIES of the firmware's track.c, geom.c, setup.c and raster.c (tools/perf/perf.h).
+"""Counters into COPIES of the firmware's track.c, car.c, geom.c, setup.c and raster.c (tools/perf/perf.h).
 
 Usage: python -I tools/perf/perf_patch.py <dir with the copies> [--ref]
 Every edit asserts that the text it replaces is there once, so a changed firmware fails loudly
 instead of silently counting something else. The firmware files themselves are never touched.
---ref: for a copy of an older tree (tools/perf/check_cull.sh): the counters of the cull's groups are left
-out where its text is another, the rest is as it is.
+--ref: for a copy of an older tree (tools/perf/check_cull.sh), whose cull has other text: its
+placements tested and kept are counted in the same words, the level of detail and the cells are not.
 """
 import sys
 
 
-def edit(path, pairs, optional=()):
+def edit(path, pairs):
     t = open(path, newline="").read()
     for old, new in pairs:
         n = t.count(old)
-        if n != 1 and not (n == 0 and old in optional):
+        if n != 1:
             raise SystemExit(f"{path}: {old!r} found {n} times")
         t = t.replace(old, new)
     open(path, "w", newline="").write(t)
@@ -22,26 +22,35 @@ def edit(path, pairs, optional=()):
 def main():
     d = sys.argv[1]
     ref = "--ref" in sys.argv
-    group = [
-        ("        if(!groups[g].count) continue;\n", "        if(!groups[g].count) continue;\n        perf_c.groups++;\n"),
-        ("            if(gx * gx + gy * gy >= REACH2) continue;\n",
-         "            if(gx * gx + gy * gy >= REACH2) { perf_c.grp_skipped++; continue; }\n"),
-        ("            if(o1 | o2 | o3 | o4 | o5 | o6) continue;\n        }\n",
-         "            if(o1 | o2 | o3 | o4 | o5 | o6) { perf_c.grp_out_view++; continue; }\n        }\n"),
+    cells = [
+        ("    for(int g = q0; g < q1; g++) {\n", "    for(int g = q0; g < q1; g++) {\n        perf_c.cells_rows++;\n"),
+        ("            if(col < col0 || col > col1) continue;\n", "            if(col < col0 || col > col1) continue;\n            perf_c.cells++;\n"),
         ("            const struct cpiece *pc = &cpieces[i];\n            int32_t no_mesh;",
          "            const struct cpiece *pc = &cpieces[i];\n            perf_c.tested++;\n            int32_t no_mesh;"),
         ("            if(no_mesh < 0) continue;\n", "            if(no_mesh < 0) continue;\n            perf_c.tested_mesh++;\n"),
         ("            vis[nv++] = (KEY(d2) + cpiece_key[i]) * 65536 + i;\n",
          "            vis[nv++] = (KEY(d2) + cpiece_key[i]) * 65536 + i;\n            perf_c.visible++;\n"),
+        # the level of detail of the placed blocks: 1 and 2 are the levels taken, d the blocks left out
+        ("            g.blk = track_lod_block(g.obj, 0, sqrtf(wx * wx + wy * wy + wh * wh), 0);\n            if(!g.blk) continue;\n",
+         "            const uint8_t *b0 = g.blk;\n            g.blk = track_lod_block(g.obj, 0, sqrtf(wx * wx + wy * wy + wh * wh), 0);\n"
+         "            if(!g.blk) { perf_c.lod_sd++; continue; }\n"
+         "            if(g.blk != b0) { if(g.blk == g.obj + rd32(g.obj + 0x18 + 0x104)) perf_c.lod_s1++; else perf_c.lod_s2++; }\n"),
     ]
-    # the reference tree (before the cull's groups) counts the placements it tests and keeps in the same words
-    ref_group = [
-        ("        const struct cpiece *pc = &cpieces[i];\n        int32_t no_mesh;",
-         "        const struct cpiece *pc = &cpieces[i];\n        perf_c.tested++;\n        int32_t no_mesh;"),
-        ("        if(no_mesh < 0) continue;\n", "        if(no_mesh < 0) continue;\n        perf_c.tested_mesh++;\n"),
-        ("        vis[nv++] = (KEY(d2) + cpiece_key[i]) * 65536 + i;\n    }\n    for(int k = 0; k < nobj",
-         "        vis[nv++] = (KEY(d2) + cpiece_key[i]) * 65536 + i;\n        perf_c.visible++;\n    }\n    for(int k = 0; k < nobj"),
-    ]
+    # the reference tree (before the cells: the original's groups of 16, or the groups of eight) counts the placements it
+    # tests and keeps in the same words; its loop is indented by 8 or 12
+    NL = chr(10)
+    ref_group = []
+    for ind in (8, 12):
+        sp = " " * ind
+        pairs = [
+            (sp + "const struct cpiece *pc = &cpieces[i];" + NL + sp + "int32_t no_mesh;",
+             sp + "const struct cpiece *pc = &cpieces[i];" + NL + sp + "perf_c.tested++;" + NL + sp + "int32_t no_mesh;"),
+            (sp + "if(no_mesh < 0) continue;" + NL, sp + "if(no_mesh < 0) continue;" + NL + sp + "perf_c.tested_mesh++;" + NL),
+            (sp + "vis[nv++] = (KEY(d2) + cpiece_key[i]) * 65536 + i;" + NL,
+             sp + "vis[nv++] = (KEY(d2) + cpiece_key[i]) * 65536 + i;" + NL + sp + "perf_c.visible++;" + NL),
+        ]
+        if ref and open(f"{d}/track.c", newline="").read().count(pairs[0][0]) == 1:
+            ref_group = pairs
     common = [
         ("    uint32_t t_pieces = now();\n",
          "    for(int k = 0; k < nv; k++) perf_c.vis_hash = (perf_c.vis_hash ^ (uint32_t)vis[k]) * 16777619u;\n    uint32_t t_pieces = now();\n"),
@@ -51,20 +60,20 @@ def main():
         ("            int nb = multi_pieces(c, f, r, u, pc, gs);\n",
          "            int nb = multi_pieces(c, f, r, u, pc, gs);\n            perf_c.multi_blocks += (uint32_t)nb;\n"),
     ]
-    edit(f"{d}/track.c", (ref_group if ref else group) + common)
-    with open(f"{d}/track.c", "r", newline="") as fh:
-        text = fh.read()
-    with open(f"{d}/track.c", "a", newline="") as fh:       # the view distances, set by framestats (FAR, REACH, LODSCALE)
-        fh.write("\nvoid perf_set_view(float far, float reach, float lod_scale)\n{\n")
-        fh.write("    if(far > 0.0f) far_z = far;\n")
-        if "reach2" in text:
-            fh.write("    if(reach > 0.0f) reach2 = reach * reach;\n")
+    edit(f"{d}/track.c", (ref_group if ref else cells) + common)
+    if not ref:
+        edit(f"{d}/car.c", [
+            ("        t->blk = track_lod_block(m->mesh, b, dist, 1);\n        if(!t->blk) continue;\n",
+             "        t->blk = track_lod_block(m->mesh, b, dist, 1);\n        if(!t->blk) { perf_c.lod_cd++; continue; }\n"
+             "        if(t->blk != q->blk) { if(t->blk == m->mesh + *(const int32_t *)(m->mesh + 0x18 + 4 * b + 0x104)) perf_c.lod_c1++; else perf_c.lod_c2++; }\n"),
+        ])
+    with open(f"{d}/track.c", "a", newline="") as fh:       # the scales, set by framestats (FARSCALE, LODSCALE)
+        fh.write("\nvoid perf_set_scales(float far_s, float lod_s)\n{\n")
+        if ref:
+            fh.write("    (void)far_s;\n    (void)lod_s;\n")
         else:
-            fh.write("    (void)reach;\n")
-        if "lod_scale" in text:
-            fh.write("    if(lod_scale >= 0.0f) lod_scale_set(lod_scale);\n")
-        else:
-            fh.write("    (void)lod_scale;\n")
+            fh.write("    if(far_s > 0.0f) {\n        far_scale = far_s;\n        track_detail(2);\n    }\n")
+            fh.write("    if(lod_s >= 0.0f) lod_inv = lod_s > 0.0f ? 1.0f / lod_s : 0.0f;\n")
         fh.write("}\n")
     edit(f"{d}/geom.c", [
         ("    st->vertices += (uint32_t)nvert;\n",

@@ -104,7 +104,7 @@ def fps_of(T_clocks):
 def parse_log(path):
     txt = open(path, encoding="utf-8", errors="replace").read()
     line = re.search(r"track frame 2: .*", txt).group(0)
-    d = {"phys": int(re.search(r"\((\d+) now, (\d+) cycles\)", line).group(2))}
+    d = {"phys": int(re.search(r"\((\d+) now, (\d+) cycles\)", line).group(2)), "phys_now": int(re.search(r"\((\d+) now, (\d+) cycles\)", line).group(1))}
     for k in ["pieces", "faces", "px", "cpu", "geometry", "setup", "raster", "misses", "blit", "backdrop"]:
         mm = re.search(r"(\d+) %s\b|%s (\d+)" % (k, k), line)
         d[k] = int(mm.group(1) or mm.group(2))
@@ -142,39 +142,44 @@ def derived(d):
 
 # ---------------------------------------------------------------------------------------- model
 class Model:
+    """gu_rows: frames that fit the units' costs (the geometry unit, the rasterizer, the tail: they do not depend on the
+    CPU's code), cpu_rows: frames of the firmware that is modelled (before the scene, the cull, the loop that hands
+    the pieces over, the rest after it)"""
+
     def rs_events(self, d):
         return d["px_span"] + self.rs_miss * d["tex_miss"] + self.rs_edge * d["walk_tris"] + self.rs_row * d["rows"] + self.rs_drain
 
-    def __init__(self, rows, variant="rs"):
-        self.variant = variant              # how the geometry unit's waits for the units behind it are counted:
-                                            # "rs" with the rasterizer's busy time, "px" with the pixels
+    def __init__(self, gu_rows, cpu_rows=None):
+        cpu_rows = cpu_rows or gu_rows
+        rows = gu_rows
         # the rasterizer: cost per event from its own counters (waiting for lines, per triangle, per row)
         self.rs_miss = mean([d["r_miss"] / d["tex_miss"] for d in rows])
         self.rs_edge = mean([d["r_edges"] / d["walk_tris"] for d in rows])
         self.rs_row = mean([d["r_rows"] / d["rows"] for d in rows])
         self.rs_drain = mean([d["r_drain"] for d in rows])
         self.rs_over = mean([d["raster"] / self.rs_events(d) for d in rows])
-        for d in rows:
-            derived(d)
-        self.A = mean([d["t_prep"] for d in rows])
-        self.c = ols([[1, d["tested"], d["visible"]] for d in rows], [d["cull"] for d in rows])
-        self.s = ols([[d["static"], d["obj_blocks"]] for d in rows],
-                     [d["pieces_cpu"] + d["out"] - d["out_wait"] for d in rows])
         rest = lambda d: d["geometry"] - MISS_GU * d["gu_miss"] - REFL * d["refl_verts"]
-        self.g = ols([[d["faces_row"], d["px_span"]] for d in rows], [rest(d) for d in rows])
         self.g2 = ols([[d["faces_row"], self.rs(d)] for d in rows], [rest(d) for d in rows])
         self.tail = mean([d["T"] - d["t_first"] - d["geometry"] for d in rows])
+        # the CPU: a frame on the grid has one physics step in 5 of the 6 simulated frames (none in one)
+        with_step = [d for d in cpu_rows if d["phys_now"]]
+        self.A = mean([d["t_prep"] for d in with_step])
+        # the cull: so much a placement tested, a piece in view and a cell passed (the old fit, as the cull of the
+        # game's window walks cells), the rest a constant
+        self.c1, self.c2, self.c3 = 150.0, 110.0, 8.0
+        self.c0 = mean([d["cull"] - self.c1 * d["tested"] - self.c2 * d["visible"] - self.c3 * d.get("cells_rows", 0) for d in cpu_rows])
+        self.s = ols([[d["static"], d["obj_blocks"]] for d in cpu_rows], [d["pieces_cpu"] + d["out"] - d["out_wait"] for d in cpu_rows])
+        hud = [d["t_hud"] - d["t_scene"] for d in cpu_rows if d.get("t_hud") and d.get("t_scene")]
+        self.p_cpu = mean(hud) if hud else P_CPU
 
     def cull(self, d):
-        return self.c[0] + self.c[1] * d["tested"] + self.c[2] * d["visible"]
+        return self.c0 + self.c1 * d["tested"] + self.c2 * d["visible"] + self.c3 * d.get("cells_rows", 0)
 
     def gu_fixed(self, d):
         return MISS_GU * d["gu_miss"] + REFL * d["refl_verts"]
 
     def gu(self, d):
-        if self.variant == "rs":
-            return self.gu_fixed(d) + self.g2[0] * d["faces_row"] + self.g2[1] * self.rs(d)
-        return self.gu_fixed(d) + self.g[0] * d["faces_row"] + self.g[1] * d["px_span"]
+        return self.gu_fixed(d) + self.g2[0] * d["faces_row"] + self.g2[1] * self.rs(d)
 
     def rs(self, d):
         return self.rs_over * self.rs_events(d)
@@ -182,30 +187,25 @@ class Model:
     def scene_cpu(self, d):
         return self.s[0] * d["static"] + self.s[1] * d["obj_blocks"]
 
-    def frame(self, d, a_extra=0.0, mirror=None):
-        """clocks of the frame and its parts; mirror: the counters of a second pass (rear-view mirror)"""
+    def frame(self, d, a_extra=0.0):
+        """clocks of the frame and its parts"""
         A, C, G, S = self.A + a_extra, self.cull(d), self.gu(d), self.scene_cpu(d)
-        if mirror is not None:
-            C2, G2, S2 = self.cull(mirror), self.gu(mirror), self.scene_cpu(mirror)
-        else:
-            C2 = G2 = S2 = 0.0
-        t_gu = A + C + G + G2 + self.tail
-        t_cpu = A + C + S + C2 + S2 + P_CPU
-        t_rs = A + C + self.rs(d) + (self.rs(mirror) if mirror is not None else 0.0) + self.tail
+        t_gu = A + C + G + self.tail
+        t_cpu = A + C + S + self.p_cpu
+        t_rs = A + C + self.rs(d) + self.tail
         T = max(t_gu, t_cpu, t_rs)
         which = "GU" if T == t_gu else "CPU" if T == t_cpu else "RS"
-        return {"T": T, "bound": which, "A": A, "C": C + C2, "GU": G + G2, "S": S + S2, "RS": self.rs(d), "t_gu": t_gu,
-                "t_cpu": t_cpu, "t_rs": t_rs}
+        return {"T": T, "bound": which, "A": A, "C": C, "GU": G, "S": S, "RS": self.rs(d), "t_gu": t_gu, "t_cpu": t_cpu, "t_rs": t_rs}
 
 
 # ---------------------------------------------------------------------------------------- the start frames
-def calibration(build="build", prefix="base"):
-    """the six start frames: the simulation's log and the PC counters of the same frame (the row of the
-    race of steps 1..4 whose faces equal the log's: a frame has one to three steps on the grid)"""
+def calibration(build="build", prefix="base", start="start"):
+    """six start frames: the simulation's log (<prefix>_t<n>.log) and the PC counters of the same frame (the row of
+    <start><n>.csv, the race's steps 1..4, whose faces equal the log's: a frame has one to three steps on the grid)"""
     rows = []
     for n in range(1, 7):
         d = parse_log(f"{build}/sim/{prefix}_t{n}.log")
-        cands = read_csv(f"{build}/stats/out/start{n}.csv")
+        cands = read_csv(f"{build}/stats/out/{start}{n}.csv")
         c = min(cands, key=lambda r: abs(r["ts_faces"] - d["faces"]))
         d.update(c)
         d["n"] = n
@@ -214,19 +214,23 @@ def calibration(build="build", prefix="base"):
 
 
 def main():
+    """the model against the simulation: each start frame of the firmware that is modelled (prefix p2: the one of
+    this tree's constants) predicted from the other five of it and the six of the old firmware (prefix base)"""
     build = sys.argv[1] if len(sys.argv) > 1 else "build"
-    rows = calibration(build)
-    print("| Held out | T measured | T predicted | error | GU error | cull error | RS error | bound |")
-    print("|---|---|---|---|---|---|---|---|")
+    base = calibration(build, "base", "start")
+    new = calibration(build, "p2", "start_p2")
+    print("| Track | T measured | T predicted | error | cull | GU | RS | CPU path | bound |")
+    print("|---|---|---|---|---|---|---|---|---|")
     errs = []
     for k in range(6):
-        mk = Model([d for i, d in enumerate(rows) if i != k])
-        d = rows[k]
-        f = mk.frame(d)
+        others = [d for i, d in enumerate(new) if i != k]
+        m = Model(base + others, others)
+        d = new[k]
+        f = m.frame(d)
         errs.append(f["T"] / d["T"] - 1)
         print(f"| {d['n']} | {d['T']:,} ({d['T'] * MS:.1f} ms) | {f['T']:,.0f} ({f['T'] * MS:.1f} ms) | {100 * errs[-1]:+.1f} % | "
-              f"{100 * (mk.gu(d) / d['geometry'] - 1):+.1f} % | {100 * (mk.cull(d) / d['cull'] - 1):+.1f} % | "
-              f"{100 * (mk.rs(d) / d['raster'] - 1):+.1f} % | {f['bound']} |")
+              f"{100 * (m.cull(d) / d['cull'] - 1):+.1f} % | {100 * (m.gu(d) / d['geometry'] - 1):+.1f} % | "
+              f"{100 * (m.rs(d) / d['raster'] - 1):+.1f} % | {m.frame(d)['t_cpu'] / d['T']:.2f} | {f['bound']} |")
     print(f"hold-out error of T: mean {100 * mean(errs):+.1f} %, worst {100 * max(errs, key=abs):+.1f} %, "
           f"rms {100 * math.sqrt(mean([e * e for e in errs])):.1f} %")
 

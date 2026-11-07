@@ -9,9 +9,17 @@ the same base at every one. Then any address of the data object as openscreamer 
 and tools/dis.sh write it (0x100000 + ds offset) can be read live, while the game runs or
 stands paused (P).
 
+Only a DOSBox this script started (race, walk) or the process DOSBOX_PID names is ever read or keyed:
+the first DOSBox it finds is never taken, and keys stop at once when the window in front is not it.
+
 Usage: python -I tools/dosram.py <what> [...]
     race [conf]         starts DOSBox itself and the race (Enter through the menus), then the
                         screenshot on the grid and pause
+    shots               as race, then the grid's picture in the game's four views (F1 .. F4): the camera of each as render.sh's CAM
+                        and a raw screenshot in build/dosbox, the game's car standing
+    walk n [secs ...]   as race, then the race goes on for secs seconds with the gas held, is paused and read
+                        (the camera, the cell window, the pieces in reach, the level-of-detail constants),
+                        and again for the next secs: build/dosbox/walk<n>.json, DOSBox closed at the end
     cam                 the camera record (ds:0x10a1c)
     shot [s] [delay]    waits (up to s seconds) until the paused game runs again, then Ctrl+F5
     list                the pieces in reach this frame (0x83164's list), with their records
@@ -19,7 +27,7 @@ Usage: python -I tools/dosram.py <what> [...]
     watch <addr> <n>    the same every 0.2 s until Ctrl+C, changed words marked
 The flat images are made by tools/unle.py into build/exe/ (tools/dis.sh does it once).
 """
-import ctypes, ctypes.wintypes as wt, struct, subprocess, sys, time, os
+import ctypes, ctypes.wintypes as wt, json, struct, subprocess, sys, time, os
 
 sys.stdout.reconfigure(encoding="utf-8")
 root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -49,10 +57,19 @@ class INPUT(ctypes.Structure):
     _fields_ = [("type", wt.DWORD), ("k", KI), ("pad", ctypes.c_byte * 8)]
 
 
-def key(sc, up):
-    """a key by its scan code to the window in front, as the keyboard sends it"""
-    i = INPUT(1, KI(0, sc, 8 | (2 if up else 0), 0, 0))
-    ctypes.WinDLL("user32").SendInput(1, ctypes.byref(i), ctypes.sizeof(i))
+MY_PID = None       # the DOSBox this script started
+
+
+def key(sc, up, ext=False):
+    """a key by its scan code to the window in front, as the keyboard sends it; nothing is sent when that
+    window is not our DOSBox"""
+    u = ctypes.WinDLL("user32")
+    p = wt.DWORD()
+    u.GetWindowThreadProcessId(u.GetForegroundWindow(), ctypes.byref(p))
+    if MY_PID and p.value != MY_PID:
+        sys.exit("the window in front is not our DOSBox (pid %d): no key sent" % MY_PID)
+    i = INPUT(1, KI(0, sc, 8 | (2 if up else 0) | (1 if ext else 0), 0, 0))
+    u.SendInput(1, ctypes.byref(i), ctypes.sizeof(i))
 
 
 def front(pid):
@@ -76,12 +93,16 @@ def front(pid):
 
 
 def dosbox_pid():
-    out = subprocess.run(["tasklist", "/fo", "csv", "/nh"], capture_output=True, text=True).stdout
+    """the pid of our DOSBox (the one race started) or DOSBOX_PID's, if that process is a DOSBox; never another"""
+    pid = MY_PID or int(os.environ.get("DOSBOX_PID", "0"))
+    if not pid:
+        sys.exit("no DOSBox of ours: start one with race or walk, or name the process in DOSBOX_PID")
+    out = subprocess.run(["tasklist", "/fo", "csv", "/nh", "/fi", "PID eq %d" % pid], capture_output=True, text=True).stdout
     for line in out.splitlines():
         f = [x.strip('"') for x in line.split('","')]
-        if len(f) > 1 and "dosbox" in f[0].lower():
-            return int(f[1])
-    sys.exit("no DOSBox running")
+        if len(f) > 1 and "dosbox" in f[0].lower() and int(f[1]) == pid:
+            return pid
+    sys.exit("process %d is not a running DOSBox" % pid)
 
 
 class Proc:
@@ -184,12 +205,16 @@ def race(conf, view=None):
     the picture is taken once its camera's fly-across has died away"""
     pressed = view is None
     d = os.environ.get("GAME_DIR", "C:/GOG Games/Screamer")
+    cap = os.path.join(root, "build", "dosbox")         # DOSBox runs here: its files and screenshots stay in the work tree
+    os.makedirs(cap, exist_ok=True)
     if conf is None:
         conf = os.path.join(root, "build", "dosrace.conf")
-        open(conf, "w").write('[autoexec]\n@ECHO OFF\nmount C "%s"\nimgmount d "%s/scream.dat" -t iso -fs iso\n'
-                              'c:\nSTARTL.EXE\nexit\n' % (d, d))
-    subprocess.Popen([d + "/DOSBOX/DOSBox.exe", "-conf", d + "/dosboxScreamer.conf", "-conf", conf,
-                      "-noconsole"], cwd=d + "/DOSBOX")
+        open(conf, "w").write('[sdl]\nfullscreen = false\nwindowresolution = 640x400\n[dosbox]\ncaptures = %s\n[capture]\ncapture_dir = %s\ndefault_image_capture_formats = raw\n'
+                              '[autoexec]\n@ECHO OFF\nmount C "%s"\nimgmount d "%s/scream.dat" -t iso -fs iso\n'
+                              'c:\nSTARTL.EXE\nexit\n' % (cap, cap, d, d))
+    global MY_PID
+    MY_PID = subprocess.Popen([d + "/DOSBOX/DOSBox.exe", "-conf", d + "/dosboxScreamer.conf", "-conf", conf,
+                               "-noconsole"], cwd=cap).pid
     end = time.time() + 120
     while time.time() < end:
         time.sleep(1.5)
@@ -204,6 +229,9 @@ def race(conf, view=None):
             # running (the clock moves), and the camera's swing onto the car over (it stands)
             if (x, z) == (2600, -18500) and g.flat(0x121538, 4) != c0 and g.flat(0x110a1c, 0x3c) == cam0:
                 front(g.p.pid)
+                cx, ch, cz = struct.unpack_from("<3i", cam0, 0)
+                cpitch, cyaw, croll = struct.unpack_from("<3f", cam0, 0x30)
+                print('CAM="%d %d %d %r %r %r"' % (cx, cz, ch, cyaw, cpitch, croll))      # for tools/render.sh CAM=
                 if not pressed:
                     key(view, 0); time.sleep(0.1); key(view, 1)
                     pressed = True
@@ -226,8 +254,119 @@ def race(conf, view=None):
     sys.exit("no race within 2 minutes")
 
 
+def dump(g, label):
+    """what the frame that stands (the game paused) walked and drew: the camera (the view structure V at
+    0x11099c that the game renders with, and the camera record C), the cell window (0x82e88: the window
+    before and after the camera cell's view box, the box itself, all in the map's coordinates + 2^20 where
+    the game adds it), the cells' columns and rows it visits, the pieces in reach (0x83164's list, then the
+    moving objects) and the level-of-detail constants (0x8a504, 0x8a508, 0x8a550, 0x8a554) and the DETAIL"""
+    dw = lambda a: struct.unpack("<i", g.flat(a, 4))[0]
+    v = struct.unpack("<3i3i", g.flat(0x11099c, 0x18))        # pitch, heading, roll (2048 = a turn), x, height, z
+    c = g.flat(0x110a1c, 0x40)
+    out = {"label": label, "view": list(v), "cam": list(struct.unpack_from("<3i", c, 0)),
+           "cam_angles": list(struct.unpack_from("<3f", c, 0x30)),
+           "window": [dw(0x82b54), dw(0x82b5c), dw(0x82b60), dw(0x82b68)],       # x0, z0, x1, z1 (map coordinates)
+           "rect": [dw(0x82b9c), dw(0x82ba4), dw(0x82ba8), dw(0x82bb0)],         # the same cut to the box, + 2^20
+           "box": [dw(0x82b6c), dw(0x82b74), dw(0x82b78), dw(0x82b80)],          # the camera cell's box + 2^20 (+-2e9: none)
+           "col0x4": dw(0x83137), "ncol": dw(0x83141),
+           "lod": [dw(0x8a504), dw(0x8a508), dw(0x8a550), dw(0x8a554)],
+           "detail": struct.unpack("<i", g.ptr(struct.unpack("<I", g.flat(0x102de8, 4))[0] + 8, 4))[0]}
+    n = dw(0x82248)
+    lst = g.flat(0x500f0, 8 * n)
+    pieces = []
+    for i in range(n):
+        d, rec = struct.unpack_from("<Ii", lst, 8 * i)
+        w = struct.unpack("<16i", g.ptr(rec & 0x3fffffff, 0x40))
+        pieces.append({"moving": bool(rec & 0x40000000), "d2q": d, "obj": w[0], "x": w[2], "h": w[3], "z": w[4], "t": w[6]})
+    out["reach"] = pieces
+    return out
+
+
+def set_pause(g, want):
+    """the game paused or running, whatever it was: P pauses (the CD player's screen), Esc leaves it (the game's ESC,
+    0x211d0); the animation clock (0x121538) stands still in the pause, the timer does not"""
+    for _ in range(4):
+        c = g.flat(0x121538, 4)
+        time.sleep(0.4)
+        stands = g.flat(0x121538, 4) == c
+        if stands == want:
+            return
+        front(MY_PID)
+        sc = 0x19 if want else 0x01
+        key(sc, 0); time.sleep(0.1); key(sc, 1)
+        time.sleep(0.5)
+    sys.exit("the game would not " + ("pause" if want else "run"))
+
+
+def walk(n, secs):
+    """the race on the grid (race), then for each of secs seconds the gas held, the game paused (P), dumped"""
+    dumps = []
+    ext = os.environ.get("GAS_EXT", "1") == "1"
+    try:
+        race(None)
+        g = Game(Proc(dosbox_pid()))
+        set_pause(g, True)
+        dumps.append(dump(g, "grid"))
+        for k, s in enumerate(secs):
+            set_pause(g, False)
+            front(MY_PID)
+            key(0x48, 0, ext)                                       # Up: the gas
+            end = time.time() + s
+            while time.time() < end:                                # (a line every two seconds: the clock runs, the car goes)
+                time.sleep(2.0)
+                v = struct.unpack("<3i", g.flat(0x1109a8, 12))
+                print("  clock %d  camera %s" % (struct.unpack("<I", g.flat(0x121538, 4))[0], v), flush=True)
+            front(MY_PID)
+            key(0x48, 1, ext)
+            set_pause(g, True)
+            dumps.append(dump(g, "after %.0f s" % sum(secs[:k + 1])))
+            print("dump %d: camera %s, %d pieces in reach" % (k + 1, dumps[-1]["view"][3:], len(dumps[-1]["reach"])), flush=True)
+    finally:
+        if MY_PID:                                                  # our DOSBox, nothing else
+            subprocess.run(["taskkill", "/PID", str(MY_PID), "/T", "/F"], capture_output=True)
+    os.makedirs(os.path.join(root, "build", "dosbox"), exist_ok=True)
+    path = os.path.join(root, "build", "dosbox", "walk%d.json" % n)
+    json.dump(dumps, open(path, "w"))
+    print("written", path)
+
+
+def shots():
+    """the grid's picture in the game's four views: race (the default view, screenshot, paused), then the game runs on
+    (the car stands: no gas) and each of F1..F4 is pressed, the camera waited for until it stands, its record printed
+    as tools/render.sh's CAM and the screenshot taken (Ctrl+F5, raw 320 x 200 in build/dosbox)"""
+    try:
+        race(None)
+        g = Game(Proc(dosbox_pid()))
+        set_pause(g, False)
+        for sc in (0x3b, 0x3c, 0x3d, 0x3e):
+            front(MY_PID)
+            key(sc, 0); time.sleep(0.1); key(sc, 1)
+            prev, still = None, 0
+            end = time.time() + 20
+            while still < 3 and time.time() < end:
+                time.sleep(0.4)
+                cur = g.flat(0x110a1c, 0x3c)
+                still = still + 1 if cur == prev else 0
+                prev = cur
+            cx, ch, cz = struct.unpack_from("<3i", cur, 0)
+            cpitch, cyaw, croll = struct.unpack_from("<3f", cur, 0x30)
+            print('F%d CAM="%d %d %d %r %r %r"' % (sc - 0x3a, cx, cz, ch, cyaw, cpitch, croll), flush=True)
+            front(MY_PID)
+            for s, up in ((0x1D, 0), (0x3F, 0), (0x3F, 1), (0x1D, 1)):
+                key(s, up)
+                time.sleep(0.05)
+            time.sleep(0.5)
+    finally:
+        if MY_PID:
+            subprocess.run(["taskkill", "/PID", str(MY_PID), "/T", "/F"], capture_output=True)
+
+
 def main():
     a = sys.argv[1:] or ["cam"]
+    if a[0] == "shots":
+        return shots()
+    if a[0] == "walk":
+        return walk(int(a[1]), [float(x) for x in a[2:]] or [14.0, 6.0, 6.0, 6.0])
     if a[0] == "race":
         view = os.environ.get("VIEW_KEY")
         return race(a[1] if len(a) > 1 else None, int(view, 0) if view else None)

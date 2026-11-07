@@ -27,6 +27,7 @@
 #   with GHOST=1 and MODE=4 REPLAYCHECK runs two robot races, the second against the first one's
 #   ghost. INTRO=1: the intro's picture after the steps (the third argument), the logos and
 #   credits over it (main.c run_intro).
+#   DEFS="-DFAR_SCALE=1.0f -DLOD_SCALE=0": compiler options for the firmware's constants (track.h).
 # The firmware's sources are copied to build/host/ with hw.h's RISC-V instructions made plain C;
 # built and run with the simulation's Docker image (gcc).
 set -e
@@ -74,6 +75,6 @@ if command -v cygpath >/dev/null 2>&1; then mount=$(cygpath -wa "$root/build"); 
 out=$(basename "$1")
 MSYS_NO_PATHCONV=1 docker run --rm ${CAM:+-e CAM} ${REFL:+-e REFL} ${GAS:+-e GAS} ${TURN:+-e TURN} ${BRAKE:+-e BRAKE} ${PAUSE:+-e PAUSE} ${CD:+-e CD} ${MENUKEYS:+-e MENUKEYS} ${CHAMP:+-e CHAMP} \
     ${TRACKSIDE:+-e TRACKSIDE} ${HUD:+-e HUD} ${REPLAYCHECK:+-e REPLAYCHECK} ${REPLAYAT:+-e REPLAYAT} ${NOHUD:+-e NOHUD} ${REPLAYDUMP:+-e REPLAYDUMP} ${MODE:+-e MODE} ${GHOST:+-e GHOST} ${INTRO:+-e INTRO} ${LEVEL:+-e LEVEL} ${BULLET:+-e BULLET} -v "$mount:/b" --entrypoint sh verilator/verilator:v5.050 -c "
-    cd /b/host/src && gcc -O2 -w ${DUMP:+-DTRACK_DUMP} -o ../render render.c track.c geom.c setup.c raster.c car.c drive.c opp.c ghost.c \
+    cd /b/host/src && gcc -O2 -w ${DUMP:+-DTRACK_DUMP} $DEFS -o ../render render.c track.c geom.c setup.c raster.c car.c drive.c opp.c ghost.c \
         efx.c scenery.c sound.c speech.c blit.c dlog.c crc32.c dat.c console.c menu.c champ.c intro.c tb_hud.c tb_spl.c tb_mmp.c hud.c -lm && cd /b/host && $run $out $args"
 mv "$root/build/host/$out" "$1"

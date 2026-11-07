@@ -3,8 +3,7 @@
 # Counting copies of the firmware of a reference commit and of this tree (tools/perf/framestats.sh build,
 # perf_patch.py: a hash of the sorted list of pieces, and the pieces, faces, triangles and vertices counted by
 # the C models) draw the same frames: the road sweeps with 0, 1 and 4 cars (160 frames a track) and a robot's
-# race of each track; every frame's hash and counters must be equal. Then a negative control: the same check
-# with a reference whose cull is made to drop one piece must fail.
+# race of each track; every frame's hash and counters must be equal.
 # Usage: tools/perf/check_cull.sh <reference commit> [tracks]       (default tracks 1 2 3 4 5 6)
 # Needs: build/check/track<n>.bin (tools/make_track.py, made by tools/simcheck.sh or tools/render.sh), the game's folder
 # (GAME_DIR) for the races. About 3 minutes.
@@ -16,8 +15,9 @@ tracks=${*:-1 2 3 4 5 6}
 [ -n "$ref" ] || { echo "usage: check_cull.sh <reference commit> [tracks]"; exit 2; }
 cd "$root"
 old=build/ref_tree
+mkdir -p build/stats/out
 rm -rf "$old"
-mkdir -p "$old" build/stats/out
+mkdir -p "$old"
 git archive "$ref" | tar -x -C "$old"
 TAG=ref REF=--ref sh tools/perf/framestats.sh build "$root/$old" > /dev/null
 sh tools/perf/framestats.sh build > /dev/null

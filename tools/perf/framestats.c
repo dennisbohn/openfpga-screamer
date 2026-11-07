@@ -9,9 +9,11 @@
  *   cars   comma list of car counts: 0 no car at all, 1 the player's car (always in the chase
  *          view), n the player's and n - 1 opponents ahead (see frame()); models AUTO00..06 in turn
  *   grid   (optional word) one more frame: the start grid, player at the start place
- * In the environment: FAR=n [REACH=m]: the far plane (faces) and the reach (placements) in units,
- * default what the firmware has; LODSCALE=f: the level-of-detail thresholds times f (0: no level of
- * detail), see track.c.
+ * In the environment: FARSCALE=f: the far plane, reach and cell window times f, LODSCALE=f: the level-of-detail
+ * distances times f (0: no level of detail); default what track.h has (FAR_SCALE, LOD_SCALE).
+ * POPIN=d in the environment: each frame is drawn a second time with the level-of-detail distances d times larger (the
+ * blocks the car passes in that step change level) and the pixels that differ are counted in a last column, popin_px
+ * (the scene on a black screen; the cars keep the level they were made at).
  * The camera is the game's near chase camera (car.c, views[2]): 1300 behind, 300 above, looking
  * down 0.1885 rad, over a car standing on the road at that point.
  */
@@ -26,7 +28,7 @@
 #include "car.h"
 #include "perf.h"
 
-void perf_set_view(float far, float reach, float lod_scale);   /* track.c's copy (perf_patch.py) */
+void perf_set_scales(float far_scale, float lod_scale);   /* track.c's copy (perf_patch.py) */
 
 #define TEX_FILE    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000))      /* as main.c */
 #define MAX_CARS    10
@@ -45,6 +47,7 @@ static void map(void)
 
 static const struct track_dir *dirs;
 static int nd;
+static float popin_d, lod_scale = LOD_SCALE;        /* POPIN, and the level-of-detail factor in force (LODSCALE) */
 
 /* the road a distance ahead of road point i: place and heading (the points run the way the road
    is driven when the next one lies in the heading's direction, else the other way) */
@@ -146,10 +149,33 @@ static void frame(FILE *out, const char *label, int idx, float x, float y, float
     perf_reset();
     perf_c.lod_c1 = c1; perf_c.lod_c2 = c2; perf_c.lod_cd = cd;
     track_mode = TRACK_MODEL;
+    static uint8_t keep[FB_W * FB_H];
+    memset((void *)FB(0), 0, FB_W * FB_H);
     track_draw_cam(FB(0), &clip, &cam, objs, nobj, &ts);
     fprintf(out, "%s,%s,%d,%.0f,%.0f,%.0f,%d,%u,%u,%u,%u,%u", label, tag, idx, x, y, z, ncars, ts.pieces, ts.faces,
             ts.triangles, ts.vertices, ts.objects);
     perf_row(out);
+    if (popin_d > 0.0f) {
+        memcpy(keep, (const void *)FB(0), sizeof keep);
+        perf_set_scales(0.0f, lod_scale * (1.0f + popin_d));
+        memset((void *)FB(0), 0, FB_W * FB_H);
+        track_draw_cam(FB(0), &clip, &cam, objs, nobj, &ts);
+        perf_set_scales(0.0f, lod_scale);
+        int diff = 0;
+        for (int i = 0; i < FB_W * FB_H; i++) diff += keep[i] != ((const volatile uint8_t *)FB(0))[i];
+        fprintf(out, ",%d", diff);
+        if (getenv("POPIN_DUMP") && diff >= atoi(getenv("POPIN_DUMP"))) {    /* the two pictures of a frame that changes by that many pixels or more */
+            char name[64];
+            snprintf(name, sizeof name, "popin_%s_%d_a.raw", label, idx);
+            FILE *fa = fopen(name, "wb");
+            fwrite(keep, 1, sizeof keep, fa);
+            fclose(fa);
+            snprintf(name, sizeof name, "popin_%s_%d_b.raw", label, idx);
+            fa = fopen(name, "wb");
+            fwrite((const void *)FB(0), 1, sizeof keep, fa);
+            fclose(fa);
+        }
+    }
     fprintf(out, "\n");
 }
 
@@ -168,9 +194,10 @@ int main(int argc, char **argv)
     int placements = track_init();
     if (!placements) { fprintf(stderr, "track_init: the image does not fit the limits\n"); return 1; }
     dirs = track_dirs(&nd);
-    if (getenv("FAR") || getenv("REACH") || getenv("LODSCALE"))
-        perf_set_view(getenv("FAR") ? (float)atof(getenv("FAR")) : 0.0f, getenv("REACH") ? (float)atof(getenv("REACH")) : 0.0f,
-                      getenv("LODSCALE") ? (float)atof(getenv("LODSCALE")) : -1.0f);
+    if (getenv("FARSCALE") || getenv("LODSCALE"))
+        perf_set_scales(getenv("FARSCALE") ? (float)atof(getenv("FARSCALE")) : 0.0f, getenv("LODSCALE") ? (float)atof(getenv("LODSCALE")) : -1.0f);
+    if (getenv("LODSCALE")) lod_scale = (float)atof(getenv("LODSCALE"));
+    if (getenv("POPIN")) popin_d = (float)atof(getenv("POPIN"));
     int step = atoi(argv[4]);
     if (step < 0) step = nd / -step;            /* -N: about N frames */
     if (step < 1) step = 1;
@@ -181,7 +208,7 @@ int main(int argc, char **argv)
     if (!out) { perror(argv[3]); return 1; }
     fprintf(out, "label,kind,idx,x,y,z,ncars,ts_pieces,ts_faces,ts_triangles,ts_vertices,ts_objects");
     perf_header(out);
-    fprintf(out, "\n");
+    fprintf(out, popin_d > 0.0f ? ",popin_px\n" : "\n");
     fprintf(stderr, "%s: %d placements, %d road points\n", argv[2], placements, nd);
 
     /* the road's height at every point; where track_under finds nothing (the middle of the road is
