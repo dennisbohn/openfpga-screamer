@@ -553,6 +553,27 @@ static struct car_input rec[REC_MAX];
 static uint32_t rec_n;
 static int rec_full;
 
+/* The simulation ends one frame after the checked one. It reports its result, then the camera and the car of
+   the checked frame, which are set against the original's (tools/dosram.py cam). Places are in game units,
+   angles in 1/10000 radian. */
+static inline __attribute__((always_inline)) void sim_report(void)
+{
+    SYS_SIM = SIM_DONE | results;
+    dlog_str("SYS_SIM=");
+    dlog_hex(SIM_DONE | results);
+    struct track_cam c;
+    const struct car_state *s = car_state();
+    car_camera(&c);
+    const float v[10] = { c.x, c.y, c.h, c.yaw * 1e4f, c.pitch * 1e4f, c.roll * 1e4f,
+                          s->x, s->y, s->z, s->yaw * 1e4f };
+    dlog_str("\ncamera x y h yaw pitch roll, car x y z yaw:");
+    for (int i = 0; i < 10; i++) {
+        dlog_char(' ');
+        dlog_dec((int32_t)v[i]);
+    }
+    dlog_char('\n');
+}
+
 /*
  * The race on track n with the car of CARS.DTR row car. The opponents take the other rows. replay is 0 for a
  * race and 1 for the replay of a finished race. Returns how the race ended: RACE_LEAVE, RACE_AGAIN (YES to
@@ -624,25 +645,7 @@ static int run_track(int n, int car, int replay)
         frames_shown = drawn;
         if (race_dbg.bench_frames && drawn > race_dbg.bench_frames)
             return RACE_LEAVE;                  /* the benchmark has its pictures */
-        /* The simulation ends one frame after the checked one. It reports its result, then the camera and the
-           car of the checked frame, which are set against the original's (tools/dosram.py cam). Places are in
-           game units, angles in 1/10000 radian. */
-        if (sim && drawn == check_at + 1) {
-            SYS_SIM = SIM_DONE | results;
-            dlog_str("SYS_SIM=");
-            dlog_hex(SIM_DONE | results);
-            struct track_cam c;
-            const struct car_state *s = car_state();
-            car_camera(&c);
-            const float v[10] = { c.x, c.y, c.h, c.yaw * 1e4f, c.pitch * 1e4f, c.roll * 1e4f,
-                                  s->x, s->y, s->z, s->yaw * 1e4f };
-            dlog_str("\ncamera x y h yaw pitch roll, car x y z yaw:");
-            for (int i = 0; i < 10; i++) {
-                dlog_char(' ');
-                dlog_dec((int32_t)v[i]);
-            }
-            dlog_char('\n');
-        }
+        if (sim && drawn == check_at + 1) sim_report();
         uint32_t press = keys & ~keys_before;   /* the keys that went down since the last step */
         race_debug_keys(keys, &press, car_v);
         /* The question PLAY AGAIN? was announced in the last pass, which drew its picture. */
