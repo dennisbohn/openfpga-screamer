@@ -7,7 +7,8 @@ the firmware toolchain and Verilator; Python 3 for the scripts.
 ## Build
 
 ```sh
-tools/fw.sh          # firmware: build/firmware/firmware.bin and program.bin
+tools/fw.sh          # the release firmware: build/firmware/firmware.bin and program.bin
+tools/fw.sh DEBUG=1  # the firmware for development: build/firmware-debug/ (not what a release holds)
 tools/build.sh       # Quartus: core/output/bitstream.rbf_r
 tools/package.sh     # SD card layout in build/sdcard/, copy its contents to the card's root
 tools/deploy.sh /i   # package and copy to the SD card mounted at /i (or I:)
@@ -22,6 +23,16 @@ The Pocket needs the bitstream bit-reversed, `tools/reverse_rbf.py` does that.
 The firmware is built by GCC 14 and picolibc from Debian trixie in Docker
 (`firmware/docker/Dockerfile`); `tools/fw.sh` builds the image on first use. See
 [firmware/README.md](../firmware/README.md).
+
+**Release and debug builds.** `firmware/debug.h` has the flag `DEBUG`, 0 unless the build says `DEBUG=1`. A release runs none of the
+measuring and diagnostic code: no timeline marks and no counters read from the units every frame, no line of statistics
+rewritten in `debug.txt` every frame, no race status block, and none of the tools below that live in `ftime.c`, `bench.c` and
+`mark.c` (the frame time display on A + L + R, the benchmark `bench = 1`, the marks on A + X and the free camera on A + Y).
+What stays is the boot log, the files, the settings read from `screamer.cfg` (`far`, `lod`) and the simulation's own hooks, which run
+only in the simulation. The simulation (`tools/simcheck.sh`) and the PC tools that read the log use the debug build
+(`tools/simcheck.sh` takes `build/firmware-debug` unless `SIM_FW` names another); a release is made from `tools/fw.sh` alone, so a
+release cannot contain the debug code by accident. The host tests of `tools/perf` (`config_test.c`, `ftime_test.c`, `bench_test.c`,
+`mark_test.c`) compile the sources directly: `-DDEBUG=1` for all of them, `config_test.c` also without it.
 
 A release holds the bitstream, the core's JSON files, the platform files and the firmware,
 never game data. `tools/deploy.sh <sd card> [game folder]` additionally copies your own game
@@ -121,7 +132,7 @@ the firmware of an earlier commit does.
 
 ### Marks and the free camera
 
-For hunting what the picture did at one place (a building that is gone for a frame): in a race, hold A and press X
+(These need the debug build, `tools/fw.sh DEBUG=1`.) For hunting what the picture did at one place (a building that is gone for a frame): in a race, hold A and press X
 (`firmware/mark.c`) to write `mark 3 track 4 view 2 frame 812: x y h yaw pitch roll | ...` to `debug.txt` with the camera of
 that picture and of 15, 30 and 45 frames before (a press comes late; view 9 is the free camera) and `MARK 3` on the screen (the log keeps 1,600 bytes for them, about ten; the race's long status block with the timeline goes to the log once a session on the Pocket, it had filled the 4 KB in the first race). Hold A and press Y for the
 free camera: the cars, the clock and the scenery stand still, the camera flies (D-pad forward / back / turn, L R down / up,

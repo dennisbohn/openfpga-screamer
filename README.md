@@ -25,9 +25,8 @@ https://youtu.be/lczQRB2F0cM
 - Music from the game's CD image, or without it the MIDI songs through an FM chip (OPL2, the
   AdLib sound of the original), sound effects and speech
 - 50 frames per second at the Pocket's native 320 x 200 picture, perspective-correct textures
-- A longer view than the original's (1.5 times the distance) with the level of detail of the game's meshes
-  stretched to match; both factors can be changed in an optional file, `screamer.cfg` (see *Settings*). A frame
-  time display in races (hold A, press L and R)
+- A longer view than the original's (1.8 times the distance) with the level of detail of the game's meshes
+  stretched to match (1.4 times); both factors can be changed in an optional file, `screamer.cfg` (see *Settings*)
 - Pocket integration: Core Controls remapping, analog sticks and triggers in the dock
 
 Not supported: network play (the menu entry is left out), the link port.
@@ -57,23 +56,17 @@ Copy the following folders and files from the game's install folder to
 
 ### Settings
 
-An optional text file `screamer.cfg` in `Assets/screamer/common/` sets how far the core draws. `far` and `lod` are
-factors on the original's distances (1.0 is the original's picture; the default is 1.5 for both):
+An optional text file `screamer.cfg` in `Assets/screamer/common/` changes how far the core draws. `far` and `lod` are
+factors on the original's distances (1.0 is the original's picture). Without the file the core uses these values:
 
 ```
-far = 1.5
-lod = 1.5
-bench = 0
+far = 1.8
+lod = 1.4
 ```
 
 `far` is the view distance, `lod` the distance at which things switch to a coarser mesh (`lod = off` turns that
-off). Larger `far` and `lod` show more, and more far away, but take more time per frame; the frame time display
-(hold A, then press L and R) shows the settings in use.
-`bench = 1` runs a benchmark at the start: the core races every track once with the gas held (ten cars, the first
-car, about 5 seconds each) and shows, and writes to `debug.txt` when the core is quit, one line per track with the
-settings, the mean and the longest frame time, the late frames (over 20 ms), and the faces and pieces drawn. The whole
-run takes one or two minutes; change the settings and run it again to compare. `#` starts a comment. Without the file,
-the defaults apply.
+off). Larger numbers show more, and more far away, but take more time per frame. `#` starts a comment. A line the core
+does not understand is left out.
 
 Saves and the debug log go to `Saves/screamer/Chainy.Screamer/`. `debug.txt` helps when
 something goes wrong; the Pocket writes it when the core is quit.
@@ -91,9 +84,6 @@ The defaults can be changed in the Pocket menu under *Core Controls*.
 | Gear up / down | R / L |
 | Pause | Start |
 | Quit race | Select |
-| Frame time display (in a race) | hold A, then press L and R |
-| Mark the camera's place in `debug.txt` (in a race) | hold A, then press X |
-| Free camera (in a race) | hold A, then press Y. D-pad: move and turn, L / R: down / up, Y / X: tilt, B: fast, Start: back |
 
 ## Building
 

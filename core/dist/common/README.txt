@@ -11,11 +11,10 @@ from the game's install folder into this folder, as they are:
 This folder is Assets/screamer/common/ on the SD card. The core is tested with the GOG version.
 If a file is missing, the core lists the missing files when it starts.
 
-Optional: a text file screamer.cfg in this folder sets how far the core draws (the default is
-1.5 times the original's distance for both):
+Optional: a text file screamer.cfg in this folder changes how far the core draws. Each number is a
+factor on the original's distance; without the file the core uses these:
 
-  far = 1.5     the view distance
-  lod = 1.5     where things switch to a coarser mesh (off: never)
-  bench = 0     1: at the start, race every track once and show the frame times (also in debug.txt)
+  far = 1.8     the view distance
+  lod = 1.4     where things switch to a coarser mesh (off: never)
 
 https://github.com/dennisbohn/openfpga-screamer

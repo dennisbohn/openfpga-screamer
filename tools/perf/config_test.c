@@ -28,6 +28,11 @@ static void t(const char *text, float far0, float lod0, float far1, float lod1, 
 
 int main(void)
 {
+    {   /* the release's settings */
+        int ok = FAR_SCALE == 1.8f && LOD_SCALE == 1.4f;
+        printf("%-4s defaults far %.2f lod %.2f\n", ok ? "ok" : "FAIL", (double)FAR_SCALE, (double)LOD_SCALE);
+        fails += !ok;
+    }
     t("far = 2.0\nlod = 2.5\n", 1.5f, 1.5f, 2.0f, 2.5f, CFG_FAR | CFG_LOD);
     t("", 1.5f, 1.5f, 1.5f, 1.5f, 0);
     t("# comment\n; another\n\n   FAR=1,25  # comma\r\nLod : 3x\r\n", 1.5f, 1.5f, 1.25f, 3.0f, CFG_FAR | CFG_LOD);
@@ -41,7 +46,17 @@ int main(void)
     t("far = 2 3", 1.5f, 1.5f, 1.5f, 1.5f, CFG_BAD);
     t("far=2.5\nfar=1.75", 1.5f, 1.5f, 1.75f, 1.5f, CFG_FAR);        /* the last one counts */
     t("far = 1.5 # the first value", 1.0f, 1.0f, 1.5f, 1.0f, CFG_FAR);
-    {   /* bench */
+#if !DEBUG
+    {   /* a release does not know bench: the line is left out */
+        float f = 1.5f, l = 1.5f;
+        int b = 0;
+        unsigned got = config_parse("bench = 1\n", 10, &f, &l, &b);
+        int ok = got == CFG_BAD && b == 0 && !config_bench();
+        printf("%-4s release: bench = 1 is left out, flags %u\n", ok ? "ok" : "FAIL", got);
+        fails += !ok;
+    }
+#else
+    {   /* bench (a debug build) */
         float f = 1.5f, l = 1.5f;
         int b = 0;
         unsigned got = config_parse("bench = 1\n", 10, &f, &l, &b);
@@ -58,5 +73,6 @@ int main(void)
         printf("%-4s bench without a number, benchx -> flags %u\n", ok ? "ok" : "FAIL", got);
         fails += !ok;
     }
+#endif
     return fails ? 1 : 0;
 }

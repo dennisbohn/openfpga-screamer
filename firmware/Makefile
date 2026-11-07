@@ -28,8 +28,16 @@ CFLAGS  += -DFAULT_$(FAULT)
 endif
 
 BOOT_SRCS = start.S boot.c selftest.c console.c dlog.c trap.c memtest.c screen.c crc32.c slot.c
-PROG_SRCS = start_prog.S main.c console.c dlog.c trap.c screen.c raster.c files.c track.c crc32.c slot.c setup.c geom.c drive.c car.c opp.c ghost.c blit.c hud.c efx.c scenery.c config.c bench.c mark.c sound.c speech.c music.c fm.c menu.c champ.c save.c intro.c ftime.c \
+PROG_SRCS = start_prog.S main.c console.c dlog.c trap.c screen.c raster.c files.c track.c crc32.c slot.c setup.c geom.c drive.c car.c opp.c ghost.c blit.c hud.c efx.c scenery.c config.c sound.c speech.c music.c fm.c menu.c champ.c save.c intro.c \
             track_build.c dat.c tb_mmp.c tb_spl.c tb_gfx.c tb_hud.c
+# DEBUG=1: a build for development (debug.h): the frame time display, the benchmark, the marks and the free camera, the statistics
+# and the timeline; the default is a release without them
+DEBUG ?= 0
+ifneq ($(DEBUG),0)
+CFLAGS    += -DDEBUG=1
+PROG_SRCS += ftime.c mark.c bench.c
+endif
+
 BOOT_OBJS = $(patsubst %,$(OUT)/obj/%.o,$(basename $(BOOT_SRCS)))
 PROG_OBJS = $(patsubst %,$(OUT)/obj/%.o,$(basename $(PROG_SRCS)))
 

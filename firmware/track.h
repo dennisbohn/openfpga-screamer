@@ -109,10 +109,10 @@ const char *track_hud_text(int k);
    a block with no mesh at its level is not drawn (the cars' level 2 is the body alone). 0: no level of detail,
    every block at level 0. */
 #ifndef FAR_SCALE                               /* (-DFAR_SCALE=1.0f on the compiler's line, for tests, wins) */
-#define FAR_SCALE   1.5f
+#define FAR_SCALE   1.8f
 #endif
 #ifndef LOD_SCALE
-#define LOD_SCALE   1.5f
+#define LOD_SCALE   1.4f
 #endif
 
 /* The two factors in force: the constants above unless config.c (screamer.cfg) has set others. Call it before

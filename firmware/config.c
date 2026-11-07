@@ -2,6 +2,7 @@
  * screamer.cfg (config.h).
  */
 #include "config.h"
+#include "debug.h"
 #include "dlog.h"
 #include "hw.h"
 #include "slot.h"
@@ -64,7 +65,7 @@ unsigned config_parse(const char *s, uint32_t n, float *far_scale, float *lod_sc
         }
         int is_far = k == 3 && name[0] == 'f' && name[1] == 'a' && name[2] == 'r';
         int is_lod = k == 3 && name[0] == 'l' && name[1] == 'o' && name[2] == 'd';
-        int is_bench = k == 5 && name[0] == 'b' && name[1] == 'e' && name[2] == 'n' && name[3] == 'c' && name[4] == 'h';
+        int is_bench = DEBUG && k == 5 && name[0] == 'b' && name[1] == 'e' && name[2] == 'n' && name[3] == 'c' && name[4] == 'h';
         while (line < le && (*line == ' ' || *line == '\t')) line++;
         if (!(is_far || is_lod || is_bench) || line == le || (*line != '=' && *line != ':')) {
             found |= CFG_BAD;
@@ -117,7 +118,7 @@ static int bench_on;
 
 int config_bench(void)
 {
-    return bench_on;
+    return DEBUG && bench_on;           /* the benchmark is in a debug build only (debug.h) */
 }
 
 void config_load(void)
@@ -143,5 +144,5 @@ void config_load(void)
     log_scale(far);
     dlog_str(" lod ");
     if (lod == 0.0f) dlog_str("off"); else log_scale(lod);
-    dlog_str(bench_on ? ", benchmark\n" : "\n");
+    dlog_str(DEBUG && bench_on ? ", benchmark\n" : "\n");
 }
