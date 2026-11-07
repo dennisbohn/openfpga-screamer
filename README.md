@@ -22,11 +22,12 @@ https://youtu.be/lczQRB2F0cM
 - Normal race, championship, time attack with ghost, cone carnage and slalom
 - Replays with the game's trackside cameras, the pause screen with its working CD player
 - The game's menus, options, records and name entry, saved between sessions
-- Music from the game's CD image, or without it the MIDI songs through an FM chip (OPL2, the
-  AdLib sound of the original), sound effects and speech
+- Music from the game's CD image, or, without it, the MIDI songs through an FM chip (OPL2, the
+  AdLib sound of the original); sound effects and speech
 - 50 frames per second at the Pocket's native 320 x 200 picture, perspective-correct textures
-- A longer view than the original's (2.0 times the distance) with the level of detail of the game's meshes
-  stretched to match (1.2 times); both factors can be changed in an optional file, `screamer.cfg` (see *Settings*)
+- A longer view than the original's (2.0 times the distance), with the level of detail of the game's
+  meshes stretched to match (1.2 times). Both factors can be changed in an optional file, `screamer.cfg`
+  (see *Settings*)
 - Pocket integration: Core Controls remapping, analog sticks and triggers in the dock
 
 Not supported: network play (the menu entry is left out), the link port.
@@ -39,8 +40,8 @@ Not supported: network play (the menu entry is left out), the link port.
    below.
 3. Start *Screamer* from the Pocket's core list. You find it in the group *Computer*.
 
-So far the core has only been tested with the GOG release of the game. Other releases might
-work if their files are the same.
+The core has been tested only with the GOG release of the game. Other releases might work if their
+files are the same.
 
 ### GOG version
 
@@ -56,20 +57,21 @@ Copy the following folders and files from the game's install folder to
 
 ### Settings
 
-An optional text file `screamer.cfg` in `Assets/screamer/common/` changes how far the core draws. `far` and `lod` are
-factors on the original's distances (1.0 is the original's picture). Without the file the core uses these values:
+An optional text file `screamer.cfg` in `Assets/screamer/common/` changes how far the core draws. `far` and
+`lod` are factors on the original's distances (1.0 is the original's picture). Without the file the core
+uses these values:
 
 ```
 far = 2.0
 lod = 1.2
 ```
 
-`far` is the view distance, `lod` the distance at which things switch to a coarser mesh (`lod = off` turns that
-off). Larger numbers show more, and more far away, but take more time per frame. `#` starts a comment. A line the core
-does not understand is left out.
+`far` is the view distance. `lod` is the distance at which things switch to a coarser mesh (`lod = off` turns
+that off). Larger numbers show more, and farther away, but take more time per frame. `#` starts a
+comment. A line the core does not understand is ignored.
 
-Saves and the debug log go to `Saves/screamer/Chainy.Screamer/`. `debug.txt` helps when
-something goes wrong; the Pocket writes it when the core is quit.
+Saves and the debug log go to `Saves/screamer/Chainy.Screamer/`. `debug.txt` helps when something goes
+wrong. The Pocket writes it when the core is quit.
 
 ## Controls
 
