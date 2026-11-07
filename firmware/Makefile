@@ -43,7 +43,7 @@ PROG_SRCS = start_prog.S main.c console.c dlog.c trap.c screen.c raster.c files.
 DEBUG ?= 0
 ifneq ($(DEBUG),0)
 CFLAGS    += -DDEBUG=1
-PROG_SRCS += ftime.c mark.c bench.c
+PROG_SRCS += ftime.c mark.c bench.c racedebug.c
 endif
 
 BOOT_OBJS = $(patsubst %,$(OUT)/obj/%.o,$(basename $(BOOT_SRCS)))

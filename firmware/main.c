@@ -34,14 +34,8 @@
 #include "champ.h"
 #include "save.h"
 #include "intro.h"
-#include "ftime.h"
 #include "config.h"
-#include "debug.h"
-#if DEBUG
-/* Debug build: the benchmark (bench.h) and the marks and free camera (mark.h). */
-#include "bench.h"
-#include "mark.h"
-#endif
+#include "racedebug.h"
 
 /*
  * Layout of this file:
@@ -144,7 +138,7 @@ static void __attribute__((noinline)) stack_fill(void)
 
 /* The most stack that has been used so far, in bytes (the part of the boot RAM from the lowest word that
    no longer holds STACK_FILL up to the end of the RAM). */
-static uint32_t stack_used(void)
+uint32_t stack_used(void)
 {
     uint32_t *p = (uint32_t *)STACK_LOW;
     while (*p == STACK_FILL)
@@ -161,91 +155,8 @@ static void log_head(const char *what, uint32_t n)
     dlog_head(buf);
 }
 
-#if DEBUG
-/* Debug build: the race's first line of debug.txt. It holds the frames drawn, the frame times so far and
-   the parts of the longest frame (ftime.h). */
-static void log_race_head(uint32_t n)
-{
-    char buf[DLOG_HEAD + 64];
-    ft_head(fmt_udec(fmt_str(fmt_str(buf, "Screamer Pocket step 3, "), "frames drawn: "), n));
-    dlog_head(buf);
-}
-#else
-#define log_race_head(n)    ((void)(n))         /* a release does not rewrite the statistics line */
-#endif
-
 static uint32_t draw_buf;               /* the back buffer (0 or 1) that the draw commands go to */
 static int back_wait;                   /* the blitter still copies the backdrop: the first piece must wait */
-#if DEBUG
-/* Debug build: what the timeline and the statistics line report about waiting. */
-static uint32_t draw_wait;              /* CPU cycles spent writing pieces to the geometry unit (hw_piece) */
-static uint32_t back_clocks, back_cycles;   /* the blitter's clocks for the backdrop; the CPU's wait for it */
-#endif
-
-#if DEBUG
-/*
- * Debug build: the frame timeline (tools/make_timeline_svg.py draws it from the log).
- * At each mark in a frame one record is stored:
- *     t     CPU cycles since the frame began
- *     gu, su, rs, bl   the busy clocks of the geometry unit, setup unit, rasterizer and blitter, as their
- *           counters hold them (the frame clears the counters at some points and sets a mark after each
- *           clear)
- *     wait  CPU cycles spent so far on writing pieces to the geometry unit (draw_wait)
- *     tag   which mark it is (TL_*)
- * Two buffers alternate. One is filled by the frame that runs; the last whole frame, in the other, is logged.
- */
-enum { TL_START, TL_PHYS, TL_PREP, TL_CULL, TL_PIECES, TL_SCENE, TL_CLEAR, TL_HUD, TL_WAIT, TL_END,
-       TL_MUSIC };
-#define TL_MAX 48
-static struct tl_mark { uint32_t t, gu, su, rs, bl, wait, tag; } tl[2][TL_MAX];
-static uint32_t tl_n[2], tl_cur, tl_t0, tl_pieces, tl_scene;
-
-/* Stores a record with this tag, if the buffer has room. */
-static void tl_mark(uint32_t tag)
-{
-    uint32_t n = tl_n[tl_cur];
-    if (n < TL_MAX) {
-        tl[tl_cur][n] = (struct tl_mark){ rdcycle() - tl_t0, GU_CLOCKS, SU_CLOCKS, RS_CLOCKS, BL_CLOCKS,
-                                          draw_wait, tag };
-        tl_n[tl_cur] = n + 1;
-    }
-}
-
-/* Starts the timeline of a new frame in the other buffer. t_frame is the cycle count at the frame's start. */
-static void tl_begin(uint32_t t_frame)
-{
-    tl_cur ^= 1;
-    tl_t0 = t_frame;
-    tl_pieces = 0;
-    /* The first record is all zeros: the units are idle, because the last frame waited for them. */
-    tl[tl_cur][0] = (struct tl_mark){ 0, 0, 0, 0, 0, 0, TL_START };
-    tl_n[tl_cur] = 1;
-}
-
-/* Writes the last whole frame's records to debug.txt, six to a line. */
-static void tl_log(void)
-{
-    const uint32_t c = tl_cur ^ 1;
-    dlog_str("  timeline (t gu su rs bl wait tag):");
-    for (uint32_t i = 0; i < tl_n[c]; i++) {
-        const struct tl_mark *m = &tl[c][i];
-        const uint32_t v[7] = { m->t, m->gu, m->su, m->rs, m->bl, m->wait, m->tag };
-        dlog_str(i % 6 ? " |" : "\n   ");
-        for (int k = 0; k < 7; k++) {
-            dlog_char(' ');
-            dlog_dec((int32_t)v[k]);
-        }
-    }
-    dlog_char('\n');
-}
-/* TL_SCENE(1) while the scene is drawn: hw_piece then marks the first piece and every eighth one after it. */
-#define TL_SCENE(v)     (tl_scene = (v))
-#else
-/* A release has no timeline. */
-#define tl_begin(t)     ((void)(t))
-#define tl_mark(tag)    ((void)0)
-#define TL_SCENE(v)     ((void)0)
-#endif
 
 #define CHECK_BUF   ((volatile uint8_t *)(SDRAM_BASE + 0x100000))  /* the picture of the C models */
 #define STILL_MEM   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x110000))    /* the still picture of the pause and
@@ -267,25 +178,11 @@ static void su_view_regs(const struct su_view *v)
    backdrop, because the scene is drawn over it. */
 static void hw_piece(const struct gu_piece *g)
 {
-#if DEBUG
-    /* Debug build: timeline marks at the first piece and at every eighth one, and the time spent writing. */
-    if (tl_scene) {
-        if (tl_pieces++ == 0)
-            tl_mark(TL_CULL);
-        else if (tl_pieces % 8 == 1)
-            tl_mark(TL_PIECES);
-    }
-    uint32_t t0 = rdcycle();
-#endif
+    piece_time_begin();
     if (back_wait) {
         while (RS_DRAW & RS_BUSY)
             ;
-#if DEBUG
-        /* Debug build: what the backdrop cost, in blitter clocks and in CPU cycles of waiting. */
-        back_clocks = BL_CLOCKS;
-        back_cycles = rdcycle() - t0;
-        t0 = rdcycle();
-#endif
+        piece_time_backdrop();
         back_wait = 0;
     }
     for (int k = 0; k < 9; k++) GU_PUSH = (uint32_t)g->m[k];        /* matrix, local to view space */
@@ -298,9 +195,7 @@ static void hw_piece(const struct gu_piece *g)
     GU_PUSH = ((uint32_t)g->row & 7) | (uint32_t)(g->mirror != 0) << 3 | ((uint32_t)g->row & 8) << 1 |
               (g->phase & 0x3FFF) << 16;
     GU_PUSH = g->refl;                                              /* phase and offsets of the reflection */
-#if DEBUG
-    draw_wait += rdcycle() - t0;                /* debug build: add the time of this piece's writes */
-#endif
+    piece_time_end();
 }
 
 /* Returns the index of the entry of the 256-colour palette pal that is nearest to the colour (r, g, b), by
@@ -657,16 +552,6 @@ enum { RACE_LEAVE, RACE_AGAIN, RACE_REPLAY };   /* how a race ends: NO, YES, its
 static struct car_input rec[REC_MAX];
 static uint32_t rec_n;
 static int rec_full;
-#if DEBUG
-/* Debug build: the long status block of the race goes to debug.txt once on the Pocket, because it fills
-   the 4 KB. */
-static int pocket_race_logged;
-/* Debug build: set during the benchmark's race (bench.h) to the number of pictures to count. 0 in an
-   ordinary race. */
-static uint32_t bench_frames;
-#else
-#define bench_frames    0u
-#endif
 
 /*
  * The race on track n with the car of CARS.DTR row car. The opponents take the other rows. replay is 0 for a
@@ -700,25 +585,10 @@ static int run_track(int n, int car, int replay)
     int32_t fade = 0;                           /* fade-in level, 0 to 0x8000 */
     snd_fade(0);
     music_fade(0);
-    uint32_t drawn = 0, keys_before = replay ? IN_KEY : 0, last_frame = 0, steps = 0, over = 0;
+    uint32_t drawn = 0, keys_before = replay ? IN_KEY : 0, last_frame = 0, over = 0;
     int ask = 0;                                /* the question is due: this pass draws, the next asks */
     uint32_t rec_at = 0;                        /* the replay's next record */
-    uint32_t swallow = 0;                       /* L and R held while A was held: no gear change (debug) */
     int car_v = CAR_VIEW_START;
-#if DEBUG
-    /* Debug build: state of the frame time overlay, the marks and the free camera (ftime.h, mark.h). */
-    uint32_t fps = 0, fps_drawn = 0, fps_frame = 0;
-    ft_reset();
-    const uint8_t ov_fg = nearest(pal, 255, 255, 255), ov_bg = nearest(pal, 0, 0, 0);   /* overlay colours */
-    int chord_before = 0;                       /* A, L and R were all down in the frame before */
-    uint32_t mark_show = 0;                     /* frames left to show the mark's number (mark.h) */
-    int mark_no = 0;
-    int free_cam = 0;                           /* the free camera (mark.h) */
-    struct track_cam free_c = { 0 }, last_cam = { 0 };
-    mark_reset();
-#else
-    const int free_cam = 0;
-#endif
     if (!replay) {
         rec_n = 0;
         rec_full = 0;
@@ -732,9 +602,6 @@ static int run_track(int n, int car, int replay)
     track_hw_piece = hw_piece;
     GU_MLB = (uint32_t)((uintptr_t)track_mlb() - SDRAM_BASE);
     GU_INVAL = 1;
-#if DEBUG
-    uint32_t frame_cycles = 0;                  /* debug build: cycles of the last frame, swap to swap */
-#endif
     /* The simulation's race (tools/sim.sh: SIM_RACE_FRAMES, and the keys in SIM_KEYS). The testbench offers
        data slot RACE_SLOT with the size n. core/data.json does not have this slot, so on the Pocket sim_race
        is 0 and the race is an ordinary one. With n set, the countdown of the start lights runs at once before
@@ -744,24 +611,19 @@ static int run_track(int n, int car, int replay)
     uint32_t sim_race = sim ? slot_size(RACE_SLOT) : 0;
     uint32_t check_at = 2 + sim_race;           /* the frame checked against the C models (on the Pocket: only
                                                    logged) */
+    race_debug_start(n, sim != 0, sim_race, check_at, col_text, col_bg);
     for (;;) {
         /* Stage 1, input: wait for the previous swap, read the keys, keep the music fed. In the benchmark
            (debug build) the gas is held and no controller is read. */
-        uint32_t st = next_frame(), keys = bench_frames ? KEY_B : IN_KEY, t_frame = rdcycle();
-        uint32_t joy = bench_frames ? 0 : IN_JOY, trig = bench_frames ? 0 : IN_TRIG;  /* stick and triggers */
-        tl_begin(t_frame);
+        uint32_t st = next_frame(), keys = race_dbg.bench_frames ? KEY_B : IN_KEY, t_frame = rdcycle();
+        uint32_t joy = race_dbg.bench_frames ? 0 : IN_JOY, trig = race_dbg.bench_frames ? 0 : IN_TRIG;
+        /* joy and trig: the stick and the triggers */
+        race_debug_frame(t_frame, drawn);
         music_frame();                          /* the music ring is kept filled (music.h) */
         tl_mark(TL_MUSIC);
         frames_shown = drawn;
-        if (bench_frames && drawn > bench_frames) return RACE_LEAVE;   /* the benchmark has its pictures */
-#if DEBUG
-        /* Debug build: the stack high-water mark, once, one frame after the checked frame. */
-        if (drawn == check_at + 1) {
-            dlog_str("stack used ");
-            dlog_dec((int32_t)stack_used());
-            dlog_str(" bytes\n");
-        }
-#endif
+        if (race_dbg.bench_frames && drawn > race_dbg.bench_frames)
+            return RACE_LEAVE;                  /* the benchmark has its pictures */
         /* The simulation ends one frame after the checked one. It reports its result, then the camera and the
            car of the checked frame, which are set against the original's (tools/dosram.py cam). Places are in
            game units, angles in 1/10000 radian. */
@@ -782,29 +644,7 @@ static int run_track(int n, int car, int replay)
             dlog_char('\n');
         }
         uint32_t press = keys & ~keys_before;   /* the keys that went down since the last step */
-#if DEBUG
-        /* Debug build: the key chords of the frame time overlay, the marks and the free camera (ftime.h,
-           mark.h). A with L and R switches the overlay on or off. Nothing else in the race uses A, but L
-           and R change gears. While A is held they are held back (swallow), so the chord, pressed with A
-           first, changes no gear. */
-        const int chord = (keys & (KEY_A | KEY_L | KEY_R)) == (KEY_A | KEY_L | KEY_R);
-        if (chord && !chord_before) ft_overlay_toggle();
-        chord_before = chord;
-        if (!bench_frames && (keys & KEY_A) && (press & KEY_X)) {      /* A held, X pressed: write a mark */
-            mark_no = mark_save(n, free_cam ? 9 : car_v, drawn);       /* view 9 stands for the free camera */
-            mark_show = 75;
-        }
-        if (!bench_frames && (keys & KEY_A) && (press & KEY_Y)) {      /* A held, Y pressed: free camera */
-            free_cam = !free_cam;
-            free_c = last_cam;                  /* it starts where the car's camera is */
-        }
-        if (free_cam && (press & KEY_START)) {  /* START gives the car's camera back; it does not pause */
-            free_cam = 0;
-            press &= ~KEY_START;
-        }
-        if (keys & KEY_A) swallow |= keys & (KEY_L | KEY_R);
-        swallow &= keys;
-#endif
+        race_debug_keys(keys, &press, car_v);
         /* The question PLAY AGAIN? was announced in the last pass, which drew its picture. */
         if (ask) return play_again(st);
         if (replay) {
@@ -837,28 +677,21 @@ static int run_track(int n, int car, int replay)
         uint32_t steps_now = ask ? 0 : drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
         last_frame = VID_FRAME(st);
         if (steps_now > 4) steps_now = 4;
-        if (free_cam) steps_now = 0;
+        if (race_dbg.free_cam) steps_now = 0;
         if (fade < 0x8000) {                    /* the race fades in from black, picture and sound */
             fade += (int32_t)steps_now * FADE_RACE;
             snd_fade(fade);
             music_fade(fade);
         }
-#if DEBUG
-        if ((press & KEY_X) && !(keys & KEY_A)) car_view(++car_v);      /* A with X writes a mark instead */
-#else
         if (press & KEY_X) car_view(++car_v);                           /* X changes the view */
-#endif
         efx_cyc_objects = efx_cyc_radar = 0;    /* efx.c adds its cycles here; the debug log reads them */
-#if DEBUG
-        /* Debug build: the cycles of the physics, for the statistics line. */
-        uint32_t t_phys = rdcycle();
-#endif
+        race_debug_physics_begin();
         for (uint32_t k = 0; k < steps_now && (!replay || rec_at < rec_n); k++) {
             struct car_input w;                 /* the controls of this step */
             if (replay)
                 w = rec[rec_at++];              /* taken from the recording */
             else {
-                w = car_keys(keys & ~swallow, keys_before & ~swallow, joy, trig);
+                w = car_keys(keys & ~race_dbg.swallow, keys_before & ~race_dbg.swallow, joy, trig);
                 if (rec_n < REC_MAX) rec[rec_n++] = w;                  /* and recorded for the replay */
                 else rec_full = 1;
             }
@@ -868,35 +701,18 @@ static int run_track(int n, int car, int replay)
             keys_before = keys;
             /* In the simulation's race and in the benchmark the countdown of the start lights runs at once:
                one more step is added until the race is on. */
-            if ((sim_race || bench_frames) && !car_race()->on && k == steps_now - 1) steps_now++;
+            if ((sim_race || race_dbg.bench_frames) && !car_race()->on && k == steps_now - 1) steps_now++;
             if (car_race()->finished || car_race()->game_over) over++;  /* steps since the end of the race */
         }
-        if (free_cam) keys_before = keys;       /* the loop above keeps keys_before, but it did not run */
-#if DEBUG
-        t_phys = rdcycle() - t_phys;            /* debug build: end of the physics timing */
-#endif
-        tl_mark(TL_PHYS);
-        steps += steps_now;
+        if (race_dbg.free_cam) keys_before = keys;      /* the loop above keeps keys_before, but it did not run */
+        race_debug_physics_end(steps_now);
         track_clock(steps_now);                 /* the animation clock of the track's textures */
 
         /* Stage 3, camera: place the camera and collect the objects (cars, shadows, smoke, props) to draw. */
-#if DEBUG
-        const struct car_state *cs = car_state();       /* debug build: for the statistics line */
-#endif
         struct track_cam cam;
         static struct track_object objs[MAX_OBJECTS];
         car_camera(&cam);
-#if DEBUG
-        /* Debug build: with the free camera on, the player's controls move that camera. While A is held,
-           X, Y, L and R do not move it, because with A they are the commands for marks, the free camera and
-           the overlay. Every camera is recorded for the marks. */
-        last_cam = cam;
-        if (free_cam) {
-            free_cam_step(&free_c, (keys & KEY_A) ? keys & ~(KEY_X | KEY_Y | KEY_L | KEY_R) : keys);
-            cam = free_c;
-        }
-        if (!bench_frames) mark_push(&cam);
-#endif
+        race_debug_camera(&cam, keys);
         int nobj = car_object(&cam, &objs[0]);
         nobj += opp_objects(objs + nobj, MAX_OBJECTS - nobj);
         nobj += ghost_objects(objs + nobj, MAX_OBJECTS - nobj);
@@ -917,12 +733,7 @@ static int run_track(int n, int car, int replay)
         draw_buf = !(st & VID_FRONT);
         blit_start(&back, (int)draw_buf);
         track_backdrop_blit(&back, &clip, &cam);
-#if DEBUG
-        /* Debug build: clear the blitter's clocks and the backdrop's counters, so that hw_piece measures the
-           backdrop alone. */
-        BL_CLOCKS = 0;
-        back_clocks = back_cycles = 0;
-#endif
+        race_debug_backdrop();
         back_wait = 1;
         hw_blit(&back);
         pal_faded(pal, fade);
@@ -930,30 +741,13 @@ static int run_track(int n, int car, int replay)
         /* Then the pieces: from the CPU to the geometry unit, its faces to the setup unit, and the triangles
            to the rasterizer. */
         struct track_stats ts;
-#if DEBUG
-        /* Debug build: clear the counters of the units, so that the statistics cover this scene only. */
-        uint32_t t0 = rdcycle();
-        RS_PIXELS = 0;
-        RS_MISSES = 0;
-        RS_CLOCKS = 0;
-        SU_CLOCKS = 0;
-        GU_CLOCKS = 0;
-        GU_FACES = 0;
-#endif
         GU_MODE = draw_buf << 8;                /* the units draw into the back buffer */
-#if DEBUG
-        /* Debug build: restart the count of the writes' time; note the cycles before the scene (ftime.h). */
-        draw_wait = 0;
-        const uint32_t t_pre = rdcycle() - t_frame;
-#endif
-        tl_mark(TL_PREP);
         RS_CLIP0 = RS_XY(clip.x0, clip.y0);
         RS_CLIP1 = RS_XY(clip.x1, clip.y1);
         su_view_regs(&view);
-        TL_SCENE(1);
+        race_debug_scene_begin();
         track_draw_cam(0, &clip, &cam, objs, nobj, &ts);
-        TL_SCENE(0);
-        tl_mark(TL_SCENE);
+        race_debug_scene_end();
 
         /* Stage 5, race screen. The radar is a darkened window over the scene (efx.h). The replay and the
            question have none (original: STARTL.EXE 0x2346c). The race screen is a list for the blitter, which
@@ -964,10 +758,7 @@ static int run_track(int n, int car, int replay)
            to it. */
         struct gu_piece radar;
         int has_radar = !replay && !ask && efx_radar_piece(&view, &radar);
-#if DEBUG
-        BL_CLOCKS = 0;                          /* debug build: clocks of the race screen's blits only */
-#endif
-        tl_mark(TL_CLEAR);
+        race_debug_screen_begin();
         if (cockpit) {
             hud_dash(&dashboard, (int)draw_buf);
             hw_blit(&dashboard);
@@ -982,191 +773,16 @@ static int run_track(int n, int car, int replay)
             else hud_build(&hud, (int)draw_buf, car_overlay() ? 2 : 0); /* no dashboard: the instruments */
         }
         hw_blit(&hud);
-        tl_mark(TL_HUD);
+        race_debug_screen_end();
 
-        /* Stage 6, frame end. Wait until the rasterizer has drawn everything. */
-#if DEBUG
-        const uint32_t t_wait = rdcycle();      /* debug build: where the wait for the rasterizer begins */
-#endif
+        /* Stage 6, frame end. Wait until the rasterizer has drawn everything. The simulation checks the
+           picture against the C models. */
         while (RS_DRAW & RS_BUSY)
             ;
-        tl_mark(TL_WAIT);
-#if DEBUG
-        /* Debug build: read the counters of the units for the statistics line. The CPU cycles count from just
-           before the scene up to the end of the rasterizer's work. The effects' cycles are copied before the
-           check runs, because the check adds to those counters as well. */
-        uint32_t blit = BL_CLOCKS;
-        uint32_t cycles = rdcycle() - t0, raster = RS_CLOCKS, pixels = RS_PIXELS, misses = RS_MISSES;
-        uint32_t setup = SU_CLOCKS, geom = GU_CLOCKS;
-        uint32_t r_miss = RS_MISS_CLOCKS, r_edge = RS_EDGE_CLOCKS, r_row = RS_ROW_CLOCKS;
-        uint32_t r_drain = RS_DRAIN_CLOCKS, r_starved = RS_STARVED;
-        ts.faces = GU_FACES;
-        uint32_t efx_objects = efx_cyc_objects, efx_radar = efx_cyc_radar;
-        uint32_t t_check = rdcycle();           /* the check is timed, to take its time off the frame's */
-        if (drawn == check_at) {
-            if (sim) track_check(fb, &clip, &cam, objs, nobj, &back, cockpit ? &dashboard : 0, &hud);
-            else dlog_str("track check: simulation only\n");
-        }
-        t_check = rdcycle() - t_check;
-
-        /* The frame's work goes to the statistics and the timing overlay (ftime.h). The overlay shows the
-           frames up to the previous one. Not counted as frames of the race are the picture of the question
-           and the first picture of the simulation's race and of the benchmark, in which the countdown of the
-           start lights (300 steps) runs at once. The time of the simulation's check is not part of the
-           frame's work. */
-        if (!ask && !((sim_race || bench_frames) && drawn == 0)) {
-            if (ft_overlay_on()) ft_draw(fb, ov_fg, ov_bg, track_far_scale(), track_lod_scale());
-            if (mark_show) {                    /* the mark's number, or a note that debug.txt was full */
-                char t[20];
-                if (mark_no) fmt_udec(fmt_str(t, "MARK "), (uint32_t)mark_no);
-                else fmt_str(t, "MARK: LOG FULL");
-                con_text(fb, 0, 3, t, ov_fg, ov_bg);
-                mark_show--;
-            }
-            if (free_cam) con_text(fb, 0, 4, "FREE CAMERA - START: BACK", ov_fg, ov_bg);
-            struct ft_frame ff = { rdcycle() - t_frame - t_check, t_pre, ts.cyc_cull,
-                                   ts.cyc_piece + ts.cyc_out, 0, rdcycle() - t_wait,
-                                   ts.faces, ts.pieces, (uint32_t)car_marker() };
-            ff.post = t_wait - t_frame - t_pre - ts.cyc_cull - ts.cyc_piece - ts.cyc_out;
-            ft_frame(&ff);
-        }
-
-        /* Pictures drawn in the last second (VID_HZ video frames). */
-        if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
-            fps = drawn - fps_drawn;
-            fps_drawn = drawn;
-            fps_frame = VID_FRAME(st);
-        }
-
-        /* The status block for debug.txt. The 4 KB log has room for one big block only, so it is written at
-           these frames: in the simulation at frame 2, then every 250 frames (not in a simulated race) and at
-           the checked frame; on the Pocket once, at the checked frame; never in the benchmark. The block has
-           three lines and the timeline of the last whole frame (tl_log):
-               track frame   the car, the race, the scene and the busy clocks of the units
-               cycles        CPU cycles of the stages of the frame
-               raster        the clocks the rasterizer spent on each kind of work */
-        if (!bench_frames && (sim ? ((drawn % 250 == 2 && !sim_race) || drawn == check_at)
-                                  : (drawn == check_at && !pocket_race_logged++))) {
-            dlog_str("track frame ");
-            dlog_dec((int32_t)drawn);
-            dlog_str(": car ");
-            dlog_dec((int32_t)cs->x);
-            dlog_char(' ');
-            dlog_dec((int32_t)cs->y);
-            dlog_char(' ');
-            dlog_dec((int32_t)cs->z);
-            dlog_str(", ");
-            dlog_dec((int32_t)drive_kmh(cs));
-            dlog_str(" km/h, gear ");
-            dlog_dec(cs->gear);
-            dlog_str(", walls ");
-            dlog_dec((int32_t)car_wall_hits());
-            dlog_str(", crashes ");
-            dlog_dec((int32_t)car_crashes());
-            dlog_str(", marker ");
-            dlog_dec(car_marker());
-            dlog_str(", place ");
-            dlog_dec(opp_player_rank());
-            dlog_str(" of ");
-            dlog_dec(opp_count() + 1);
-            dlog_str(", cars in view ");
-            dlog_dec((int32_t)ts.objects);
-            dlog_str(" slip x100 ");
-            dlog_dec((int32_t)(cs->surface * 100.0f));
-            dlog_str(", steps ");
-            dlog_dec((int32_t)steps);
-            dlog_str(" (");
-            dlog_dec((int32_t)steps_now);
-            dlog_str(" now, ");
-            dlog_dec((int32_t)t_phys);
-            dlog_str(" cycles)");
-            dlog_str(", ");
-            dlog_dec((int32_t)ts.pieces);
-            dlog_str(" pieces, ");
-            dlog_dec((int32_t)ts.faces);
-            dlog_str(" faces, ");
-            dlog_dec((int32_t)pixels);
-            dlog_str(" px, cpu ");
-            dlog_dec((int32_t)cycles);
-            dlog_str(", geometry ");
-            dlog_dec((int32_t)geom);
-            dlog_str(", setup ");
-            dlog_dec((int32_t)setup);
-            dlog_str(", raster ");
-            dlog_dec((int32_t)raster);
-            dlog_str(", misses ");
-            dlog_dec((int32_t)misses);
-            dlog_str(", blit ");
-            dlog_dec((int32_t)blit);
-            dlog_str(", backdrop ");                    /* the blitter's clocks, then the CPU's wait */
-            dlog_dec((int32_t)back_clocks);
-            dlog_str(" (wait ");
-            dlog_dec((int32_t)back_cycles);
-            dlog_char(')');
-            dlog_str(", fps ");
-            dlog_dec((int32_t)fps);
-            dlog_str(", frame ");                       /* the cycles of the previous frame */
-            dlog_dec((int32_t)frame_cycles);
-            if (drawn == check_at) {                    /* these two are logged once, at the checked frame */
-                dlog_str(", camera ");
-                dlog_dec(ts.cam[0]);
-                dlog_char(' ');
-                dlog_dec(ts.cam[1]);
-                dlog_char(' ');
-                dlog_dec(ts.cam[2]);
-                dlog_str(", nearest ");
-                dlog_dec((int32_t)ts.nearest);
-            }
-            float shx, shy, shh;
-            if (car_shadow_at(&shx, &shy, &shh)) {
-                dlog_str(", shadow ");
-                dlog_dec((int32_t)shx);
-                dlog_char(' ');
-                dlog_dec((int32_t)shy);
-                dlog_char(' ');
-                dlog_dec((int32_t)shh);
-            }
-            dlog_str(", puffs ");
-            dlog_dec(car_puffs());
-            dlog_str(", late ");                        /* mixer passes that were late since the start */
-            dlog_dec((int32_t)(AU_STATUS & AU_LATE));
-            dlog_str("\n  cycles: cull ");
-            dlog_dec((int32_t)ts.cyc_cull);
-            dlog_str(", pieces ");
-            dlog_dec((int32_t)ts.cyc_piece);
-            dlog_str(", out ");
-            dlog_dec((int32_t)ts.cyc_out);
-            dlog_str(" (wait ");
-            dlog_dec((int32_t)draw_wait);
-            dlog_str("), after ");
-            dlog_dec((int32_t)(cycles - ts.cyc_cull - ts.cyc_piece - ts.cyc_out));
-            dlog_str(", effects ");                     /* cycles: shadows and smoke + radar (efx.h) */
-            dlog_dec((int32_t)efx_objects);
-            dlog_str(" + ");
-            dlog_dec((int32_t)efx_radar);
-            dlog_str(" (");
-            dlog_dec((int32_t)efx_radar_lines);
-            dlog_str(" lines)");
-            dlog_str("\n  raster: miss ");
-            dlog_dec((int32_t)r_miss);
-            dlog_str(", edges ");
-            dlog_dec((int32_t)r_edge);
-            dlog_str(", rows ");
-            dlog_dec((int32_t)r_row);
-            dlog_str(", drain ");
-            dlog_dec((int32_t)r_drain);
-            dlog_str(", starved ");
-            dlog_dec((int32_t)r_starved);
-            dlog_str("\n");
-            tl_log();
-        }
-        frame_cycles = rdcycle() - t_frame;
-        tl_mark(TL_END);
-#else
-        /* A release has no statistics. It runs only the check of the simulation. */
+        race_debug_measure(&ts);
         if (sim && drawn == check_at)
             track_check(fb, &clip, &cam, objs, nobj, &back, cockpit ? &dashboard : 0, &hud);
-#endif
+        race_debug_report(st, fb, ask, steps_now, &ts);
         VID_SWAP = 1;                           /* show the finished picture */
         log_race_head(++drawn);
     }
@@ -1689,73 +1305,6 @@ static int race(int n, int car)
     }
 }
 
-#if DEBUG
-/* Debug build: shows the result of the benchmark (bench.h) on the screen, one line for each track, until a
-   button is pressed. A new press counts only after 25 pictures. rows holds the summaries and ok[] tells which
-   tracks were raced. */
-static void bench_show(const struct ft_summary *rows, const int *ok)
-{
-    static const uint32_t pal[5] = { 0x000000, 0xFFFFFF, 0x40D070, 0xF04848, 0x909090 };
-    enum { BG, FG, GREEN_, RED_, GREY_ };           /* the colours: black, white, green, red, grey */
-    char line[CON_COLS + 1], *p;
-    uint32_t drawn = 0, keys_before = IN_KEY;
-    for (;;) {
-        uint32_t st = wait_swap_done();
-        volatile uint8_t *fb = FB(!(st & VID_FRONT));
-        for (int i = 0; i < 5; i++) VID_PAL[i] = pal[i];
-        fb_fill(fb, 0, 0, FB_W, FB_H, BG);
-        fb_fill(fb, 0, 0, FB_W, 8, FG);
-        con_text(fb, 1, 0, "SCREAMER - BENCHMARK", BG, FG);
-        p = fmt_scale(fmt_str(line, "far "), track_far_scale());
-        fmt_scale(fmt_str(p, "  lod "), track_lod_scale());
-        con_text(fb, 1, 2, line, GREEN_, BG);
-        con_text(fb, 1, 4, BENCH_SCREEN_HEAD, GREY_, BG);
-        for (int t = 0; t < BENCH_TRACKS; t++) {
-            bench_screen_row(line, t + 1, ok[t] ? &rows[t] : 0);
-            con_text(fb, 1, 5 + t, line, ok[t] && rows[t].late ? RED_ : FG, BG);
-        }
-        con_text(fb, 1, 12, "avg, max: ms a frame; late: over 20 ms", GREY_, BG);
-        con_text(fb, 1, 13, "faces, pieces: mean a frame", GREY_, BG);
-        con_text(fb, 1, 15, "More in debug.txt (Saves folder).", GREY_, BG);
-        con_text(fb, 1, 17, "Press a button to go on.", FG, BG);
-        VID_SWAP = 1;
-        uint32_t keys = IN_KEY;
-        if (++drawn > 25 && (keys & ~keys_before)) return;
-        keys_before = keys;
-    }
-}
-
-/* Debug build: the benchmark (bench.h), started by "bench = 1" in screamer.cfg. Each track is raced once for
-   BENCH_FRAMES pictures with the gas held and the first car. The options (laps, difficulty) are as set in the
-   menu. The result goes into debug.txt and onto the screen. The races write little to the log, and room for
-   the result is kept free in it (dlog_keep). */
-static void bench_run(void)
-{
-    struct ft_summary rows[BENCH_TRACKS];
-    int ok[BENCH_TRACKS] = { 0 };
-    struct menu_options opt;
-    menu_options(&opt);
-    car_laps = opt.laps;
-    car_mode = CAR_NORMAL;
-    track_build_difficulty = opt.difficulty == 3 ? 4 : opt.difficulty;
-    opp_bullet = track_build_difficulty > 2;
-    speech_on = 0;
-    dlog_keep(MARK_ROOM + BENCH_LOG_BYTES);
-    for (int n = 1; n <= BENCH_TRACKS; n++) {
-        bench_frames = BENCH_FRAMES;
-        if (race(n, 0)) {
-            ft_summary(&rows[n - 1]);
-            ok[n - 1] = rows[n - 1].frames > 0;
-        }
-        bench_frames = 0;
-    }
-    dlog_keep(0);                               /* the result may use the room kept for it and the marks */
-    bench_log(rows, ok, track_far_scale(), track_lod_scale());
-    dlog_keep(MARK_ROOM);                       /* afterwards only the marks' room is kept */
-    bench_show(rows, ok);
-}
-#endif
-
 /*
  * Runs the intro's race on track n, which is set up already (intro.h). In each frame the opponents, the
  * scenery and the intro's camera move (original: STARTL.EXE 0x2780c), and the logos and credits are drawn
@@ -1993,9 +1542,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     menu_options_load();
     volumes();
     config_load();                  /* screamer.cfg: how far the core draws (config.h) */
-#if DEBUG
-    dlog_keep(MARK_ROOM);           /* debug build: the rest of the log leaves room for the marks (mark.h) */
-#endif
+    race_debug_init();
     if (files_missing()) files_loop(0);         /* a file the game needs is missing: the list, for ever */
     int sim = (SYS_FLAGS & FLAG_SIM) != 0;
     const uint32_t *shown = sim ? 0 : first_picture(intro_track());    /* the simulation's race has none */
@@ -2025,9 +1572,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
         int screen = (!sim || check) && menus();
         int n = sim && slot_size(TRACK_SLOT) ? (int)slot_size(TRACK_SLOT) : choice.track % MENU_TRACKS + 1;
         int car = choice.car;                   /* the last track and car, as CHOICE.DAT keeps them */
-#if DEBUG
-        if (config_bench()) bench_run();        /* debug build: screamer.cfg has "bench = 1" */
-#endif
+        race_debug_bench(race);
         if (screen) menu_sounds();
         enum { AT_PAGES, AT_NAME, AT_TRACKS, AT_CARS };     /* the screen to go on with */
         const int first = !check ? AT_PAGES : check == 2 ? AT_CARS : AT_TRACKS;
