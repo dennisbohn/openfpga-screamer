@@ -54,6 +54,11 @@ uint32_t frames_shown;            /* frames swapped in so far; trap.c prints it 
 #define STACK_FILL  0x57AC57ACu /* pattern in unused stack; stack_used() finds how far it was overwritten */
 #define STACK_LOW   0x6000u     /* the stack may grow down to here (link.ld keeps the boot loader below) */
 
+/* A named part of the loop of one caller (a race, a menu screen). It is inlined, so that the loop compiles as
+   if it were written out in one piece. The loops are hot, and the compiler allocates their registers
+   differently when a part is a call or has a struct for its variables. */
+#define INLINE_STEP static inline __attribute__((always_inline))
+
 static uint32_t results;        /* SYS_SIM bits 20..0, from the boot loader */
 static uint8_t col_bg = COL_BG, col_text = COL_TEXT, col_dim = COL_DIM, col_alert = COL_ALERT;
 
@@ -554,11 +559,10 @@ static uint32_t rec_n;
 static int rec_full;
 
 /*
- * The steps of a pass of the race loop. They are inlined into run_track, so that the loop compiles as if it
- * were written out in one piece. The parts that make decisions (the keys of the pause and of the end, the
- * physics steps, the set-up of the units) stay in run_track itself.
+ * The steps of a pass of the race loop. They are inlined into run_track (INLINE_STEP). The parts that make
+ * decisions (the keys of the pause and of the end, the physics steps, the set-up of the units) stay in
+ * run_track itself.
  */
-#define RACE_STEP   static inline __attribute__((always_inline))
 
 /*
  * What the steps of a pass hand to one another. The members of the first group are set before the first
@@ -590,7 +594,7 @@ struct race_frame {
 /* The simulation ends one frame after the checked one. It reports its result, then the camera and the car of
    the checked frame, which are set against the original's (tools/dosram.py cam). Places are in game units,
    angles in 1/10000 radian. */
-RACE_STEP void sim_report(void)
+INLINE_STEP void sim_report(void)
 {
     SYS_SIM = SIM_DONE | results;
     dlog_str("SYS_SIM=");
@@ -610,7 +614,7 @@ RACE_STEP void sim_report(void)
 
 /* Sets up the race on track n with the car of CARS.DTR row car: the ghost, the cars, the view of the car, the
    dashboard, and the hook that hands the pieces to the geometry unit. Returns 1 if the dashboard is there. */
-RACE_STEP int race_enter(int n, int car, int replay, int car_v)
+INLINE_STEP int race_enter(int n, int car, int replay, int car_v)
 {
     ghost_init(n, car);
     car_init(car, replay);
@@ -626,7 +630,7 @@ RACE_STEP int race_enter(int n, int car, int replay, int car_v)
 
 /* Stage 1, input: waits for the previous swap, reads the keys and keeps the music fed. Returns VID_STATUS of
    the new pass. In the benchmark (debug build) the gas is held and no controller is read. */
-RACE_STEP uint32_t race_input(struct race_frame *f, uint32_t drawn)
+INLINE_STEP uint32_t race_input(struct race_frame *f, uint32_t drawn)
 {
     uint32_t st = next_frame();
     f->keys = race_dbg.bench_frames ? KEY_B : IN_KEY;
@@ -642,7 +646,7 @@ RACE_STEP uint32_t race_input(struct race_frame *f, uint32_t drawn)
 
 /* Stage 2, physics: the race fades in from black, picture and sound. fade is the level, 0 to 0x8000, and
    steps_now the physics steps of this pass. Returns the new level. */
-RACE_STEP int32_t race_fade_in(int32_t fade, uint32_t steps_now)
+INLINE_STEP int32_t race_fade_in(int32_t fade, uint32_t steps_now)
 {
     if (fade < 0x8000) {
         fade += (int32_t)steps_now * FADE_RACE;
@@ -654,7 +658,7 @@ RACE_STEP int32_t race_fade_in(int32_t fade, uint32_t steps_now)
 
 /* Stage 3, camera: places the camera in cam and collects the objects (cars, shadows, smoke, props) to draw
    in objs. */
-RACE_STEP void race_objects(struct race_frame *f, struct track_cam *cam, struct track_object *objs)
+INLINE_STEP void race_objects(struct race_frame *f, struct track_cam *cam, struct track_object *objs)
 {
     car_camera(cam);
     race_debug_camera(cam, f->keys);
@@ -669,7 +673,7 @@ RACE_STEP void race_objects(struct race_frame *f, struct track_cam *cam, struct 
 /* Stage 4, scene, first part: the backdrop (original: STARTL.EXE 0x83a68) and the palette. The blitter copies
    the backdrop while the CPU culls the scene. The first piece for the geometry unit waits until the blitter
    is done (hw_piece). st is VID_STATUS of the pass, fade the fade level. */
-RACE_STEP void race_backdrop(struct race_frame *f, uint32_t st, int32_t fade, const struct rs_clip *clip,
+INLINE_STEP void race_backdrop(struct race_frame *f, uint32_t st, int32_t fade, const struct rs_clip *clip,
                              struct track_cam *cam)
 {
     f->fb = FB(!(st & VID_FRONT));
@@ -684,7 +688,7 @@ RACE_STEP void race_backdrop(struct race_frame *f, uint32_t st, int32_t fade, co
 
 /* Stage 4, scene, second part: the pieces go from the CPU to the geometry unit, their faces to the setup unit
    and the triangles to the rasterizer. ts gets what the scene came to. */
-RACE_STEP void race_draw(struct race_frame *f, struct track_object *objs, struct track_cam *cam,
+INLINE_STEP void race_draw(struct race_frame *f, struct track_object *objs, struct track_cam *cam,
                          const struct rs_clip *clip, struct track_stats *ts)
 {
     race_debug_scene_begin();
@@ -696,7 +700,7 @@ RACE_STEP void race_draw(struct race_frame *f, struct track_object *objs, struct
    The blitter draws the dashboard once the scene is done, and the CPU makes the race screen's list
    meanwhile. Then the CPU waits for both and widens the clip to the whole screen, so that the window is
    clipped to it. radar is the radar's piece; it is drawn if has_radar is set. */
-RACE_STEP void race_cockpit_screen(int has_radar, struct gu_piece *radar)
+INLINE_STEP void race_cockpit_screen(int has_radar, struct gu_piece *radar)
 {
     hud_dash(&dashboard, (int)draw_buf);
     hw_blit(&dashboard);
@@ -709,7 +713,7 @@ RACE_STEP void race_cockpit_screen(int has_radar, struct gu_piece *radar)
 
 /* Stage 5, race screen without the cockpit: the radar window, then the list of the instruments. The question
    PLAY AGAIN? (ask) has no race screen. */
-RACE_STEP void race_plain_screen(int ask, int has_radar, struct gu_piece *radar)
+INLINE_STEP void race_plain_screen(int ask, int has_radar, struct gu_piece *radar)
 {
     if (has_radar) hw_piece(radar);
     if (ask) blit_start(&hud, (int)draw_buf);                   /* the question has no race screen */
@@ -718,7 +722,7 @@ RACE_STEP void race_plain_screen(int ask, int has_radar, struct gu_piece *radar)
 
 /* Stage 6, frame end: waits until the rasterizer has drawn everything, lets the simulation check the picture
    against the C models, and hands the picture to the statistics of the debug build. */
-RACE_STEP void race_finish(struct race_frame *f, uint32_t st, int ask, uint32_t drawn, uint32_t steps_now,
+INLINE_STEP void race_finish(struct race_frame *f, uint32_t st, int ask, uint32_t drawn, uint32_t steps_now,
                            const struct rs_clip *clip, struct track_cam *cam, struct track_object *objs,
                            struct track_stats *ts)
 {
@@ -1185,6 +1189,45 @@ static int dashboard_init(void)
     return ok;
 }
 
+/* The simulation ends at the third frame of a menu screen: it reports its result and the stack use. */
+INLINE_STEP void menu_sim_done(void)
+{
+    SYS_SIM = SIM_DONE | results;
+    dlog_str("stack used ");
+    dlog_dec((int32_t)stack_used());
+    dlog_str(" bytes\n");
+}
+
+/* Writes a line to the log: how long frame number drawn of the menu screen took, from its start at cycle
+   count t_frame. */
+INLINE_STEP void menu_log_frame(int screen, uint32_t drawn, uint32_t t_frame)
+{
+    dlog_str(screen == MENU_CAR_SCREEN ? "car screen" :
+             screen == MENU_TRACK_SCREEN ? "track screen" :
+             screen == MENU_CHAMP_SCREEN ? "championship" :
+             screen == MENU_RECORDS_SCREEN ? "records" :
+             screen == MENU_NAME_SCREEN ? "name" : "pages");
+    dlog_str(" frame ");
+    dlog_dec((int32_t)drawn);
+    dlog_str(": ");
+    dlog_dec((int32_t)(rdcycle() - t_frame));
+    dlog_str(" cycles\n");
+}
+
+/* The simulation's check of the picture just drawn: the C models draw the same picture into CHECK_BUF, and
+   compare_log compares it with the screen. */
+INLINE_STEP void menu_check(void)
+{
+    volatile uint8_t *m = CHECK_BUF;
+    uint32_t t0 = rdcycle();
+    blit_model(m, &back);
+    track_mode = TRACK_MODEL;
+    menu_scene(m);
+    track_mode = TRACK_HW;
+    blit_model(m, &hud);
+    compare_log(FB(draw_buf), m, t0);
+}
+
 /*
  * Runs one screen of the menu (menu.h) until something is chosen. screen is one of the MENU_*_SCREEN values
  * and n is the choice to start on. Returns the number chosen: the track, the car's row + 1, or for the pages
@@ -1217,12 +1260,7 @@ static int menu_screen(int screen, int n)
         uint32_t st = next_frame(), keys = in_keys(), t_frame = rdcycle();
         music_frame();
         frames_shown = drawn;
-        if (sim && drawn == 3) {
-            SYS_SIM = SIM_DONE | results;
-            dlog_str("stack used ");
-            dlog_dec((int32_t)stack_used());
-            dlog_str(" bytes\n");
-        }
+        if (sim && drawn == 3) menu_sim_done();
 
         /* The menu runs at 50 steps a second, at most 4 steps for a picture. A choice ends the screen, but
            the pages fade out first. */
@@ -1271,28 +1309,8 @@ static int menu_screen(int screen, int n)
         hw_blit(&hud);
         while (RS_DRAW & RS_BUSY)
             ;
-        if (drawn % 250 == 2) {                 /* every 250 frames a line in the log */
-            dlog_str(screen == MENU_CAR_SCREEN ? "car screen" :
-                     screen == MENU_TRACK_SCREEN ? "track screen" :
-                     screen == MENU_CHAMP_SCREEN ? "championship" :
-                     screen == MENU_RECORDS_SCREEN ? "records" :
-                     screen == MENU_NAME_SCREEN ? "name" : "pages");
-            dlog_str(" frame ");
-            dlog_dec((int32_t)drawn);
-            dlog_str(": ");
-            dlog_dec((int32_t)(rdcycle() - t_frame));
-            dlog_str(" cycles\n");
-        }
-        if (sim && drawn == 2) {                /* the simulation's check against the C models */
-            volatile uint8_t *m = CHECK_BUF;
-            uint32_t t0 = rdcycle();
-            blit_model(m, &back);
-            track_mode = TRACK_MODEL;
-            menu_scene(m);
-            track_mode = TRACK_HW;
-            blit_model(m, &hud);
-            compare_log(FB(draw_buf), m, t0);
-        }
+        if (drawn % 250 == 2) menu_log_frame(screen, drawn, t_frame);   /* every 250 frames */
+        if (sim && drawn == 2) menu_check();    /* the simulation's check against the C models */
         VID_SWAP = 1;
         drawn++;
     }
