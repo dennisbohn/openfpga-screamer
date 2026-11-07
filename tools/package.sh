@@ -1,13 +1,15 @@
 #!/bin/sh
-# Assemble the SD card layout in build/sdcard/ from core/:
+# Assembles the SD card layout in build/sdcard/ from core/ and build/assets/.
+# Usage: tools/package.sh        (no arguments; run tools/fw.sh and tools/build.sh first)
+# Result:
 #   Cores/Chainy.Screamer/     core JSONs, bitstream.rbf_r, icon.bin, info.txt
 #   Platforms/screamer.json    platform definition
 #   Platforms/_images/         platform image
 #   Assets/screamer/Chainy.Screamer/  firmware.bin, program.bin (tools/fw.sh)
 #   Assets/screamer/common/    README.txt: which game files go there
-# Copy the contents of build/sdcard/ onto the root of the Pocket's SD card. A release never
+# Copy the contents of build/sdcard/ onto the root of the Pocket's SD card. The package never
 # holds game data: the player copies the game's own files to Assets/screamer/common/
-# (tools/deploy.sh does that from a game folder).
+# (tools/deploy.sh does that from a game folder). tools/release_zip.py zips the result.
 set -e
 root=$(cd "$(dirname "$0")/.." && pwd)
 core="$root/core"
@@ -25,7 +27,7 @@ cp "$core/output/bitstream.rbf_r" "$out/Cores/$name/"
 cp "$core/dist/platforms/screamer.json" "$out/Platforms/"
 cp "$core/dist/platforms/_images/screamer.bin" "$out/Platforms/_images/"
 
-# the firmware only: build/assets/ may also hold files made from the game data
+# Copy only the two firmware files, although build/assets/ may hold more.
 assets="$root/build/assets/screamer/$name"
 mkdir -p "$out/Assets/screamer/$name" "$out/Assets/screamer/common"      # common: for the game files
 for f in firmware.bin program.bin; do

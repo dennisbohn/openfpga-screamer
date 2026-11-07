@@ -1,86 +1,79 @@
-"""One track for the Pocket (firmware/track.c, car.c), from the game files: the reference.
+"""Builds one track image for the Pocket from the game's files: the reference implementation.
 
-The core builds this image itself from the original containers on the SD card
-(firmware/track_build.c); this script is kept only as the reference that
-tools/check_track_build.sh compares the firmware's build with, byte for byte.
+The core builds this image itself, from the original containers on the SD card
+(firmware/track_build.c). This script is the reference that tools/check_track_build.sh compares the
+firmware's build with, byte for byte. The firmware reads the image in firmware/track.c and car.c.
 
-Usage: python tools/make_track.py <GFX/MAPnL.DAT> <DATA/MAPn.DAT> <DATA/GEN.DAT> <out.bin>
-                                  <preview.png>
-(GFX/GAME.DAT and DATA/LOCAL.DAT are taken from beside them.)
+Usage: python -I tools/make_track.py <GFX/MAPnH.DAT> <DATA/MAPn.DAT> <DATA/GEN.DAT> <out.bin> <preview.png>
+  GFX/MAPnL.DAT works instead of MAPnH.DAT. GFX/GAME.DAT and DATA/LOCAL.DAT are taken from beside
+  the arguments. The containers are read with tools/datfile.py.
+Writes: out.bin, the image (the one that firmware/main.c builds at TEX_FILE), and preview.png, the
+  placements (grey) and the player's path (red) seen from above. It prints one line of counts.
+The image is made from game data, so it stays in build/ and is never committed.
 
-Formats from openscreamer docs/NOTES.md ("How the track is built", sections 1-4, 6-9, 11).
-The output, the image firmware/main.c builds at TEX_FILE, little-endian:
+The formats are those of openscreamer docs/NOTES.md ("How the track is built", sections 1-4, 6-9, 11).
 
-  0x00  "SCRK", u32 version 6
-  0x08  u32 offset, size of MAPn.MLB     materials and pixel pages, unchanged
-  0x10  u32 offset, size of MAPn.UNR     the meshes, unchanged
-  0x18  u32 offset of the palette        256 x 0x00RRGGBB (MAPn.COL is 6-bit VGA)
-  0x1C  u32 offset, count of placements  from MAPn.MMP: int32 object, X, Y, height, heading
-                                         (2048 = one turn), 20 bytes each; cell by cell, each
-                                         cell's record run 1 before its run 0, the order in which
-                                         the game puts them into its draw list (0x83164); then
-                                         the cell table: "CELL", u32 cells, u32 0, per cell
-                                         u16 key (row x 256 + column in the map's grid), u16 first
-                                         placement, u16 placements, u16 1 if it has a view box
-                                         (cell array 4: the part of the map the game draws
-                                         while the camera is in this cell, 0x82e88), the box
-                                         int32 x0, z0, x1, z1 (zeros without one); the cells in the
-                                         order of their keys, 24 bytes each
-  0x24  u32 offset, count of camera path points: int32 X, Y, height, about 100 units apart,
-                                         along the player's line (MAPnOPP.SPL, the tenth
-                                         spline, a uniform quadratic B-spline over the
-                                         nodes' handles)
-  0x2C  u32 offset, count of the ground index: the drivable pieces (record run 0) by the
-                                         grid cell of their position, cell = ((Y + 2^20) >> 13)
-                                         x 256 + ((X + 2^20) >> 13): u16 first[65537], then
-                                         count u16 placement numbers, each cell's in file order
-                                         (as openscreamer's track_under() walks them)
-  0x34  u32 offset, count of markers     MAPn.MRK's 32-byte records unchanged
-  0x3C  u32 offset, count of cars        CARS.DTR's CARS_DATA rows, 68 bytes each: char
-                                         name[12], int32 livery, float maxspd, maxrpm, grip,
-                                         accel, int32 automatic, nshift, float ratio[7]
-  0x44  u32 offset, count of car models  AUTO00..: float wheelbase, front axle (ahead of the
-                                         origin), rear axle (behind it), half track, from the
-                                         wheel blocks' offsets; u32 offset (from this section)
-                                         and size of the .3DX file, which follow the records
-  0x4C  u32 offset, count of road points MAPn.MMP cell array 2: float angle, int32 x, y
-  0x54  u32 offset, count of walls       MAPn.MMP cell array 3: float angle, int32 x, y, x1,
-                                         y1, x2, y2
-  0x5C  int32 x, y, float heading        where the player starts: its place on the grid, the
-                                         start node of MAPnOPP.SPL's tenth spline (its own point),
-                                         facing as the MMP road point nearest to it (0x120c0)
-  0x68  u32 offset, size of the race screen: u32 images, u32 fonts; per image u32 offset
-                                         (from the section), u16 width, height, int16 x, y;
-                                         per font u32 height, first character, count, widest,
-                                         first image; the pictures' boxes (below); GAME.TXT's
-                                         lines, 26 x 32 bytes; then the
-                                         images, one byte a pixel, 0 see-through: the 63 sprites
-                                         of GAMEL.SPR (x, y their offsets), the characters of
-                                         GAMEL.FNT's fonts (each pixel its shade 1..15), then
-                                         IMPLET_L and IMPRES_L (.PKC) each as the boxes round its
-                                         groups of pixels (so the blitter does not walk the
-                                         see-through between them), x, y the place on the
-                                         screen; u32 first box, count of each of the two after
-                                         the fonts
-  0x70  int32 bonus_time, camera_hi      TRACK_DATA of MAPnB.DTR (the difficulty's file, below)
-  0x78  u32 offset of the backdrop       MAPn.BCK (a PCX) unpacked: 512 x 256 palette
-                                         indices, rows of 512 bytes, and its last row once more
-                                         (the game's copy, 0x83a68, runs on past a row's end
-                                         into the next row)
-  0x7C  u32 ground colour                TRACK_DATA's color: the palette index below the
-                                         backdrop
-  0x80  u32 offset, size of the opponents: u32 splines, u32 rows; rows x float max_spd,
-                                         accel, brakes, skill, sband (OPPONENTS of the
-                                         difficulty's file); then per spline of MAPnOPP.SPL
-                                         (opponent k drives spline k, the tenth is the player's)
-                                         u32 start node, u32 nodes, nodes x int32 x, y, z (the
-                                         node's own point), next, in x, y, out x, y (its handles)
-  0x88  u32 file size, u32 n, n x u32    CRC-32 (zlib) of each 256 KB block from 0x100 on,
-                                         so the core can tell where a load went wrong
+Layout of the image. All numbers are little-endian, offsets count bytes from the start of the file,
+and every section starts on a 256-byte boundary. The header is:
 
-Sections start on 256-byte boundaries. The output is made from game data: it stays in
-build/, never in the repository, and is no longer put on the SD card. The preview draws
-placements and path from above.
+  0x00  "SCRK", u32 version (6).
+  0x08  u32 offset, u32 size of MAPn.MLB: the materials and pixel pages, unchanged.
+  0x10  u32 offset, u32 size of MAPn.UNR: the meshes, unchanged.
+  0x18  u32 offset of the palette: 256 entries of 0x00RRGGBB (MAPn.COL has 6-bit VGA values).
+  0x1C  u32 offset, u32 count of the placements, from MAPn.MMP. A placement is 20 bytes: int32 object,
+        X, Y, height, heading (2048 = one turn). They go cell by cell, and in each cell the records
+        of run 1 come before those of run 0. That is the order in which the game puts them into its
+        draw list (original: STARTL.EXE 0x83164).
+        The cell table follows the placements: "CELL", u32 number of cells, u32 0, then 24 bytes
+        per cell, the cells in the order of their keys: u16 key (row x 256 + column in the map's
+        grid), u16 first placement, u16 number of placements, u16 1 if the cell has a view box (else
+        0), int32 x0, z0, x1, z1 of the box (zeros without one). The view box (cell array 4) is
+        the part of the map that the game draws while the camera is in this cell (original:
+        STARTL.EXE 0x82e88).
+  0x24  u32 offset, u32 count of the camera path points: int32 X, Y, height, about 100 units apart,
+        along the player's line. That line is the tenth spline of MAPnOPP.SPL, a uniform quadratic
+        B-spline over the nodes' handles.
+  0x2C  u32 offset, u32 count of the ground index. It lists the drivable pieces (the records of
+        run 0) by the grid cell of their position, cell = ((Y + 2^20) >> 13) x 256 + ((X + 2^20) >> 13).
+        Layout: u16 first[65537], then one u16 placement number per entry, each cell's in file
+        order (as openscreamer's track_under() walks them).
+  0x34  u32 offset, u32 count of markers: the 32-byte records of MAPn.MRK, unchanged.
+  0x3C  u32 offset, u32 count of cars: the CARS_DATA rows of CARS.DTR, 68 bytes each: char name[12],
+        int32 livery, float maxspd, maxrpm, grip, accel, int32 automatic, nshift, float ratio[7].
+  0x44  u32 offset, u32 count of car models (AUTO00..). Per model: float wheelbase, front axle (ahead
+        of the origin), rear axle (behind it), half track, all taken from the offsets of the wheel
+        blocks; then u32 offset (from this section) and u32 size of the .3DX file. The .3DX files
+        follow the records.
+  0x4C  u32 offset, u32 count of road points, from cell array 2 of MAPn.MMP: float angle, int32 x, y.
+  0x54  u32 offset, u32 count of walls, from cell array 3 of MAPn.MMP: float angle, int32 x, y, x1, y1,
+        x2, y2.
+  0x5C  int32 x, int32 y, float heading: where the player starts, its place on the grid. x, y is the
+        start node of the tenth spline of MAPnOPP.SPL (its own point). The heading is that of the
+        MMP road point nearest to it (original: STARTL.EXE 0x120c0).
+  0x68  u32 offset, u32 size of the race screen section, which holds in this order:
+          u32 images, u32 fonts;
+          per image: u32 offset (from the section), u16 width, u16 height, int16 x, int16 y;
+          per font: u32 height, first character, count, widest, first image;
+          for each of the two pictures IMPLET_L and IMPRES_L: u32 first box, u32 count of boxes
+            (the boxes are images, see below);
+          the lines of GAME.TXT, 26 x 32 bytes;
+          the images, one byte per pixel, 0 = see-through: the 63 sprites of GAMEL.SPR (x, y are
+          their offsets), the characters of the fonts of GAMEL.FNT (each pixel is its shade, 1..15),
+          then IMPLET_L and IMPRES_L (.PKC), each as the boxes round its groups of pixels, so that
+          the blitter does not walk the see-through between them (x, y is the place on the screen).
+  0x70  int32 bonus_time, int32 camera_hi: TRACK_DATA of MAPnB.DTR (the difficulty's file, see
+        DIFFICULTY).
+  0x78  u32 offset of the backdrop: MAPn.BCK (a PCX) unpacked to 512 x 256 palette indices, rows of
+        512 bytes, and its last row once more. The last row is stored twice because the game's copy
+        (original: STARTL.EXE 0x83a68) runs on past the end of a row into the next row.
+  0x7C  u32 ground colour: the color of TRACK_DATA, the palette index below the backdrop.
+  0x80  u32 offset, u32 size of the opponents section: u32 splines, u32 rows; rows x float max_spd,
+        accel, brakes, skill, sband (OPPONENTS of the difficulty's file); then per spline of
+        MAPnOPP.SPL (opponent k drives spline k, the tenth is the player's): u32 start node, u32
+        nodes, and per node int32 x, y, z (the node's own point), next, in x, in y, out x, out y
+        (its handles).
+  0x88  u32 file size, u32 n, then n x u32: the CRC-32 (zlib) of each 256 KB block from 0x100 on, so
+        that the core can tell where a load went wrong.
 """
 import math
 import os
@@ -95,6 +88,7 @@ BLOCK = 0x40000         # bytes per CRC block
 
 
 def png(path, w, h, rgb):
+    """Writes a w x h PNG file (8 bits, RGB) from rgb, which holds w * h * 3 bytes."""
     rows = b"".join(b"\0" + rgb[y * w * 3:(y + 1) * w * 3] for y in range(h))
 
     def chunk(kind, body):
@@ -107,7 +101,7 @@ def png(path, w, h, rgb):
 
 
 def cells(mmp):
-    """The cells of the 256 x 256 grid that hold something, row by row"""
+    """Yields the offset in the MMP of each cell of the 256 x 256 grid that holds something, row by row."""
     i32 = lambda o: struct.unpack_from("<i", mmp, o)[0]
     for gy in range(256):
         row = i32(4 * gy)
@@ -120,7 +114,10 @@ def cells(mmp):
 
 
 def placements(mmp):
-    """The 64-byte records of runs 1 and 0 of every cell, and which of them are run 0"""
+    """Returns the placements of all cells and a flag for each: is it a record of run 0?
+
+    Per cell the 64-byte records are taken run 1 first, then run 0. A placement is the tuple
+    (object, X, Y, height, heading) of one record."""
     i32 = lambda o: struct.unpack_from("<i", mmp, o)[0]
     out, run0 = [], []
     for c in cells(mmp):
@@ -133,7 +130,7 @@ def placements(mmp):
 
 
 def cell_table(mmp):
-    """The table that ends the placements: every cell's key, its placements and its view box"""
+    """The cell table that follows the placements: each cell's key, its placements and its view box."""
     i32 = lambda o: struct.unpack_from("<i", mmp, o)[0]
     out, first, n = [], 0, 0
     for gy in range(256):
@@ -156,7 +153,10 @@ def cell_table(mmp):
 
 
 def ground_index(pl, run0):
-    """u16 first[65537] and the run-0 placement numbers, binned by their position's cell"""
+    """The ground index and the number of its entries (see the header of this file).
+
+    It holds u16 first[65537] and the numbers of the run-0 placements, sorted into bins by the
+    grid cell of their position. Placements outside the 256 x 256 grid are left out."""
     bins = {}
     for i, (obj, x, y, h, t) in enumerate(pl):
         if not run0[i]:
@@ -173,7 +173,7 @@ def ground_index(pl, run0):
 
 
 def cell_arrays(mmp):
-    """Arrays 2 (road points, 12 bytes) and 3 (walls, 28 bytes) of every cell"""
+    """The records of cell array 2 (road points, 12 bytes each) and 3 (walls, 28 bytes each) of all cells."""
     i32 = lambda o: struct.unpack_from("<i", mmp, o)[0]
     dirs, walls = [], []
     for c in cells(mmp):
@@ -185,7 +185,9 @@ def cell_arrays(mmp):
 
 
 def cars_data(dtr):
-    """CARS.DTR's CARS_DATA rows (openscreamer drive.c, cars_dtr_load)"""
+    """The CARS_DATA rows of CARS.DTR as 68-byte records, and their number.
+
+    The text is read as openscreamer's cars_dtr_load (drive.c) reads it: 14 values make a row."""
     rows, row, on = [], [], False
     for line in dtr.decode("latin-1").splitlines():
         s = line.strip()
@@ -201,6 +203,8 @@ def cars_data(dtr):
             if len(row) == 14:
                 rows.append(row)
                 row = []
+    # A value is a one-letter prefix and a number: x marks a hexadecimal integer, any other prefix
+    # a decimal float.
     num = lambda tok: int(tok[1:], 16) if tok[0] == "x" else float(tok[1:])
     out = b""
     for r in rows:
@@ -211,8 +215,10 @@ def cars_data(dtr):
 
 
 def car_model(x3d):
-    """wheelbase, front axle, rear axle, half track of a .3DX car: from the offsets of its
-    off-centre (wheel) blocks (openscreamer mesh.c); the nose is towards local -Z (16 bytes)"""
+    """Wheelbase, front axle, rear axle and half track of a .3DX car, as four floats (16 bytes).
+
+    They come from the offsets of the off-centre (wheel) blocks (openscreamer mesh.c). The nose
+    points towards local -Z. A model without wheel blocks gets fixed values."""
     i32 = lambda o: struct.unpack_from("<i", x3d, o)[0]
     lo = hi = half = 0.0
     seen = False
@@ -227,12 +233,15 @@ def car_model(x3d):
         lo, hi = (tz, tz) if not seen else (min(lo, tz), max(hi, tz))
         seen = True
         half = max(half, abs(tx))
-    return struct.pack("<4f", hi - lo, -lo, hi, half) if seen else struct.pack("<4f", 935.0, 445.0, 490.0, 226.0)
+    return (struct.pack("<4f", hi - lo, -lo, hi, half) if seen
+            else struct.pack("<4f", 935.0, 445.0, 490.0, 226.0))
 
 
 def pkc(data):
-    """A .PKC picture (320 x 200): negative = skip so many (see-through), positive = so many
-    pixels follow; as the boxes round its groups of pixels: [(x, y, w, h, bytes)]"""
+    """A .PKC picture (320 x 200) as the boxes round its groups of pixels: [(x, y, w, h, bytes)].
+
+    The file is a list of int32 counts. A negative count skips that many see-through pixels, a
+    positive count is followed by that many pixels."""
     px = bytearray(64000)
     p = at = 0
     while p + 4 <= len(data) and at < 64000:
@@ -244,8 +253,8 @@ def pkc(data):
         px[at:at + n] = data[p:p + n]
         p += n
         at += n
-    # groups: rows with pixels split into bands at empty rows, each band into boxes at runs
-    # of more than 8 empty columns
+    # The groups of pixels: the rows with pixels are split into bands at the empty rows, and each band
+    # into boxes at runs of more than 8 empty columns.
     boxes = []
     rows = [y for y in range(200) if any(px[y * 320:(y + 1) * 320])]
     bands, start = [], None
@@ -269,7 +278,7 @@ def pkc(data):
 
 
 def race_screen(game, local):
-    """The race screen section (see the header): sprites, pictures, fonts, texts"""
+    """The race screen section (see the header of this file): sprites, fonts, pictures and texts."""
     images, fonts = [], []
     spr = datfile.extract(game, "GAMEL.SPR")
     n, size = struct.unpack_from("<2i", spr, 0)
@@ -287,10 +296,10 @@ def race_screen(game, local):
     for h, first, count in heads:
         glyphs.append([struct.unpack_from("<2i", fnt, o + 8 * k) for k in range(count)])
         o += 8 * count
-    o += 4                                              # the pixels' size
+    o += 4                                              # skip the size of the pixel data
     for (h, first, count), gl in zip(heads, glyphs):
         fonts.append((h, first, count, max([1] + [w for w, _ in gl]), len(images)))
-        for w, at in gl:                                # two pixels a byte, the high half first
+        for w, at in gl:                                # two pixels per byte, the high half first
             bw = (w + 1) // 2
             img = bytes((fnt[o + at + r * bw + c // 2] >> (0 if c & 1 else 4)) & 15
                         for r in range(h) for c in range(w))
@@ -312,13 +321,16 @@ def race_screen(game, local):
             b"".join(struct.pack("<2I", *pc) for pc in pictures) + texts + blob)
 
 
-# the difficulty is the letter of the track's data file: 'A' + difficulty (0x13251), 0 ROOKIE,
-# 1 NORMAL, 2 PRO; NORMAL is what the game's intro sets (0x2777f) and openscreamer's default
+# The difficulty selects the track's data file, MAPn + the letter 'A' + difficulty + .DTR
+# (original: STARTL.EXE 0x13251): 0 ROOKIE, 1 NORMAL, 2 PRO. NORMAL is what the game's intro sets
+# (original: STARTL.EXE 0x2777f) and openscreamer's default.
 DIFFICULTY = "B"
 
 
 def opponents(spl, dtr):
-    """The opponents section: OPPONENTS rows of dtr, every spline of spl"""
+    """The opponents section (see the header of this file), its number of splines and its number of rows.
+
+    The rows are the OPPONENTS rows of dtr; the splines are all those of spl."""
     s = dtr.decode("latin-1")
     rows = []
     for line in s[s.index("OPPONENTS"):].splitlines()[1:]:
@@ -337,12 +349,16 @@ def opponents(spl, dtr):
 
 
 def grid_pose(spl, mmp):
-    """The player's place on the grid as STARTL.EXE sets it (0x13e07): the start node of the
-    tenth spline, its own point (+0x04, +0x08); the heading is not the spline's but that of the
-    road point (MMP array 2) nearest to that point (0x13ea1 calls 0x120c0 with mode 0): the
-    3 x 3 cells round it, rows then columns, each cell's points in order, the first with the
-    smallest squared distance (int32 sums, as the game's imul); an angle of 2 pi or more less
-    2 pi (0x12351; the + pi before it is an option the core does not have, 0x11d270 & 8)"""
+    """The player's place on the grid (x, y, heading), as the game sets it (original: STARTL.EXE 0x13e07).
+
+    x, y is the start node of the tenth spline, its own point (+0x04, +0x08). The heading is not
+    the spline's. It is the angle of the road point (cell array 2 of the MMP) nearest to that
+    point (original: STARTL.EXE 0x13ea1 calls 0x120c0 with mode 0). The search covers the 3 x 3
+    cells round the point, rows then columns, and in each cell the points in order. The first
+    point with the smallest squared distance wins; the sums are int32, as the game's imul makes
+    them. An angle of 2 pi or more is reduced by 2 pi (original: STARTL.EXE 0x12351). The game
+    adds pi before that if an option is set (original: STARTL.EXE 0x11d270 & 8); the core has
+    no such option."""
     start, nodes = splines(spl)[9]
     n = nodes[start]
     x, y = n["x"], n["y"]
@@ -388,7 +404,7 @@ def pcx(data):
 
 
 def track_data(dtr):
-    """TRACK_DATA of MAPnA.DTR: color, camera_hi, bonus_time, carnage"""
+    """The values of TRACK_DATA in the difficulty's file: color, camera_hi, bonus_time, carnage."""
     s = dtr.decode("latin-1")
     rows = [l.split() for l in s[s.index("TRACK_DATA"):].splitlines()[1:]]
     row = next(r for r in rows if r and not r[0].startswith("*"))
@@ -396,7 +412,7 @@ def track_data(dtr):
 
 
 def splines(spl):
-    """[(start_node, [node dicts])] of a .SPL file holding several splines"""
+    """The splines of a .SPL file as [(start_node, [node dicts])]. A node has x, y, z, next, in and out."""
     out, p = [], 0
     while p + 8 <= len(spl):
         count, start = struct.unpack_from("<2i", spl, p)
@@ -412,6 +428,10 @@ def splines(spl):
 
 
 def player_path(spl, step=100.0):
+    """The camera path: points about step units apart along the player's spline, as (X, Y, height).
+
+    Each node and its successor give two pieces of a uniform quadratic B-spline over the
+    handles; the height goes from the node's z to the next node's z along the second piece."""
     start, nodes = splines(spl)[9]
     pts, k = [], start
     for _ in range(len(nodes)):
@@ -433,6 +453,7 @@ def player_path(spl, step=100.0):
 
 
 def main():
+    """Reads the containers, builds the sections, writes the image and the preview, prints the counts."""
     gfx, dat, gen, out, preview = sys.argv[1:6]
     g = datfile.read(gfx)
     d = datfile.read(dat)

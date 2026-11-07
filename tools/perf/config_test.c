@@ -1,5 +1,8 @@
-/* screamer.cfg's parser (firmware/config.c) on texts a player might write, and the overlay's second line.
-   Stubs stand in for the log, the slot and the track. */
+/* Host test of the parser of screamer.cfg (firmware/config.c) on texts a player might write, and of
+   the overlay's second line. Stubs stand in for the log, the slot and the track.
+   Build in tools/perf, with and without the debug code:
+   gcc -Wall -Wextra -DDEBUG=1 -I../../firmware config_test.c -o config_test -lm   (also -DDEBUG=0)
+   The program exits with 1 if a check fails. */
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>

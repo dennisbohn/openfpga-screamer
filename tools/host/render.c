@@ -1,38 +1,69 @@
 /*
- * render.c - one frame of the race from the firmware's own code on the PC, through the C models
- * of the geometry unit, the setup unit and the rasterizer (the firmware's TRACK_MODEL path, the
- * one its track check sets against the hardware). For comparing with the original
- * (tools/cmpframe.py) in seconds instead of a simulation's minutes. Built by tools/render.sh.
+ * render.c - one frame of the race, or of a menu screen, from the firmware's own code on the PC.
  *
- * The firmware's addresses are kept: the SDRAM is mapped at SDRAM_BASE (and its uncached view
- * at SDRAM_UBASE, the same memory), the registers and frame buffers at 0xF0000000, so its
- * pointers and SDRAM byte addresses work unchanged.
+ * The picture goes through the C models of the geometry unit, the setup unit and the rasterizer
+ * (the firmware's TRACK_MODEL path, the one that its track check compares with the hardware). It
+ * is for comparing with the original (tools/cmpframe.py) in seconds instead of a simulation's
+ * minutes. tools/render.sh builds this file with the firmware's sources in Docker and runs it;
+ * that script shows the usual call.
  *
- * Usage: render <track image> <MAPnH.DAT> <MAPn.DAT> <out.rgb> [view [steps [n [car]]]]
- *   view: 0 bumper, 1 cockpit, 2 near chase (default), 3 far chase; steps: physics steps on
- *   the grid before the picture (default 2); n: the track's number (default 1); car: the
- *   player's row of CARS.DTR (default 0), the opponents take the others
- *   GAS=1 in the environment: the pedal down for the steps; TURN=k: the last k steering left (-k
- *   right), BRAKE=k: the last k braking. PAUSE=1: the pause's picture over the frame (the race screen left out),
- *   with the disc's tracks 2-8, 6 chosen (GAME.DAT for the CD player in the working directory);
- *   CD="b[,p[,c[,v]]]": its cursor on button b (0 PLAY .. 6), pressed if p (EJECT's text with it),
- *   volume c (0 CD, 1 FX, 2 MU) at v (default 0x6000) shown on buttons 4..6 (hud.h);
- *   PAUSE=2: PLAY AGAIN? TRACKSIDE=1: the trackside camera after the steps, HUD=1 with the race
- *   screen. REPLAYCHECK=s: the replay's determinism check instead (replay_check()), REPLAYAT=k
- *   its picture at step k of the replay, NOHUD=1 without the race screen, REPLAYDUMP=f: the
- *   race's values of every step and each drawn frame's CRC-32 and race screen into file f (two
- *   versions of the code compared with cmp). MODE=m: the game
- *   mode (car.h, 4 time attack, 0x20 cone carnage, 0x40 slalom), its props, rules and race screen;
- *   GHOST=1 with MODE=4: ghost_check() instead of replay_check().
- *        render menu <MENU.DAT> <GRAF.DAT> <LOCAL.DAT> <GEN.DAT> <out.rgb> [screen [n [steps]]]
- *   the track screen (screen 1, the default) with track n chosen or the car screen (screen 2)
- *   with the car of row n - 1 (menu.h; default 1), steps of 1/50 s after entering it (default 0);
- *   screen 3: track n's loading screen; screen 4 the main menu, 5 the options page; screen 6 the
- *   championship's stage CHAMP="s[,failed]" (default 0), races before it with made-up results;
- *   screen 7 VIEW RECORDS of track n, two made-up races entered (choice_record); screen 8 ENTER
- *   YOUR NAME.
- *   MENUKEYS in the environment: presses before the steps, each for one step, then 30 steps
- *   without (U D L R up, down, left, right; B; A)
+ * The firmware's addresses are kept: the SDRAM is mapped at SDRAM_BASE (and its uncached view at
+ * SDRAM_UBASE, the same memory), the registers and frame buffers at 0xF0000000. The firmware's
+ * pointers and SDRAM byte addresses therefore work unchanged.
+ *
+ * Race:  render <track image> <MAPnH.DAT> <MAPn.DAT> <out.rgb> [view [steps [n [car]]]]
+ *   view   0 bumper, 1 cockpit, 2 near chase (default), 3 far chase
+ *   steps  physics steps on the grid before the picture (default 2)
+ *   n      the track's number (default 1)
+ *   car    the player's row of CARS.DTR (default 0); the opponents take the others
+ *
+ * Race options, as environment variables:
+ *   GAS=1           the pedal down for the steps
+ *   TURN=k          the last k steps steering left (-k: right)
+ *   BRAKE=k         the last k steps braking
+ *   TRACKSIDE=1     the trackside camera of the race's end after the steps (MAPnRPL.SPL)
+ *   HUD=1           the race screen over the picture
+ *   CAM="x y h yaw pitch roll"   the original's camera record instead of the car's camera
+ *   REFL="x y z [phase]"         the player's reflection accumulators and picture from the
+ *                   original's car record (+0x30, +0x3c), with the car standing
+ *   MODE=m          the game mode (car.h: 4 time attack, 0x20 cone carnage, 0x40 slalom), its props,
+ *                   rules and race screen
+ *   PAUSE=1         the pause's picture over the frame (without the race screen unless HUD=1),
+ *                   with the disc's tracks 2-8, track 6 chosen. It needs GAME.DAT for the CD player
+ *                   in the working directory.
+ *   CD="b[,p[,c[,v]]]"  with PAUSE=1: the cursor on button b (0 PLAY .. 6), pressed if p is not 0
+ *                   (EJECT's text with it), volume channel c (0 CD, 1 FX, 2 MU) at volume v
+ *                   (default 0x6000), shown on buttons 4..6 (hud.h)
+ *   PAUSE=2         PLAY AGAIN?
+ *   INTRO=1         the intro's picture after the steps (run_intro in main.c), the logos and
+ *                   credits over it (GRAF.DAT and LOCAL.DAT in the working directory)
+ *
+ * Replay check, ghost check and dump (see replay_check and ghost_check below):
+ *   REPLAYCHECK=s   the replay's determinism check (replay_check()) instead of one picture
+ *   REPLAYAT=k      its picture at step k of the replay
+ *   NOHUD=1         without the race screen
+ *   REPLAYDUMP=f    the race's values of every step, and each drawn frame's CRC-32 and race screen,
+ *                   into file f (to compare two versions of the code with cmp)
+ *   GHOST=1         with MODE=4: ghost_check() instead of replay_check()
+ *
+ * Menu:  render menu <MENU.DAT> <GRAF.DAT> <LOCAL.DAT> <GEN.DAT> <out.rgb> [screen [n [steps]]]
+ *   screen 1 (default) the track screen with track n chosen
+ *          2 the car screen with the car of row n - 1 (menu.h; n defaults to 1)
+ *          3 track n's loading screen
+ *          4 the main menu, 5 the options page
+ *          6 the championship's stage CHAMP="s[,failed]" (default 0), with made-up results for the
+ *            races before it
+ *          7 VIEW RECORDS of track n, with two made-up races entered (choice_record)
+ *          8 ENTER YOUR NAME
+ *   steps  steps of 1/50 s after entering the screen (default 0)
+ *
+ * Menu options, as environment variables. The menu is as a new game has it (three tracks, twelve
+ * cars) unless these change it:
+ *   MENUKEYS="DDB..."  key presses before the steps, each held for one step and followed by 30
+ *                   steps without a press. U, D, L, R are up, down, left, right; B and A are the
+ *                   buttons.
+ *   LEVEL=n         CHOICE.DAT's level (the tracks up to n + 3, NEW TRACK AVAILABLE)
+ *   BULLET=1        the Bullet was won
  */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -71,18 +102,25 @@
 #define CD_MEM      ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x120000))
 #define MAX_OBJECTS 64
 
+/* Maps the memory the firmware expects: the SDRAM at SDRAM_BASE and again, as the same memory, at
+   SDRAM_UBASE (its uncached view), and the registers and frame buffers at 0xF0000000. */
 static void map(void)
 {
     int fd = memfd_create("sdram", 0);
     if (fd < 0 || ftruncate(fd, SDRAM_SIZE)
-        || mmap((void *)(uintptr_t)SDRAM_BASE, SDRAM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED
-        || mmap((void *)(uintptr_t)SDRAM_UBASE, SDRAM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED
-        || mmap((void *)0xF0000000u, 0x4000000u, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) == MAP_FAILED) {
+        || mmap((void *)(uintptr_t)SDRAM_BASE, SDRAM_SIZE, PROT_READ | PROT_WRITE,
+                MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED
+        || mmap((void *)(uintptr_t)SDRAM_UBASE, SDRAM_SIZE, PROT_READ | PROT_WRITE,
+                MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED
+        || mmap((void *)0xF0000000u, 0x4000000u, PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) == MAP_FAILED) {
         perror("map");
         exit(1);
     }
 }
 
+/* Reads at most max bytes of the file into memory at at; returns the number read. Exits if the
+   file is missing. */
 static uint32_t load(const char *path, uint8_t *at, uint32_t max)
 {
     FILE *f = fopen(path, "rb");
@@ -92,6 +130,7 @@ static uint32_t load(const char *path, uint8_t *at, uint32_t max)
     return n;
 }
 
+/* Writes frame buffer 0 to a file as raw RGB, 3 bytes per pixel, through the palette pal. */
 static void write_rgb(const char *path, const uint32_t *pal)
 {
     volatile uint8_t *fb = FB(0);
@@ -105,19 +144,23 @@ static void write_rgb(const char *path, const uint32_t *pal)
     fclose(f);
 }
 
-/* The replay's check (REPLAYCHECK=steps): a race driven by a robot at the keys (gas held, the
-   d-pad towards the path 20 points ahead, the brake in sharp turns, R tapped now and then),
-   recorded as main.c records it (car_keys), in frames of 1-4 steps with the objects and the
-   race screen made between them as main.c makes them, every 32nd frame drawn; it stops 250
-   steps after the finish, or after steps. Then everything set up again as main.c's race() does
-   and the race run from the recording on the trackside camera, in other frames; the player's
-   place, heading and speed and the opponents' places compared bit for bit after every step. */
+/* The replay check (REPLAYCHECK=steps) tests that the race is deterministic.
+   First a robot drives a race through the keys, as a player would: gas held, the d-pad towards
+   the path point 20 ahead, the brake in sharp turns, R tapped now and then. The keys are recorded
+   as main.c records them (car_keys). The race runs in frames of 1 to 4 steps, with the objects and
+   the race screen made between the frames as main.c makes them, and every 32nd frame is drawn.
+   It stops 250 steps after the finish, or after the given number of steps.
+   Then everything is set up again as main.c's race() does, and the race runs from the recording
+   on the trackside camera, in other frames. After every step the player's place, heading and
+   speed and the opponents' places are compared bit for bit with the first run. */
 #define CHECK_MAX   60000
 #define CHECK_VALS  (5 + 2 * 16)
 static struct car_input rec[CHECK_MAX];
 static float vals[CHECK_MAX][CHECK_VALS];
 static FILE *dump;                      /* REPLAYDUMP: the race's steps and frames */
 
+/* The robot's keys for the given step. It looks for the nearest path point from 20 behind to 60
+   ahead of the last one found and steers towards the point 20 further on. */
 static uint32_t robot(uint32_t step)
 {
     static uint32_t at;
@@ -143,6 +186,8 @@ static uint32_t robot(uint32_t step)
     return k;
 }
 
+/* Stores the values the replay check compares: the player's x, y, z, yaw and speed, then x and y
+   of each of 16 opponents (0 for a missing one). */
 static void check_values(float *v)
 {
     const struct car_state *c = car_state();
@@ -157,9 +202,9 @@ static void check_values(float *v)
 
 static void write_rgb(const char *path, const uint32_t *pal);
 
-/* the objects and the race screen between frames, as main.c makes them; every 32nd frame drawn,
-   and with out the whole picture (backdrop, scene, race screen unless NOHUD=1) into that file,
-   its camera and the car printed */
+/* One frame of a check run: makes the objects and the race screen between frames, as main.c makes
+   them. Every 32nd frame is drawn. If out is not null, the whole picture (backdrop, scene, and
+   race screen unless NOHUD=1) goes into that file, and the camera and the car are printed. */
 static void check_frame(uint32_t frame, uint32_t steps_now, const char *out)
 {
     static struct track_object objs[MAX_OBJECTS];
@@ -189,18 +234,19 @@ static void check_frame(uint32_t frame, uint32_t steps_now, const char *out)
         fwrite(l.c, 16, (size_t)l.n, dump);
     }
     if (out) {
-        printf("picture: camera %.0f %.0f %.0f yaw %.4f pitch %.4f, car %.0f %.0f %.0f\n", cam.x, cam.y, cam.h, cam.yaw,
-               cam.pitch, car_state()->x, car_state()->y, car_state()->z);
+        printf("picture: camera %.0f %.0f %.0f yaw %.4f pitch %.4f, car %.0f %.0f %.0f\n",
+               cam.x, cam.y, cam.h, cam.yaw, cam.pitch, car_state()->x, car_state()->y, car_state()->z);
         if (!getenv("NOHUD")) blit_model(FB(0), &l);
         write_rgb(out, track_palette());
     }
 }
 
-/* GHOST=1 with MODE=4: time attack's ghost (ghost.h) instead. A robot's race as replay_check's,
-   kept as the track's best if it finishes; then a second one against it from the other grid
-   place, its picture at step REPLAYAT (default: its end) with the ghost and the race screen. At
-   each step 4k + 1 (a pose exactly) of every 500 the ghost's place is set against the first
-   race's player's, and the running order printed. */
+/* GHOST=1 with MODE=4: checks time attack's ghost (ghost.h) instead of the replay.
+   A robot drives a race as in replay_check; if it finishes, the race is kept as the track's best.
+   Then a second robot race runs against it from the other grid place. Its picture at step
+   REPLAYAT (default: its end) is written with the ghost and the race screen. At each step
+   4k + 1 (a pose exactly) of every 500, the ghost's place is compared with the first race's
+   player's place, and the running order is printed. */
 static int ghost_check(int max, int car, int n, uint32_t data_size, uint32_t gfx_size, const char *out)
 {
     static float first[CHECK_MAX][3];
@@ -215,8 +261,8 @@ static int ghost_check(int max, int car, int n, uint32_t data_size, uint32_t gfx
         car_init(car, 0);
         car_view(CAR_VIEW_START);
         opp_init(car);
-        printf("run %d: grid place %d, start %.0f %.0f, ghost's lap %.2f s\n", run, ghost_slot(), car_state()->x,
-               car_state()->y, ghost_time());
+        printf("run %d: grid place %d, start %.0f %.0f, ghost's lap %.2f s\n", run, ghost_slot(),
+               car_state()->x, car_state()->y, ghost_time());
         while ((int)steps < max && (!end || steps < end)) {
             seed = seed * 1103515245u + 12345u;
             uint32_t now = 1 + (seed >> 16) % 4;
@@ -234,16 +280,17 @@ static int ghost_check(int max, int car, int n, uint32_t data_size, uint32_t gfx
                     first[steps][0] = c->x; first[steps][1] = c->y; first[steps][2] = c->z;
                 } else if (steps % 500 == 1 && ghost_objects(&g, 1))
                     printf("  step %u: ghost %.0f %.0f %.0f, first race %.0f %.0f %.0f, player %.0f %.0f, place %d\n",
-                           steps, g.x, g.y, g.h, first[steps][0], first[steps][1], first[steps][2], c->x, c->y,
-                           opp_player_rank());
+                           steps, g.x, g.y, g.h, first[steps][0], first[steps][1], first[steps][2],
+                           c->x, c->y, opp_player_rank());
                 if (car_race()->finished && !end) end = steps + 250;
             }
             check_frame(frames++, now, run && steps >= shot ? out : 0);
             if (run && steps >= shot) shot = ~0u;
         }
         const struct car_race *r = car_race();
-        printf("run %d: %u steps, finished %d, time over %d, lap %.2f s, made it %d, place %d, lap to beat %.2f\n", run,
-               steps, r->finished, r->game_over, r->total, r->made_it, opp_player_rank(), car_lap_record());
+        printf("run %d: %u steps, finished %d, time over %d, lap %.2f s, made it %d, place %d, lap to beat %.2f\n",
+               run, steps, r->finished, r->game_over, r->total, r->made_it, opp_player_rank(),
+               car_lap_record());
         if (run && shot != ~0u) check_frame(frames, 0, out);
         ghost_end();
         const struct ghost_file *f = ghost_track(n);
@@ -253,6 +300,9 @@ static int ghost_check(int max, int car, int n, uint32_t data_size, uint32_t gfx
     return 0;
 }
 
+/* Runs the replay check described above for at most max steps. The picture goes to the file out
+   (at step REPLAYAT, default the end of the replay). Returns 0 if every step of the replay was
+   identical to the race, 1 at the first difference. */
 static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gfx_size, const char *out)
 {
     int props, moving;
@@ -284,16 +334,17 @@ static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gf
     const struct car_race *r = car_race();
     printf("race: %u steps in %u frames, %d laps (progress %.1f), finished %d, time over %d, place %d, walls %u, "
            "crashes %u\n",
-           steps, frames, r->laps, car_progress(), r->finished, r->game_over, opp_player_rank(), car_wall_hits(),
-           car_crashes());
+           steps, frames, r->laps, car_progress(), r->finished, r->game_over, opp_player_rank(),
+           car_wall_hits(), car_crashes());
     int all, down = scenery_hits(&all), gates, through = car_gates(&gates);
-    printf("mode 0x%x: props down %d of %d, gates %d of %d, countdown %.2f, perfect %d\n", car_mode, down, all,
-           through, gates, r->timer, r->perfect);
-    /* again, as race() sets it up: the scenery, then the car on the trackside camera */
+    printf("mode 0x%x: props down %d of %d, gates %d of %d, countdown %.2f, perfect %d\n",
+           car_mode, down, all, through, gates, r->timer, r->perfect);
+    /* Set everything up again as race() does: the scenery, then the car on the trackside camera. */
     scenery_init(DATA_FILE, data_size, GFX_FILE, gfx_size, n, SCENERY_MEM, 0x10000, &props, &moving);
     car_init(car, 1);
     opp_init(car);
-    uint32_t at = 0, replay_frames = 0, shot = getenv("REPLAYAT") ? (uint32_t)atoi(getenv("REPLAYAT")) : steps;
+    uint32_t at = 0, replay_frames = 0,
+             shot = getenv("REPLAYAT") ? (uint32_t)atoi(getenv("REPLAYAT")) : steps;
     seed = 2;
     while (at < steps) {
         seed = seed * 1103515245u + 12345u;
@@ -307,7 +358,8 @@ static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gf
             if (memcmp(v, vals[at], sizeof v)) {
                 int j = 0;
                 while (v[j] == vals[at][j]) j++;
-                printf("replay: step %u differs, value %d: %.6f, the race had %.6f\n", at, j, v[j], vals[at][j]);
+                printf("replay: step %u differs, value %d: %.6f, the race had %.6f\n",
+                       at, j, v[j], vals[at][j]);
                 return 1;
             }
             at++;
@@ -316,21 +368,28 @@ static int replay_check(int max, int car, int n, uint32_t data_size, uint32_t gf
         if (at >= shot) shot = ~0u;
     }
     printf("replay: %u steps in %u frames, %d laps, finished %d: every step identical "
-           "(the player and %d opponents)\n", at, replay_frames, car_race()->laps, car_race()->finished, opp_count());
+           "(the player and %d opponents)\n",
+           at, replay_frames, car_race()->laps, car_race()->finished, opp_count());
     return 0;
 }
 
-/* a screen of the menu: the containers whole (the firmware loads only menu.h's parts of them) */
+/* One screen of the menu (the "Menu" mode in the header of this file). The containers are loaded
+   whole, while the firmware loads only the parts that menu.h names. */
 static int menu(int argc, char **argv)
 {
     int which = argc > 7 ? atoi(argv[7]) : 1;
-    int screen = which == 2 ? MENU_CAR_SCREEN : which == 6 ? MENU_CHAMP_SCREEN : which == 7 ? MENU_RECORDS_SCREEN
-               : which == 8 ? MENU_NAME_SCREEN : which >= 4 ? MENU_PAGE_SCREEN : MENU_TRACK_SCREEN;
-    int n = which == 4 || which == 5 ? which - 3 : argc > 8 ? atoi(argv[8]) : 1, steps = argc > 9 ? atoi(argv[9]) : 0;
+    int screen = which == 2 ? MENU_CAR_SCREEN : which == 6 ? MENU_CHAMP_SCREEN
+               : which == 7 ? MENU_RECORDS_SCREEN : which == 8 ? MENU_NAME_SCREEN
+               : which >= 4 ? MENU_PAGE_SCREEN : MENU_TRACK_SCREEN;
+    int n = which == 4 || which == 5 ? which - 3 : argc > 8 ? atoi(argv[8]) : 1,
+        steps = argc > 9 ? atoi(argv[9]) : 0;
     uint32_t menu_size = load(argv[2], MENU_FILE, 0x400000), graf_size = load(argv[3], GRAF_FILE, 0x400000);
     uint32_t local_size = load(argv[4], LOCAL_FILE, 0x10000), gen_size = load(argv[5], GEN_FILE, 0x10000);
-    if (!menu_init(MENU_FILE, menu_size, GRAF_FILE, graf_size, LOCAL_FILE, local_size, GEN_FILE, gen_size, MENU_MEM,
-                   0x80000, SCRATCH, 0x2A0000)) { fprintf(stderr, "menu: its files are not all there\n"); return 1; }
+    if (!menu_init(MENU_FILE, menu_size, GRAF_FILE, graf_size, LOCAL_FILE, local_size, GEN_FILE, gen_size,
+                   MENU_MEM, 0x80000, SCRATCH, 0x2A0000)) {
+        fprintf(stderr, "menu: its files are not all there\n");
+        return 1;
+    }
     static struct blit_list l;
     volatile uint8_t *fb = FB(0);
     if (which == 3) {
@@ -342,9 +401,10 @@ static int menu(int argc, char **argv)
         return 0;
     }
     choice_defaults();
-    if (getenv("LEVEL")) choice.level = atoi(getenv("LEVEL"));     /* the unlocks: tracks up to level + 3, */
-    if (getenv("BULLET")) choice.bullet = 1;                        /* the Bullet's row */
-    if (which == 6) {                   /* the stage, the races before it 1st, 2nd, 3rd in turn */
+    /* LEVEL unlocks the tracks up to level + 3; BULLET unlocks the Bullet's row of cars. */
+    if (getenv("LEVEL")) choice.level = atoi(getenv("LEVEL"));
+    if (getenv("BULLET")) choice.bullet = 1;
+    if (which == 6) {                   /* the stage; the races before it end 1st, 2nd, 3rd in turn */
         static const int pts[3] = { 9, 7, 5 };
         const char *c = getenv("CHAMP");
         int failed = 0;
@@ -384,11 +444,12 @@ static int menu(int argc, char **argv)
     return 0;
 }
 
-/* INTRO=1: the intro's picture after steps steps of its race (main.c's run_intro), the logos
-   and credits over it (GRAF.DAT and LOCAL.DAT in the working directory) */
+/* INTRO=1: the intro's picture after steps steps of its race (run_intro in main.c), with the
+   logos and credits over it (GRAF.DAT and LOCAL.DAT in the working directory). */
 static int intro_frame(int steps, int car, int n, uint32_t data_size, const char *out)
 {
-    uint32_t graf_size = load("GRAF.DAT", GRAF_FILE, 0x400000), local_size = load("LOCAL.DAT", LOCAL_FILE, 0x10000);
+    uint32_t graf_size = load("GRAF.DAT", GRAF_FILE, 0x400000),
+             local_size = load("LOCAL.DAT", LOCAL_FILE, 0x10000);
     if (!intro_init(GRAF_FILE, graf_size, LOCAL_FILE, local_size, MENU_MEM, 0x40000, SCRATCH, 0x2A0000)) {
         fprintf(stderr, "intro: its files are not all there\n");
         return 1;
@@ -427,11 +488,18 @@ static int intro_frame(int steps, int car, int n, uint32_t data_size, const char
     return 0;
 }
 
+/* Entry point. With "menu" as the first argument it draws a menu screen, otherwise one frame of
+   the race, or one of the checks (see the header of this file). It writes the picture to the RGB
+   file and prints what the check or the picture holds. */
 int main(int argc, char **argv)
 {
     map();
     if (argc >= 7 && !strcmp(argv[1], "menu")) return menu(argc, argv);
-    if (argc < 5) { fprintf(stderr, "usage: render <track image> <MAPnH.DAT> <MAPn.DAT> <out.rgb> [view [steps [n [car]]]]\n"); return 2; }
+    if (argc < 5) {
+        fprintf(stderr,
+                "usage: render <track image> <MAPnH.DAT> <MAPn.DAT> <out.rgb> [view [steps [n [car]]]]\n");
+        return 2;
+    }
     int view = argc > 5 ? atoi(argv[5]) : CAR_VIEW_START, steps = argc > 6 ? atoi(argv[6]) : 2;
     int n = argc > 7 ? atoi(argv[7]) : 1, car = argc > 8 ? atoi(argv[8]) : 0;
     MEM_STATUS = MEM_LOCKED | MEM_READY | MEM_WRITES_IDLE;     /* waited for by efx_init */
@@ -445,10 +513,11 @@ int main(int argc, char **argv)
     scenery_init(DATA_FILE, data_size, GFX_FILE, gfx_size, n, SCENERY_MEM, 0x10000, &props, &moving);
     printf("scenery: %d props, %d moving\n", props, moving);
     car_trackside_init(DATA_FILE, data_size, n);
-    car_mode_init(DATA_FILE, data_size, n, 1);         /* NORMAL, as make_track.py */
+    car_mode_init(DATA_FILE, data_size, n, 1);         /* difficulty 1 (NORMAL), as in make_track.py */
     if (getenv("REPLAYCHECK") && getenv("GHOST"))
         return ghost_check(atoi(getenv("REPLAYCHECK")), car, n, data_size, gfx_size, argv[4]);
-    if (getenv("REPLAYCHECK")) return replay_check(atoi(getenv("REPLAYCHECK")), car, n, data_size, gfx_size, argv[4]);
+    if (getenv("REPLAYCHECK"))
+        return replay_check(atoi(getenv("REPLAYCHECK")), car, n, data_size, gfx_size, argv[4]);
     if (getenv("INTRO")) return intro_frame(steps, car, n, data_size, argv[4]);
     car_init(car, 0);
     opp_init(car);
@@ -456,24 +525,25 @@ int main(int argc, char **argv)
     int turn = getenv("TURN") ? atoi(getenv("TURN")) : 0, brake = getenv("BRAKE") ? atoi(getenv("BRAKE")) : 0;
     for (int k = 0; k < steps; k++) {
         uint32_t keys = getenv("GAS") ? KEY_B : 0;  /* GAS=1: the pedal down */
-        if (k >= steps - abs(turn)) keys |= turn > 0 ? KEY_LEFT : KEY_RIGHT;   /* TURN=k: the last k steps
-                                                                                  left, -k right */
-        if (k >= steps - brake) keys = (keys & ~KEY_B) | KEY_Y;                /* BRAKE=k: braking */
-        struct car_input in = { (uint16_t)keys, 0x80, 0, 0 };    /* (no stick: car_keys) */
+        /* TURN=k: the last k steps steering left, -k: right */
+        if (k >= steps - abs(turn)) keys |= turn > 0 ? KEY_LEFT : KEY_RIGHT;
+        /* BRAKE=k: the last k steps braking instead of the gas */
+        if (k >= steps - brake) keys = (keys & ~KEY_B) | KEY_Y;
+        struct car_input in = { (uint16_t)keys, 0x80, 0, 0 };   /* no analog parts, as in car_keys */
         car_step(&in);
         opp_step();
         scenery_step();
     }
     track_clock((uint32_t)steps);
-    if (getenv("TRACKSIDE")) car_trackside();       /* TRACKSIDE=1: the race's end's camera */
+    if (getenv("TRACKSIDE")) car_trackside();       /* TRACKSIDE=1: the camera of the race's end */
 
     struct track_cam cam;
     static struct track_object objs[MAX_OBJECTS];
     car_camera(&cam);
     const char *set = getenv("CAM");    /* "x y h yaw pitch roll": the original's camera record */
     if (set) sscanf(set, "%f %f %f %f %f %f", &cam.x, &cam.y, &cam.h, &cam.yaw, &cam.pitch, &cam.roll);
-    const char *rf = getenv("REFL");    /* "x y z [phase]": the player's reflection accumulators and
-                                           picture (record +0x30, +0x3c) */
+    /* REFL="x y z [phase]": the player's reflection accumulators and picture (record +0x30, +0x3c) */
+    const char *rf = getenv("REFL");
     float acc[3];
     unsigned rph = 0;
     if (rf && sscanf(rf, "%f %f %f %u", &acc[0], &acc[1], &acc[2], &rph) >= 3) car_reflection(acc, rph);
@@ -508,7 +578,8 @@ int main(int argc, char **argv)
         static struct blit_list l;
         if (ask) hud_question(&l, 0, STILL_MEM, 0, 1);
         else {
-            if (!hud_cd_init(GAME_FILE, load("GAME.DAT", GAME_FILE, 0x100000), CD_MEM, 0x10000, SCRATCH, 0x2A0000))
+            if (!hud_cd_init(GAME_FILE, load("GAME.DAT", GAME_FILE, 0x100000), CD_MEM, 0x10000,
+                             SCRATCH, 0x2A0000))
                 fprintf(stderr, "CDFRONTL.PKC missing\n");
             struct cd_player c = { 2, 8, 6, 0, 0, 0, 0, 0, 0x6000 };
             if (getenv("CD")) sscanf(getenv("CD"), "%d,%d,%d,%i", &c.button, &c.pressed, &c.chan, &c.vol);

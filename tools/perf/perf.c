@@ -1,6 +1,8 @@
 /*
- * Counters and cache models for tools/perf/perf.h. SDRAM byte address = pointer - SDRAM_BASE (the
- * PC maps the SDRAM at the firmware's address, as tools/host/render.c does).
+ * perf.c - the counters and cache models declared in tools/perf/perf.h.
+ *
+ * The SDRAM byte address of a pointer is pointer - SDRAM_BASE: the PC maps the SDRAM at the
+ * firmware's address, as tools/host/render.c does.
  */
 #include <stdlib.h>
 #include <math.h>
@@ -24,7 +26,8 @@ void perf_reset(void)
     memset(seen, 0, sizeof seen);
 }
 
-/* the rasterizer's texel read (raster.c, RS_TRACE) */
+/* Counts one texel read of the rasterizer (called from raster.c when RS_TRACE is defined). It counts a
+   miss of the texture cache and the first read of each 32-byte line (tex_lines). */
 void rs_trace(const volatile uint8_t *p)
 {
     uint32_t a = (uint32_t)((uintptr_t)p - SDRAM_BASE), line = a >> 5;
@@ -40,6 +43,7 @@ void rs_trace(const volatile uint8_t *p)
     }
 }
 
+/* Counts the geometry unit's reads of len bytes at p, one per 32-byte line, and the misses of its cache. */
 void perf_gu_rd(const void *p, uint32_t len)
 {
     if (len == 0) return;
@@ -54,6 +58,7 @@ void perf_gu_rd(const void *p, uint32_t len)
     }
 }
 
+/* Writes the names of the counters as CSV column names, each after a comma. */
 void perf_header(FILE *f)
 {
 #define X(n) fprintf(f, ",%s", #n);
@@ -61,6 +66,7 @@ void perf_header(FILE *f)
 #undef X
 }
 
+/* Writes the values of the counters as CSV fields, each after a comma. */
 void perf_row(FILE *f)
 {
 #define X(n) fprintf(f, ",%u", perf_c.n);

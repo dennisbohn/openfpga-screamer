@@ -1,30 +1,41 @@
 #!/bin/sh
 # Frame statistics from the firmware's own C models in Docker (docs/development.md, "Frame statistics").
-#   tools/perf/framestats.sh build [dir]
-#       copies firmware/ (or the source tree dir/firmware, e.g. an older commit made with git archive) to
-#       build/stats/src[_name], puts the counters of perf_patch.py into the copies and builds framestats
-#       and racestats there. TAG=name builds into src_name / framestats_name (default: no tag);
-#       DEFS="-DLOD_SCALE=1.5f ..." are compile-time options for the firmware's constants
-#   tools/perf/framestats.sh sweep <track image> <label> <out.csv> <step> <cars,...> [grid]
-#       the frames along the road, see framestats.c (FARSCALE, LODSCALE in the environment; TAG=name)
-#   tools/perf/framestats.sh walk <track image> <camera lines file>
-#       the cell window and the placements in reach for cameras "x height z yaw" (walkcheck.c), written to <file>.result
-#   tools/perf/framestats.sh drop <track image> <lines> <cameras file> [radius]
-#       why a placement is drawn from one camera and not from the next (dropcheck.c): cameras "x y h yaw pitch" (the marks of
-#       debug.txt), lines the screen's height (132 in the cockpit view, else 200); prints the placements whose state differs
-#   tools/perf/framestats.sh race <track n> <label> <out.csv> <steps> <every> [car]
-#       a race on the PC with a robot at the keys, a frame every <every> steps, see racestats.c
-# The firmware is never changed; the counters live in the copies. Game data only under build/.
-# The game's folder is read for the track image (build/check/track<n>.bin, made by tools/make_track.py) and for
-# the race (GFX/MAP<n>H.DAT, DATA/MAP<n>.DAT): GAME_DIR, default "C:/GOG Games/Screamer".
+# Usage: tools/perf/framestats.sh <command> [arguments]
+#   build [dir]
+#       Copies firmware/ (or the source tree dir/firmware, for example an older commit made with
+#       git archive) to build/stats/src[_name], puts the counters of perf_patch.py into the copies
+#       and builds framestats, racestats, walkcheck and dropcheck there.
+#       TAG=name builds into src_name and framestats_name (default: no tag).
+#       DEFS="-DLOD_SCALE=1.5f ..." gives compile-time options for the firmware's constants.
+#       REF=--ref is handed to perf_patch.py (tools/perf/check_cull.sh uses it).
+#   sweep <track image> <label> <out.csv> <step> <cars,...> [grid]
+#       The frames along the road; see framestats.c. In the environment: FARSCALE, LODSCALE, POPIN,
+#       POPIN_DUMP, and TAG=name for the tagged build.
+#   walk <track image> <camera lines file>
+#       The cell window and the placements in reach for the cameras "x height z yaw" of the file
+#       (walkcheck.c). The answer is written to <file>.result.
+#   drop <track image> <lines> <cameras file> [radius]
+#       Why a placement is drawn from one camera and not from the next (dropcheck.c). The cameras are
+#       lines "x y h yaw pitch" (the marks of debug.txt); lines is the screen's height (132 in the
+#       cockpit view, else 200). Prints the placements whose state differs. In the environment:
+#       DROP_ALL, DROP_ROWS, DROP_DRAW (see dropcheck.c), and TAG=name.
+#   race <track n> <label> <out.csv> <steps> <every> [car]
+#       A race on the PC with a robot at the keys, a frame every <every> steps; see racestats.c.
+#       In the environment: FARSCALE, LODSCALE, and TAG=name.
+# The firmware is never changed; the counters live in the copies. Game data stays under build/.
+# The game's folder GAME_DIR (default "C:/GOG Games/Screamer") is read for the track image
+# (build/check/track<n>.bin, made by tools/make_track.py) and for the race (GFX/MAP<n>H.DAT,
+# DATA/MAP<n>.DAT).
 set -e
 root=$(cd "$(dirname "$0")/../.." && pwd)
 st="$root/build/stats"
 tag=${TAG:+_$TAG}
 game=${GAME_DIR:-C:/GOG Games/Screamer}
 if command -v cygpath >/dev/null 2>&1; then mount=$(cygpath -wa "$root/build"); else mount=$root/build; fi
+# The Docker image of the simulation also has gcc.
 img=verilator/verilator:v5.050
 docker_sh() { MSYS_NO_PATHCONV=1 docker run --rm "$@"; }
+# The firmware sources that the programs are linked with (track.c is added separately).
 LIST="geom.c setup.c raster.c car.c drive.c opp.c ghost.c efx.c scenery.c sound.c speech.c blit.c dlog.c crc32.c dat.c console.c menu.c champ.c intro.c tb_hud.c tb_spl.c tb_mmp.c hud.c"
 
 cmd=$1
@@ -35,8 +46,10 @@ build)
     src="$st/src$tag"
     rm -rf "$src"
     mkdir -p "$src"
+    # Copy the firmware and the programs of this directory into the working copy.
     cp "$from"/firmware/*.c "$from"/firmware/*.h "$root"/tools/perf/perf.h "$root"/tools/perf/perf.c \
        "$root"/tools/perf/framestats.c "$root"/tools/perf/racestats.c "$root"/tools/perf/walkcheck.c "$root"/tools/perf/dropcheck.c "$src/"
+    # hw.h: keep everything up to the cache maintenance, then add the same helpers in plain C (as render.sh does).
     python -I - "$src/hw.h" <<'PY'
 import sys
 p = sys.argv[1]
@@ -51,6 +64,7 @@ static inline float opaquef(float x) { return x; }
 """
 open(p, "w").write(t)
 PY
+    # Put the counters into the copies, then build the four programs.
     python -I "$root/tools/perf/perf_patch.py" "$src" $REF
     docker_sh -v "$mount:/b" --entrypoint sh $img -c "
         cd /b/stats/src$tag && gcc -O2 -w -include perf.h -DRS_TRACE $DEFS -o ../framestats$tag framestats.c perf.c track.c $LIST -lm &&
