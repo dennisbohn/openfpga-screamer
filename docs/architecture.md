@@ -958,17 +958,17 @@ number).
 The six start frames (simulation, fast-forward, near chase camera, frame 2, ten cars; each 0 pixels
 difference to the C models; "Frame" is the whole time of frame 1, 20 ms = 1.485 M clocks). Before: the
 original's distances without the level of detail (release 1.0.2's firmware); now: `FAR_SCALE` 1.5 and
-`LOD_SCALE` 1.5. In the frames of tracks 5 (before) and 6 (now) the simulation ran no physics step (about
-0.1 M clocks less), which is added here:
+`LOD_SCALE` 1.5. The frame before of track 5 ran no physics step in the simulation (about 0.09 M clocks
+less), which is added here:
 
 | Track | Placements | Pieces now | Faces now | Pixels now | Frame before | Frame now |
 |---|---|---|---|---|---|---|
-| 1 Palm Town | 1164 | 255 | 1399 | 107,904 | 1,207,338 = 16.3 ms | 978,485 = 13.2 ms |
-| 2 Lake Valley | 1408 | 247 | 1281 | 111,904 | 1,139,480 = 15.3 ms | 917,296 = 12.4 ms |
-| 3 Lindburg | 1590 | 235 | 1334 | 96,583 | 1,054,694 = 14.2 ms | 884,998 = 11.9 ms |
-| 4 Palm Town Night | 1764 | 264 | 1577 | 110,404 | 1,253,610 = 16.9 ms | 987,983 = 13.3 ms |
-| 5 Sunbeach Hill | 2359 | 278 | 1673 | 118,817 | about 1,302,000 = 17.5 ms | 912,214 = 12.3 ms |
-| 6 Sandrock | 2073 | 296 | 1415 | 132,644 | 1,265,507 = 17.0 ms | about 1,107,000 = 14.9 ms |
+| 1 Palm Town | 1164 | 255 | 1400 | 107,903 | 1,207,338 = 16.3 ms | 877,522 = 11.8 ms |
+| 2 Lake Valley | 1408 | 247 | 1281 | 111,904 | 1,139,480 = 15.3 ms | 896,525 = 12.1 ms |
+| 3 Lindburg | 1590 | 235 | 1334 | 96,583 | 1,054,694 = 14.2 ms | 884,449 = 11.9 ms |
+| 4 Palm Town Night | 1764 | 264 | 1577 | 110,404 | 1,253,610 = 16.9 ms | 991,215 = 13.3 ms |
+| 5 Sunbeach Hill | 2359 | 278 | 1673 | 118,817 | about 1,302,000 = 17.5 ms | 913,080 = 12.3 ms |
+| 6 Sandrock | 2073 | 296 | 1415 | 132,644 | 1,265,507 = 17.0 ms | 915,198 = 12.3 ms |
 
 Tracks 5 and 6 have more placements than the 2048 `track.c` used to hold (now 2560).
 
