@@ -142,7 +142,7 @@ static struct gpiece gpieces[MAX_GROUND];
 static float sin_q[513];                /* sin(2 pi i / 2048) for i = 0..512 */
 static float under_n[3];                /* track_under's face: its normal in world axes (x, y, up) */
 static float far_scale = FAR_SCALE;     /* (variables, so that the PC tools can try others: tools/perf) */
-static float lod_inv = LOD_SCALE > 0.0f ? 1.0f / LOD_SCALE : 0.0f;     /* 0: no level of detail */
+static float lod_inv;                   /* 1 / LOD_SCALE, 0 for none: no level of detail (set in track_init) */
 static float far_z = 43808.0f * FAR_SCALE;      /* the far plane of the DETAIL level */
 static float reach2 = (REACH * FAR_SCALE) * (REACH * FAR_SCALE);       /* the reach, squared */
 static float radius[MAX_OBJ];           /* of each mesh around its origin */
@@ -308,6 +308,11 @@ int track_open(const volatile uint8_t *file)
     return 1;
 }
 
+static float lod_scale_inv(float scale)
+{
+    return scale > 0.0f ? 1.0f / scale : 0.0f;
+}
+
 int track_init(void)
 {
     const uint8_t *f = file_start;
@@ -332,6 +337,7 @@ int track_init(void)
     walls = (const struct track_wall *)(f + rd32(f + 0x54));
     nwalls = rd32(f + 0x58);
     start = (const struct start *)(f + 0x5C);
+    lod_inv = lod_scale_inv(LOD_SCALE);
     unr_count = rd32(unr + 4);
     if(unr_count > MAX_OBJ || npieces > MAX_PIECES || npath < LOOK + 2 || ncars < 1 || nmodels < 1) return 0;
     unr_off = (const int32_t *)(unr + 8);
