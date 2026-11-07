@@ -114,7 +114,8 @@ texture cache (16 KB) and of the geometry unit's read cache (4 KB), a hash of th
 counters agree with the simulation (pieces and faces equal, texture misses within 0.4 %).
 `tools/perf/perf_model.py` turns them into a frame time: a model of the CPU phases and of the geometry unit
 and rasterizer, calibrated on the six start frames of the simulation (each predicted from the other five: rms
-error 1.8 %, worst 3.4 %). `tools/perf/check_cull.sh <commit>` checks that a change of the cull hands the same
+error 1.8 %, worst 3.4 % for release 1.0.2's firmware; 4.4 % and 8.2 %, the model 3 % low, for the firmware with
+the cell window and the level of detail, whose frames are CPU-bound as often as geometry-bound). `tools/perf/check_cull.sh <commit>` checks that a change of the cull hands the same
 pieces to the geometry unit, in the same order, in every frame of road sweeps and races of all six tracks as
 the firmware of an earlier commit does.
 
