@@ -192,8 +192,8 @@ The marks are for the PC:
 - `tools/perf/framestats.sh drop <track image> <screen lines> <file of marks "x y h yaw pitch"> [radius]`
   (`dropcheck.c`, with `DROP_ALL=1`, `DROP_ROWS=1`, `DROP_DRAW=1` for more) says for each placement why it is
   drawn from one mark and not from the next: its cell is outside the window, it is out of reach, it is
-  behind a view plane, or it draws something else. That is how the far buildings that came and went on track
-  5 were found, in the window's edge.
+  behind a view plane, or it draws something else. With this tool, the far buildings that came and went on
+  track 5 were traced to the window's edge.
 
 ### Draw distance and level of detail
 

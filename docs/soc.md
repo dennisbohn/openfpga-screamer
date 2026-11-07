@@ -365,8 +365,8 @@ distance d in x and y. `car_step` sets it every step (`snd_ear`).
 - The moving parts of the track (`0x21b80`, `scenery.c`): the fourth column of `ANIMATIONS` names a row of
   the track's own `SOUND_FX` list in `MAPnDAT.DTR` (track 1: `truck`, `airplane`), loaded after the effects
   and the commentator. Within 40000 units, the volume is ((40000 - d) / 40000)^2 and the pitch 65536.
-- Both get Doppler, + 9 per unit that the source came closer in one game frame (1/30 s), here per step
-  * 50 / 30. It is omitted when the camera jumps over 1000 units in one step (a cut).
+- Both get Doppler, + 9 per unit that the source came closer in one game frame (1/30 s), here
+  per step * 50 / 30. It is omitted when the camera jumps over 1000 units in one step (a cut).
 - Only these sounds are placed in the stereo image: the line to the source in the camera frame,
   pan = 0x8000 +- 32767 * sqrt(|lateral| / d), the far side linearly quieter. The player's own sounds stay
   centred.

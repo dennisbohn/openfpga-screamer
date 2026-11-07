@@ -220,12 +220,12 @@ projection, and the vertex transformation is only 3 %. These units take over the
   floats per corner). The hardware projects them, splits them into a fan and computes the rasterizer's values
   in fixed point, while the rasterizer draws the previous triangle.
 - **Clipper** (`clipper.v`, in front of the setup unit): With the setup unit alone, the CPU time in the
-  heaviest frame fell from 10.4 to 5.8 million clocks, and 58 % of it was clipping. The clipper clips as the
+  heaviest frame drops from 10.4 to 5.8 million clocks, and 58 % of it is clipping. The clipper clips as the
   original does, at the near plane (depth 128) and at the far plane of the DETAIL level. A guard band at
   14 x depth is there only so that screen coordinates fit 16 bits (the rasterizer clips at the screen edge).
   The lens is the original's: focal length 128, eye height at 65 % of the frame height, and the eye 128
-  units behind the camera. The division at `0x83420` reads `TABS\PERSP01.TAB`; the screen point is the centre
-  + 128 * x / (128 + z), with z from the camera.
+  units behind the camera. The division at `0x83420` reads `TABS\PERSP01.TAB`; the screen point is
+  the centre + 128 * x / (128 + z), with z from the camera.
 - **Geometry unit** (`geom.v`, C model `firmware/geom.c`): The CPU selects and sorts the parts and writes 19
   words per part (matrix, origin, eye, mesh, face list; layout in `docs/soc.md`) into the unit's buffer
   (2048 words, 107 parts, block RAM). The unit reads the mesh itself from the SDRAM, transforms the vertices,
@@ -233,9 +233,9 @@ projection, and the vertex transformation is only 3 %. These units take over the
   does not wait for each part. The unit needs about 20 % of a frame; the rest is left for cars and game
   logic.
 - **Texture prefetch:** Without the prefetch, counters in the rasterizer showed 76 % of its time waiting for
-  texture lines. Both caches fetch each missing line once. (Before that was fixed, the counters counted every
-  miss twice: a cache study with the C model's texel addresses showed half as many misses as counted.)
-  Tiling the texture memory brings little, because most misses are first accesses (about 7,800 lines per
+  texture lines. They were measured while both caches fetched each missing line twice, and a cache study with
+  the C model's texel addresses showed half as many misses as counted. Both caches fetch each missing line
+  once. Tiling the texture memory brings little, because most misses are first accesses (about 7,800 lines per
   frame). So the rasterizer prefetches (after Igehy, Eldridge, Proudfoot 1998):
   - Tags are checked ahead of a queue of 64 pixels.
   - A missing line is requested at once (up to 16 in flight, into a line buffer).
@@ -298,9 +298,9 @@ excluded. This makes every polygon about half a pixel fuller all round than the 
 triangle" rule. Neighbours overlap at the seam, also where a corner lies on the other's edge (T junction),
 and asphalt stays closed.
 
-The gain was counted. With the centre rule and corners on whole pixels, 61 hole pixels remained at the four
-steepest slants of track 1. With the original's rule there are only 9, columns between parts that do not
-touch.
+Counting the hole pixels at the four steepest slants of track 1 compares the two rules. With the centre rule
+and corners on whole pixels, 61 hole pixels remain. With the original's rule there are only 9, columns
+between parts that do not touch.
 
 The rasterizer stays line by line, because the framebuffer holds four pixels of a line in one word. It
 computes the same set: per line both edges at the top and bottom edge. See `docs/original_filler.md`.
@@ -1091,8 +1091,8 @@ new game has all three 0).
   is three at the start.
 - Each championship league won sets the level to 1, 2, 3 (`0x290e8`, tracks 4 to 6). Everything won sets it
   to 9 (`0x29141`; the original also unlocks the backward tracks 7 to 12, which the core does not have).
-- The cars are rows 0 to 11, and the Bullet (row 12) is available only once it is won (`0x28726`: `0x207ec`
-  + 11). AFTERBURNER as highest difficulty likewise (+0x45c).
+- The cars are rows 0 to 11, and the Bullet (row 12) is available only once it is won (`0x28726`:
+  `0x207ec` + 11). AFTERBURNER as highest difficulty likewise (+0x45c).
 - After the last selectable track the right arrow is missing (`0x2e32a`, `0x2e4a2`), so locked models never
   come into view.
 - While the level is above the one shown, NEW TRACK AVAILABLE blinks in the track screen (`MENU.TXT` row 53,
@@ -1275,7 +1275,7 @@ has 0 pixels difference to the C models. "Frame" is the whole time of frame 1; 2
 
 - The columns "without the factors" belong to the firmware with the original's distances and without the
   level of detail.
-- The columns "with the factors" were measured at `FAR_SCALE` 1.5 and `LOD_SCALE` 1.5. The release has 2.0
+- The columns "with the factors" were measured at `FAR_SCALE` 1.5 and `LOD_SCALE` 1.5. The defaults are 2.0
   and 1.2.
 - Pieces, faces and pixels are those of the frame with the factors.
 - The frame of track 5 without the factors ran no physics step in the simulation, which is about 0.09 M

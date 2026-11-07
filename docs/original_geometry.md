@@ -297,7 +297,7 @@ The mesh is `[[ds:0x12153c] + 4*rec[0]]`:
 | +0 | radius |
 | +0x10 | number of frames (-1 = none) |
 | +0x14 | number of blocks |
-| **+0x18 + 4b + 0x104*L** | offset of block b at level of detail L (0, 1, 2; 0 = no block) |
+| `+0x18 + 4b + 0x104*L` | offset of block b at level of detail L (0, 1, 2; 0 = no block) |
 | +0x32c | class |
 
 A block has:
