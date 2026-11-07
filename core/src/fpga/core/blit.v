@@ -1,11 +1,16 @@
 //
-// Blitter: the backdrop, the race screen's pictures, characters and needles into the
-// framebuffer, bit for bit the C model firmware/blit.c. The CPU writes commands into a buffer
-// of 512 words (128 commands) and goes on; the blitter takes one while the 3D units are idle
-// (go): the backdrop before the scene (the CPU holds the first piece back until it is done),
-// the race screen after it. A picture or a character one pixel a clock: its bytes come from
-// the SDRAM a line of 32 bytes at a time (the shared line port), the pixel goes into the
-// framebuffer with its byte enable; a fill a framebuffer word of four pixels a clock.
+// Blitter (BL): draws the backdrop, the race screen's pictures, characters, needles and fills
+// into the framebuffer. It is bit for bit the C model firmware/blit.c.
+//
+// Work flow
+//   The CPU writes commands (register 0) into a buffer of 512 words (128 commands) and goes
+//   on. The blitter takes one command while the 3D units are idle (input go). So the backdrop
+//   is drawn before the scene (the CPU holds the first piece back until it is done) and the
+//   race screen after it.
+//   A picture or a character is drawn one pixel a clock. Its bytes come from the SDRAM a line
+//   of 32 bytes at a time (over the shared line port, mem_*), and the pixel goes into the
+//   framebuffer with its byte enable. A fill is drawn a framebuffer word of four pixels a
+//   clock.
 //
 // Registers (soc.v maps them at 0xF000_3180 + 4 * wr_addr):
 //   0       write: the next word of a command (soc.v holds the write back while the buffer is
@@ -30,22 +35,26 @@ module blit (
     input   wire            clk,
     input   wire            reset,
 
+    // register writes of the CPU, wr_addr is the register number
     input   wire            wr,
     input   wire    [4:0]   wr_addr,
     input   wire    [31:0]  wr_data,
-    output  wire            busy,
+    output  wire            busy,               // a command is in work or waits in the buffer
     output  wire            full,               // the command buffer takes no word now
-    output  reg     [31:0]  busy_clocks = 0,
+    output  reg     [31:0]  busy_clocks = 0,    // register 1
     input   wire            go,                 // the 3D units are done: a command may start
 
-    // framebuffer writes, one pixel each (be[3] is the leftmost pixel of the word)
+    // Framebuffer writes: a pixel (be selects its lane) or, for a fill, a word. be[3] is the
+    // leftmost pixel of the word. fb_buf is the buffer drawn into.
     output  reg             fb_wr = 0,
     output  reg             fb_buf,
     output  reg     [13:0]  fb_addr,
     output  reg     [31:0]  fb_data,
     output  reg     [3:0]   fb_be,
 
-    // lines from the SDRAM (shared with the rasterizer's port, soc.v)
+    // Lines from the SDRAM over the line port that soc.v shares with the other units.
+    // mem_valid stays high with mem_addr (the 32-byte line) until mem_ready. The line then
+    // comes as 8 words in order, each with mem_rsp_valid.
     output  reg             mem_valid = 0,
     input   wire            mem_ready,
     output  reg     [25:5]  mem_addr,
@@ -54,7 +63,8 @@ module blit (
 );
 
 //
-// the command buffer: 512 words, block RAM
+// The command buffer: 512 words, block RAM. The CPU's writes go in at f_wp, the sequencer
+// reads at f_ra. full is set when 508 of the 512 words are used.
 //
     (* ramstyle = "no_rw_check, M10K" *) reg [31:0] fifo [0:511];
     reg  [9:0]  f_wp = 0, f_rp = 0;
@@ -63,33 +73,42 @@ module blit (
     reg  [31:0] f_q;
     assign full = f_count >= 10'd508;
     wire        push = wr && wr_addr == 5'd0 && !full;
+    // buffer RAM: write port and registered read port
 always @(posedge clk) begin
     if(push) fifo[f_wp[8:0]] <= wr_data;
     f_q <= fifo[f_ra];
 end
 
+    // States of the sequencer:
+    //   B_IDLE   wait for go and a whole command in the buffer
+    //   B_FETCH  take the command's four words
+    //   B_SETUP  prepare the command by its kind, or finish an empty one
+    //   B_PIX    copy, font: one pixel a clock; B_MEM first loads the pixel's line
+    //   B_MEM    load a line of 32 bytes over the line port
+    //   B_LINE   line: one pixel a clock (Bresenham)
+    //   B_FILL   fill: one framebuffer word a clock, row by row
     localparam  [2:0]   B_IDLE = 3'd0, B_FETCH = 3'd1, B_SETUP = 3'd2, B_PIX = 3'd3, B_MEM = 3'd4,
                         B_LINE = 3'd5, B_FILL = 3'd6;
     reg  [2:0]  state = B_IDLE;
     reg  [2:0]  fk;                             // words of the command taken
-    reg  [31:0] c0, c1, c2;
-    reg  [1:0]  kind;
+    reg  [31:0] c0, c1, c2;                     // words 0 to 2 of the command
+    reg  [1:0]  kind;                           // 0 copy, 1 font, 2 line, 3 fill
     reg  [7:0]  colour;
     reg         opaque;
 
     // copy, font
     reg  [25:0] row_addr;                       // the row's first byte
-    reg  [8:0]  w, h, c, r;
-    reg  [9:0]  stride;
-    reg  signed [9:0] x0, y0;
+    reg  [8:0]  w, h, c, r;                     // width, height, the column and row being drawn
+    reg  [9:0]  stride;                         // bytes from one row to the next
+    reg  signed [9:0] x0, y0;                   // the first pixel's place on the screen
     wire signed [10:0] px = $signed({x0[9], x0}) + $signed({2'd0, c});
     wire signed [10:0] py = $signed({y0[9], y0}) + $signed({2'd0, r});
     wire        on_screen = px >= 11'sd0 && px < 11'sd320 && py >= 11'sd0 && py < 11'sd200;
     wire [25:0] a = row_addr + {17'd0, c};
     reg  [255:0] lb;                            // the line in the buffer
-    reg  [20:0] lb_tag;
-    reg         lb_ok = 0;
-    reg  [2:0]  fill;
+    reg  [20:0] lb_tag;                         // its address
+    reg         lb_ok = 0;                      // the line buffer holds a line
+    reg  [2:0]  fill;                           // the word of the line coming in
     wire [7:0]  byte_at = lb[{a[4:0], 3'd0} +: 8];
     wire        last_c = c == w - 9'd1, last_r = r == h - 9'd1;
 
@@ -104,13 +123,14 @@ end
     wire [8:0]  fl_last = fl_x1 - 9'd1;
     reg  [3:0]  fl_be;
     integer     k;
+    // byte enables of the fill word fl_w: the pixels inside [fl_x0, fl_x1)
 always @(*) begin
     fl_be = 0;
     for(k = 0; k < 4; k = k + 1)
         if({fl_w, k[1:0]} >= fl_x0 && {fl_w, k[1:0]} < fl_x1) fl_be[3 - k] = 1;
 end
 
-    // line
+    // line: from (lx, ly) to (ex, ey); ldx = |dx|, ldy = -|dy|; err is Bresenham's error term
     reg  signed [10:0] lx, ly, ex, ey, ldx, ldy;
     reg  signed [12:0] err;
     reg         sxp, syp;                       // the line goes right, down
@@ -123,7 +143,9 @@ end
 
     assign busy = state != B_IDLE || f_count != 10'd0 || fb_wr || mem_valid;
 `ifdef BLIT_TRACE
+    // counter for the simulation trace
     reg  [31:0] trace_t = 0;
+    // clocks since the blitter became busy
 always @(posedge clk) trace_t <= busy ? trace_t + 1'b1 : 32'd0;
 `endif
 
@@ -137,6 +159,7 @@ always @(posedge clk) trace_t <= busy ? trace_t + 1'b1 : 32'd0;
         end
     endtask
 
+    // The sequencer (the case on state), the buffer pointers and the busy counter.
 always @(posedge clk) begin
     fb_wr <= 0;
     if(push) f_wp <= f_wp + 1'b1;
@@ -189,14 +212,16 @@ always @(posedge clk) begin
         end
     end
 
-    B_SETUP: begin
+    B_SETUP: begin                              // by kind: line, fill, or copy and font
         if(kind == 2'd2) begin
             sxp <= ex >= lx;
             syp <= ey >= ly;
             ldx <= ex >= lx ? ex - lx : lx - ex;                    // |dx|
             ldy <= ey >= ly ? ly - ey : ey - ly;                    // -|dy|
-            err <= (ex >= lx ? {{2{ex[10]}}, ex} - {{2{lx[10]}}, lx} : {{2{lx[10]}}, lx} - {{2{ex[10]}}, ex}) +
-                   (ey >= ly ? {{2{ly[10]}}, ly} - {{2{ey[10]}}, ey} : {{2{ey[10]}}, ey} - {{2{ly[10]}}, ly});
+            err <= (ex >= lx ? {{2{ex[10]}}, ex} - {{2{lx[10]}}, lx} :
+                               {{2{lx[10]}}, lx} - {{2{ex[10]}}, ex}) +
+                   (ey >= ly ? {{2{ly[10]}}, ly} - {{2{ey[10]}}, ey} :
+                               {{2{ey[10]}}, ey} - {{2{ly[10]}}, ly});
             state <= B_LINE;
         end else if(kind == 2'd3) begin
             fl_x0 <= x0 < 10'sd0 ? 9'd0 : x0[8:0];
@@ -222,7 +247,7 @@ always @(posedge clk) begin
             fl_w <= fl_w + 1'b1;
     end
 
-    B_PIX: begin
+    B_PIX: begin                                // a pixel a clock; its line is loaded first if needed
         if(on_screen && !(lb_ok && lb_tag == a[25:5])) begin    // its line first
             mem_valid <= 1;
             mem_addr <= a[25:5];
@@ -244,7 +269,7 @@ always @(posedge clk) begin
         end
     end
 
-    B_MEM: if(!mem_valid && mem_rsp_valid) begin
+    B_MEM: if(!mem_valid && mem_rsp_valid) begin   // the line's 8 words into the line buffer
         lb[{fill, 5'd0} +: 32] <= mem_rsp_data;
         fill <= fill + 1'b1;
         if(fill == 3'd7) begin

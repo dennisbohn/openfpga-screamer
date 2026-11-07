@@ -1,21 +1,33 @@
 //
-// Audio: the sound effects mixer and its I2S output, bit for bit the C model firmware/mixer.c.
-// 32 voices play 8-bit unsigned samples from the SDRAM. Once per output frame (48 kHz) one pass
-// goes through them, a voice every four clocks, all through one datapath: the byte at the
-// voice's place (the stored sample, nothing smoothed between two, as the game's driver played
-// them), centred, times the left and the right volume, summed and clipped to 16 bits; then the
-// place moves on by the voice's step, round its loop or to its end, where the voice stops.
-// A voice's line of 32 bytes around its place lies in block RAM; when the place moves into
-// another line, the pass asks for that line over the shared line port (soc.v), and it is in
-// long before the next pass reads it (a frame is 1547 clocks).
-// After the voices the pass plays the music: one stream of 16-bit stereo samples at 44.1 kHz
-// (the CD's) from a ring of 256 KB in the SDRAM that the firmware keeps filled. The two samples
-// around the music's place, each side between them in a straight line (16 bits of fraction),
-// times the volume, go into the sums; then the place moves on by 44100 / 48000 of a sample
-// (60211 / 65536). The two lines around the place (16 samples) lie in an MLAB; when the place
-// moves into the second, the pass asks for the one after it.
+// Audio (the mixer): the sound effects mixer and its I2S output. It is bit for bit the C model
+// firmware/mixer.c. docs/soc.md describes the sound in the section "Sound".
 //
-// Registers (soc.v maps them at 0xF000_4000 + wr_addr):
+// Voices
+//   32 voices play 8-bit unsigned samples from the SDRAM. Once per output frame (48 kHz) one
+//   pass goes through them, a voice every four clocks, all through one datapath:
+//     - the byte at the voice's place (the stored sample, nothing smoothed between two, as
+//       the game's driver played them), centred,
+//     - times the left and the right volume, summed and clipped to 16 bits,
+//     - then the place moves on by the voice's step, round its loop or to its end, where the
+//       voice stops.
+//   A voice's line of 32 bytes around its place lies in block RAM. When the place moves into
+//   another line, the pass asks for that line over the shared line port (soc.v). It is in
+//   long before the next pass reads it (a frame is 1547 clocks).
+//
+// Music
+//   After the voices the pass plays the music: one stream of 16-bit stereo samples at
+//   44.1 kHz (the CD's) from a ring of 256 KB in the SDRAM that the firmware keeps filled.
+//   The two samples around the music's place are interpolated, each side between them in a
+//   straight line (16 bits of fraction), multiplied with the volume and added to the sums.
+//   Then the place moves on by 44100 / 48000 of a sample (60211 / 65536). The two lines
+//   around the place (16 samples) lie in an MLAB. When the place moves into the second, the
+//   pass asks for the one after it.
+//
+// FM music
+//   The FM music (opl.v) is one more value that the sums start with, the same on both sides.
+//   Without it (0) the pass is the C model's.
+//
+// Registers (soc.v maps them at 0xF000_4000, offsets in bytes):
 //   32 v + 0   voice v: [25:0] SDRAM byte address of the sample's first byte
 //   32 v + 4   [25:0] the byte address where it ends, or where its loop ends
 //   32 v + 8   [19:0] the loop's length in bytes: at the end the place goes back by it;
@@ -35,37 +47,41 @@
 //   0x414      write: bit 0 1 plays the ring from its start (the two passes after load its
 //              lines, the third plays the first sample), 0 stops; read: [15:0] the place, the
 //              sample in the ring the next pass starts from, bit 16 it plays
-// A register takes effect when the pass comes to its voice: writes between passes all at once.
-// The FM music (opl.v) is one more value that the sums start with, the same on both sides;
-// without it (0) the pass is the C model's.
+// A register takes effect when the pass comes to its voice: writes between passes take effect
+// all at once.
 //
-// I2S as the APF takes it (the template's timing): MCLK 12.288 MHz from a fractional divider,
-// the bit clock MCLK / 4 (not a pin), 64 bits a frame; LRCK low the left half, high the right,
-// each 16 bits MSB first from the second bit clock of the half on, then zeros. Everything
-// changes in the clock in which the bit clock falls, which is a rising edge of MCLK.
+// I2S as the APF takes it (the template's timing)
+//   MCLK 12.288 MHz from a fractional divider, the bit clock MCLK / 4 (not a pin), 64 bits a
+//   frame. LRCK is low in the left half and high in the right half. Each half has 16 bits,
+//   MSB first from the second bit clock of the half on, then zeros. Everything changes in the
+//   clock in which the bit clock falls, which is a rising edge of MCLK.
 //
 
 module audio (
     input   wire            clk,
     input   wire            reset,              // the CPU's: the voices stop, the output goes on
 
+    // register writes of the CPU, wr_addr is the word address
     input   wire            wr,
     input   wire    [10:2]  wr_addr,
     input   wire    [31:0]  wr_data,
-    output  reg     [31:0]  playing = 0,
-    output  reg             late = 0,
+    output  reg     [31:0]  playing = 0,        // bit v: voice v plays (register 0x400)
+    output  reg             late = 0,           // a pass was not done by the next frame (register 0x408)
     output  wire            busy,               // a pass runs or waits (the testbench writes between)
     output  wire    [16:0]  music,              // {it plays, the place in the ring}
     output  wire            frame,              // a frame begins (opl.v computes its value for the next)
     input   wire signed [15:0] fm,              // the FM music's value, mono (opl.v): the sums start with it
 
-    // lines from the SDRAM (soc.v's line port)
+    // Lines from the SDRAM (soc.v's line port). mem_valid stays high with mem_addr (the
+    // 32-byte line) until mem_ready. The line then comes as 8 words in order, each with
+    // mem_rsp_valid.
     output  reg             mem_valid = 0,
     input   wire            mem_ready,
     output  reg     [25:5]  mem_addr,
     input   wire            mem_rsp_valid,
     input   wire    [31:0]  mem_rsp_data,
 
+    // I2S to the APF
     output  reg             i2s_mclk = 0,
     output  reg             i2s_sclk = 0,       // the bit clock: no pin, the simulation reads it
     output  reg             i2s_lrck = 0,
@@ -73,7 +89,8 @@ module audio (
 );
 
 //
-// I2S: 74.25 MHz x 4096 / 12375 = 24.576 MHz, the edges of MCLK
+// I2S: a fractional divider makes the edges of MCLK, 74.25 MHz x 4096 / 12375 = 24.576 MHz
+// (two edges per MCLK period). The bit clock is MCLK / 4; bitn counts its clocks in a frame.
 //
     reg  [13:0] ac = 0;
     wire [14:0] ac_n = {1'b0, ac} + 15'd4096;
@@ -88,6 +105,7 @@ module audio (
     reg  [15:0] sh = 0;                         // the half being sent
     reg  [15:0] out_l = 0, out_r = 0;           // the last pass's sums
     reg  [15:0] r_next = 0;                     // its right half, for the frame being sent
+    // the divider, the MCLK and bit clock outputs, and the serial data
 always @(posedge clk) begin
     ac <= m_edge ? ac_n[13:0] - 14'd12375 : ac_n[13:0];
     if(m_edge) begin
@@ -105,22 +123,24 @@ always @(posedge clk) begin
 end
 
 //
-// the registers, one small RAM each (MLAB): the CPU's port writes, the pass reads at v
+// The registers, one small RAM each (MLAB): the CPU's port writes them, the pass reads them
+// at v. Each RAM has 32 entries, one per voice.
 //
     (* ramstyle = "MLAB, no_rw_check" *) reg  [25:0] r_addr [0:31];
     (* ramstyle = "MLAB, no_rw_check" *) reg  [25:0] r_end [0:31];
     (* ramstyle = "MLAB, no_rw_check" *) reg  [27:0] r_loop [0:31];     // {times, length}
     (* ramstyle = "MLAB, no_rw_check" *) reg  [17:0] r_step [0:31];
     (* ramstyle = "MLAB, no_rw_check" *) reg  [15:0] r_vol [0:31];
-    // the place: {byte address, fraction, loops left}, the pass's own
+    // The place: {byte address (26 bits), fraction (16), loops left (8)}, the pass's own.
     (* ramstyle = "MLAB, no_rw_check" *) reg  [49:0] r_pos [0:31];
-    // the lines: 8 words a voice
+    // The lines: 8 words a voice.
     (* ramstyle = "no_rw_check, M10K" *) reg  [31:0] lines [0:255];
-    // the music's two lines: the sample at place p in word p mod 16
+    // The music's two lines: the sample at place p in word p mod 16.
     (* ramstyle = "MLAB, no_rw_check" *) reg  [31:0] mlines [0:15];
 
     wire        wr_voice = wr && !wr_addr[10];
     wire [4:0]  wv = wr_addr[9:5];
+    // the voice registers (32 v + 0 .. 16)
 always @(posedge clk) begin
     if(wr_voice && wr_addr[4:2] == 3'd0) r_addr[wv] <= wr_data[25:0];
     if(wr_voice && wr_addr[4:2] == 3'd1) r_end[wv] <= wr_data[25:0];
@@ -130,7 +150,7 @@ always @(posedge clk) begin
 end
 
 //
-// the pass: a voice in four phases, read address v
+// The pass: a voice in four phases, read address v
 //   0  the RAMs read voice v (and the voice before's right half goes to the multiplier)
 //   1  the place plus the step; its line's word asked for
 //   2  past the end?, the place back by the loop; the byte
@@ -143,11 +163,11 @@ end
 //   6, 7  into the sums (>> 15); in 7 the frame is complete, the place moves on, and when it
 //         came into the second line, the line after is asked for (waits while one is coming)
 //
-    reg         run = 0, pend = 0;
-    reg         mrun = 0;
-    reg  [2:0]  mph = 0;
-    reg  [4:0]  v = 0;
-    reg  [1:0]  ph = 0;
+    reg         run = 0, pend = 0;              // the voices' pass runs; a frame began and its pass waits
+    reg         mrun = 0;                       // the music's part of the pass runs
+    reg  [2:0]  mph = 0;                        // its clock, 0..7
+    reg  [4:0]  v = 0;                          // the voice
+    reg  [1:0]  ph = 0;                         // the voice's phase, 0..3
     reg  [31:0] fresh = 0;                      // (re)started: the place is set by the next pass
     reg  [25:0] q_addr, q_end;
     reg  [27:0] q_loop;
@@ -159,18 +179,19 @@ end
     wire [7:0]  left = q_pos[7:0];              // loops left
     reg  [41:0] sum;                            // {byte address, fraction}
     reg  [25:0] back;                           // sum's address back by the loop
-    reg         over, on, new_;
-    reg  [1:0]  bsel;
+    reg         over, on, new_;                 // past the end; the voice plays; its first pass
+    reg  [1:0]  bsel;                           // the byte in the word
     reg  [7:0]  smp;                            // the byte, centred (two's complement)
 
-    // phase 3
+    // phase 3: the voice stops at its end without loops left; npos is the new place
     wire        stop = !new_ && over && left == 8'd0;
     wire [49:0] npos = new_ ? {q_addr, 16'd0, q_loop[27:20]} :
                        over ? {back, sum[15:0], left == 8'hFF ? left : left - 8'd1} :
                               {sum, left};
     wire        need = on && !stop && (new_ || npos[49:29] != cur[25:5]);
 
-    // fetching a line for voice f_v, or the music's (f_mus) into half f_v[0]
+    // Fetching a line for voice f_v, or the music's (f_mus) into half f_v[0]. f_w is the word
+    // that comes in.
     reg         f_busy = 0, f_mus = 0;
     reg  [4:0]  f_v;
     reg  [2:0]  f_w;
@@ -189,14 +210,14 @@ end
                                : {mq[15], mq[15:0]} - {ms0[15], ms0[15:0]};
     wire [16:0] mf_sum = {1'b0, mu_frac} + 17'd60211;
     wire [15:0] mi_next = mu_idx + {15'd0, mf_sum[16]};
-    // the line to load: from the start the place's and the one after, while playing the line
-    // after the one the place came into
+    // The line to load: from the start the place's and the one after; while playing, the line
+    // after the one that the place came into.
     wire [12:0] mline = mu_fill != 2'd0 ? mu_idx[15:3] + {12'd0, mu_fill[0]} : mi_next[15:3] + 13'd1;
     wire        mneed = mu_on && (mu_fill != 2'd0 || (mf_sum[16] && mi_next[2:0] == 3'd0));
     wire        madv = mrun && mph == 3'd7 && !(mneed && f_busy);
     assign music = {mu_on, mu_idx};
 
-    // the multiplier and the sums: operands, product, sum (a music product counts >> 15)
+    // The multiplier and the sums: operands, product, sum (a music product counts >> 15).
     reg  [17:0] m_a;
     reg  [15:0] m_b;
     reg         m_en = 0, m_side, m_mus, r_load = 0;
@@ -207,7 +228,7 @@ end
     reg signed [21:0] acc_l, acc_r;
     wire signed [21:0] acc_sum = (p_side ? acc_r : acc_l) +
                                  (p_mus ? {{5{prod[31]}}, prod[31:15]} : {{5{prod[16]}}, prod[16:0]});
-    // the music's first sample plus the difference times the fraction >> 16
+    // The music's first sample plus the difference times the fraction >> 16.
     wire [17:0] m_int = (mph[0] ? {{2{ms0[31]}}, ms0[31:16]} : {{2{ms0[15]}}, ms0[15:0]}) +
                         {prod[32], prod[32:16]};
 
@@ -217,6 +238,7 @@ end
 
     assign busy = run || mrun || pend;
 
+    // The register RAMs' read ports, the place write-back and the line fills.
 always @(posedge clk) begin
     q_addr <= r_addr[v];
     q_end <= r_end[v];
@@ -232,6 +254,7 @@ always @(posedge clk) begin
 end
 
     integer     i;
+    // The pass: its phases, the multiplier and sums, and the CPU's start and stop commands.
 always @(posedge clk) begin
     if(tick) pend <= 1;
     if(tick && busy) late <= 1;
@@ -250,7 +273,7 @@ always @(posedge clk) begin
     end
     if(run && ph == 2'd3 && !adv) ph <= ph;     // waits for the line before
     if(adv) begin
-        if(stop && !fresh[v]) playing[v] <= 0;  // (unless started again meanwhile)
+        if(stop && !fresh[v]) playing[v] <= 0;  // unless the voice was started again meanwhile
         if(new_) fresh[v] <= 0;
         if(need) begin
             mem_valid <= 1;
@@ -268,7 +291,7 @@ always @(posedge clk) begin
         end
     end
 
-    // the music after the voices
+    // The music after the voices.
     if(mrun && mph != 3'd7) mph <= mph + 1'b1;
     if(mrun && mph == 3'd1) ms0 <= mq;
     if(madv) begin
@@ -288,15 +311,15 @@ always @(posedge clk) begin
         end
     end
 
-    // lines in
+    // Lines in: the request is done when mem_ready comes; then f_w counts the words.
     if(mem_valid && mem_ready) mem_valid <= 0;
     if(f_busy && !mem_valid && mem_rsp_valid) begin
         f_w <= f_w + 1'b1;
         if(f_w == 3'd7) f_busy <= 0;
     end
 
-    // the multiplier: left half in phase 3, the right half a clock later; the music's
-    // differences times the fraction in mph 2 and 3, its samples times the volume in 4 and 5
+    // The multiplier: the left half in phase 3, the right half a clock later; the music's
+    // differences times the fraction in mph 2 and 3, its samples times the volume in 4 and 5.
     m_en <= 0;
     r_load <= adv;
     if(adv) begin
@@ -310,7 +333,7 @@ always @(posedge clk) begin
     end
     if(r_load) begin
         m_a <= {{10{r_smp[7]}}, r_smp};
-        m_b <= {8'd0, q_vol[15:8]};             // (still the voice before's: read a clock late)
+        m_b <= {8'd0, q_vol[15:8]};             // q_vol is read a clock late: still this voice's
         m_en <= r_en;
         m_side <= 1;
         m_mus <= 0;
@@ -339,7 +362,8 @@ always @(posedge clk) begin
         out_r <= clip(p_en && p_side ? acc_sum : acc_r);
     end
 
-    // a pass begins with the frame, once the line before is in
+    // A pass begins with the frame, once the line before is in. The sums start with the FM
+    // music's value.
     if(!run && !mrun && pend && !f_busy) begin
         pend <= 0;
         run <= 1;
@@ -349,7 +373,8 @@ always @(posedge clk) begin
         acc_r <= {{6{fm[15]}}, fm};
     end
 
-    // the CPU starts and stops voices, bit by bit over the pass's own changes
+    // The CPU starts and stops voices (registers 0x400 and 0x404), bit by bit, over the
+    // pass's own changes; and the other registers.
     for(i = 0; i < 32; i = i + 1) begin
         if(wr && wr_addr[10:2] == 9'h100 && wr_data[i]) begin
             playing[i] <= 1;

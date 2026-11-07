@@ -13,6 +13,10 @@
 //   rd = (rs1 * rs2) >> 16, both signed 16.16, result rounded toward -infinity
 //   (the same as (int32_t)(((int64_t)a * b) >> 16) in C)
 //
+// Protocol: cmd_valid/cmd_ready take the command. The result is held in the response
+// register with rsp_valid until rsp_ready takes it. The function id is not decoded: every
+// command is this multiply. soc.v instantiates it next to the CPU.
+//
 module cfu_fixmul (
     input  wire         clk,
     input  wire         reset,
@@ -34,6 +38,7 @@ module cfu_fixmul (
 
     wire signed [63:0] product = $signed(cmd_payload_inputs_0) * $signed(cmd_payload_inputs_1);
 
+    // The response register: valid one clock after a command, with bits 47:16 of the product.
 always @(posedge clk) begin
     if(reset)           rsp_valid <= 1'b0;
     else if(cmd_ready)  rsp_valid <= cmd_valid;

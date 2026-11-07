@@ -8,8 +8,8 @@
 //
 // Quartus gets an explicit altsyncram: inferring a memory with byte enables builds
 // registers instead of M10K, and inferring a second read port duplicates the blocks.
-// The simulation gets the same behaviour from an array, starting from a poison byte so
-// a lost write shows up.
+// The simulation (Verilator) gets the same behaviour from an array, starting from a poison
+// byte (0xA5) so a lost write shows up.
 //
 
 module ram_lane #(
@@ -36,11 +36,13 @@ module ram_lane #(
     integer i;
     initial for(i = 0; i < (1<<ADDR_W); i = i + 1) mem[i] = 8'hA5;
 
+    // port A: write, and read with the new byte on a write
 always @(posedge clk_a) begin
     if(we_a) mem[addr_a] <= wdata_a;
     ra <= we_a ? wdata_a : mem[addr_a];
 end
 
+    // port B, the same
 always @(posedge clk_b) begin
     if(we_b) mem[addr_b] <= wdata_b;
     rb <= we_b ? wdata_b : mem[addr_b];
@@ -51,6 +53,8 @@ end
 
 `else
 
+    // Quartus: a true dual-port M10K with both read ports unregistered (data one clock after
+    // the address) and a read during a write returning the new byte.
 altsyncram #(
     .operation_mode                 ( "BIDIR_DUAL_PORT" ),
     .intended_device_family         ( "Cyclone V" ),

@@ -8,6 +8,7 @@
 //   video port (clk_vid):   read only, data one clock after the address
 // The drawing side has to read too: the game's see-through effects (smoke, glass,
 // shadows, the radar) blend with what is already on the screen.
+// A row is 80 words, so the word of pixel (x, y) is 80 y + x / 4.
 //
 
 module framebuffer (
@@ -28,6 +29,7 @@ module framebuffer (
     wire [14:0] addr_a = {wr_buf, wr_addr};
     wire [14:0] addr_b = {rd_buf, rd_addr};
 
+    // one RAM lane per byte of the word; the drawing port is port A, the video port port B
     genvar lane;
     generate
         for(lane = 0; lane < 4; lane = lane + 1) begin : lanes
