@@ -553,19 +553,31 @@ static struct car_input rec[REC_MAX];
 static uint32_t rec_n;
 static int rec_full;
 
-/* The steps of a pass of the race loop are inlined into run_track, so that the loop compiles as if it were
-   written out in one piece. */
+/*
+ * The steps of a pass of the race loop. They are inlined into run_track, so that the loop compiles as if it
+ * were written out in one piece. The parts that make decisions (the keys of the pause and of the end, the
+ * physics steps, the set-up of the units) stay in run_track itself.
+ */
 #define RACE_STEP   static inline __attribute__((always_inline))
 
-/* What the steps of a pass hand to one another. The first members are set before the first pass, the others
-   are made in each pass. The state that lives from one pass to the next (fade, drawn, ask and the other
-   variables of run_track) is not part of it. It stays in local variables, because the compiler allocates
-   the registers of the loop differently when they are members of a struct. */
+/*
+ * What the steps of a pass hand to one another. The members of the first group are set before the first
+ * pass, those of the second group are made in each pass.
+ *
+ * The state that lives from one pass to the next (fade, drawn, ask and the other variables of run_track) is
+ * not part of it. It stays in local variables, because as members of a struct it changes how the compiler
+ * allocates the registers of the loop.
+ */
 struct race_frame {
     const uint32_t *pal;                /* the track's palette */
     int dash_ok;                        /* the player's car has a dashboard for the cockpit view */
     uint32_t sim;                       /* the simulation runs the core */
-    uint32_t sim_race;                  /* the simulation's long race: see run_track; else 0 */
+    /* The simulation's race (tools/sim.sh: SIM_RACE_FRAMES, and the keys in SIM_KEYS). The testbench offers
+       data slot RACE_SLOT with the size sim_race. core/data.json does not have this slot, so on the Pocket
+       sim_race is 0 and the race is an ordinary one. With sim_race set, the countdown of the start lights
+       runs at once before the first picture, and the sim_race-th picture after the green light is the one
+       that is checked and reported (check_at) instead of the third. On the Pocket check_at is only logged. */
+    uint32_t sim_race;
     uint32_t check_at;                  /* the picture that is checked against the C models */
     uint32_t keys, joy, trig;           /* the buttons, the stick and the triggers */
     uint32_t press;                     /* the buttons that went down since the last physics step */
@@ -596,8 +608,8 @@ RACE_STEP void sim_report(void)
     dlog_char('\n');
 }
 
-/* Sets up the race on track n with car number car: the ghost, the cars, the view of the car, the dashboard
-   and the hook that hands pieces to the geometry unit. Returns 1 if the dashboard is there. */
+/* Sets up the race on track n with the car of CARS.DTR row car: the ghost, the cars, the view of the car, the
+   dashboard, and the hook that hands the pieces to the geometry unit. Returns 1 if the dashboard is there. */
 RACE_STEP int race_enter(int n, int car, int replay, int car_v)
 {
     ghost_init(n, car);
@@ -612,8 +624,8 @@ RACE_STEP int race_enter(int n, int car, int replay, int car_v)
     return dash_ok;
 }
 
-/* Stage 1, input: waits for the previous swap, reads the keys and keeps the music fed. Returns the video
-   status of the new picture. In the benchmark (debug build) the gas is held and no controller is read. */
+/* Stage 1, input: waits for the previous swap, reads the keys and keeps the music fed. Returns VID_STATUS of
+   the new pass. In the benchmark (debug build) the gas is held and no controller is read. */
 RACE_STEP uint32_t race_input(struct race_frame *f, uint32_t drawn)
 {
     uint32_t st = next_frame();
@@ -628,7 +640,20 @@ RACE_STEP uint32_t race_input(struct race_frame *f, uint32_t drawn)
     return st;
 }
 
-/* Stage 3, camera: places the camera and collects the objects (cars, shadows, smoke, props) to draw. */
+/* Stage 2, physics: the race fades in from black, picture and sound. fade is the level, 0 to 0x8000, and
+   steps_now the physics steps of this pass. Returns the new level. */
+RACE_STEP int32_t race_fade_in(int32_t fade, uint32_t steps_now)
+{
+    if (fade < 0x8000) {
+        fade += (int32_t)steps_now * FADE_RACE;
+        snd_fade(fade);
+        music_fade(fade);
+    }
+    return fade;
+}
+
+/* Stage 3, camera: places the camera in cam and collects the objects (cars, shadows, smoke, props) to draw
+   in objs. */
 RACE_STEP void race_objects(struct race_frame *f, struct track_cam *cam, struct track_object *objs)
 {
     car_camera(cam);
@@ -643,7 +668,7 @@ RACE_STEP void race_objects(struct race_frame *f, struct track_cam *cam, struct 
 
 /* Stage 4, scene, first part: the backdrop (original: STARTL.EXE 0x83a68) and the palette. The blitter copies
    the backdrop while the CPU culls the scene. The first piece for the geometry unit waits until the blitter
-   is done (hw_piece). st is the video status of the pass; fade is the fade level. */
+   is done (hw_piece). st is VID_STATUS of the pass, fade the fade level. */
 RACE_STEP void race_backdrop(struct race_frame *f, uint32_t st, int32_t fade, const struct rs_clip *clip,
                              struct track_cam *cam)
 {
@@ -657,7 +682,7 @@ RACE_STEP void race_backdrop(struct race_frame *f, uint32_t st, int32_t fade, co
     pal_faded(f->pal, fade);
 }
 
-/* Stage 4, scene, second part: the pieces go from the CPU to the geometry unit, its faces to the setup unit,
+/* Stage 4, scene, second part: the pieces go from the CPU to the geometry unit, their faces to the setup unit
    and the triangles to the rasterizer. ts gets what the scene came to. */
 RACE_STEP void race_draw(struct race_frame *f, struct track_object *objs, struct track_cam *cam,
                          const struct rs_clip *clip, struct track_stats *ts)
@@ -670,7 +695,7 @@ RACE_STEP void race_draw(struct race_frame *f, struct track_object *objs, struct
 /* Stage 5, race screen with the cockpit: the dashboard comes before the radar window, which darkens it too.
    The blitter draws the dashboard once the scene is done, and the CPU makes the race screen's list
    meanwhile. Then the CPU waits for both and widens the clip to the whole screen, so that the window is
-   clipped to it. radar is the piece of the radar window; it is drawn if has_radar. */
+   clipped to it. radar is the radar's piece; it is drawn if has_radar is set. */
 RACE_STEP void race_cockpit_screen(int has_radar, struct gu_piece *radar)
 {
     hud_dash(&dashboard, (int)draw_buf);
@@ -682,8 +707,8 @@ RACE_STEP void race_cockpit_screen(int has_radar, struct gu_piece *radar)
     if (has_radar) hw_piece(radar);
 }
 
-/* Stage 5, race screen without the cockpit: the radar window comes first, then the list of the instruments.
-   The question PLAY AGAIN? (ask) has no race screen. */
+/* Stage 5, race screen without the cockpit: the radar window, then the list of the instruments. The question
+   PLAY AGAIN? (ask) has no race screen. */
 RACE_STEP void race_plain_screen(int ask, int has_radar, struct gu_piece *radar)
 {
     if (has_radar) hw_piece(radar);
@@ -692,7 +717,7 @@ RACE_STEP void race_plain_screen(int ask, int has_radar, struct gu_piece *radar)
 }
 
 /* Stage 6, frame end: waits until the rasterizer has drawn everything, lets the simulation check the picture
-   against the C models, and gives the picture to the statistics of the debug build. */
+   against the C models, and hands the picture to the statistics of the debug build. */
 RACE_STEP void race_finish(struct race_frame *f, uint32_t st, int ask, uint32_t drawn, uint32_t steps_now,
                            const struct rs_clip *clip, struct track_cam *cam, struct track_object *objs,
                            struct track_stats *ts)
@@ -723,7 +748,8 @@ RACE_STEP void race_finish(struct race_frame *f, uint32_t st, int ask, uint32_t 
  *     RACE_AGAIN for YES, RACE_LEAVE for NO.
  * The race fades in from black, picture and sound, in half a second (0x21e50 in each frame).
  *
- * Each pass of the loop makes one picture, in six stages that are marked in the code:
+ * Each pass of the loop makes one picture, in six stages that are marked in the code (the steps above are
+ * called race_...):
  *   1. input        wait for the previous swap, read the keys, handle the pause, the replay and the end
  *   2. physics      run the car, the opponents and the scenery for the steps since the last picture
  *   3. camera       place the camera and collect the objects to draw
@@ -791,11 +817,7 @@ static int run_track(int n, int car, int replay)
         last_frame = VID_FRAME(st);
         if (steps_now > 4) steps_now = 4;
         if (race_dbg.free_cam) steps_now = 0;
-        if (fade < 0x8000) {                    /* the race fades in from black, picture and sound */
-            fade += (int32_t)steps_now * FADE_RACE;
-            snd_fade(fade);
-            music_fade(fade);
-        }
+        fade = race_fade_in(fade, steps_now);
         if (f.press & KEY_X) car_view(++car_v);                         /* X changes the view */
         efx_cyc_objects = efx_cyc_radar = 0;    /* efx.c adds its cycles here; the debug log reads them */
         race_debug_physics_begin();
@@ -821,7 +843,7 @@ static int run_track(int n, int car, int replay)
         race_debug_physics_end(steps_now);
         track_clock(steps_now);                 /* the animation clock of the track's textures */
 
-        /* Stage 3, camera: the objects to draw, and the 3D view. */
+        /* Stage 3, camera: the objects to draw, then the 3D view. */
         struct track_cam cam;
         static struct track_object objs[MAX_OBJECTS];
         race_objects(&f, &cam, objs);
@@ -833,7 +855,7 @@ static int run_track(int n, int car, int replay)
         struct su_view view;
         track_view(&clip, &view);
 
-        /* Stage 4, scene: the backdrop, then the pieces. */
+        /* Stage 4, scene: the backdrop, the set-up of the units, the pieces. */
         race_backdrop(&f, st, fade, &clip, &cam);
         struct track_stats ts;
         GU_MODE = draw_buf << 8;                /* the units draw into the back buffer */
@@ -855,6 +877,7 @@ static int run_track(int n, int car, int replay)
         hw_blit(&hud);
         race_debug_screen_end();
 
+        /* Stage 6, frame end. */
         race_finish(&f, st, ask, drawn, steps_now, &clip, &cam, objs, &ts);
         VID_SWAP = 1;                           /* show the finished picture */
         log_race_head(++drawn);
