@@ -27,6 +27,15 @@ def main():
     """Applies all edits to the files in the directory given as the first argument."""
     d = sys.argv[1]
     ref = "--ref" in sys.argv
+
+    def names(path, new, old):
+        """The new name if the file uses it (the helpers of bytes.h, rdcycle), else the old one (an older tree)."""
+        return new if new + "(" in open(path, newline="").read() else old
+
+    s16 = names(f"{d}/geom.c", "ld16s", "rd16")      # signed 16 bits, aligned
+    u16 = names(f"{d}/geom.c", "ld16u", "ru16")      # unsigned 16 bits, aligned
+    s32 = names(f"{d}/geom.c", "ld32s", "rd32")      # signed 32 bits, aligned
+    cyc = names(f"{d}/track.c", "rdcycle", "now")    # the cycle counter
     cells = [
         ("    for(int g = q0; g < q1; g++) {\n",
          "    for(int g = q0; g < q1; g++) {\n"
@@ -49,7 +58,7 @@ def main():
          "            const uint8_t *b0 = g.blk;\n"
          "            g.blk = track_lod_block(g.obj, 0, sqrtf(wx * wx + wy * wy + wh * wh), 0);\n"
          "            if(!g.blk) { perf_c.lod_sd++; continue; }\n"
-         "            if(g.blk != b0) { if(g.blk == g.obj + rd32(g.obj + 0x18 + 0x104)) "
+         f"            if(g.blk != b0) {{ if(g.blk == g.obj + {s32}(g.obj + 0x18 + 0x104)) "
          "perf_c.lod_s1++; else perf_c.lod_s2++; }\n"),
     ]
     # The reference tree (older than the cells: the original's groups of 16, or the groups of eight)
@@ -70,14 +79,14 @@ def main():
         if ref and open(f"{d}/track.c", newline="").read().count(pairs[0][0]) == 1:
             ref_group = pairs
     common = [
-        ("    uint32_t t_pieces = now();\n",
+        (f"    uint32_t t_pieces = {cyc}();\n",
          "    for(int k = 0; k < nv; k++) "
          "perf_c.vis_hash = (perf_c.vis_hash ^ (uint32_t)vis[k]) * 16777619u;\n"
-         "    uint32_t t_pieces = now();\n"),
+         f"    uint32_t t_pieces = {cyc}();\n"),
         ("        st->objects++;\n", "        st->objects++;\n        perf_c.obj_visible++;\n"),
-        ("            if(ob->make) ob->make(ob->id, cam, ob);\n",
+        ("            if(ob->make) ob->make(ob->id, cam, ob);",
          "            if(ob->make) ob->make(ob->id, cam, ob);\n"
-         "            perf_c.obj_blocks += (uint32_t)ob->n;\n"),
+         "            perf_c.obj_blocks += (uint32_t)ob->n;"),
         ("            int nb = multi_pieces(c, f, r, u, pc, gs);\n",
          "            int nb = multi_pieces(c, f, r, u, pc, gs);\n"
          "            perf_c.multi_blocks += (uint32_t)nb;\n"),
@@ -102,6 +111,9 @@ def main():
             fh.write("    if(far_s > 0.0f) {\n        far_scale = far_s;\n        track_detail(2);\n    }\n")
             fh.write("    if(lod_s >= 0.0f) lod_inv = lod_s > 0.0f ? 1.0f / lod_s : 0.0f;\n")
         fh.write("}\n")
+    # The statement ends on the next line in the current geom.c and on the same line in older trees.
+    geom = open(f"{d}/geom.c", newline="").read()
+    back_tail = "\n            continue;" if f"(p->mirror != 0))\n            continue;" in geom else " continue;"
     edit(f"{d}/geom.c", [
         ("    st->vertices += (uint32_t)nvert;\n",
          "    st->vertices += (uint32_t)nvert;\n    perf_c.gu_pieces++;\n"
@@ -114,16 +126,16 @@ def main():
         ("        const uint8_t *fc = p->blk + fo;\n",
          "        const uint8_t *fc = p->blk + fo;\n        perf_c.faces_row++;\n        perf_gu_rd(e, 2);\n"
          "        perf_gu_rd(fc, 0x20);\n"),
-        ("        const uint8_t *c0 = verts + ru16(fc + 8);\n",
-         "        const uint8_t *c0 = verts + ru16(fc + 8);\n"
+        (f"        const uint8_t *c0 = verts + {u16}(fc + 8);\n",
+         f"        const uint8_t *c0 = verts + {u16}(fc + 8);\n"
          "        perf_gu_rd(c0, 6);\n"),
-        ("+ bz * rd16(fc + 0x1C) < 0) != (p->mirror != 0)) continue;",
-         "+ bz * rd16(fc + 0x1C) < 0) != (p->mirror != 0)) { perf_c.back++; continue; }"),
-        ("        const uint8_t *mat = mlb + rd16(fc + 4);\n",
-         "        const uint8_t *mat = mlb + rd16(fc + 4);\n"
+        (f"+ bz * {s16}(fc + 0x1C) < 0) != (p->mirror != 0))" + back_tail,
+         f"+ bz * {s16}(fc + 0x1C) < 0) != (p->mirror != 0)) {{ perf_c.back++; continue; }}"),
+        (f"        const uint8_t *mat = mlb + {s16}(fc + 4);\n",
+         f"        const uint8_t *mat = mlb + {s16}(fc + 4);\n"
          "        perf_gu_rd(mat, 16);\n"),
-        ("            const uint8_t *trec = mlb + rd32(mat + 4);\n",
-         "            const uint8_t *trec = mlb + rd32(mat + 4);\n"
+        (f"            const uint8_t *trec = mlb + {s32}(mat + 4);\n",
+         f"            const uint8_t *trec = mlb + {s32}(mat + 4);\n"
          "            perf_gu_rd(trec, 12);\n"),
         ("            c[j].f = vt[vi % GU_MAX_VERT].f;\n",
          "            c[j].f = vt[vi % GU_MAX_VERT].f;\n"
