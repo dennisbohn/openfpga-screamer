@@ -102,7 +102,7 @@
 //   column address is A9:A0, so a page is 1024 words. The EMR text says "M7 through M12 set to
 //   0" but Table 5 uses A7 for drive strength: Table 5 wins (A7:A5 = 100 = 75 % is legal).
 //   p.22 "DQM must be asserted prior to the WRITE" contradicts write latency 0 (typo). CL1 is
-//   allowed by the datasheet up to 50 MHz but treated as illegal here, as briefed.
+//   allowed by the datasheet up to 50 MHz but treated as illegal by this model.
 //   The datasheet only requires "a PRECHARGE" after 200 us with all banks then precharged:
 //   any PRECHARGE that reaches every bank works. 200 us at CLK_NS = 13.468 is 14851 clocks
 //   (14850 x 13.468 ns = 199999.8 ns); exactly 74.25 MHz gives 14850 (CLK_NS = 13.4680135).
@@ -248,8 +248,8 @@ module sdram_model #(
                                  && FAULT_DQ_SHORT_B <= 15 && FAULT_DQ_SHORT_A != FAULT_DQ_SHORT_B) ? 1 : 0;
     localparam integer SH_A   = SH_ON != 0 ? FAULT_DQ_SHORT_A : 0;
     localparam integer SH_B   = SH_ON != 0 ? FAULT_DQ_SHORT_B : 1;
-    localparam integer RA_ON  = (FAULT_ROW_ALIAS_SRC >= 0 && FAULT_ROW_ALIAS_SRC <= 12 && FAULT_ROW_ALIAS_DST >= 0
-                                 && FAULT_ROW_ALIAS_DST <= 12) ? 1 : 0;
+    localparam integer RA_ON  = (FAULT_ROW_ALIAS_SRC >= 0 && FAULT_ROW_ALIAS_SRC <= 12
+                                 && FAULT_ROW_ALIAS_DST >= 0 && FAULT_ROW_ALIAS_DST <= 12) ? 1 : 0;
     localparam integer RA_SRC = RA_ON != 0 ? FAULT_ROW_ALIAS_SRC : 0;
     localparam integer RA_DST = RA_ON != 0 ? FAULT_ROW_ALIAS_DST : 0;
     localparam integer DROP_N = FAULT_DROP_WRITE_N > 0 ? FAULT_DROP_WRITE_N : 1;
@@ -421,11 +421,13 @@ module sdram_model #(
         end
     endfunction
 
+    // The word at key k: the stored value, or the value a word never written reads as (see MEMORY).
     function automatic [15:0] mem_rd(input [24:0] k);
         if (mem.exists({7'd0, k}) != 0) mem_rd = mem[{7'd0, k}];
         else mem_rd = 16'hA5A5 ^ k[15:0] ^ {k[24:16], 7'd0};
     endfunction
 
+    // The command code {ras_n, cas_n, we_n} as a name, for the error messages.
     function automatic string cmd_name(input [2:0] c);
         case (c)
             3'b111:  cmd_name = "NOP";
@@ -444,15 +446,19 @@ module sdram_model #(
         pick = c ? t : f;
     endfunction
 
+    // Reports one protocol error: counts it, prints the first MAX_MSG of them as one line with the
+    // tag, and stops the simulation if FATAL is set.
     task automatic report(input string tag, input string msg);
         begin
             nerr = nerr + 1;
             if (nerr <= MAX_MSG) $display("sdram_model: clock %0d: ERROR [%s] %s", cyc, tag, msg);
-            if (nerr == MAX_MSG) $display("sdram_model: clock %0d: %0d errors, no further error lines", cyc, nerr);
+            if (nerr == MAX_MSG)
+                $display("sdram_model: clock %0d: %0d errors, no further error lines", cyc, nerr);
             if (FATAL != 0) $fatal(1, "sdram_model: FATAL = 1, stopping at the first error");
         end
     endtask
 
+    // What the initialisation still lacks, as text for the init_order message.
     function automatic string init_missing();
         string t;
         begin
@@ -464,21 +470,26 @@ module sdram_model #(
         end
     endfunction
 
+    // Printed at the first edge with CKE high: the limits in clocks, and the faults that are active.
     task automatic startup_message();
         string f;
         begin
             $display("sdram_model: clock %0d: CKE high, power-up starts. CLK_NS %0.4f: tRCD %0d, tRP %0d, tRAS %0d..%0d, tRC %0d, tRRD %0d, tWR %0d, tRFC %0d, tMRD %0d clocks; first command after %0d clocks; AUTO REFRESH at least every %0d clocks; bus held %0d clocks after the last read beat",
-                     cyc, CLK_NS, TRCD, TRP, TRAS, TRAS_MAX, TRC, TRRD, TWR, TRFC, TMRD, TINIT, TREF_MAX, BUS_HOLD);
+                cyc, CLK_NS, TRCD, TRP, TRAS, TRAS_MAX, TRC, TRRD, TWR, TRFC, TMRD, TINIT, TREF_MAX,
+                BUS_HOLD);
             f = "";
-            if (FAULT_DQ_STUCK0 != 16'h0000) f = {f, $sformatf(" DQ stuck at 0 (mask 0x%04x);", FAULT_DQ_STUCK0)};
-            if (FAULT_DQ_STUCK1 != 16'h0000) f = {f, $sformatf(" DQ stuck at 1 (mask 0x%04x);", FAULT_DQ_STUCK1)};
+            if (FAULT_DQ_STUCK0 != 16'h0000)
+                f = {f, $sformatf(" DQ stuck at 0 (mask 0x%04x);", FAULT_DQ_STUCK0)};
+            if (FAULT_DQ_STUCK1 != 16'h0000)
+                f = {f, $sformatf(" DQ stuck at 1 (mask 0x%04x);", FAULT_DQ_STUCK1)};
             if (SH_ON != 0) f = {f, $sformatf(" DQ%0d and DQ%0d shorted (wired-AND);", SH_A, SH_B)};
             if (FAULT_LDQM_LOW != 0) f = {f, " LDQM seen low;"};
             if (FAULT_UDQM_LOW != 0) f = {f, " UDQM seen low;"};
             if (FAULT_DQM_SWAP != 0) f = {f, " DQML and DQMH swapped;"};
             if (FAULT_BA1_STUCK0 != 0) f = {f, " BA1 stuck at 0 in the array;"};
             if (RA_ON != 0) f = {f, $sformatf(" row bit %0d aliased onto row bit %0d;", RA_SRC, RA_DST)};
-            if (FAULT_DROP_WRITE_N > 0) f = {f, $sformatf(" every %0d. write beat dropped;", FAULT_DROP_WRITE_N)};
+            if (FAULT_DROP_WRITE_N > 0)
+                f = {f, $sformatf(" every %0d. write beat dropped;", FAULT_DROP_WRITE_N)};
             if (f != "") $display("sdram_model: FAULT INJECTION ACTIVE:%s", f);
         end
     endtask
@@ -496,27 +507,36 @@ module sdram_model #(
                 else if (b_open[n]) busy = {busy, $sformatf(" bank %0d has row %0d open%s;", n, b_row[n],
                                                             pick(b_ap[n], " (auto precharge pending)", ""))};
                 else if (at - b_pre[n] < TRP)
-                    early = {early, $sformatf(" bank %0d only %0d clock(s) after its %s at edge %0d;", n, at - b_pre[n],
-                                              pick(b_pre_ap[n], "auto precharge", "PRECHARGE"), b_pre[n])};
+                    early = {early,
+                        $sformatf(" bank %0d only %0d clock(s) after its %s at edge %0d;", n, at - b_pre[n],
+                            pick(b_pre_ap[n], "auto precharge", "PRECHARGE"), b_pre[n])};
             end
             if (busy != "") report("not_idle", {what, " needs all banks idle:", busy});
-            if (early != "") report("tRP", {what, $sformatf(" needs tRP (%0d clocks) after the precharge:", TRP), early});
+            if (early != "")
+                report("tRP", {what, $sformatf(" needs tRP (%0d clocks) after the precharge:", TRP), early});
         end
     endtask
 
     // READ and WRITE: initialised, the bank open and not auto-precharging, tRCD
     task automatic access_checks(input string what, input integer at);
         begin
-            if (!init_ok) report("init_order", {what, " before the initialisation is complete (missing:", init_missing(), ")"});
+            if (!init_ok)
+                report("init_order",
+                    {what, " before the initialisation is complete (missing:", init_missing(), ")"});
             if (b_ap[ba] || (b_pre_ap[ba] && !b_open[ba] && at - b_pre[ba] < TRP))
-                report("auto_precharge", $sformatf("%s to bank %0d during its auto precharge (READ/WRITE with A10 = 1 at edge %0d; the bank is idle tRP after the precharge starts, p.42 note 60)",
-                                                   what, ba, b_ap_cmd[ba]));
-            else if (!b_open[ba]) report("bank_closed", $sformatf("%s to bank %0d, which has no open row", what, ba));
+                report("auto_precharge",
+                    $sformatf("%s to bank %0d during its auto precharge (READ/WRITE with A10 = 1 at edge %0d; the bank is idle tRP after the precharge starts, p.42 note 60)",
+                        what, ba, b_ap_cmd[ba]));
+            else if (!b_open[ba])
+                report("bank_closed", $sformatf("%s to bank %0d, which has no open row", what, ba));
             else if (at - b_act[ba] < TRCD)
-                report("tRCD", $sformatf("%s to bank %0d only %0d clock(s) after its ACTIVE at edge %0d (tRCD = %0d clocks)",
-                                         what, ba, at - b_act[ba], b_act[ba], TRCD));
+                report("tRCD",
+                    $sformatf("%s to bank %0d only %0d clock(s) after its ACTIVE at edge %0d (tRCD = %0d clocks)",
+                        what, ba, at - b_act[ba], b_act[ba], TRCD));
             if (a[10] && bl == 0)
-                report("auto_precharge", {what, " with auto precharge (A10 = 1) in full-page mode, which the chip does not support (p.12)"});
+                report("auto_precharge",
+                    {what,
+                        " with auto precharge (A10 = 1) in full-page mode, which the chip does not support (p.12)"});
         end
     endtask
 
@@ -527,8 +547,10 @@ module sdram_model #(
             if (rd_bl == 0) rd_on = 1'b0;           // full page: this is how it ends
             else begin
                 if (TRUNC_IS_ERROR != 0)
-                    report("truncation", $sformatf("%s at edge %0d cuts the READ of edge %0d (bank %0d row %0d column %0d, burst length %0d) short: beats %0d..%0d (due at edges %0d..%0d) are lost",
-                                                   by, at, rd_r, rd_bank, rd_row, rd_col, rd_bl, rd_k, rd_bl - 1, at + cl, at + cl + rd_bl - 1 - rd_k));
+                    report("truncation",
+                        $sformatf("%s at edge %0d cuts the READ of edge %0d (bank %0d row %0d column %0d, burst length %0d) short: beats %0d..%0d (due at edges %0d..%0d) are lost",
+                            by, at, rd_r, rd_bank, rd_row, rd_col, rd_bl, rd_k, rd_bl - 1, at + cl,
+                            at + cl + rd_bl - 1 - rd_k));
                 rd_ghost = 1'b1;
             end
             own_until = at + cl - 1 + BUS_HOLD;
@@ -539,8 +561,10 @@ module sdram_model #(
     task automatic cut_write(input string by, input integer at);
         begin
             if (wr_bl != 0 && TRUNC_IS_ERROR != 0)
-                report("truncation", $sformatf("%s at edge %0d cuts the WRITE of edge %0d (bank %0d row %0d column %0d, burst length %0d) short: beats %0d..%0d (edges %0d..%0d) are not written",
-                                               by, at, wr_w, wr_bank, wr_row, wr_col, wr_bl, wr_k, wr_bl - 1, at, at + wr_bl - 1 - wr_k));
+                report("truncation",
+                    $sformatf("%s at edge %0d cuts the WRITE of edge %0d (bank %0d row %0d column %0d, burst length %0d) short: beats %0d..%0d (edges %0d..%0d) are not written",
+                        by, at, wr_w, wr_bank, wr_row, wr_col, wr_bl, wr_k, wr_bl - 1, at,
+                        at + wr_bl - 1 - wr_k));
             wr_on = 1'b0;
         end
     endtask
@@ -572,34 +596,45 @@ module sdram_model #(
             else if (nbl == 0) s_bl = "full page";
             else s_bl = $sformatf("%0d", nbl);
             $display("sdram_model: clock %0d: LOAD MODE REGISTER A = 0x%04x: CAS latency %s, burst length %s, %s, %s%s",
-                     at, a, s_cl, s_bl, pick(a[3], "interleaved", "sequential"),
-                     pick(a[9], "single-location writes (A9 = 1)", "burst writes (A9 = 0)"),
-                     pick(a[12:10] != 3'b000 || a[8:7] != 2'b00, ", reserved bits set", ""));
+                at, a, s_cl, s_bl, pick(a[3], "interleaved", "sequential"),
+                pick(a[9], "single-location writes (A9 = 1)", "burst writes (A9 = 0)"),
+                pick(a[12:10] != 3'b000 || a[8:7] != 2'b00, ", reserved bits set", ""));
             legal = 1'b1;
             if (a[12:10] != 3'b000) begin
                 legal = 1'b0;
-                report("mode_reg", $sformatf("LOAD MODE REGISTER with A12:A10 = %b; they must be 0", a[12:10]));
+                report("mode_reg",
+                    $sformatf("LOAD MODE REGISTER with A12:A10 = %b; they must be 0", a[12:10]));
             end
             if (a[8:7] != 2'b00) begin
                 legal = 1'b0;
-                report("mode_reg", $sformatf("LOAD MODE REGISTER with operating mode A8:A7 = %b; only 00 (standard) is defined", a[8:7]));
+                report("mode_reg",
+                    $sformatf("LOAD MODE REGISTER with operating mode A8:A7 = %b; only 00 (standard) is defined",
+                        a[8:7]));
             end
             if (ncl == 0) begin
                 legal = 1'b0;
-                report("mode_reg", $sformatf("LOAD MODE REGISTER with CAS latency code A6:A4 = %b; only 010 (CL2) and 011 (CL3) are accepted", a[6:4]));
+                report("mode_reg",
+                    $sformatf("LOAD MODE REGISTER with CAS latency code A6:A4 = %b; only 010 (CL2) and 011 (CL3) are accepted",
+                        a[6:4]));
             end
             if (nbl < 0) begin
                 legal = 1'b0;
-                report("mode_reg", $sformatf("LOAD MODE REGISTER with reserved burst length code A2:A0 = %b", a[2:0]));
+                report("mode_reg",
+                    $sformatf("LOAD MODE REGISTER with reserved burst length code A2:A0 = %b", a[2:0]));
             end
             if (nbl == 0 && a[3]) begin
                 legal = 1'b0;
-                report("mode_reg", "LOAD MODE REGISTER with a full-page burst and interleaved burst type (A3 = 1), which is not supported");
+                report("mode_reg",
+                    "LOAD MODE REGISTER with a full-page burst and interleaved burst type (A3 = 1), which is not supported");
             end
             if (ncl == 2 && CLK_NS < 12.0)
-                report("cl_clock", $sformatf("CAS latency 2 with a %0.3f ns clock: CL2 is specified only up to 83 MHz (tCK >= 12 ns, p.10 Table 3, p.16)", CLK_NS));
+                report("cl_clock",
+                    $sformatf("CAS latency 2 with a %0.3f ns clock: CL2 is specified only up to 83 MHz (tCK >= 12 ns, p.10 Table 3, p.16)",
+                        CLK_NS));
             if (ncl == 3 && CLK_NS < 6.0)
-                report("cl_clock", $sformatf("CAS latency 3 with a %0.3f ns clock: CL3 is specified only up to 166 MHz (tCK >= 6 ns)", CLK_NS));
+                report("cl_clock",
+                    $sformatf("CAS latency 3 with a %0.3f ns clock: CL3 is specified only up to 166 MHz (tCK >= 6 ns)",
+                        CLK_NS));
             if (ncl != 0) cl = ncl;
             if (nbl >= 0) bl = nbl;
             il = a[3];
@@ -633,28 +668,38 @@ module sdram_model #(
                 default: s_ds = $sformatf("reserved (A7:A5 = %b)", a[7:5]);
             endcase
             $display("sdram_model: clock %0d: LOAD EXTENDED MODE REGISTER A = 0x%04x: partial-array self refresh %s, drive strength %s%s",
-                     at, a, s_pasr, s_ds, pick(a[12:8] != 5'd0 || a[4:3] != 2'd0, ", reserved bits set", ""));
+                at, a, s_pasr, s_ds, pick(a[12:8] != 5'd0 || a[4:3] != 2'd0, ", reserved bits set", ""));
             legal = 1'b1;
             if (a[12:8] != 5'd0) begin
                 legal = 1'b0;
-                report("ext_mode_reg", $sformatf("LOAD EXTENDED MODE REGISTER with A12:A8 = %b; they must be 0", a[12:8]));
+                report("ext_mode_reg",
+                    $sformatf("LOAD EXTENDED MODE REGISTER with A12:A8 = %b; they must be 0", a[12:8]));
             end
             if (a[4:3] != 2'd0) begin
                 legal = 1'b0;
-                report("ext_mode_reg", $sformatf("LOAD EXTENDED MODE REGISTER with A4:A3 = %b; they must be 0", a[4:3]));
+                report("ext_mode_reg",
+                    $sformatf("LOAD EXTENDED MODE REGISTER with A4:A3 = %b; they must be 0", a[4:3]));
             end
             if (!pasr_ok) begin
                 legal = 1'b0;
-                report("ext_mode_reg", $sformatf("LOAD EXTENDED MODE REGISTER with reserved PASR code A2:A0 = %b", a[2:0]));
+                report("ext_mode_reg",
+                    $sformatf("LOAD EXTENDED MODE REGISTER with reserved PASR code A2:A0 = %b", a[2:0]));
             end
             if (a[7:5] > 3'b100) begin
                 legal = 1'b0;
-                report("ext_mode_reg", $sformatf("LOAD EXTENDED MODE REGISTER with reserved drive strength code A7:A5 = %b", a[7:5]));
+                report("ext_mode_reg",
+                    $sformatf("LOAD EXTENDED MODE REGISTER with reserved drive strength code A7:A5 = %b",
+                        a[7:5]));
             end
             emr_ok = legal && at - t_start >= TINIT;
         end
     endtask
 
+    // The model, one run per rising edge, in this order: power-up start, CKE check, the bus window
+    // check, the DQM check of the initialisation, auto precharges that start, the tRAS max and
+    // refresh interval checks, the checks that every command must pass (init_wait, tRFC, tMRD), the
+    // command itself, the write data of this edge, the read fetch of this edge. After that comes
+    // the output for the next edge: the read beat that is valid then.
     always @(posedge clk) begin
         e = cyc;
         if (!started && cke) begin
@@ -665,28 +710,34 @@ module sdram_model #(
 
         if (started) begin
             if (!cke) begin
-                if (!cke_low) report("cke", "CKE low: power-down, self refresh and clock suspend are not modelled; keep CKE high");
+                if (!cke_low)
+                    report("cke",
+                        "CKE low: power-down, self refresh and clock suspend are not modelled; keep CKE high");
                 cke_low = 1'b1;
             end else cke_low = 1'b0;
 
             // the bus in the clock that ends at this edge
             if (dq_i_en && e >= own_from && e <= own_until && !conflict_seen) begin
-                report("bus_conflict", $sformatf("dq_i_en is high in the clock ending at this edge, but the chip owns DQ from edge %0d to edge %0d (from the clock after the READ at edge %0d until BUS_HOLD = %0d clocks after its last beat)",
-                                                 own_from, own_until, own_read, BUS_HOLD));
+                report("bus_conflict",
+                    $sformatf("dq_i_en is high in the clock ending at this edge, but the chip owns DQ from edge %0d to edge %0d (from the clock after the READ at edge %0d until BUS_HOLD = %0d clocks after its last beat)",
+                        own_from, own_until, own_read, BUS_HOLD));
                 conflict_seen = 1'b1;
             end
 
             if (!init_seen && dqm != 2'b11 && !dqm_flagged) begin
-                report("dqm_init", $sformatf("DQM = %b during the initialisation; both DQM must stay high until it is complete (p.6 Figure 1)", dqm));
+                report("dqm_init",
+                    $sformatf("DQM = %b during the initialisation; both DQM must stay high until it is complete (p.6 Figure 1)",
+                        dqm));
                 dqm_flagged = 1'b1;
             end
 
-            // auto precharges that start now
+            // auto precharges that start at this edge
             for (i = 0; i < 4; i = i + 1)
                 if (b_ap[i] && b_ap_at[i] <= e) begin
                     if (b_ap_at[i] - b_act[i] < TRAS)
-                        report("tRAS", $sformatf("the auto precharge of bank %0d (READ/WRITE with A10 = 1 at edge %0d) starts at edge %0d, only %0d clock(s) after its ACTIVE at edge %0d (tRAS = %0d clocks; no tRAS lock-out is documented)",
-                                                 i, b_ap_cmd[i], b_ap_at[i], b_ap_at[i] - b_act[i], b_act[i], TRAS));
+                        report("tRAS",
+                            $sformatf("the auto precharge of bank %0d (READ/WRITE with A10 = 1 at edge %0d) starts at edge %0d, only %0d clock(s) after its ACTIVE at edge %0d (tRAS = %0d clocks; no tRAS lock-out is documented)",
+                                i, b_ap_cmd[i], b_ap_at[i], b_ap_at[i] - b_act[i], b_act[i], TRAS));
                     b_ap[i] = 1'b0;
                     b_open[i] = 1'b0;
                     b_pre[i] = b_ap_at[i];
@@ -695,16 +746,18 @@ module sdram_model #(
 
             for (i = 0; i < 4; i = i + 1)
                 if (b_open[i] && !b_rasmax[i] && e - b_act[i] > TRAS_MAX) begin
-                    report("tRAS_max", $sformatf("row %0d of bank %0d has been open since edge %0d, longer than tRAS max (%0d clocks)",
-                                                 b_row[i], i, b_act[i], TRAS_MAX));
+                    report("tRAS_max",
+                        $sformatf("row %0d of bank %0d has been open since edge %0d, longer than tRAS max (%0d clocks)",
+                            b_row[i], i, b_act[i], TRAS_MAX));
                     b_rasmax[i] = 1'b1;
                 end
 
             if (t_ref != NEVER) begin
                 if (e - t_ref > ref_max) ref_max = e - t_ref;
                 if (!ref_late && e - t_ref > TREF_MAX) begin
-                    report("refresh_interval", $sformatf("no AUTO REFRESH for %0d clocks since the one at edge %0d (%0.1f ns; the limit is %0d clocks, %0.1f ns x REF_FACTOR %0.2f)",
-                                                         e - t_ref, t_ref, (e - t_ref) * CLK_NS, TREF_MAX, T_REFI_NS, REF_FACTOR));
+                    report("refresh_interval",
+                        $sformatf("no AUTO REFRESH for %0d clocks since the one at edge %0d (%0.1f ns; the limit is %0d clocks, %0.1f ns x REF_FACTOR %0.2f)",
+                            e - t_ref, t_ref, (e - t_ref) * CLK_NS, TREF_MAX, T_REFI_NS, REF_FACTOR));
                     ref_late = 1'b1;
                 end
             end
@@ -712,33 +765,46 @@ module sdram_model #(
             cmd = {ras_n, cas_n, we_n};
             if (cmd != 3'b111) begin
                 if (e - t_start < TINIT)
-                    report("init_wait", $sformatf("%s %0d clocks (%0.1f ns) after the first edge with CKE high (edge %0d): only NOPs are allowed for the first %0d clocks (%0.0f ns, p.5)",
-                                                  cmd_name(cmd), e - t_start, (e - t_start) * CLK_NS, t_start, TINIT, T_INIT_NS));
+                    report("init_wait",
+                        $sformatf("%s %0d clocks (%0.1f ns) after the first edge with CKE high (edge %0d): only NOPs are allowed for the first %0d clocks (%0.0f ns, p.5)",
+                            cmd_name(cmd), e - t_start, (e - t_start) * CLK_NS, t_start, TINIT, T_INIT_NS));
                 if (e - t_ref < TRFC)
-                    report("tRFC", $sformatf("%s only %0d clock(s) after the AUTO REFRESH at edge %0d (tRFC = %0d clocks; nothing may interrupt a refresh, p.42 note 61)",
-                                             cmd_name(cmd), e - t_ref, t_ref, TRFC));
+                    report("tRFC",
+                        $sformatf("%s only %0d clock(s) after the AUTO REFRESH at edge %0d (tRFC = %0d clocks; nothing may interrupt a refresh, p.42 note 61)",
+                            cmd_name(cmd), e - t_ref, t_ref, TRFC));
                 if (e - t_mrs < TMRD)
-                    report("tMRD", $sformatf("%s only %0d clock(s) after the LOAD MODE REGISTER at edge %0d (tMRD = %0d clocks)",
-                                             cmd_name(cmd), e - t_mrs, t_mrs, TMRD));
+                    report("tMRD",
+                        $sformatf("%s only %0d clock(s) after the LOAD MODE REGISTER at edge %0d (tMRD = %0d clocks)",
+                            cmd_name(cmd), e - t_mrs, t_mrs, TMRD));
             end
 
             case (cmd)
                 3'b011: begin                                                   // ACTIVE
-                    if (!init_ok) report("init_order", {"ACTIVE before the initialisation is complete (missing:", init_missing(), ")"});
+                    if (!init_ok)
+                        report("init_order",
+                            {"ACTIVE before the initialisation is complete (missing:", init_missing(), ")"});
                     if (b_ap[ba])
-                        report("auto_precharge", $sformatf("ACTIVE to bank %0d during its READ/WRITE with auto precharge at edge %0d", ba, b_ap_cmd[ba]));
+                        report("auto_precharge",
+                            $sformatf("ACTIVE to bank %0d during its READ/WRITE with auto precharge at edge %0d",
+                                ba, b_ap_cmd[ba]));
                     else if (b_open[ba])
-                        report("bank_open", $sformatf("ACTIVE to bank %0d, which already has row %0d open (ACTIVE at edge %0d)", ba, b_row[ba], b_act[ba]));
+                        report("bank_open",
+                            $sformatf("ACTIVE to bank %0d, which already has row %0d open (ACTIVE at edge %0d)",
+                                ba, b_row[ba], b_act[ba]));
                     else if (b_known[ba] && e - b_pre[ba] < TRP)
-                        report("tRP", $sformatf("ACTIVE to bank %0d only %0d clock(s) after its %s at edge %0d (tRP = %0d clocks)",
-                                                ba, e - b_pre[ba], pick(b_pre_ap[ba], "auto precharge started", "PRECHARGE"), b_pre[ba], TRP));
+                        report("tRP",
+                            $sformatf("ACTIVE to bank %0d only %0d clock(s) after its %s at edge %0d (tRP = %0d clocks)",
+                                ba, e - b_pre[ba], pick(b_pre_ap[ba], "auto precharge started", "PRECHARGE"),
+                                b_pre[ba], TRP));
                     if (e - b_act[ba] < TRC)
-                        report("tRC", $sformatf("ACTIVE to bank %0d only %0d clock(s) after its previous ACTIVE at edge %0d (tRC = %0d clocks)",
-                                                ba, e - b_act[ba], b_act[ba], TRC));
+                        report("tRC",
+                            $sformatf("ACTIVE to bank %0d only %0d clock(s) after its previous ACTIVE at edge %0d (tRC = %0d clocks)",
+                                ba, e - b_act[ba], b_act[ba], TRC));
                     for (i = 0; i < 4; i = i + 1)
                         if (i[1:0] != ba && e - b_act[i] < TRRD)
-                            report("tRRD", $sformatf("ACTIVE to bank %0d only %0d clock(s) after the ACTIVE to bank %0d at edge %0d (tRRD = %0d clocks)",
-                                                     ba, e - b_act[i], i, b_act[i], TRRD));
+                            report("tRRD",
+                                $sformatf("ACTIVE to bank %0d only %0d clock(s) after the ACTIVE to bank %0d at edge %0d (tRRD = %0d clocks)",
+                                    ba, e - b_act[i], i, b_act[i], TRRD));
                     b_open[ba] = 1'b1;
                     b_row[ba] = a;
                     b_act[ba] = e;
@@ -749,11 +815,13 @@ module sdram_model #(
                 3'b101: begin                                                   // READ
                     access_checks("READ", e);
                     // the running bursts end here (p.18-21, p.32); another bank's auto
-                    // precharge starts now (READ burst) or tWR from now (WRITE burst)
+                    // precharge starts at this edge (READ burst) or tWR after it (WRITE burst)
                     if (rd_on && !rd_ghost) begin
                         if (rd_bl != 0 && TRUNC_IS_ERROR != 0)
-                            report("truncation", $sformatf("READ at edge %0d cuts the READ of edge %0d (bank %0d row %0d column %0d, burst length %0d) short: beats %0d..%0d (due at edges %0d..%0d) are lost",
-                                                           e, rd_r, rd_bank, rd_row, rd_col, rd_bl, rd_k, rd_bl - 1, e + cl, e + cl + rd_bl - 1 - rd_k));
+                            report("truncation",
+                                $sformatf("READ at edge %0d cuts the READ of edge %0d (bank %0d row %0d column %0d, burst length %0d) short: beats %0d..%0d (due at edges %0d..%0d) are lost",
+                                    e, rd_r, rd_bank, rd_row, rd_col, rd_bl, rd_k, rd_bl - 1, e + cl,
+                                    e + cl + rd_bl - 1 - rd_k));
                         if (rd_ap && b_ap[rd_bank] && b_ap_at[rd_bank] > e) b_ap_at[rd_bank] = e;
                     end
                     if (wr_on) begin
@@ -806,8 +874,9 @@ module sdram_model #(
                         if (rd_ap && b_ap[rd_bank] && b_ap_at[rd_bank] > e) b_ap_at[rd_bank] = e;
                     end
                     if (lost > 0 && rd_bl != 0 && TRUNC_IS_ERROR != 0)
-                        report("truncation", $sformatf("WRITE at edge %0d cuts read data short: %0d beat(s) from edge %0d on are lost (last READ at edge %0d, bank %0d row %0d column %0d, burst length %0d)",
-                                                       e, lost, first, rd_r, rd_bank, rd_row, rd_col, rd_bl));
+                        report("truncation",
+                            $sformatf("WRITE at edge %0d cuts read data short: %0d beat(s) from edge %0d on are lost (last READ at edge %0d, bank %0d row %0d column %0d, burst length %0d)",
+                                e, lost, first, rd_r, rd_bank, rd_row, rd_col, rd_bl));
                     if (own_until > e + BUS_HOLD) own_until = e + BUS_HOLD;
                     if (wr_on) begin
                         if (wr_ap && b_ap[wr_bank] && b_ap_at[wr_bank] > e + TWR) b_ap_at[wr_bank] = e + TWR;
@@ -836,9 +905,11 @@ module sdram_model #(
                         if (p_v[s[1:0]] && p_drv[s[1:0]]) pend = 1'b1;
                     end
                     if (!(rd_on && !rd_ghost) && !wr_on && !pend)
-                        report("burst_terminate", "BURST TERMINATE with no READ or WRITE burst in progress (p.42-43 Table 10)");
+                        report("burst_terminate",
+                            "BURST TERMINATE with no READ or WRITE burst in progress (p.42-43 Table 10)");
                     else if (last_ap && ((rd_on && !rd_ghost) || wr_on))
-                        report("burst_terminate", "BURST TERMINATE of a READ/WRITE with auto precharge, which must not be interrupted (p.42 note 60)");
+                        report("burst_terminate",
+                            "BURST TERMINATE of a READ/WRITE with auto precharge, which must not be interrupted (p.42 note 60)");
                     if (rd_on && !rd_ghost) cut_read("BURST TERMINATE", e);
                     if (wr_on) cut_write("BURST TERMINATE", e);
                 end
@@ -847,29 +918,37 @@ module sdram_model #(
                     for (i = 0; i < 4; i = i + 1)
                         if (a[10] || ba == i[1:0]) begin
                             if (b_ap[i])
-                                report("auto_precharge", $sformatf("PRECHARGE of bank %0d during its READ/WRITE with auto precharge at edge %0d", i, b_ap_cmd[i]));
+                                report("auto_precharge",
+                                    $sformatf("PRECHARGE of bank %0d during its READ/WRITE with auto precharge at edge %0d",
+                                        i, b_ap_cmd[i]));
                             else if (b_open[i]) begin
                                 if (e - b_act[i] < TRAS)
-                                    report("tRAS", $sformatf("PRECHARGE of bank %0d only %0d clock(s) after its ACTIVE at edge %0d (tRAS = %0d clocks)",
-                                                             i, e - b_act[i], b_act[i], TRAS));
+                                    report("tRAS",
+                                        $sformatf("PRECHARGE of bank %0d only %0d clock(s) after its ACTIVE at edge %0d (tRAS = %0d clocks)",
+                                            i, e - b_act[i], b_act[i], TRAS));
                                 if (e - b_wr[i] < TWR)
-                                    report("tWR", $sformatf("PRECHARGE of bank %0d only %0d clock(s) after its last write data at edge %0d (tWR = %0d clocks)",
-                                                            i, e - b_wr[i], b_wr[i], TWR));
+                                    report("tWR",
+                                        $sformatf("PRECHARGE of bank %0d only %0d clock(s) after its last write data at edge %0d (tWR = %0d clocks)",
+                                            i, e - b_wr[i], b_wr[i], TWR));
                             end else if (b_known[i] && e - b_pre[i] < TRP) begin
                                 if (b_pre_ap[i])
-                                    report("auto_precharge", $sformatf("PRECHARGE of bank %0d only %0d clock(s) after its auto precharge started at edge %0d (tRP = %0d clocks, p.42 note 60)",
-                                                                       i, e - b_pre[i], b_pre[i], TRP));
+                                    report("auto_precharge",
+                                        $sformatf("PRECHARGE of bank %0d only %0d clock(s) after its auto precharge started at edge %0d (tRP = %0d clocks, p.42 note 60)",
+                                            i, e - b_pre[i], b_pre[i], TRP));
                                 else
-                                    report("precharge_busy", $sformatf("PRECHARGE of bank %0d only %0d clock(s) after its PRECHARGE at edge %0d: no command to a bank while it precharges (tRP = %0d clocks, p.42 notes 60 and 64)",
-                                                                       i, e - b_pre[i], b_pre[i], TRP));
+                                    report("precharge_busy",
+                                        $sformatf("PRECHARGE of bank %0d only %0d clock(s) after its PRECHARGE at edge %0d: no command to a bank while it precharges (tRP = %0d clocks, p.42 notes 60 and 64)",
+                                            i, e - b_pre[i], b_pre[i], TRP));
                             end
                         end
                     // the bursts of the precharged bank(s) end here
-                    if (rd_on && !rd_ghost && (a[10] || ba == rd_bank)) cut_read(pick(a[10], "PRECHARGE ALL", "PRECHARGE"), e);
+                    if (rd_on && !rd_ghost && (a[10] || ba == rd_bank))
+                        cut_read(pick(a[10], "PRECHARGE ALL", "PRECHARGE"), e);
                     if (wr_on && (a[10] || ba == wr_bank)) begin
                         if (dqm != 2'b11)
-                            report("precharge_truncate", $sformatf("PRECHARGE at edge %0d cuts the WRITE of edge %0d (bank %0d) while DQM = %b: the data on the PRECHARGE edge must be masked (p.31)",
-                                                                   e, wr_w, wr_bank, dqm));
+                            report("precharge_truncate",
+                                $sformatf("PRECHARGE at edge %0d cuts the WRITE of edge %0d (bank %0d) while DQM = %b: the data on the PRECHARGE edge must be masked (p.31)",
+                                    e, wr_w, wr_bank, dqm));
                         cut_write(pick(a[10], "PRECHARGE ALL", "PRECHARGE"), e);
                     end
                     for (i = 0; i < 4; i = i + 1)
@@ -894,7 +973,10 @@ module sdram_model #(
                     check_idle("LOAD MODE REGISTER", e);
                     if (ba == 2'b00) decode_mr(e);
                     else if (ba == 2'b10) decode_emr(e);
-                    else report("mode_reg", $sformatf("LOAD MODE REGISTER with BA = %b, which selects no register (00: mode register, 10: extended mode register)", ba));
+                    else
+                        report("mode_reg",
+                            $sformatf("LOAD MODE REGISTER with BA = %b, which selects no register (00: mode register, 10: extended mode register)",
+                                ba));
                     t_mrs = e;
                 end
 
@@ -907,8 +989,9 @@ module sdram_model #(
             if (wr_on) begin
                 col = burst_col(wr_col, wr_k, wr_bl, il);
                 if (dqm != 2'b11 && !dq_i_en)
-                    report("write_undriven", $sformatf("WRITE beat %0d of edge %0d (bank %0d row %0d column %0d) is not masked (DQM = %b) but dq_i_en is low",
-                                                       wr_k, wr_w, wr_bank, wr_row, col, dqm));
+                    report("write_undriven",
+                        $sformatf("WRITE beat %0d of edge %0d (bank %0d row %0d column %0d) is not masked (DQM = %b) but dq_i_en is low",
+                            wr_k, wr_w, wr_bank, wr_row, col, dqm));
                 if (dqm != 2'b11) b_wr[wr_bank] = e;
                 m = dqm_fault(dqm);
                 if (m != 2'b11) begin
@@ -924,7 +1007,7 @@ module sdram_model #(
                 if (wr_bl != 0 && wr_k == wr_bl) wr_on = 1'b0;
             end
 
-            // read: fetch the beat that is valid CL edges from now
+            // read: fetch the beat that is valid CL edges after this one
             if (rd_on) begin
                 col = burst_col(rd_col, rd_k, rd_bl, il);
                 s = (e + cl) & 3;
@@ -948,8 +1031,10 @@ module sdram_model #(
                 dq_o_en <= 1'b0;
             end else begin
                 if (READ_MASK_IS_ERROR != 0 && dqm_d1 != 2'b00)
-                    report("read_mask", $sformatf("the read beat valid at edge %0d (READ at edge %0d, bank %0d row %0d column %0d) is masked by DQM = %b at edge %0d: masked byte lanes are not driven",
-                                                  e + 1, p_r[s[1:0]], p_addr[s[1:0]][24:23], p_addr[s[1:0]][22:10], p_addr[s[1:0]][9:0], dqm_d1, e - 1));
+                    report("read_mask",
+                        $sformatf("the read beat valid at edge %0d (READ at edge %0d, bank %0d row %0d column %0d) is masked by DQM = %b at edge %0d: masked byte lanes are not driven",
+                            e + 1, p_r[s[1:0]], p_addr[s[1:0]][24:23], p_addr[s[1:0]][22:10],
+                            p_addr[s[1:0]][9:0], dqm_d1, e - 1));
                 dq_o <= {m[1] ? ~p_d[s[1:0]][15:8] : v[15:8], m[0] ? ~p_d[s[1:0]][7:0] : v[7:0]};
                 dq_o_en <= m != 2'b11;
             end

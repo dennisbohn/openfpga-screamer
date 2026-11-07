@@ -1,17 +1,25 @@
-// audio testbench: the mixer (audio.v) against its C model firmware/mixer.c, frame by frame,
-// as the I2S output carries it. Random voices: anywhere in the 64 MB, random ends, loops of
-// random length and count (none, a few, for ever), steps up to 4 samples a frame, volumes and
-// random bytes (sums of many loud voices clip); between passes random register writes as the
-// CPU makes them: voices started (also again while they play), stopped, steps, volumes and ends
-// changed. The music on top: its ring anywhere, random 16-bit frames, started from the start
-// again, stopped, its volume and ring changed now and then. Lines come from a model of the SDRAM
-// line port with random delays. Each frame the I2S bits (LRCK, the bit clock, the data) are
-// decoded and compared with the model's frame of the pass before, and after each pass the
-// music's place with the model's; no pass may be late.
+// Audio testbench: the mixer (audio.v) against its C model, firmware/mixer.c, frame by frame, as
+// the I2S output carries it.
 //
 // Usage: Vaudio [frames, default 20000] [seed, default 1]
 //   tools/sim.sh audio 20000 1
 // Prints PASS or FAIL (with the first differing frame) and exits with 0 or 1.
+//
+// How it is driven
+//   - Random voices: sample anywhere in the 64 MB, random ends, loops of random length and count
+//     (none, a few, for ever), steps up to 4 samples a frame, random volumes and random bytes.
+//     The sum of many loud voices clips, which the test covers.
+//   - Between two passes of the mixer, random register writes as the CPU makes them: voices
+//     started (also again while they play), stopped, and their steps, volumes and ends changed.
+//   - The music on top: its ring anywhere in memory, random 16-bit frames; now and then it is
+//     started from the start again, stopped, or its volume or ring is changed.
+//   - Sample lines come from a model of the SDRAM line port with random delays.
+//
+// Checks
+//   - Each frame of the I2S output (LRCK, the bit clock and the data are decoded) is compared with
+//     the frame the model made in the pass before.
+//   - After each pass the music's place is compared with the model's.
+//   - No pass may be late.
 
 #include <cstdio>
 #include <cstdint>
@@ -37,24 +45,30 @@ static uint32_t rnd()
 }
 static uint32_t rr(uint32_t n) { return rnd() % n; }
 
-// the SDRAM: all 64 MB, random bytes, a quarter of them 0x80 (silence) in runs
+// The SDRAM: all 64 MB, random bytes, a quarter of them 0x80 (silence) in runs.
+// lines holds the line reads the mixer has started and not yet got all words for: the line's byte
+// address, the clock from which its words may come, and the number of words sent so far.
 static const uint32_t MEM = 1u << 26;
 static std::vector<uint8_t> mem(MEM);
 struct line_req { uint32_t addr; uint64_t at; int k; };
 static std::deque<line_req> lines;
 
-// the I2S decoder: bits on the rising edges of the bit clock, the half's 16 bits after its first
+// The I2S decoder (in tick): a data bit is taken at each rising edge of the bit clock. The bit at
+// the edge where LRCK changes is skipped, and the next 16 bits are the sample of that half.
+// dec_l and dec_r are the decoded frames. passes counts the mixer passes done, and dec_pass
+// remembers its value when a frame's left half began.
 static int sclk_prev, lr_prev = -1, bitk;
 static uint32_t word;
 static int16_t got_l;
-static std::vector<int16_t> dec_l, dec_r;   // decoded frames
-static std::vector<int> dec_pass;           // passes done when the frame's left half began
+static std::vector<int16_t> dec_l, dec_r;
+static std::vector<int> dec_pass;
 static int passes, busy_prev;
 
+// One clock: the model of the SDRAM line port, then the I2S decoder and the pass counter.
 static void tick()
 {
-    // the line port: ready two clocks of three; a line's words 4 to 40 clocks later, in two
-    // clocks of three
+    // The line port: mem_ready is high in two clocks of three. The words of a line may start to
+    // come 4 to 40 clocks after the request, and a word comes in two clocks of three.
     top->mem_ready = rr(3) != 0;
     bool ask = top->mem_valid && top->mem_ready;
     uint32_t ask_addr = (uint32_t)top->mem_addr << 5;
@@ -94,6 +108,8 @@ static void tick()
     sclk_prev = top->i2s_sclk;
 }
 
+// A write to the mixer's register at byte address a (voice registers at 32 * voice, the rest at
+// 0x400 and up, see the header of audio.v). The model gets the same write.
 static struct mixer model;
 static void reg_wr(uint32_t a, uint32_t d)
 {
@@ -105,7 +121,8 @@ static void reg_wr(uint32_t a, uint32_t d)
     mix_write(&model, a, d);
 }
 
-// a voice set up and started: a sample somewhere, its end, loop, step and volume
+// Sets up voice v and starts it: a sample somewhere, its end, loop (length and count), step and
+// volume. The bits that the registers ignore get random values.
 static void start_voice(int v)
 {
     uint32_t addr = rnd() & (MEM - 1), len = 1 + rr(rr(4) ? 20000 : 200);
@@ -120,7 +137,9 @@ static void start_voice(int v)
     reg_wr(0x400, 1u << v);
 }
 
-// the CPU's writes between two passes
+// The CPU's writes between two passes: usually 0 to 2, sometimes up to 11. Half of them start or
+// restart a voice; the others stop voices or change a voice's step, volume or end. One time in 32
+// the music is changed as well.
 static void writes()
 {
     int n = rr(4) ? rr(3) : rr(12);
@@ -139,7 +158,7 @@ static void writes()
         switch (rr(8)) {
         case 0: reg_wr(0x414, rr(4) ? 0 : rnd() & ~1u); break;  // stopped
         case 1: case 2: reg_wr(0x414, rnd() | 1); break;        // from the ring's start
-        case 3: case 4: case 5: reg_wr(0x410, rr(2) ? rnd() : rr(0x8000)); break;
+        case 3: case 4: case 5: reg_wr(0x410, rr(2) ? rnd() : rr(0x8000)); break;   // its volume
         default: reg_wr(0x40C, rnd()); reg_wr(0x414, 1); break; // another ring (set before a start)
         }
     }
@@ -154,7 +173,7 @@ int main(int argc, char **argv)
         uint32_t r = rnd();
         for (int k = 0; k < 4; k++) mem[a + k] = (uint8_t)(r >> (8 * k));
     }
-    for (int i = 0; i < 2000; i++) {                        // runs of silence
+    for (int i = 0; i < 2000; i++) {                        // runs of silence (0x80, the centre)
         uint32_t a = rnd() & (MEM - 1), n = rr(30000);
         for (uint32_t k = 0; k < n && a + k < MEM; k++) mem[a + k] = 0x80;
     }
@@ -173,6 +192,9 @@ int main(int argc, char **argv)
 
     // pass k: the writes after pass k - 1, then the model's frame k; the hardware's pass k
     // starts with the next frame and is heard in the frame after
+    // exp_l and exp_r are the model's frames. played, fetched and music only feed the statistics
+    // line at the end: voice frames played, lines fetched, frames with the music. The limit is a
+    // timeout in clocks (one frame is 1547 clocks).
     std::vector<int16_t> exp_l, exp_r;
     int fails = 0, played = 0, fetched = 0, music = 0;
     uint64_t limit = (uint64_t)(frames + 4) * 1600;
@@ -192,6 +214,7 @@ int main(int argc, char **argv)
             fetched += top->mem_valid && top->mem_ready;
             tick();
         }
+        // The pass is over: it must not have been late, and the music's place must be the model's.
         if (top->late) {
             printf("FAIL: a pass was late (frame %zu)\n", exp_l.size());
             return 1;
@@ -202,7 +225,8 @@ int main(int argc, char **argv)
             return 1;
         }
     }
-    // the frames heard: frame j carries pass dec_pass[j] - 1
+    // The frames heard: frame j carries pass dec_pass[j] - 1; a frame heard before the first pass is
+    // silent. Compare the decoded I2S frames with the model's and count the left samples that clip.
     size_t checked = 0;
     int clipped = 0;
     for (size_t j = 0; j < dec_l.size(); j++) {
@@ -212,7 +236,8 @@ int main(int argc, char **argv)
         clipped += el == 32767 || el == -32768;
         if (dec_l[j] != el || dec_r[j] != er) {
             if (fails < 5)
-                printf("frame %zu (pass %d): hardware %d %d, model %d %d\n", j, p, dec_l[j], dec_r[j], el, er);
+                printf("frame %zu (pass %d): hardware %d %d, model %d %d\n", j, p, dec_l[j], dec_r[j],
+                       el, er);
             fails++;
         }
         checked++;

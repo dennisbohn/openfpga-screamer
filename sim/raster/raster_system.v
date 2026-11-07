@@ -1,8 +1,8 @@
 //
-// Simulation top for the rasterizer alone (sim/raster/tb.cpp): raster.v and the framebuffer
-// (both buffers), the drawing port shared as in soc.v (the rasterizer's while it is busy,
-// else the testbench's); the registers, the setup unit's triangle and the texture line port
-// are the testbench's
+// Simulation top for the rasterizer alone (sim/raster/tb.cpp): raster.v and the framebuffer with
+// both buffers. The framebuffer's drawing port is shared as in soc.v: the rasterizer has it while
+// it is busy, otherwise the testbench has it. The testbench also drives the registers, the setup
+// unit's triangle (su_*) and the texture line port (mem_*).
 //
 
 module raster_system (
@@ -15,8 +15,8 @@ module raster_system (
     output  wire            busy,
     output  wire    [31:0]  pixels,
 
-    // the framebuffer port while the rasterizer is idle: a whole word written, or read (fb_q
-    // the clock after)
+    // the framebuffer port while the rasterizer is idle: a whole word written, or read (the word
+    // read is on fb_q one clock later)
     input   wire            tb_wr,
     input   wire            tb_buf,
     input   wire    [13:0]  tb_addr,
@@ -42,6 +42,8 @@ module raster_system (
     wire [13:0] rs_fb_addr;
     wire [31:0] rs_fb_data;
     wire [3:0]  rs_fb_be;
+    // The rasterizer's counters and the framebuffer's video read port (tied to buffer 0, address 0)
+    // are not used here.
     wire [31:0] misses, busy_clocks, miss_clocks, edge_clocks, row_clocks, drain_clocks;
     wire [31:0] vid_q;
 
