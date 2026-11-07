@@ -566,6 +566,7 @@ static int run_track(int n, int car, int replay)
     ft_reset();
     const uint8_t ov_fg = nearest(pal, 255, 255, 255), ov_bg = nearest(pal, 0, 0, 0);   /* the timing overlay's colours */
     uint32_t swallow = 0;                       /* L and R held while A was: no gear change for them */
+    int chord_before = 0;                       /* A, L and R were all down in the frame before */
     int car_v = CAR_VIEW_START;
     if (!replay) {
         rec_n = 0;
@@ -622,8 +623,9 @@ static int run_track(int n, int car, int replay)
         uint32_t press = keys & ~keys_before;
         /* A, L and R together switch the timing overlay (ftime.h). Nothing else in the race uses A; L and R
            shift, so while A is held they do not: the chord (A first, then L and R) changes no gear */
-        const uint32_t chord = KEY_A | KEY_L | KEY_R;
-        if ((keys & chord) == chord && (keys_before & chord) != chord) ft_overlay_toggle();
+        const int chord = (keys & (KEY_A | KEY_L | KEY_R)) == (KEY_A | KEY_L | KEY_R);
+        if (chord && !chord_before) ft_overlay_toggle();
+        chord_before = chord;
         if (keys & KEY_A) swallow |= keys & (KEY_L | KEY_R);
         swallow &= keys;
         if (ask) return play_again(st);
