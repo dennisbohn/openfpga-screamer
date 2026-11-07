@@ -8,24 +8,19 @@
  *   dat_lzw      one LZW stream
  */
 #include "dat.h"
+#include "bytes.h"
 #include <string.h>
 
 #define REC         32          /* bytes per directory record */
 #define FIRST       258         /* the first code of the table */
 #define CODES       4096        /* 12 bits */
 
-/* The CPU does no unaligned loads, so words are read a byte at a time. */
-static uint32_t rd32(const uint8_t *p)
-{
-    return p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
-}
-
 /* Gets the directory, which ends the file in front of the last u32 (its size). Returns the
    first record, and *records is the number of whole records. Returns 0 if the file is malformed. */
 static const uint8_t *directory(const uint8_t *file, uint32_t file_size, uint32_t *records)
 {
     if (file_size < 4) return 0;
-    uint32_t dir_size = rd32(file + file_size - 4);
+    uint32_t dir_size = le32u(file + file_size - 4);
     if (dir_size > file_size - 4) return 0;
     *records = dir_size / REC;
     return file + file_size - 4 - dir_size;
@@ -49,10 +44,10 @@ static void record(const uint8_t *r, struct dat_entry *e)
     for (i = 0; i < 16 && (r[i] ^ 0x3A) != 0; i++)
         e->name[i] = (char)(r[i] ^ 0x3A);
     e->name[i] = 0;
-    e->offset = rd32(r + 16);
-    e->stored = rd32(r + 20);
-    e->size = rd32(r + 24);
-    e->method = rd32(r + 28);
+    e->offset = le32u(r + 16);
+    e->stored = le32u(r + 20);
+    e->size = le32u(r + 24);
+    e->method = le32u(r + 28);
 }
 
 static int upper(int c) { return c >= 'a' && c <= 'z' ? c - 32 : c; }

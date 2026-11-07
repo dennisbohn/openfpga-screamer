@@ -1,9 +1,9 @@
 /*
  * Reads and writes of 16 and 32 bit numbers in the game's files and in the track image.
- * The CPU does no unaligned loads, so a number at an address that is not a multiple of its width is read
- * and written a byte at a time. The names say how a helper works:
- *   le16u, le32u, le32s   read little-endian a byte at a time, so any address is fine; u is unsigned, s signed
- *   put_le16, put_le32    write little-endian a byte at a time
+ * The CPU does no unaligned loads, so a number at an address that is not a multiple of its width is
+ * read and written a byte at a time. The names say how a helper works:
+ *   le16u, le32u, le32s   read little-endian a byte at a time, at any address; u unsigned, s signed
+ *   put_le16, put_le32    write little-endian a byte at a time; put_le16s, put_le32s take a signed value
  *   ld16u, ld16s, ld32s   read in one access through a pointer cast, so the address must be aligned
  */
 #pragma once
@@ -41,6 +41,20 @@ static inline void put_le32(uint8_t *p, uint32_t v)
     p[1] = (uint8_t)(v >> 8);
     p[2] = (uint8_t)(v >> 16);
     p[3] = (uint8_t)(v >> 24);
+}
+
+/* put_le16 for a signed v: the same bytes, and the shifts are arithmetic */
+static inline void put_le16s(uint8_t *p, int32_t v)
+{
+    p[0] = (uint8_t)v;
+    p[1] = (uint8_t)(v >> 8);
+}
+
+/* put_le32 for a signed v: the same bytes, and the shifts are arithmetic */
+static inline void put_le32s(uint8_t *p, int32_t v)
+{
+    put_le16s(p, v);
+    put_le16s(p + 2, v >> 16);
 }
 
 /* The unsigned 16 bit number at p, in one access: p must be a multiple of 2 */
