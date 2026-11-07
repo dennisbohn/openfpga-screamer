@@ -11,6 +11,9 @@
  * A release keeps what a player or a bug report needs: the boot log, the loading of the files and their
  * list, the settings read from screamer.cfg, and the simulation's own hooks, which run only in the
  * simulation.
+ *
+ * What the race measures and logs is in racedebug.c, which only a debug build compiles. racedebug.h gives a
+ * release empty macros for the same calls, so that the race loop in main.c has no #if DEBUG.
  */
 #pragma once
 
