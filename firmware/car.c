@@ -1078,6 +1078,16 @@ float car_speed_needle(void)
     return needle_speed;
 }
 
+/* Finds block b of the mesh: sets q->blk, and q->t to the block's place in the mesh (x, y and z of
+   the record that the block's +0x0C points to; 0 for a block without one). */
+static void cblock_find(struct cblock *q, const uint8_t *mesh, int b)
+{
+    q->blk = mesh + *(const int32_t *)(mesh + 0x18 + 4 * b);
+    int32_t so = *(const int32_t *)(q->blk + 0x0C);
+    for(int j = 0; j < 3; j++)
+        q->t[j] = so > 0 ? (float)*(const int32_t *)(mesh + so + 0x10 + 4 * j) : 0.0f;
+}
+
 /* Makes the model (struct cmodel) of a car's mesh from its blocks, as car_draw() takes it. */
 static void cmodel_build(struct cmodel *m, const uint8_t *mesh)
 {
@@ -1088,10 +1098,7 @@ static void cmodel_build(struct cmodel *m, const uint8_t *mesh)
     m->ncb = 0;
     for(int b = 0; b < *(const int32_t *)(m->mesh + 0x14) && m->ncb < MAX_BLOCKS; b++) {
         struct cblock *q = &m->cb[m->ncb++];
-        q->blk = m->mesh + *(const int32_t *)(m->mesh + 0x18 + 4 * b);
-        int32_t so = *(const int32_t *)(q->blk + 0x0C);
-        for(int j = 0; j < 3; j++)
-            q->t[j] = so > 0 ? (float)*(const int32_t *)(m->mesh + so + 0x10 + 4 * j) : 0.0f;
+        cblock_find(q, m->mesh, b);
         for(int j = 0; j < 3; j++) q->mid[j] = (float)*(const int16_t *)(q->blk + 4 + 2 * j) + q->t[j];
         const uint8_t *nmz = q->blk + 0x68;
         int named = nmz[0] != 'A' && nmz[0] != 'a' && nmz[3] == 0;
@@ -1312,17 +1319,25 @@ static void sin_cos(float a, float *s, float *c)
     *c = 1.0f - a2 * (0.5f - a2 * (1.0f / 24.0f - a2 * (1.0f / 720.0f - a2 * (1.0f / 40320.0f))));
 }
 
+/* Sets ps to the pose of a mesh placed as one body at (x, y, z) with the heading yaw, the pitch and the
+   roll: no wheels turned and no lean. */
+static inline void flat_pose(struct pose *ps, float x, float y, float z, float yaw, float pitch, float roll)
+{
+    *ps = (struct pose){ { 1.0f, 0.0f, 1.0f, 0.0f }, { 0 }, { 1.0f, 0.0f, 1.0f, 0.0f }, 0, x, y, z, 0.0f };
+    sin_cos(pitch, &ps->car[1], &ps->car[0]);
+    sin_cos(roll, &ps->car[3], &ps->car[2]);
+    ps->car[4] = cosf(yaw);
+    ps->car[5] = sinf(yaw);
+}
+
 /* Makes the first block of the flat mesh `file` and places it as a car's body is placed
    (car.h). The pose has no wheels turned and no lean. */
 void car_flat_block(const uint8_t *file, float x, float y, float z, float yaw, float pitch, float roll,
                     struct track_block *out)
 {
     const struct cblock q = { 0 };
-    struct pose ps = { { 1.0f, 0.0f, 1.0f, 0.0f }, { 0 }, { 1.0f, 0.0f, 1.0f, 0.0f }, 0, x, y, z, 0.0f };
-    sin_cos(pitch, &ps.car[1], &ps.car[0]);
-    sin_cos(roll, &ps.car[3], &ps.car[2]);
-    ps.car[4] = cosf(yaw);
-    ps.car[5] = sinf(yaw);
+    struct pose ps;
+    flat_pose(&ps, x, y, z, yaw, pitch, roll);
     place_block(&q, &ps, out);
     out->file = file;
     out->blk = file + *(const int32_t *)(file + 0x18);
@@ -1334,19 +1349,13 @@ void car_flat_block(const uint8_t *file, float x, float y, float z, float yaw, f
 int car_mesh_blocks(const uint8_t *file, float x, float y, float z, float yaw, float pitch, float roll,
                     const struct track_cam *cam, struct track_block *out, int max)
 {
-    struct pose ps = { { 1.0f, 0.0f, 1.0f, 0.0f }, { 0 }, { 1.0f, 0.0f, 1.0f, 0.0f }, 0, x, y, z, 0.0f };
-    sin_cos(pitch, &ps.car[1], &ps.car[0]);
-    sin_cos(roll, &ps.car[3], &ps.car[2]);
-    ps.car[4] = cosf(yaw);
-    ps.car[5] = sinf(yaw);
+    struct pose ps;
+    flat_pose(&ps, x, y, z, yaw, pitch, roll);
     int nb = *(const int32_t *)(file + 0x14), n = 0;
     float key[MAX_BLOCKS];
     for(int b = 0; b < nb && n < max && n < MAX_BLOCKS; b++, n++) {
         struct cblock q = { 0 };
-        q.blk = file + *(const int32_t *)(file + 0x18 + 4 * b);
-        int32_t so = *(const int32_t *)(q.blk + 0x0C);         /* its place in the mesh, as cmodel() */
-        for(int j = 0; j < 3; j++)
-            q.t[j] = so > 0 ? (float)*(const int32_t *)(file + so + 0x10 + 4 * j) : 0.0f;
+        cblock_find(&q, file, b);
         place_block(&q, &ps, &out[n]);
         out[n].file = file;
         out[n].blk = q.blk;
