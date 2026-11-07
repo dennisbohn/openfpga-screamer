@@ -77,6 +77,7 @@
 #ifdef TRACK_DUMP
 #include <stdio.h>
 #endif
+#include "bytes.h"
 #include "crc32.h"
 #include <math.h>
 #include <string.h>
@@ -278,9 +279,6 @@ static inline uint32_t now(void) { return 0; }
 #define INT_NOW8(a, b, c, d, e, f, g, h) ((void)0)
 #endif
 
-static int32_t rd32(const uint8_t *p) { return *(const int32_t *)p; }
-static int16_t rd16(const uint8_t *p) { return *(const int16_t *)p; }
-
 static float sin2048(uint32_t a)
 {
     a &= 2047;
@@ -291,7 +289,7 @@ static float sin2048(uint32_t a)
 static const uint8_t *block_of(int k, const uint8_t **obj)
 {
     *obj = unr_blob + unr_off[k];
-    return *obj + rd32(*obj + 0x18);
+    return *obj + ld32s(*obj + 0x18);
 }
 
 /* The cell of v along one axis of a cgrid: v0 is the grid's start, s the cells per unit.
@@ -386,11 +384,11 @@ static void gpiece_make(int at, struct gpiece *g)
     g->obj = -1;
     if(pc->obj < 0 || pc->obj >= unr_count || cobj_first[pc->obj] < 0) return;
     const uint8_t *obj, *blk = block_of(pc->obj, &obj);
-    float r = (float)rd32(blk);
+    float r = (float)ld32s(blk);
     g->x = (float)pc->x;
     g->y = (float)pc->y;
-    g->ox = (float)rd16(blk + 4);
-    g->oy = (float)rd16(blk + 8);
+    g->ox = (float)ld16s(blk + 4);
+    g->oy = (float)ld16s(blk + 8);
     g->r2 = r * r;
     g->c = sin2048((uint32_t)pc->t + 512);
     g->s = sin2048((uint32_t)pc->t);
@@ -403,10 +401,10 @@ static void gpiece_make(int at, struct gpiece *g)
 int track_open(const volatile uint8_t *file)
 {
     const uint8_t *f = (const uint8_t *)file;
-    if(rd32(f) != 0x4B524353 || rd32(f + 4) != 6) return 0;    /* "SCRK", version 6 */
+    if(ld32s(f) != 0x4B524353 || ld32s(f + 4) != 6) return 0;  /* "SCRK", version 6 */
     file_start = f;
-    file_size = (uint32_t)rd32(f + 0x88);
-    nblocks = rd32(f + 0x8C);
+    file_size = (uint32_t)ld32s(f + 0x88);
+    nblocks = ld32s(f + 0x8C);
     if(nblocks < 1 || 0x90 + 4 * nblocks > 0x100) return 0;
     return 1;
 }
@@ -429,29 +427,29 @@ static float lod_scale_inv(float scale)
 int track_init(void)
 {
     const uint8_t *f = file_start;
-    mlb = f + rd32(f + 0x08);
-    const uint8_t *unr = f + rd32(f + 0x10);
-    pal = (const uint32_t *)(f + rd32(f + 0x18));
-    pieces = (const struct piece *)(f + rd32(f + 0x1C));
-    npieces = rd32(f + 0x20);
-    path = (const struct pt *)(f + rd32(f + 0x24));
-    npath = rd32(f + 0x28);
-    ground_first = (const uint16_t *)(f + rd32(f + 0x2C));
+    mlb = f + ld32s(f + 0x08);
+    const uint8_t *unr = f + ld32s(f + 0x10);
+    pal = (const uint32_t *)(f + ld32s(f + 0x18));
+    pieces = (const struct piece *)(f + ld32s(f + 0x1C));
+    npieces = ld32s(f + 0x20);
+    path = (const struct pt *)(f + ld32s(f + 0x24));
+    npath = ld32s(f + 0x28);
+    ground_first = (const uint16_t *)(f + ld32s(f + 0x2C));
     ground_list = ground_first + 65537;
-    markers = (const struct track_marker *)(f + rd32(f + 0x34));
-    nmarkers = rd32(f + 0x38);
-    cars = (const struct car_spec *)(f + rd32(f + 0x3C));
-    ncars = rd32(f + 0x40);
-    models_at = f + rd32(f + 0x44);
+    markers = (const struct track_marker *)(f + ld32s(f + 0x34));
+    nmarkers = ld32s(f + 0x38);
+    cars = (const struct car_spec *)(f + ld32s(f + 0x3C));
+    ncars = ld32s(f + 0x40);
+    models_at = f + ld32s(f + 0x44);
     models = (const struct track_model *)models_at;
-    nmodels = rd32(f + 0x48);
-    dirs = (const struct track_dir *)(f + rd32(f + 0x4C));
-    ndirs = rd32(f + 0x50);
-    walls = (const struct track_wall *)(f + rd32(f + 0x54));
-    nwalls = rd32(f + 0x58);
+    nmodels = ld32s(f + 0x48);
+    dirs = (const struct track_dir *)(f + ld32s(f + 0x4C));
+    ndirs = ld32s(f + 0x50);
+    walls = (const struct track_wall *)(f + ld32s(f + 0x54));
+    nwalls = ld32s(f + 0x58);
     start = (const struct start *)(f + 0x5C);
     lod_inv = lod_scale_inv(lod_scale);
-    unr_count = rd32(unr + 4);
+    unr_count = ld32s(unr + 4);
     if(unr_count > MAX_OBJ || npieces > MAX_PIECES || npath < LOOK + 2 || ncars < 1 || nmodels < 1)
         return 0;
     unr_off = (const int32_t *)(unr + 8);
@@ -474,24 +472,24 @@ int track_init(void)
     for(int i = 0; i < ground_first[65536]; i++) {
         int k = pieces[ground_list[i]].obj;
         if(k < 0 || k >= unr_count || cobj_first[k] >= 0) continue;
-        const uint8_t *obj, *blk = block_of(k, &obj), *verts = obj + rd32(blk + 0x1C);
-        int nface = rd32(blk + 0x14), ro = rd32(blk + 0x28), first = ncfaces;
+        const uint8_t *obj, *blk = block_of(k, &obj), *verts = obj + ld32s(blk + 0x1C);
+        int nface = ld32s(blk + 0x14), ro = ld32s(blk + 0x28), first = ncfaces;
         if(ro <= 0 || ncfaces + nface > MAX_CFACES) continue;
         for(int j = 0; j < nface; j++) {
             uint16_t e = *(const uint16_t *)(blk + ro + 2 * j);
             if(e == 0xFFFF) continue;                   /* an end mark, no face */
             const uint8_t *fc = blk + e;
             struct cface *q = &cfaces[ncfaces++];
-            int nc = rd16(fc + 6);
+            int nc = ld16s(fc + 6);
             q->nc = (uint8_t)(nc < 3 ? 3 : nc > 4 ? 4 : nc);
             for(int c = 0; c < q->nc; c++) {
-                int vo = rd16(fc + 8 + 2 * c);
+                int vo = ld16s(fc + 8 + 2 * c);
                 if(vo < 0) { q->nc = 0; break; }       /* a negative offset is no corner: never over it */
-                q->x[c] = rd16(verts + vo);
-                q->z[c] = rd16(verts + vo + 4);
-                if(c == 0) q->v[0] = q->x[0], q->v[1] = rd16(verts + vo + 2), q->v[2] = q->z[0];
+                q->x[c] = ld16s(verts + vo);
+                q->z[c] = ld16s(verts + vo + 4);
+                if(c == 0) q->v[0] = q->x[0], q->v[1] = ld16s(verts + vo + 2), q->v[2] = q->z[0];
             }
-            for(int c = 0; c < 3; c++) q->n[c] = rd16(fc + 0x14 + 4 * c);
+            for(int c = 0; c < 3; c++) q->n[c] = ld16s(fc + 0x14 + 4 * c);
             /* The box, and whether the face is boxed. At each corner, t is the cross product of the
                two edges that meet there. s is the sum over the edges of x[a] z[b] - x[b] z[a], twice
                the face's signed area. The face is boxed if it has an area (s != 0) and is convex
@@ -525,20 +523,20 @@ int track_init(void)
     /* 3. Per mesh: whether it has several blocks or moving parts, and its reach. */
     for(int k = 0; k < unr_count; k++) {
         const uint8_t *obj, *blk = block_of(k, &obj);
-        int nb = rd32(obj + 0x14), frames = rd32(obj + 0x10);
+        int nb = ld32s(obj + 0x14), frames = ld32s(obj + 0x10);
         multi[k] = nb > 1 || frames > 0;
         /* The reach round the origin is the largest, over the blocks, of two distances added: the
            farthest vertex of the block, and the farthest the block's place (the position record) or
            its frames can move it from the origin. */
         radius[k] = 0.0f;
         for(int b = 0; b < (multi[k] ? nb : 1) && b < MAX_BLOCKS; b++) {
-            blk = obj + rd32(obj + 0x18 + 4 * b);
-            const uint8_t *v = obj + rd32(blk + 0x1C);
-            int n = rd32(blk + 0x10);
-            int32_t so = rd32(blk + 0x0C);
+            blk = obj + ld32s(obj + 0x18 + 4 * b);
+            const uint8_t *v = obj + ld32s(blk + 0x1C);
+            int n = ld32s(blk + 0x10);
+            int32_t so = ld32s(blk + 0x0C);
             float r2 = 0.0f, t2 = 0.0f;
             for(int i = 0; i < n && i < GU_MAX_VERT; i++, v += 6) {
-                float x = rd16(v), y = rd16(v + 2), z = rd16(v + 4), d = x * x + y * y + z * z;
+                float x = ld16s(v), y = ld16s(v + 2), z = ld16s(v + 4), d = x * x + y * y + z * z;
                 if(d > r2) r2 = d;
             }
             if(multi[k] && so > 0)
@@ -546,11 +544,11 @@ int track_init(void)
                     float tx, ty, tz;
                     if(frames > 0) {
                         const uint8_t *q = obj + so + 0x1C + 0x30 * fr;
-                        tx = rd16(q + 18); ty = rd16(q + 20); tz = rd16(q + 22);
+                        tx = ld16s(q + 18); ty = ld16s(q + 20); tz = ld16s(q + 22);
                     } else {
-                        tx = (float)rd32(obj + so + 0x10);
-                        ty = (float)rd32(obj + so + 0x14);
-                        tz = (float)rd32(obj + so + 0x18);
+                        tx = (float)ld32s(obj + so + 0x10);
+                        ty = (float)ld32s(obj + so + 0x14);
+                        tz = (float)ld32s(obj + so + 0x18);
                     }
                     if(tx * tx + ty * ty + tz * tz > t2) t2 = tx * tx + ty * ty + tz * tz;
                 }
@@ -579,7 +577,7 @@ int track_init(void)
 
 int track_class_key(const uint8_t *obj)
 {
-    int32_t cl = rd32(obj + 0x32C);                     /* (original: STARTL.EXE 0x8a8d7) */
+    int32_t cl = ld32s(obj + 0x32C);                    /* (original: STARTL.EXE 0x8a8d7) */
     return cl == 3 ? -6000 : cl == 1 ? -1500 : cl == 2 ? -800 : cl == 4 ? -200 : 0;
 }
 
@@ -659,22 +657,22 @@ void track_clock(uint32_t steps)
 
 int track_bonus_time(void)
 {
-    return rd32(file_start + 0x70);
+    return ld32s(file_start + 0x70);
 }
 
 int track_camera_hi(void)
 {
-    return rd32(file_start + 0x74);
+    return ld32s(file_start + 0x74);
 }
 
 const uint8_t *track_backdrop(void)
 {
-    return file_start + rd32(file_start + 0x78);
+    return file_start + ld32s(file_start + 0x78);
 }
 
 int track_ground_colour(void)
 {
-    return rd32(file_start + 0x7C) & 255;
+    return ld32s(file_start + 0x7C) & 255;
 }
 
 /*
@@ -714,34 +712,34 @@ void track_backdrop_blit(struct blit_list *l, const struct rs_clip *clip, const 
    the two pictures' boxes (8 bytes each), 26 lines of GAME.TXT (32 bytes each), then the pixels. */
 const uint8_t *track_hud(void)
 {
-    return file_start + rd32(file_start + 0x68);
+    return file_start + ld32s(file_start + 0x68);
 }
 
 const struct blit_image *track_hud_images(int *n)
 {
     const uint8_t *h = track_hud();
-    *n = rd32(h);
+    *n = ld32s(h);
     return (const struct blit_image *)(h + 8);
 }
 
 const struct blit_font *track_hud_fonts(int *n)
 {
     const uint8_t *h = track_hud();
-    *n = rd32(h + 4);
-    return (const struct blit_font *)(h + 8 + 12 * rd32(h));
+    *n = ld32s(h + 4);
+    return (const struct blit_font *)(h + 8 + 12 * ld32s(h));
 }
 
 void track_hud_picture(int k, int *first, int *count)
 {
-    const uint8_t *h = track_hud(), *p = h + 8 + 12 * rd32(h) + 20 * rd32(h + 4) + 8 * k;
-    *first = rd32(p);
-    *count = rd32(p + 4);
+    const uint8_t *h = track_hud(), *p = h + 8 + 12 * ld32s(h) + 20 * ld32s(h + 4) + 8 * k;
+    *first = ld32s(p);
+    *count = ld32s(p + 4);
 }
 
 const char *track_hud_text(int k)
 {
     const uint8_t *h = track_hud();
-    return (const char *)(h + 8 + 12 * rd32(h) + 20 * rd32(h + 4) + 16 + 32 * k);
+    return (const char *)(h + 8 + 12 * ld32s(h) + 20 * ld32s(h + 4) + 16 + 32 * k);
 }
 
 void track_start(float *x, float *y, float *yaw)
@@ -849,22 +847,22 @@ void track_under_tilt(float fx, float fy, float *pitch, float *roll)
    its start node, its node count and its nodes (32 bytes each). */
 int track_opp_count(int *rows)
 {
-    const uint8_t *o = file_start + rd32(file_start + 0x80);
-    *rows = rd32(o + 4);
-    return rd32(o);
+    const uint8_t *o = file_start + ld32s(file_start + 0x80);
+    *rows = ld32s(o + 4);
+    return ld32s(o);
 }
 
 const struct track_opp_row *track_opp_rows(void)
 {
-    return (const struct track_opp_row *)(file_start + rd32(file_start + 0x80) + 8);
+    return (const struct track_opp_row *)(file_start + ld32s(file_start + 0x80) + 8);
 }
 
 const struct track_spline_node *track_opp_spline(int k, int *start, int *n)
 {
-    const uint8_t *o = file_start + rd32(file_start + 0x80), *p = o + 8 + 20 * rd32(o + 4);
-    for(int j = 0; j < k; j++) p += 8 + 32 * rd32(p + 4);
-    *start = rd32(p);
-    *n = rd32(p + 4);
+    const uint8_t *o = file_start + ld32s(file_start + 0x80), *p = o + 8 + 20 * ld32s(o + 4);
+    for(int j = 0; j < k; j++) p += 8 + 32 * ld32s(p + 4);
+    *start = ld32s(p);
+    *n = ld32s(p + 4);
     return (const struct track_spline_node *)(p + 8);
 }
 
@@ -957,11 +955,11 @@ static int lod_level(float dist, int moving, int zname)
    one table of block offsets per level, 0x104 bytes apart. */
 const uint8_t *track_lod_block(const uint8_t *mesh, int b, float dist, int moving)
 {
-    const uint8_t *blk = mesh + rd32(mesh + 0x18 + 4 * b);
+    const uint8_t *blk = mesh + ld32s(mesh + 0x18 + 4 * b);
     if(lod_inv == 0.0f) return blk;
     int level = lod_level(dist, moving, !moving && blk[0x68] == 'Z');
     if(!level) return blk;
-    int32_t off = rd32(mesh + 0x18 + 4 * b + 0x104 * level);       /* block b at the level, 0: none */
+    int32_t off = ld32s(mesh + 0x18 + 4 * b + 0x104 * level);      /* block b at the level, 0: none */
     return off ? mesh + off : 0;
 }
 
@@ -975,7 +973,7 @@ int track_blocks(void)
 int track_block_ok(int k)
 {
     uint32_t o = 0x100 + (uint32_t)k * BLOCK, e = o + BLOCK < file_size ? o + BLOCK : file_size;
-    return o < e && crc32(file_start + o, file_start + e) == (uint32_t)rd32(file_start + 0x90 + 4 * k);
+    return o < e && crc32(file_start + o, file_start + e) == (uint32_t)ld32s(file_start + 0x90 + 4 * k);
 }
 
 void track_view(const struct rs_clip *clip, struct su_view *v)
@@ -1099,7 +1097,7 @@ static int32_t vis[MAX_PIECES + MAX_OBJS];
 static void face_eye(const uint8_t *blk, float x, float y, float z, struct gu_piece *g)
 {
     const float e[3] = { x, y, z };
-    float p[3] = { x + (float)rd16(blk + 4), y + (float)rd16(blk + 6), z + (float)rd16(blk + 8) };
+    float p[3] = { x + (float)ld16s(blk + 4), y + (float)ld16s(blk + 6), z + (float)ld16s(blk + 8) };
     for(int i = 0; i < 3; i++)
         g->e[i] = (int32_t)((e[i] - (float)g->m[6 + i] * (EYE_BACK / 65536.0f)) * 256.0f);
     /* All the comparisons come first, without branches: the FPU answers them side by side,
@@ -1162,24 +1160,24 @@ static int multi_pieces(const float c[3], const float f[3], const float r[3], co
                         const struct piece *pc, struct gu_piece *gs)
 {
     const uint8_t *obj = unr_blob + unr_off[pc->obj];
-    int nb = rd32(obj + 0x14), frames = rd32(obj + 0x10), n = 0, ord[MAX_BLOCKS];
+    int nb = ld32s(obj + 0x14), frames = ld32s(obj + 0x10), n = 0, ord[MAX_BLOCKS];
     float key[MAX_BLOCKS];
     struct gu_piece tmp[MAX_BLOCKS];
     float ca = sin2048((uint32_t)pc->t + 512), sa = sin2048((uint32_t)pc->t);
     const float R[9] = { ca, 0.0f, -sa, sa, 0.0f, ca, 0.0f, 1.0f, 0.0f };   /* world from the piece's frame */
     int fr = frames > 0 ? (int)(((uint32_t)frames * clock16) >> 16) : -1;      /* the frame; -1: no frames */
     for(int b = 0; b < nb && b < MAX_BLOCKS; b++) {
-        const uint8_t *blk = obj + rd32(obj + 0x18 + 4 * b);
-        int32_t so = rd32(blk + 0x0C);              /* the block's frames or position record; <= 0: none */
+        const uint8_t *blk = obj + ld32s(obj + 0x18 + 4 * b);
+        int32_t so = ld32s(blk + 0x0C);             /* the block's frames or position record; <= 0: none */
         float F[9] = { 1.0f, 0.0f, 0.0f, 0.0f, 1.0f, 0.0f, 0.0f, 0.0f, 1.0f }, t[3] = { 0.0f, 0.0f, 0.0f };
         int moving = so > 0 && fr >= 0;
         if(moving) {                                /* F: rows x, up, z; the words run down its columns */
             const uint8_t *q = obj + so + 0x1C + 0x30 * fr;
             for(int i = 0; i < 3; i++)
-                for(int j = 0; j < 3; j++) F[3 * i + j] = (float)rd16(q + 2 * (3 * j + i)) / 16383.0f;
-            for(int i = 0; i < 3; i++) t[i] = (float)rd16(q + 18 + 2 * i);
+                for(int j = 0; j < 3; j++) F[3 * i + j] = (float)ld16s(q + 2 * (3 * j + i)) / 16383.0f;
+            for(int i = 0; i < 3; i++) t[i] = (float)ld16s(q + 18 + 2 * i);
         } else if(so > 0)
-            for(int i = 0; i < 3; i++) t[i] = (float)rd32(obj + so + 0x10 + 4 * i);
+            for(int i = 0; i < 3; i++) t[i] = (float)ld32s(obj + so + 0x10 + 4 * i);
         /* The block's matrix m and origin o in the world, and w, its middle less the camera. */
         float m[9], o[3];
         for(int i = 0; i < 3; i++) {
@@ -1190,8 +1188,8 @@ static int multi_pieces(const float c[3], const float f[3], const float r[3], co
         }
         float w[3];
         for(int i = 0; i < 3; i++)
-            w[i] = o[i] + m[3 * i] * rd16(blk + 4) + m[3 * i + 1] * rd16(blk + 6) +
-                   m[3 * i + 2] * rd16(blk + 8) - c[i];
+            w[i] = o[i] + m[3 * i] * ld16s(blk + 4) + m[3 * i + 1] * ld16s(blk + 6) +
+                   m[3 * i + 2] * ld16s(blk + 8) - c[i];
         key[b] = -(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
         /* The block at its level of detail. The middle and the key stay those of level 0. */
         const uint8_t *lb = track_lod_block(obj, b, sqrtf(-key[b]), 0);
@@ -1390,7 +1388,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
                a reflection state and one of its blocks has the flag 0x2000 (blk +0x18). */
             uint32_t refl = ob->refl_phase & 0xFFFF;
             for(int b = 0; b < ob->n && ob->refl; b++)
-                if(rd32(ob->b[b].blk + 0x18) & 0x2000) {
+                if(ld32s(ob->b[b].blk + 0x18) & 0x2000) {
                     refl |= refl_offsets(ob, f, r, u);
                     break;
                 }
@@ -1434,7 +1432,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
            the camera. The matrices, the key and the place in the sort stay those of level 0. A block
            for which the mesh has no block at its level is not drawn. */
         if(lod_inv != 0.0f) {
-            float lx = rd16(g.blk + 4), ly = rd16(g.blk + 6), lz = rd16(g.blk + 8);
+            float lx = ld16s(g.blk + 4), ly = ld16s(g.blk + 6), lz = ld16s(g.blk + 8);
             float wx = dx + lx * ca - lz * sa, wy = dy + lx * sa + lz * ca, wh = dh + ly;
             g.blk = track_lod_block(g.obj, 0, sqrtf(wx * wx + wy * wy + wh * wh), 0);
             if(!g.blk) continue;
