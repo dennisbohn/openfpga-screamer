@@ -11,6 +11,7 @@
  * it is read.
  */
 #include "tb_mmp.h"
+#include "bytes.h"
 #include <string.h>
 
 #define GRID        256                 /* cells a side, of the MMP and of the ground index */
@@ -21,30 +22,11 @@
 #define BOX_LEN     24                  /* a cell's view box (array 4): int32 x0, -, z0, x1, -, z1 */
 #define CELL_LEN    24                  /* an entry of the cell table that ends the placements */
 
-static uint32_t get32(const uint8_t *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24;
-}
-
-static uint32_t get16(const uint8_t *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8; }
-
-static void put16(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-}
-
-static void put32(uint8_t *p, uint32_t v)
-{
-    put16(p, v);
-    put16(p + 2, v >> 16);
-}
-
 /* Reads the int32 at off. Beyond the end of the file it returns 0 and sets *bad. */
-static int32_t rd32(const uint8_t *p, uint32_t size, uint32_t off, int *bad)
+static int32_t rd32_or_bad(const uint8_t *p, uint32_t size, uint32_t off, int *bad)
 {
     if(size < 4 || off > size - 4) { *bad = 1; return 0; }
-    return (int32_t)get32(p + off);
+    return (int32_t)le32u(p + off);
 }
 
 /* Whether n entries of len bytes, starting at off, lie in the file. */
@@ -64,14 +46,14 @@ struct cell { uint32_t rec, n0, n1, dirs, ndirs, walls, nwalls, box; };
 static int read_cell(const uint8_t *p, uint32_t size, uint32_t a, struct cell *c)
 {
     int bad = 0;
-    int32_t dirs = rd32(p, size, a + 0x08, &bad);
-    int32_t walls = rd32(p, size, a + 0x0C, &bad);
-    int32_t n0 = rd32(p, size, a + 0x14, &bad);
-    int32_t n1 = rd32(p, size, a + 0x18, &bad);
-    int32_t ndirs = rd32(p, size, a + 0x1C, &bad);
-    int32_t nwalls = rd32(p, size, a + 0x20, &bad);
-    int32_t nbox = rd32(p, size, a + 0x24, &bad);
-    int32_t box = rd32(p, size, a + 0x10, &bad);
+    int32_t dirs = rd32_or_bad(p, size, a + 0x08, &bad);
+    int32_t walls = rd32_or_bad(p, size, a + 0x0C, &bad);
+    int32_t n0 = rd32_or_bad(p, size, a + 0x14, &bad);
+    int32_t n1 = rd32_or_bad(p, size, a + 0x18, &bad);
+    int32_t ndirs = rd32_or_bad(p, size, a + 0x1C, &bad);
+    int32_t nwalls = rd32_or_bad(p, size, a + 0x20, &bad);
+    int32_t nbox = rd32_or_bad(p, size, a + 0x24, &bad);
+    int32_t box = rd32_or_bad(p, size, a + 0x10, &bad);
     if(bad || n0 < 0 || n1 < 0 || ndirs < 0 || nwalls < 0) return 0;
     /* The offset of an empty array is never read. It is 0 in the game's files. */
     if((n0 || n1) && !fits(size, a + 0x28, (uint32_t)n0 + (uint32_t)n1, REC)) return 0;
@@ -99,10 +81,10 @@ static int next_cell(struct walk *w, struct cell *c)
 {
     while(w->k < GRID * GRID) {
         uint32_t gx = w->k % GRID;
-        if(gx == 0) w->row = rd32(w->p, w->size, 4 * (w->k / GRID), &w->bad);
+        if(gx == 0) w->row = rd32_or_bad(w->p, w->size, 4 * (w->k / GRID), &w->bad);
         if(w->bad || w->row < -1) goto bad;
         if(w->row == -1) { w->k += GRID; continue; }
-        int32_t at = rd32(w->p, w->size, (uint32_t)w->row + 4 * gx, &w->bad);
+        int32_t at = rd32_or_bad(w->p, w->size, (uint32_t)w->row + 4 * gx, &w->bad);
         w->k++;
         if(w->bad || at < -1) goto bad;
         if(at == -1) continue;
@@ -126,12 +108,12 @@ int tb_mmp_road_angle(const uint8_t *mmp, uint32_t size, int32_t x, int32_t y, f
     float a = 0.0f;
     for(int32_t gy = ky - 1; gy <= ky + 1; gy++) {
         if(gy < 0 || gy >= GRID) continue;
-        int32_t row = rd32(mmp, size, 4 * (uint32_t)gy, &bad);
+        int32_t row = rd32_or_bad(mmp, size, 4 * (uint32_t)gy, &bad);
         if(bad || row < -1) return 0;
         if(row == -1) continue;
         for(int32_t gx = kx - 1; gx <= kx + 1; gx++) {
             if(gx < 0 || gx >= GRID) continue;
-            int32_t at = rd32(mmp, size, (uint32_t)row + 4 * (uint32_t)gx, &bad);
+            int32_t at = rd32_or_bad(mmp, size, (uint32_t)row + 4 * (uint32_t)gx, &bad);
             struct cell c;
             if(bad || at < -1) return 0;
             if(at == -1) continue;
@@ -139,7 +121,7 @@ int tb_mmp_road_angle(const uint8_t *mmp, uint32_t size, int32_t x, int32_t y, f
             for(uint32_t k = 0; k < c.ndirs; k++) {
                 const uint8_t *e = mmp + c.dirs + DIR_LEN * k;
                 /* The game's imul and add: int32, and wrapping. */
-                uint32_t dx = get32(e + 4) - (uint32_t)x, dy = get32(e + 8) - (uint32_t)y;
+                uint32_t dx = le32u(e + 4) - (uint32_t)x, dy = le32u(e + 8) - (uint32_t)y;
                 int32_t d = (int32_t)(dx * dx + dy * dy);
                 if(d < best) {
                     best = d;
@@ -187,24 +169,24 @@ uint32_t tb_mmp_placements(const uint8_t *mmp, uint32_t size, uint8_t *out, uint
     struct walk w2 = { mmp, size, 0, 0, 0 };
     if(cap - at < 12) return 0;
     memcpy(out + at, "CELL", 4);
-    put32(out + at + 8, 0);
+    put_le32(out + at + 8, 0);
     at += 12;
     while(next_cell(&w2, &c)) {
         if(cap - at < CELL_LEN) return 0;
-        put16(out + at, w2.k - 1);
-        put16(out + at + 2, first);
-        put16(out + at + 4, c.n0 + c.n1);
-        put16(out + at + 6, c.box != 0);
+        put_le16(out + at, w2.k - 1);
+        put_le16(out + at + 2, first);
+        put_le16(out + at + 4, c.n0 + c.n1);
+        put_le16(out + at + 6, c.box != 0);
         /* The box's x0, z0, x1, z1 are the int32 numbers 0, 2, 3, 5 of the 24 bytes. */
         for(int f = 0; f < 4; f++)
-            put32(out + at + 8 + 4 * f,
-                  c.box ? get32(mmp + c.box + 4 * (f == 0 ? 0 : f == 1 ? 2 : f == 2 ? 3 : 5)) : 0);
+            put_le32(out + at + 8 + 4 * f,
+                  c.box ? le32u(mmp + c.box + 4 * (f == 0 ? 0 : f == 1 ? 2 : f == 2 ? 3 : 5)) : 0);
         first += c.n0 + c.n1;
         at += CELL_LEN;
         cells++;
     }
     if(w2.bad) return 0;
-    put32(out + PL_LEN * n + 4, cells);
+    put_le32(out + PL_LEN * n + 4, cells);
     *count = n;
     return at;
 }
@@ -228,16 +210,16 @@ uint32_t tb_mmp_ground(const uint8_t *mmp, uint32_t size, uint8_t *out, uint32_t
                 if(i > 0xFFFF) return 0;
                 if(j < c.n1) continue;          /* run 1: not drivable */
                 const uint8_t *r = mmp + record(&c, j);
-                int32_t x = (int32_t)get32(r + 0x08), y = (int32_t)get32(r + 0x10);
+                int32_t x = (int32_t)le32u(r + 0x08), y = (int32_t)le32u(r + 0x10);
                 if(x < -0x100000 || x >= 0x100000 || y < -0x100000 || y >= 0x100000) continue;
                 uint32_t g = ((uint32_t)(y + 0x100000) >> 13) * GRID + ((uint32_t)(x + 0x100000) >> 13);
                 if(pass == 0) {
                     if(++n > 0xFFFF) return 0;
-                    put16(out + 2 * (g + 1), get16(out + 2 * (g + 1)) + 1);
+                    put_le16(out + 2 * (g + 1), le16u(out + 2 * (g + 1)) + 1);
                 } else {
-                    uint32_t at = get16(out + 2 * g);
-                    put16(list + 2 * at, i);
-                    put16(out + 2 * g, at + 1);
+                    uint32_t at = le16u(out + 2 * g);
+                    put_le16(list + 2 * at, i);
+                    put_le16(out + 2 * g, at + 1);
                 }
             }
         }
@@ -245,11 +227,11 @@ uint32_t tb_mmp_ground(const uint8_t *mmp, uint32_t size, uint8_t *out, uint32_t
         if(pass == 0) {
             if(cap - TB_MMP_GROUND_FIRST < 2 * n) return 0;
             for(uint32_t k = 1; k <= GRID * GRID; k++)
-                put16(out + 2 * k, get16(out + 2 * k) + get16(out + 2 * (k - 1)));
+                put_le16(out + 2 * k, le16u(out + 2 * k) + le16u(out + 2 * (k - 1)));
         }
     }
     memmove(out + 2, out, TB_MMP_GROUND_FIRST - 2);
-    put16(out, 0);
+    put_le16(out, 0);
     *count = n;
     return TB_MMP_GROUND_FIRST + 2 * n;
 }

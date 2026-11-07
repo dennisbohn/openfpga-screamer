@@ -12,6 +12,7 @@
  * - the 2D layouts: 0x2df38, 0x2e08c and 0x2e384.
  */
 #include "menu.h"
+#include "bytes.h"
 #include "hw.h"
 #include "dat.h"
 #include "track.h"
@@ -244,15 +245,10 @@ static void records_enter(int n);
 static void name_enter(void);
 static void room(const char *file, int x0, int y0, int w, int h);
 
-/* Little-endian reads from the data files. */
-static uint32_t rd16(const uint8_t *p)
-{
-    return (uint32_t)p[0] | (uint32_t)p[1] << 8;
-}
-
+/* The int32 at p, little-endian, from two 16 bit halves. */
 static int32_t rd32(const uint8_t *p)
 {
-    return (int32_t)(rd16(p) | rd16(p + 2) << 16);
+    return (int32_t)(le16u(p) | le16u(p + 2) << 16);
 }
 
 /* Returns the entry n of the container `file` where it lies in the container, if it is stored
@@ -323,7 +319,8 @@ static int text_number(const uint8_t *t, uint32_t n, int k)
 static int pcx(const uint8_t *d, uint32_t n, uint8_t *out, uint32_t *pal)
 {
     if(n < 128 + 769 || d[0] != 10 || d[2] != 1 || d[3] != 8 || d[65] != 1 || d[n - 769] != 12) return 0;
-    uint32_t w = rd16(d + 8) - rd16(d + 4) + 1, h = rd16(d + 10) - rd16(d + 6) + 1, stride = rd16(d + 66);
+    uint32_t w = le16u(d + 8) - le16u(d + 4) + 1, h = le16u(d + 10) - le16u(d + 6) + 1,
+             stride = le16u(d + 66);
     if(w != PIC_W || h != PIC_H || stride < w) return 0;
     uint32_t p = 128, end = n - 769;
     for(uint32_t y = 0; y < h; y++)
@@ -887,8 +884,8 @@ static int map_blocks(const struct track_cam *cam, struct track_block *b)
             float pz = so > 0 ? (float)rd32(obj + so + 0x18) : 0.0f;
             struct track_block t = { obj, blk, { c, 0.0f, -s, s, 0.0f, c, 0.0f, 1.0f, 0.0f },
                                      { x + c * px - s * pz, ROW_Z + s * px + c * pz, py }, 0 };
-            float mx = (float)(int16_t)rd16(blk + 4), my = (float)(int16_t)rd16(blk + 6);
-            float mz = (float)(int16_t)rd16(blk + 8);
+            float mx = (float)(int16_t)le16u(blk + 4), my = (float)(int16_t)le16u(blk + 6);
+            float mz = (float)(int16_t)le16u(blk + 8);
             float dx = t.o[0] + c * mx - s * mz - cam->x, dy = t.o[1] + s * mx + c * mz - cam->y,
                   dh = t.o[2] + my - cam->h;
             float d = dx * dx + dy * dy + dh * dh;      /* the squared distance of the middle */

@@ -8,27 +8,18 @@
  * The files' words are read a byte at a time, because the CPU does no unaligned loads.
  */
 #include "tb_gfx.h"
+#include "bytes.h"
 #include <string.h>
-
-static uint32_t rd16(const uint8_t *p) { return (uint32_t)p[0] | (uint32_t)p[1] << 8; }
-
-static void wr32(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-    p[2] = (uint8_t)(v >> 16);
-    p[3] = (uint8_t)(v >> 24);
-}
 
 static void wrf(uint8_t *p, float f)
 {
     uint32_t v;
     memcpy(&v, &f, 4);
-    wr32(p, v);
+    put_le32(p, v);
 }
 
 /* Reads the int32 at byte o of a file of size bytes into *v. Returns 1, or 0 if it lies outside the file. */
-static int rd32(const uint8_t *p, uint32_t size, uint32_t o, int32_t *v)
+static int rd32_checked(const uint8_t *p, uint32_t size, uint32_t o, int32_t *v)
 {
     if(size < 4 || o > size - 4) return 0;
     p += o;
@@ -43,7 +34,7 @@ uint32_t tb_palette(const uint8_t *col, uint32_t size, uint8_t *out, uint32_t ca
     if(size < 768 || cap < TB_PALETTE_SIZE) return 0;
     for(int i = 0; i < 256; i++) {
         const uint8_t *c = col + 3 * i;     /* values above 63 spill into the next field, as in the tool */
-        wr32(out + 4 * i, (uint32_t)c[0] * 4 << 16 | (uint32_t)c[1] * 4 << 8 | (uint32_t)c[2] * 4);
+        put_le32(out + 4 * i, (uint32_t)c[0] * 4 << 16 | (uint32_t)c[1] * 4 << 8 | (uint32_t)c[2] * 4);
     }
     return TB_PALETTE_SIZE;
 }
@@ -64,12 +55,13 @@ static int car_model(const uint8_t *x3d, uint32_t size, float r[4])
     int32_t nblk, off, so, tx, tz;
     int64_t lo = 0, hi = 0, half = 0;
     int seen = 0;
-    if(!rd32(x3d, size, 0x14, &nblk)) return 0;
+    if(!rd32_checked(x3d, size, 0x14, &nblk)) return 0;
     for(int32_t k = 0; k < nblk; k++) {     /* the reads fail long before 4 * k overflows */
-        if(!rd32(x3d, size, 0x18 + 4 * (uint32_t)k, &off) || off < 0 ||
-           !rd32(x3d, size, (uint32_t)off + 0x0C, &so)) return 0;
+        if(!rd32_checked(x3d, size, 0x18 + 4 * (uint32_t)k, &off) || off < 0 ||
+           !rd32_checked(x3d, size, (uint32_t)off + 0x0C, &so)) return 0;
         if(so <= 0) continue;
-        if(!rd32(x3d, size, (uint32_t)so + 0x10, &tx) || !rd32(x3d, size, (uint32_t)so + 0x18, &tz)) return 0;
+        if(!rd32_checked(x3d, size, (uint32_t)so + 0x10, &tx) ||
+           !rd32_checked(x3d, size, (uint32_t)so + 0x18, &tz)) return 0;
         if(tx == 0) continue;
         if(!seen || tz < lo) lo = tz;
         if(!seen || tz > hi) hi = tz;
@@ -113,8 +105,8 @@ uint32_t tb_car_models(const uint8_t *const x3d[], const uint32_t size[], int n,
         float r[4];
         if(!car_model(x3d[k], size[k], r)) return 0;
         for(int i = 0; i < 4; i++) wrf(out + 24 * k + 4 * i, r[i]);
-        wr32(out + 24 * k + 16, at);
-        wr32(out + 24 * k + 20, size[k]);
+        put_le32(out + 24 * k + 16, at);
+        put_le32(out + 24 * k + 20, size[k]);
         if(out + at != x3d[k]) memmove(out + at, x3d[k], size[k]);     /* moved only if not unpacked there */
         uint32_t pad = (uint32_t)(-size[k] & 255);
         memset(out + at + size[k], 0, pad);
@@ -131,9 +123,9 @@ uint32_t tb_backdrop(const uint8_t *bck, uint32_t size, uint8_t *out, uint32_t c
 {
     if(size < 128 || cap < TB_BACKDROP_SIZE) return 0;
     if(bck[0] != 10 || bck[2] != 1 || bck[3] != 8 || bck[65] != 1) return 0;
-    int32_t w = (int32_t)rd16(bck + 8) - (int32_t)rd16(bck + 4) + 1;
-    int32_t h = (int32_t)rd16(bck + 10) - (int32_t)rd16(bck + 6) + 1;
-    uint32_t line = rd16(bck + 66);         /* bytes per line; the padding after w is left out */
+    int32_t w = (int32_t)le16u(bck + 8) - (int32_t)le16u(bck + 4) + 1;
+    int32_t h = (int32_t)le16u(bck + 10) - (int32_t)le16u(bck + 6) + 1;
+    uint32_t line = le16u(bck + 66);        /* bytes per line; the padding after w is left out */
     if(w != TB_BACKDROP_W || h != TB_BACKDROP_H || line < TB_BACKDROP_W) return 0;
     uint8_t *row = out, *end = out + TB_BACKDROP_W * TB_BACKDROP_H;
     uint32_t p = 128, x = 0;

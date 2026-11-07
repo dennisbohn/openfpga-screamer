@@ -25,6 +25,7 @@
  * MAPnA/B/C.DTR (0x70, 0x74, 0x7C: tb_track_data).
  */
 #include "track_build.h"
+#include "bytes.h"
 #include "dat.h"
 #include "tb_mmp.h"
 #include "tb_spl.h"
@@ -63,14 +64,6 @@ struct build {
     char track[8];                          /* "MAPn" */
     struct track_build_info *info;
 };
-
-static void wr32(uint8_t *p, uint32_t v)
-{
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-    p[2] = (uint8_t)(v >> 16);
-    p[3] = (uint8_t)(v >> 24);
-}
 
 /* Records what stopped the build, for the log (info->fail). Returns 0, so that a caller can
    write `return fail(...)`. */
@@ -241,28 +234,28 @@ uint32_t track_build(const struct track_files *f, int n, uint8_t *out, uint32_t 
     uint32_t size = b.pos, blocks = (size - FIRST + BLOCK - 1) / BLOCK;
     if(blocks > MAX_BLOCKS) return (uint32_t)fail(&b, "image size");
     memcpy(out, "SCRK", 4);
-    wr32(out + 0x04, 6);
-    wr32(out + 0x08, b.offs[0]);
-    wr32(out + 0x0C, b.counts[0]);
-    wr32(out + 0x10, b.offs[1]);
-    wr32(out + 0x14, b.counts[1]);
-    wr32(out + 0x18, b.offs[2]);
+    put_le32(out + 0x04, 6);
+    put_le32(out + 0x08, b.offs[0]);
+    put_le32(out + 0x0C, b.counts[0]);
+    put_le32(out + 0x10, b.offs[1]);
+    put_le32(out + 0x14, b.counts[1]);
+    put_le32(out + 0x18, b.offs[2]);
     for(int k = 3; k <= 10; k++) {          /* placements to walls: offset, count */
-        wr32(out + 0x1C + 8 * (k - 3), b.offs[k]);
-        wr32(out + 0x20 + 8 * (k - 3), b.counts[k]);
+        put_le32(out + 0x1C + 8 * (k - 3), b.offs[k]);
+        put_le32(out + 0x20 + 8 * (k - 3), b.counts[k]);
     }
-    wr32(out + 0x68, b.offs[11]);
-    wr32(out + 0x6C, b.counts[11]);
+    put_le32(out + 0x68, b.offs[11]);
+    put_le32(out + 0x6C, b.counts[11]);
     memcpy(out + 0x70, td, 8);              /* bonus_time, camera_hi */
-    wr32(out + 0x78, b.offs[12]);
+    put_le32(out + 0x78, b.offs[12]);
     memcpy(out + 0x7C, td + 8, 4);          /* the ground colour */
-    wr32(out + 0x80, b.offs[13]);
-    wr32(out + 0x84, b.counts[13]);
-    wr32(out + 0x88, size);
-    wr32(out + 0x8C, blocks);
+    put_le32(out + 0x80, b.offs[13]);
+    put_le32(out + 0x84, b.counts[13]);
+    put_le32(out + 0x88, size);
+    put_le32(out + 0x8C, blocks);
     for(uint32_t k = 0; k < blocks; k++) {  /* the last block may be shorter */
         uint32_t o = FIRST + k * BLOCK, e = size - o < BLOCK ? size : o + BLOCK;
-        wr32(out + 0x90 + 4 * k, crc32(out + o, out + e));
+        put_le32(out + 0x90 + 4 * k, crc32(out + o, out + e));
     }
     info->cycles = now() - t0;
     return size;
