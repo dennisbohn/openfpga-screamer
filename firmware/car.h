@@ -79,9 +79,11 @@ void car_player_look(struct car_look *lk);
 void car_flat_block(const uint8_t *file, float x, float y, float z, float yaw, float pitch, float roll,
                     struct track_block *out);
 /* Every block of a mesh placed so (the helicopter: its body and its rotor), each at its own
-   place in the mesh; how many went into out, up to max */
+   place in the mesh; how many went into out, up to max. With a camera the blocks come in the game's
+   drawing order for it (0x8ac58: the furthest block's middle first, so that the rotor, above the body,
+   goes first when the camera is below), without one in the mesh's order */
 int car_mesh_blocks(const uint8_t *file, float x, float y, float z, float yaw, float pitch, float roll,
-                    struct track_block *out, int max);
+                    const struct track_cam *cam, struct track_block *out, int max);
 
 /* The player's shadow (SHADOW.3DX, efx.h) and tyre smoke (SMOKE.3DX, up to 8 puffs) as objects
    for track_draw_cam() (up to max), their blocks made when they come up in the drawing; the

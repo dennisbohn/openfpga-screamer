@@ -49,7 +49,8 @@ void ft_frame(const struct ft_frame *f)
     ft.o_last = f->work;
     ft.o_faces = f->faces;
     ft.o_pieces = f->npieces;
-    ft.ring_sum += f->work - ft.ring[ft.ring_at];
+    ft.ring_sum += f->work;                     /* (two steps: the difference of two uint32_t is not negative) */
+    ft.ring_sum -= ft.ring[ft.ring_at];
     ft.ring[ft.ring_at] = f->work;
     if (++ft.ring_at == RING) ft.ring_at = 0;
     if (ft.ring_n < RING) ft.ring_n++;

@@ -1158,7 +1158,7 @@ void car_flat_block(const uint8_t *file, float x, float y, float z, float yaw, f
 }
 
 int car_mesh_blocks(const uint8_t *file, float x, float y, float z, float yaw, float pitch, float roll,
-                    struct track_block *out, int max)
+                    const struct track_cam *cam, struct track_block *out, int max)
 {
     struct pose ps = { { 1.0f, 0.0f, 1.0f, 0.0f }, { 0 }, { 1.0f, 0.0f, 1.0f, 0.0f }, 0, x, y, z, 0.0f };
     sin_cos(pitch, &ps.car[1], &ps.car[0]);
@@ -1166,7 +1166,8 @@ int car_mesh_blocks(const uint8_t *file, float x, float y, float z, float yaw, f
     ps.car[4] = cosf(yaw);
     ps.car[5] = sinf(yaw);
     int nb = *(const int32_t *)(file + 0x14), n = 0;
-    for(int b = 0; b < nb && n < max; b++, n++) {
+    float key[MAX_BLOCKS];
+    for(int b = 0; b < nb && n < max && n < MAX_BLOCKS; b++, n++) {
         struct cblock q = { 0 };
         q.blk = file + *(const int32_t *)(file + 0x18 + 4 * b);
         int32_t so = *(const int32_t *)(q.blk + 0x0C);         /* its place in the mesh, as cmodel() */
@@ -1175,7 +1176,23 @@ int car_mesh_blocks(const uint8_t *file, float x, float y, float z, float yaw, f
         out[n].file = file;
         out[n].blk = q.blk;
         out[n].phase = 0;
+        if(cam) {       /* the block's middle from the camera, as draw_model() has it (block_point adds the place) */
+            float mid[3], mw[3];
+            for(int j = 0; j < 3; j++) mid[j] = (float)*(const int16_t *)(q.blk + 4 + 2 * j);
+            block_point(&q, &ps, mid, mw);
+            float dx = mw[0] - cam->x, dy = mw[1] - cam->y, dh = mw[2] - cam->h;
+            key[n] = -rintf(sqrtf(dx * dx + dy * dy + dh * dh));
+        }
     }
+    if(cam)             /* the furthest middle first, on a tie the lower block first (insertion, stable) */
+        for(int i = 1; i < n; i++) {
+            struct track_block t = out[i];
+            float k = key[i];
+            int j = i;
+            while(j > 0 && key[j - 1] > k) { out[j] = out[j - 1]; key[j] = key[j - 1]; j--; }
+            out[j] = t;
+            key[j] = k;
+        }
     return n;
 }
 

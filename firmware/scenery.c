@@ -379,8 +379,7 @@ void scenery_step(void)
 static int moving_make(int k, const struct track_cam *cam, struct track_object *obj)
 {
     struct moving *m = &moving[k];
-    (void)cam;
-    m->nb = car_mesh_blocks(m->mesh, m->x, m->y, m->h, m->yaw, 0.0f, 0.0f, m->b, MOVING_BLOCKS);
+    m->nb = car_mesh_blocks(m->mesh, m->x, m->y, m->h, m->yaw, 0.0f, 0.0f, cam, m->b, MOVING_BLOCKS);
     for(int b = 0; b < m->nb; b++) m->b[b].phase = track_phase();
     obj->n = m->nb;
     obj->b = m->b;
