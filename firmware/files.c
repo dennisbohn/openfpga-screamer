@@ -1,5 +1,6 @@
 /*
- * The game's files and the screen that lists them (files.h)
+ * The game's files and the screen that lists them (files.h). A file counts as present when the
+ * APF's slot table gives its data slot a size other than 0 (slot_size()).
  */
 #include "files.h"
 #include "hw.h"
@@ -7,7 +8,8 @@
 #include "dlog.h"
 #include "slot.h"
 
-/* core/data.json: the slot, the name on the SD card, 1 if the game cannot run without it */
+/* The files, as in core/data.json: the data slot, the name on the SD card, and 1 if the game
+   cannot run without the file */
 static const struct file { uint8_t slot, must; const char *name; } files[] = {
     {  4, 1, "GFX/GAME.DAT" },   { 20, 1, "GFX/GRAF.DAT" },   { 19, 1, "GFX/MENU.DAT" },
     {  3, 1, "GFX/MAP1H.DAT" },  {  9, 1, "GFX/MAP2H.DAT" },  { 10, 1, "GFX/MAP3H.DAT" },
@@ -19,7 +21,7 @@ static const struct file { uint8_t slot, must; const char *name; } files[] = {
 };
 #define NFILES  (int)(sizeof files / sizeof files[0])
 
-/* the screen's palette: entries 0 to 4 */
+/* The screen's own palette, entries 0 to 4 (files_draw sets them) */
 #define BLACK   0
 #define WHITE   1
 #define GREEN   2
@@ -59,12 +61,13 @@ void files_draw(volatile uint8_t *fb, int failed)
     static const uint32_t pal[5] = { 0x000000, 0xFFFFFF, 0x40D070, 0xF04848, 0x909090 };
     for (int i = 0; i < 5; i++) VID_PAL[i] = pal[i];
     fb_fill(fb, 0, 0, FB_W, FB_H, BLACK);
-    fb_fill(fb, 0, 0, FB_W, 8, WHITE);
+    fb_fill(fb, 0, 0, FB_W, 8, WHITE);                      /* title bar, one text row high */
     con_text(fb, 1, 0, "SCREAMER - GAME FILES", BLACK, WHITE);
-    for (int i = 0; i < NFILES; i++) {
+    for (int i = 0; i < NFILES; i++) {                      /* one row per file, from row 1 */
         const struct file *f = &files[i];
         int ok = present(f);
         con_text(fb, 1, 1 + i, f->name, WHITE, BLACK);
+        /* [OK] in green; [MISSING] in red for a needed file, in grey for an optional one */
         con_text(fb, 17, 1 + i, ok ? "[OK]" : "[MISSING]", ok ? GREEN : f->must ? RED : GREY, BLACK);
         if (!f->must) con_text(fb, 28, 1 + i, "*", GREY, BLACK);
     }

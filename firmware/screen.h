@@ -1,13 +1,16 @@
 /*
- * What boot loader and program both draw: waiting for a swap, the test band.
+ * What the boot loader and the program both draw: waiting for a buffer swap, and the test
+ * band at the top of the screen.
  */
 #pragma once
 #include <stdint.h>
 
-#define BAND_H      8           /* test band: rows 0..7, index x for x < 256, else 0 */
+/* Height of the test band: rows 0..7. Column x holds palette index x for x < 256, else 0. */
+#define BAND_H      8
 
-/* Spin until the last swap is done; returns VID_STATUS. Logs once if it takes 0.5 s. */
+/* Spin until the last buffer swap is done and return VID_STATUS. If this takes more than
+   0.5 s, log it once. */
 uint32_t wait_swap_done(void);
 
-/* The test band of docs/soc.md in the top rows */
+/* Draw the test band of docs/soc.md into the top BAND_H rows of fb */
 void draw_band(volatile uint8_t *fb);

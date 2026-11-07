@@ -7,10 +7,11 @@
 #pragma once
 #include <stdint.h>
 
-/* How many of the files the game needs are missing; the log gets a line "game files: n
-   missing" with their names (the optional ones too) */
+/* Count the files the game needs that are missing, and return the count. The debug log gets a
+   line "game files: n missing" followed by the names of all missing files, the optional ones
+   too. */
 int files_missing(void);
 
-/* Draw the list into fb: every file with [OK] or [MISSING], and what to do. failed: all the
-   needed files are there, but loading them failed (the log says why) */
+/* Draw the list into fb: every file with [OK] or [MISSING], and what to do about it. failed is
+   set when all the needed files are there but loading them failed (the log says why). */
 void files_draw(volatile uint8_t *fb, int failed);

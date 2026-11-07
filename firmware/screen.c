@@ -1,5 +1,6 @@
 /*
- * What boot loader and program both draw (screen.h)
+ * What the boot loader and the program both draw (screen.h): the wait for a buffer swap and
+ * the test band.
  */
 #include "hw.h"
 #include "dlog.h"
@@ -24,6 +25,6 @@ void draw_band(volatile uint8_t *fb)
 {
     volatile uint32_t *p = (volatile uint32_t *)fb;
     for (int y = 0; y < BAND_H; y++)
-        for (uint32_t x = 0; x < FB_W / 4; x++)     /* four pixels 4x .. 4x+3 per word */
-            *p++ = x < 64 ? 0x03020100u + 0x04040404u * x : 0;
+        for (uint32_t x = 0; x < FB_W / 4; x++)     /* word x holds the pixels 4x .. 4x+3 */
+            *p++ = x < 64 ? 0x03020100u + 0x04040404u * x : 0;     /* index = column up to 255 */
 }

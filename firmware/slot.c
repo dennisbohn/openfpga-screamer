@@ -1,6 +1,11 @@
+/*
+ * Data slot reads and the slot table, through the DS_ registers (hw.h; docs/soc.md). The
+ * functions are described in slot.h.
+ */
 #include "slot.h"
 #include "hw.h"
 
+/* Fill in the request registers and start the read */
 void slot_start(uint32_t id, uint32_t offset, uint32_t addr, uint32_t len)
 {
     DS_ID = id;
@@ -15,6 +20,7 @@ int slot_busy(void)
     return (DS_CTRL & DS_BUSY) != 0;
 }
 
+/* The APF's result of the last read: DS_CTRL bits 6..4, 0 = ok */
 int slot_result(void)
 {
     return (int)((DS_CTRL >> 4) & 7);
@@ -25,8 +31,8 @@ int slot_read(uint32_t id, uint32_t offset, uint32_t addr, uint32_t len)
     slot_start(id, offset, addr, len);
     uint32_t t0 = rdcycle();
     while (slot_busy())
-        if (rdcycle() - t0 > 20u * CPU_HZ) return -1;
-    dcache_invalidate();
+        if (rdcycle() - t0 > 20u * CPU_HZ) return -1;      /* 20 seconds */
+    dcache_invalidate();            /* the bridge wrote the data behind the cache */
     return slot_result();
 }
 

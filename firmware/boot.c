@@ -1,12 +1,15 @@
 /*
- * The boot loader (firmware.bin, data slot 0, in the boot RAM; docs/soc.md): the CPU tests
- * itself and the SDRAM, then starts the program in the SDRAM (program.bin, data slot 2).
- * CPU self-tests, then the short memory test of the SDRAM (memtest.h: its clock phase, then
- * windows of 2 KB, a tenth of a second), its progress in the debug log's head line alone; the
- * screen stays black until the program's first picture. The memory test also loads program.bin
- * and checks its header and CRC-32. If everything passed, a jump to program.bin with the results
- * and the debug log's position. Otherwise the results go on screen, stay there, and go to
- * SYS_SIM after the third frame.
+ * The boot loader (firmware.bin, data slot 0, in the boot RAM; docs/soc.md). It tests the CPU
+ * and the SDRAM, then starts the program in the SDRAM (program.bin, data slot 2). main() runs
+ * these steps in order:
+ *   1. The CPU self-tests (selftest.c): integer, floating point and CFU.
+ *   2. The short memory test of the SDRAM (memtest.c): first its clock phase, then windows of
+ *      2 KB, about a tenth of a second in all. It also loads program.bin and checks its
+ *      header and CRC-32. Its progress goes only into the debug log's head line. The screen
+ *      stays black until the program draws its first picture.
+ *   3. If everything passed, a jump to program.bin with the results and the debug log's
+ *      position. Otherwise the results go on screen and stay there, and after the third frame
+ *      they go to SYS_SIM as well.
  */
 #include "hw.h"
 #include "console.h"
@@ -20,14 +23,15 @@ uint32_t frames_shown;             /* read by the trap handler */
 
 extern const uint8_t __image_start[], __image_end[];   /* link.ld: what firmware.bin holds */
 
-#define ALL_PASSED  (7u | MT_ALL)    /* the self-tests' bits and the memory test's */
+#define ALL_PASSED  (7u | MT_ALL)    /* result bits 0..2 (self-tests) and the memory test's bits */
 
-static int ok[3];               /* self-tests: integer, float, CFU */
-static uint32_t results;        /* SYS_SIM bits 20..0 */
+static int ok[3];               /* self-tests: integer, float, CFU; 1 = passed */
+static uint32_t results;        /* result bits: 0..2 the self-tests, 3..12 the memory test (memtest.h) */
 static int (*const tests[3])(void) = { selftest_int, selftest_float, selftest_cfu };
-static const char *const test_names[3] = { "Ganzzahl", "Fliesskomma", "CFU" };
-static const char *const log_names[3] = { "integer", "float", "cfu" };
+static const char *const test_names[3] = { "Ganzzahl", "Fliesskomma", "CFU" };     /* on the screen */
+static const char *const log_names[3] = { "integer", "float", "cfu" };              /* in the log */
 
+/* Rewrite the debug log's head line as "Screamer Pocket boot, <what><n>" */
 static void log_head(const char *what, uint32_t n)
 {
     char buf[DLOG_HEAD + 16];
@@ -35,13 +39,14 @@ static void log_head(const char *what, uint32_t n)
     dlog_head(buf);
 }
 
-/* band, background, title, self-test results */
+/* Draw the common part of the results screen into fb: palette, test band, background, the
+   title bar and the self-test results */
 static void draw_frame(volatile uint8_t *fb, const char *title)
 {
     pal_write();
     draw_band(fb);
     fb_fill(fb, 0, BAND_H, FB_W, FB_H - BAND_H, COL_BG);
-    fb_fill(fb, 0, 2 * 8 - 3, FB_W, 8 + 6, COL_TEXT);  /* title bar, 3 pixels around the text */
+    fb_fill(fb, 0, 2 * 8 - 3, FB_W, 8 + 6, COL_TEXT);  /* title bar: text row 2 and 3 pixels around it */
     con_text(fb, 1, 2, title, COL_BG, COL_TEXT);
     int col = con_text(fb, 1, 4, "CPU", COL_DIM, COL_BG) + 1;
     for (int i = 0; i < 3; i++) {
@@ -50,8 +55,8 @@ static void draw_frame(volatile uint8_t *fb, const char *title)
     }
 }
 
-/* memtest_run() calls this before each test and every 64 KB: into the log's head line, so
-   that a hang shows where */
+/* memtest_run() calls this before each test and every 64 KB inside one. It writes the test
+   and the address into the log's head line, so that a hang shows where. */
 static void progress(const char *what, uint32_t addr)
 {
     char buf[DLOG_HEAD + 16];
@@ -59,6 +64,7 @@ static void progress(const char *what, uint32_t addr)
     dlog_head(buf);
 }
 
+/* Draw the memory test rows (memtest_rows()) and the note below them */
 static void draw_results(volatile uint8_t *fb, const char *note)
 {
     char rows[MT_ROWS][41];
@@ -94,14 +100,16 @@ int main(void)
     }
 
 #ifdef FAULT_IFETCH
-    /* fault test for sim/soc (make FAULT=IFETCH): code past the end of the boot RAM. The
-       trap handler has to run from lines the cache loads after the bad one (docs/soc.md). */
+    /* Fault test for sim/soc (make FAULT=IFETCH): jump to code past the end of the boot RAM.
+       The trap handler has to run from lines that the cache loads after the bad one
+       (docs/soc.md). */
     dlog_str("fault test: jump to 00008000\n");
     ((void (*)(void))0x00008000u)();
 #endif
 
-    /* the screen black until the program's first picture (after a reset the last run's
-       picture would stay, docs/soc.md) */
+    /* Keep the screen black until the program's first picture: show a swapped-in buffer with an
+       all-black palette. Without this, after a reset the last run's picture would stay
+       (docs/soc.md). */
     wait_swap_done();
     for (int i = 0; i < 256; i++) VID_PAL[i] = 0;
     VID_SWAP = 1;
@@ -112,19 +120,22 @@ int main(void)
         uint32_t pos, cur;
         dlog_str("boot: starting program.bin\n");
         dlog_state(&pos, &cur);
+        /* The bridge wrote program.bin behind the data cache, and the instruction cache has
+           not seen it. The program's start-up code receives results, pos and cur in a0..a2. */
         dcache_invalidate();
         icache_sync();
         ((void (*)(uint32_t, uint32_t, uint32_t))(uintptr_t)entry)(results, pos, cur);
     }
 
-    /* a test failed or no program to start: the results stay on screen */
+    /* A test failed or there is no program to start: the results stay on the screen. Every
+       loop pass waits for the last swap, draws the screen into the back buffer and swaps. */
     const char *note = entry ? "Test failed: not starting" : "program.bin missing or damaged";
     dlog_str(entry ? "boot: a test failed, the results stay on screen\n" : "boot: no program to start\n");
     uint32_t drawn = 0;
     for (;;) {
         uint32_t st = wait_swap_done();
         frames_shown = drawn;
-        if (drawn == 3) {
+        if (drawn == 3) {           /* the simulation reads the results after the third frame */
             SYS_SIM = SIM_DONE | results;
             dlog_str("SYS_SIM=");
             dlog_hex(SIM_DONE | results);

@@ -1,7 +1,7 @@
 /*
- * Debug log (dlog.h). Word stores only: docs/soc.md describes the log as bytes but promises
- * neither byte stores nor reads there, so the bytes of the word being filled are kept in
- * cur and the whole word is written each time.
+ * Debug log (dlog.h). The log is written with word stores only. The bytes of the word being
+ * filled are kept in cur, and the whole word is stored each time a byte is added, so the log
+ * is never read back.
  */
 #include "hw.h"
 #include "console.h"
@@ -9,10 +9,10 @@
 
 #define LOG ((volatile uint32_t *)DLOG_BASE)
 
-static uint32_t pos;            /* next byte */
-static uint32_t cur;            /* bytes already in the word at pos & ~3 */
+static uint32_t pos;            /* the offset of the next byte */
+static uint32_t cur;            /* the bytes already in the word at pos & ~3 */
 static uint32_t limit;          /* appends stop here; 0 until dlog_init() */
-static char last;               /* last character appended */
+static char last;               /* the last character appended */
 
 void dlog_init(void)
 {
@@ -24,7 +24,7 @@ void dlog_init(void)
     limit = DLOG_SIZE - DLOG_RESERVE;
 }
 
-static uint32_t kept;           /* the room held back (dlog_keep) */
+static uint32_t kept;           /* the room held back by dlog_keep() */
 
 void dlog_keep(uint32_t bytes)
 {
@@ -48,6 +48,8 @@ void dlog_state(uint32_t *p, uint32_t *c)
     *c = cur;
 }
 
+/* The program takes over the log of the boot loader. p and c are the values that the boot
+   loader's dlog_state() returned. The log is not cleared. */
 void dlog_attach(uint32_t p, uint32_t c)
 {
     pos = p;
@@ -58,17 +60,17 @@ void dlog_attach(uint32_t p, uint32_t c)
 
 void dlog_head(const char *s)
 {
-    if (!limit)
+    if (!limit)                                     /* before dlog_init() there is no log */
         return;
-    for (uint32_t i = 0; i < DLOG_HEAD; i += 4) {
+    for (uint32_t i = 0; i < DLOG_HEAD; i += 4) {   /* one word of the line at a time */
         uint32_t w = 0;
         for (uint32_t k = 0; k < 4; k++) {
-            uint32_t c = ' ';
+            uint32_t c = ' ';                       /* padding after the end of s */
             if (i + k == DLOG_HEAD - 1)
                 c = '\n';
             else if (*s)
                 c = (uint8_t)*s++;
-            w |= c << (8 * k);
+            w |= c << (8 * k);                      /* little-endian: byte k of the word */
         }
         LOG[i / 4] = w;
     }
@@ -76,13 +78,13 @@ void dlog_head(const char *s)
 
 void dlog_char(char c)
 {
-    /* the last byte below the limit is kept for '\n': the last line is always complete */
+    /* The last byte below the limit is kept for '\n', so the last line is always complete. */
     if (pos >= limit || (c != '\n' && pos + 1 >= limit))
         return;
     cur |= (uint32_t)(uint8_t)c << (8 * (pos & 3));
     LOG[pos / 4] = cur;
     if (++pos % 4 == 0)
-        cur = 0;
+        cur = 0;                    /* the word is full: the next byte starts a new one */
     last = c;
 }
 
@@ -119,7 +121,7 @@ void dlog_trap(void)
         dlog_init();
         dlog_head("Screamer Pocket step 3: trap before main");
     }
-    limit = DLOG_SIZE;
+    limit = DLOG_SIZE;          /* open the reserve at the end of the log */
     if (last != '\n')
         dlog_char('\n');
 }

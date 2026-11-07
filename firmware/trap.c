@@ -1,8 +1,9 @@
 /*
- * Trap handler: every trap is fatal in step 1 (interrupts stay off). start.S enters here
- * with a fresh gp and sp. It writes mcause, mepc and mtval (plus the interrupted ra and sp)
- * to the debug log, reports to the simulation through SYS_SIM, shows the same on screen
- * and stops. Look up mepc in build/firmware/firmware.lst.
+ * Trap handler. Every trap is fatal: interrupts stay off, and the handler never returns.
+ * start.S (or start_prog.S) enters here with a fresh gp and sp, and with the interrupted sp
+ * and ra as arguments. The handler writes mcause, mepc and mtval (plus that ra and sp) to the
+ * debug log, reports to the simulation through SYS_SIM, shows the same on screen and stops.
+ * Look up mepc in build/firmware/firmware.lst (program.lst for a trap in the program).
  */
 #include "hw.h"
 #include "console.h"
@@ -10,8 +11,10 @@
 
 void trap_handler(uint32_t sp, uint32_t ra) __attribute__((noreturn));
 
-extern uint32_t frames_shown;       /* main.c: frames swapped in so far */
+extern uint32_t frames_shown;       /* boot.c and main.c: how many frames have been swapped in */
 
+/* The names of the exception codes 0 to 11 in mcause (RISC-V privileged architecture). Code 10
+   is not defined. */
 static const char *const causes[] = {
     "insn misaligned", "insn access fault", "illegal instruction", "breakpoint",
     "load misaligned", "load access fault", "store misaligned", "store access fault",
@@ -20,6 +23,7 @@ static const char *const causes[] = {
 
 #define BOX_ROW 18                  /* the report covers text rows 18..24 */
 
+/* Draw the alert box into fb: the lines of text, one per text row from BOX_ROW on */
 static void show(volatile uint8_t *fb, char text[][CON_COLS + 1], int lines)
 {
     fb_fill(fb, 0, BOX_ROW * 8, FB_W, FB_H - BOX_ROW * 8, COL_ALERT);
@@ -31,6 +35,7 @@ void trap_handler(uint32_t sp, uint32_t ra)
 {
     static int active;
     uint32_t mcause = csr_read(mcause), mepc = csr_read(mepc), mtval = csr_read(mtval);
+    /* Bit 31 of mcause marks an interrupt; otherwise the code is an exception. */
     const char *cause = mcause >> 31 ? "interrupt"
                       : mcause < sizeof causes / sizeof causes[0] ? causes[mcause] : "?";
     if (active++)                   /* a trap inside the handler: give up quietly */
@@ -54,6 +59,7 @@ void trap_handler(uint32_t sp, uint32_t ra)
     dlog_char('\n');
     SYS_SIM = SIM_TRAP | (mcause & 0x3FFFFFFFu);
 
+    /* The text of the report, one line per row of the alert box (the screen text is German) */
     char text[7][CON_COLS + 1], *p;
     fmt_str(text[0], " CPU-ABSTURZ (Trap)");
     p = fmt_hex(fmt_str(text[1], " mcause "), mcause, 8);
@@ -66,9 +72,9 @@ void trap_handler(uint32_t sp, uint32_t ra)
     fmt_str(text[5], " Protokoll: Core beenden, per USB:");
     fmt_str(text[6], "Saves/screamer/Chainy.Screamer/debug.txt");
 
-    /* Into both buffers, so the report shows whichever is on screen now or after a
-       pending swap. Before the first frame no buffer has a palette yet: then the back
-       buffer gets one and is swapped in. Later the last whole frame stays where it is. */
+    /* Draw into both buffers, so that the report shows whichever is on screen now or after a
+       pending swap. Before the first frame no buffer has a palette yet: then the back buffer
+       gets one and is swapped in. Later the last whole frame stays where it is. */
     uint32_t st = VID_STATUS;
     show(FB(st & VID_FRONT), text, 7);
     show(FB(!(st & VID_FRONT)), text, 7);

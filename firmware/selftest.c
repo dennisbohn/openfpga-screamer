@@ -1,10 +1,11 @@
 /*
- * CPU self-tests (selftest.h): integer multiply, divide and shift, single-precision
- * floating point, and the CFU. Expected values are exact results with RISC-V semantics
- * (division by zero, overflow), computed beforehand with Python's integer arithmetic.
- * Inputs reach the instructions through opaque() or inline asm, so nothing is folded at
- * compile time; firmware.lst shows the instructions. A failure is logged as
- * "<test> check <n>: got <result>, expected <value>" (the first four of each test).
+ * CPU self-tests (selftest.h): integer multiply, divide and shift, single-precision floating
+ * point, and the CFU. Each test returns 1 if all its checks passed. The expected values are
+ * exact results with RISC-V semantics (including division by zero and overflow), computed
+ * beforehand with Python's integer arithmetic. The inputs reach the instructions through
+ * opaque() or inline asm, so the compiler folds nothing at compile time; firmware.lst shows
+ * the instructions. A failure is logged as "<test> check <n>: got <result>, expected <value>",
+ * for the first four failures of each test.
  */
 #include <math.h>
 #include <string.h>
@@ -12,8 +13,8 @@
 #include "dlog.h"
 #include "selftest.h"
 
-static const char *test_name;
-static int failures;
+static const char *test_name;   /* the running test, for the log */
+static int failures;            /* failed checks of the running test */
 
 static void begin(const char *name)
 {
@@ -21,6 +22,7 @@ static void begin(const char *name)
     failures = 0;
 }
 
+/* Compare a result with the expected value. n numbers the check in the log. */
 static void check(int n, uint32_t got, uint32_t expected)
 {
     if (got == expected)
@@ -37,10 +39,12 @@ static void check(int n, uint32_t got, uint32_t expected)
     }
 }
 
-/* One R-type instruction, so the exact instruction is tested (also where C has no
-   defined result, like division by zero) */
-#define RR(insn, a, b) ({ uint32_t r_; __asm__ volatile (insn " %0, %1, %2" : "=r"(r_) : "r"(a), "r"(b)); r_; })
+/* One R-type instruction, so that exactly this instruction is tested. This also covers cases
+   where C has no defined result, like division by zero. */
+#define RR(insn, a, b) \
+    ({ uint32_t r_; __asm__ volatile (insn " %0, %1, %2" : "=r"(r_) : "r"(a), "r"(b)); r_; })
 
+/* The operand pairs a, b of the integer checks */
 static const uint32_t int_in[8][2] = {
     { 0x00003039u, 0xFFFFE57Bu },       /* 12345, -6789 */
     { 0x12345678u, 0x9ABCDEF0u },
@@ -52,19 +56,29 @@ static const uint32_t int_in[8][2] = {
     { 0x00000007u, 0xFFFFFFFEu },       /* 7, -2 */
 };
 
-/* mul, mulh, mulhsu, mulhu, div, divu, rem, remu of int_in; check n = 10 * row + column */
+/* The expected results for int_in, per row in the order mul, mulh, mulhsu, mulhu, div, divu,
+   rem, remu. Check number n = 10 * row + column. */
 static const uint32_t int_out[8][8] = {
-    { 0xFB012863u, 0xFFFFFFFFu, 0x00003038u, 0x00003038u, 0xFFFFFFFFu, 0x00000000u, 0x000015B4u, 0x00003039u },
-    { 0x242D2080u, 0xF8CC93D6u, 0x0B00EA4Eu, 0x0B00EA4Eu, 0x00000000u, 0x00000000u, 0x12345678u, 0x12345678u },
-    { 0xFFFFFD44u, 0xFFFFFFFFu, 0xFFFFFFFFu, 0x00000006u, 0xFFFFFFF2u, 0x24924916u, 0xFFFFFFFEu, 0x00000002u },
-    { 0x80000000u, 0x00000000u, 0x80000000u, 0x7FFFFFFFu, 0x80000000u, 0x00000000u, 0x00000000u, 0x80000000u },
-    { 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u, 0xFFFFFFFFu, 0xFFFFFFFFu, 0xDEADBEEFu, 0xDEADBEEFu },
-    { 0x00000001u, 0x3FFFFFFFu, 0x3FFFFFFFu, 0x3FFFFFFFu, 0x00000001u, 0x00000001u, 0x00000000u, 0x00000000u },
-    { 0x00000001u, 0x00000000u, 0xFFFFFFFFu, 0xFFFFFFFEu, 0x00000001u, 0x00000001u, 0x00000000u, 0x00000000u },
-    { 0xFFFFFFF2u, 0xFFFFFFFFu, 0x00000006u, 0x00000006u, 0xFFFFFFFDu, 0x00000000u, 0x00000001u, 0x00000007u },
+    { 0xFB012863u, 0xFFFFFFFFu, 0x00003038u, 0x00003038u,
+      0xFFFFFFFFu, 0x00000000u, 0x000015B4u, 0x00003039u },
+    { 0x242D2080u, 0xF8CC93D6u, 0x0B00EA4Eu, 0x0B00EA4Eu,
+      0x00000000u, 0x00000000u, 0x12345678u, 0x12345678u },
+    { 0xFFFFFD44u, 0xFFFFFFFFu, 0xFFFFFFFFu, 0x00000006u,
+      0xFFFFFFF2u, 0x24924916u, 0xFFFFFFFEu, 0x00000002u },
+    { 0x80000000u, 0x00000000u, 0x80000000u, 0x7FFFFFFFu,
+      0x80000000u, 0x00000000u, 0x00000000u, 0x80000000u },
+    { 0x00000000u, 0x00000000u, 0x00000000u, 0x00000000u,
+      0xFFFFFFFFu, 0xFFFFFFFFu, 0xDEADBEEFu, 0xDEADBEEFu },
+    { 0x00000001u, 0x3FFFFFFFu, 0x3FFFFFFFu, 0x3FFFFFFFu,
+      0x00000001u, 0x00000001u, 0x00000000u, 0x00000000u },
+    { 0x00000001u, 0x00000000u, 0xFFFFFFFFu, 0xFFFFFFFEu,
+      0x00000001u, 0x00000001u, 0x00000000u, 0x00000000u },
+    { 0xFFFFFFF2u, 0xFFFFFFFFu, 0x00000006u, 0x00000006u,
+      0xFFFFFFFDu, 0x00000000u, 0x00000001u, 0x00000007u },
 };
 
-/* value, shift amount (only bits 4..0 count), sll, srl, sra; check n = 100 + 10 * row + column */
+/* The shift checks. Per row: the value, the shift amount (only bits 4..0 count), and the
+   expected results of sll, srl and sra. Check number n = 100 + 10 * row + column. */
 static const uint32_t shifts[5][5] = {
     { 0x87654321u,  4, 0x76543210u, 0x08765432u, 0xF8765432u },
     { 0x87654321u, 31, 0x80000000u, 0x00000001u, 0xFFFFFFFFu },
@@ -94,7 +108,7 @@ int selftest_int(void)
         check(100 + 10 * i + 1, RR("srl", s[0], s[1]), s[3]);
         check(100 + 10 * i + 2, RR("sra", s[0], s[1]), s[4]);
     }
-    /* the same through the compiler: shifts by immediates, C operators */
+    /* The same through the compiler: shifts by immediates and C operators */
     uint32_t v = opaque(0x87654321u);
     check(150, v << 4, 0x76543210u);
     check(151, v >> 4, 0x08765432u);
@@ -106,6 +120,7 @@ int selftest_int(void)
     return failures == 0;
 }
 
+/* The bit pattern of a float */
 static uint32_t fbits(float f)
 {
     uint32_t u;
@@ -113,6 +128,9 @@ static uint32_t fbits(float f)
     return u;
 }
 
+/* Each check compares the bit pattern of a result. The comment names the instruction and the
+   exact value; "rounded" means the exact result does not fit a float and is rounded to the
+   nearest one. */
 int selftest_float(void)
 {
     begin("float");
@@ -126,13 +144,14 @@ int selftest_float(void)
     check(7, fbits(one / opaquef(3.0f)), 0x3EAAAAABu);                  /* rounded: 0.333333343f */
     check(8, fbits(sqrtf(b)), 0x3FC00000u);                             /* fsqrt.s: 1.5 */
     check(9, fbits(sqrtf(opaquef(2.0f))), 0x3FB504F3u);                 /* rounded: 1.41421354f */
-    /* fmadd.s, exact: VexRiscv's FMA rounds the product early (FpuCore.scala, "FMA precision
-       lost"), so a case that needs a true fused result would fail */
+    /* fmadd.s with an exactly representable result. VexRiscv's FMA rounds the product early
+       (FpuCore.scala, "FMA precision lost"), so a case that needs a truly fused result would
+       fail. */
     check(10, fbits(__builtin_fmaf(a, b, opaquef(0.125f))), 0x40600000u);    /* 3.5 */
     check(11, fbits((float)(int32_t)opaque((uint32_t)-123456789)), 0xCCEB79A3u);   /* fcvt.s.w: -123456792 */
     check(12, fbits((float)opaque(0xFFFFFFFFu)), 0x4F800000u);          /* fcvt.s.wu: 2^32 */
     check(13, (uint32_t)(int32_t)opaquef(-2.75f), 0xFFFFFFFEu);         /* fcvt.w.s, toward 0: -2 */
-    check(14, (uint32_t)(int32_t)opaquef(1234567.875f), 1234567u);
+    check(14, (uint32_t)(int32_t)opaquef(1234567.875f), 1234567u);      /* fcvt.w.s, toward 0 */
     check(15, (uint32_t)opaquef(3.0e9f), 3000000000u);                  /* fcvt.wu.s */
     check(16, (uint32_t)((a < b) + 2 * (b <= a) + 4 * (a == opaquef(1.5f))), 5u);  /* flt, fle, feq */
     check(17, fbits(-a), 0xBFC00000u);                                  /* fneg.s */
@@ -140,7 +159,7 @@ int selftest_float(void)
     return failures == 0;
 }
 
-/* fixmul(a, b) must equal ((int64_t)a * b) >> 16, i.e. bits 47..16 of the product */
+/* fixmul(a, b) must equal ((int64_t)a * b) >> 16, which is bits 47..16 of the product */
 static const int32_t cfu_in[][2] = {
     {  0x00018000,  0x00024000 },       /* 1.5 * 2.25 = 3.375 */
     { -0x00018000,  0x00024000 },
