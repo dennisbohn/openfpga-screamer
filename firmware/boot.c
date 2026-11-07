@@ -2,12 +2,12 @@
  * The boot loader (firmware.bin, data slot 0, in the boot RAM; docs/soc.md). It tests the CPU
  * and the SDRAM, then starts the program in the SDRAM (program.bin, data slot 2). main() runs
  * these steps in order:
- *   1. The CPU self-tests (selftest.c): integer, floating point and CFU.
- *   2. The short memory test of the SDRAM (memtest.c): first its clock phase, then windows of
+ *   1. LOADING on the screen (show_loading), until the program draws its first picture.
+ *   2. The CPU self-tests (selftest.c): integer, floating point and CFU.
+ *   3. The short memory test of the SDRAM (memtest.c): first its clock phase, then windows of
  *      2 KB, about a tenth of a second in all. It also loads program.bin and checks its
- *      header and CRC-32. Its progress goes only into the debug log's head line. The screen
- *      stays black until the program draws its first picture.
- *   3. If everything passed, a jump to program.bin with the results and the debug log's
+ *      header and CRC-32. Its progress goes only into the debug log's head line.
+ *   4. If everything passed, a jump to program.bin with the results and the debug log's
  *      position. Otherwise the results go on screen and stay there, and after the third frame
  *      they go to SYS_SIM as well.
  */
@@ -37,6 +37,20 @@ static void log_head(const char *what, uint32_t n)
     char buf[DLOG_HEAD + 16];
     fmt_udec(fmt_str(fmt_str(buf, "Screamer Pocket boot, "), what), n);
     dlog_head(buf);
+}
+
+/* Shows LOADING in white on black, from the first moments of the boot until the program draws its first
+   picture, which takes about a second. The swap also replaces the picture that a reset leaves on the screen
+   (docs/soc.md). Palette entry 0 is black and entry 1 white. */
+static void show_loading(void)
+{
+    uint32_t st = wait_swap_done();
+    volatile uint8_t *fb = FB(!(st & VID_FRONT));
+    for (int i = 0; i < 256; i++) VID_PAL[i] = 0;
+    VID_PAL[1] = 0x00FFFFFFu;
+    fb_fill(fb, 0, 0, FB_W, FB_H, 0);
+    con_text(fb, (CON_COLS - 7) / 2, CON_ROWS / 2, "LOADING", 1, 0);
+    VID_SWAP = 1;
 }
 
 /* Draw the common part of the results screen into fb: palette, test band, background, the
@@ -91,6 +105,7 @@ int main(void)
     dlog_hex(id);
     dlog_str(id == SYS_ID_VALUE ? " ok\n" : " wrong\n");
 
+    show_loading();
     for (int i = 0; i < 3; i++) {   /* one line each, so a trap shows which one ran */
         ok[i] = tests[i]();
         results |= (uint32_t)ok[i] << i;
@@ -107,12 +122,6 @@ int main(void)
     ((void (*)(void))0x00008000u)();
 #endif
 
-    /* Keep the screen black until the program's first picture: show a swapped-in buffer with an
-       all-black palette. Without this, after a reset the last run's picture would stay
-       (docs/soc.md). */
-    wait_swap_done();
-    for (int i = 0; i < 256; i++) VID_PAL[i] = 0;
-    VID_SWAP = 1;
     results |= memtest_run(progress);
 
     uint32_t entry = memtest_program();
