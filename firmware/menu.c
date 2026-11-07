@@ -36,7 +36,6 @@
 #define TAKE        0.8f
 #define LIT         0.6f
 #define DT          0.02f           /* a step */
-#define PI          3.1415927f
 #define TWO_PI      6.2831853f
 #define PIC_W       320             /* MENU1L.PCX, MENU3L.PCX, MENU4L.PCX */
 #define PIC_H       200

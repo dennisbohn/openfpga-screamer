@@ -25,7 +25,6 @@
 #include "speech.h"
 #include "tb_spl.h"
 
-#define PI          3.14159265f
 /* The bumper cam's height over the car: camera_hi in TRACK_DATA of MAPnA.DTR. */
 #define CAMERA_HI   ((float)track_camera_hi())
 
@@ -167,14 +166,6 @@ static float puff_clock;                /* +0x304 */
    heading slightly past pi. Our car moves in floats (drive.c); this place follows those moves.
    fx and fy are the float place that it took last. */
 static struct { int32_t x, y; float fx, fy; } whole;
-
-/* Wraps an angle into -pi .. pi. */
-static float wrap_pi(float a)
-{
-    while(a > PI) a -= 2.0f * PI;
-    while(a < -PI) a += 2.0f * PI;
-    return a;
-}
 
 /* Stands the car on the drivable surface (OpenScreamer's player_contact;
    original: STARTL.EXE 0x11a30, 0x16698). One call changes pc.z, pc.pitch, pc.roll, pc.rough,

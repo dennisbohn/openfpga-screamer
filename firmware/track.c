@@ -125,7 +125,6 @@ static const float far_depth[3] = { 27808.0f, 27808.0f, 43808.0f };     /* LOW, 
 #define EYE_BACK    128.0f
 #define EYE_LINE(h) ((h) * 65 / 100)
 #define LOOK        12          /* a track's camera path has at least LOOK + 2 points (checked in track_init) */
-#define PI          3.14159265f
 
 /* The game's view angles (original: STARTL.EXE 0x829e3).
    1. The camera record holds each angle as a float, 0 .. 2 pi. The game multiplies it by 2048 / 2 pi
@@ -695,7 +694,7 @@ void track_backdrop_blit(struct blit_list *l, const struct rs_clip *clip, const 
     int w = clip->x1 - clip->x0, h = clip->y1 - clip->y0, eye = EYE_LINE(h);
     int32_t s = view_sin16(view_angle(cam->pitch));             /* the game's sine (original: [0x8228c]) */
     int top = eye + 22 - 256 + ((-54152 * s) >> 7) / -54152;
-    int heading = (int)lrintf((cam->yaw + 1.5707964f) * (1024.0f / 3.14159265f));
+    int heading = (int)lrintf((cam->yaw + 1.5707964f) * (1024.0f / PI));
     int col = ((2047 - heading) >> 1) & 511;
     int rows = 256 + (top < 0 ? top : 0);
     if(top + 256 > h) rows -= top + 256 - h;
@@ -1017,7 +1016,7 @@ static int first_cell(uint32_t key)
 static __attribute__((noinline)) void cell_window(float cx, float cy, float yaw, int *row0, int *row1,
                                                   int *col0, int *col1)
 {
-    const int h = (int)(yaw * 1024.0f / 3.14159274f) & 0x7FF;
+    const int h = (int)(yaw * 1024.0f / PI) & 0x7FF;
     const int a = 0x7FF - h;
     const int64_t s = view_sin16(a), c = view_sin16((a + 512) & 2047);
     const int64_t px = (int64_t)(WINDOW_X * far_scale + 0.5f), pz = (int64_t)(WINDOW_Z * far_scale + 0.5f);

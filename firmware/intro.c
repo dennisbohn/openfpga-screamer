@@ -16,7 +16,6 @@
 #include <string.h>
 
 #define DT          DRIVE_DT
-#define PI          3.1415927f
 #define LINES       256             /* ATTR.TXT's lines, its '*' lines not counted */
 #define BLOCK_LINES 20              /* a block's lines eased (original: 0x11ce54) */
 #define POSTS       64              /* MAPnCAM.SPL's nodes (14 .. 29) */
@@ -137,14 +136,6 @@ static struct track_cam place(int p, float x, float y, float h, int zoom)
     return c;
 }
 
-/* Brings the angle a into -PI .. PI. */
-static float wrap(float a)
-{
-    while(a > PI) a -= 2.0f * PI;
-    while(a < -PI) a += 2.0f * PI;
-    return a;
-}
-
 /*
  * Works out car k's camera for this step (original: STARTL.EXE 0x1a920).
  *   - The camera is on the post nearest the car on the ground. A post at the car's very place
@@ -186,7 +177,7 @@ static void car_cam(int k)
     if(c->fresh) c->fly = 0;
     else if(zoom != c->zoom) {
         struct track_cam was = place(at, x, y, h, c->zoom);
-        c->d = (struct track_cam){ was.x - now.x, was.y - now.y, was.h - now.h, wrap(was.yaw - now.yaw),
+        c->d = (struct track_cam){ was.x - now.x, was.y - now.y, was.h - now.h, wrap_pi(was.yaw - now.yaw),
                                    was.pitch - now.pitch, 0.0f };
         c->fly = 1;
     }
