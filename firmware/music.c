@@ -45,6 +45,7 @@ static int opt_seen;
 static int paused_song;                     /* the song music_pause paused, CD or FM, 0 none */
 enum { SRC_CD = 1, SRC_FM };
 static uint32_t paused_at;                  /* the paused track's place: bytes into it, whole sectors */
+static uint32_t play_from;                  /* where in its track (bytes) the current run of cd_start began */
 static uint32_t master = MASTER;            /* music_master */
 int music_on = 1;
 /* The track playing, in the image: its first byte (from), the byte after its last (to), and the
@@ -269,6 +270,7 @@ static void cd_start(int n, uint32_t off)
     from = (uint32_t)first[n] * SECTOR;
     to = last * SECTOR;
     at = off < to - from ? from + off : from;
+    play_from = at - from;
     written = played = place = short_frames = 0;
     playing = n;
     for (uint32_t len; playing && (len = next()) != 0;)
@@ -302,8 +304,8 @@ void music_cd(int n)
 }
 
 /* Pause (see music.h). An FM song is paused in the driver. A CD track is stopped: the frames
-   played up to the mixer's place are counted, and the place is kept as a whole number of
-   sectors in paused_at. */
+   played up to the mixer's place are counted, and the place (where the run began plus what was
+   played, so also after a resume) is kept as a whole number of sectors in paused_at. */
 void music_pause(void)
 {
     int n = playing;
@@ -314,7 +316,7 @@ void music_pause(void)
     }
     if (!n) return;
     played += ((AU_MUSIC & 0xFFFF) - place) & 0xFFFF;
-    uint32_t off = played * 4 % (to - from) / SECTOR * SECTOR;
+    uint32_t off = (play_from + played * 4) % (to - from) / SECTOR * SECTOR;
     music_stop();
     paused = n;
     paused_at = off;

@@ -138,7 +138,7 @@ def main():
               m, sets[("1.0", "0")])
     per_track("FAR_SCALE 1.0, LOD_SCALE 1.0 (the original's rule)", m, sets[("1.0", "1.0")])
     per_track("FAR_SCALE 1.5, LOD_SCALE off", m, sets[("1.5", "0")])
-    per_track("FAR_SCALE 1.5, LOD_SCALE 1.5 (the defaults)", m, sets[("1.5", "1.5")])
+    per_track("FAR_SCALE 1.5, LOD_SCALE 1.5", m, sets[("1.5", "1.5")])
     txt = "\n".join(out)
     print(txt)
     open(f"{st}/report.md", "w", encoding="utf-8").write(txt + "\n")

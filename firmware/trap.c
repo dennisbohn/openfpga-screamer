@@ -59,9 +59,9 @@ void trap_handler(uint32_t sp, uint32_t ra)
     dlog_char('\n');
     SYS_SIM = SIM_TRAP | (mcause & 0x3FFFFFFFu);
 
-    /* The text of the report, one line per row of the alert box (the screen text is German) */
+    /* The text of the report, one line per row of the alert box (40 characters at most) */
     char text[7][CON_COLS + 1], *p;
-    fmt_str(text[0], " CPU-ABSTURZ (Trap)");
+    fmt_str(text[0], " CPU CRASH (trap)");
     p = fmt_hex(fmt_str(text[1], " mcause "), mcause, 8);
     fmt_str(fmt_str(p, " "), cause);
     p = fmt_hex(fmt_str(text[2], " mepc   "), mepc, 8);
@@ -69,7 +69,7 @@ void trap_handler(uint32_t sp, uint32_t ra)
     p = fmt_hex(fmt_str(text[3], " ra     "), ra, 8);
     fmt_hex(fmt_str(p, "  sp    "), sp, 8);
     fmt_str(text[4], "");
-    fmt_str(text[5], " Protokoll: Core beenden, per USB:");
+    fmt_str(text[5], " Log: quit the core, then via USB:");
     fmt_str(text[6], "Saves/screamer/Chainy.Screamer/debug.txt");
 
     /* Draw into both buffers, so that the report shows whichever is on screen now or after a

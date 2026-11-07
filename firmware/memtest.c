@@ -671,7 +671,7 @@ static char *ok_word(char *p, const char *label, int bit)
 /* Make the SDRAM's result rows for the screen (memtest.h): text in rows[], 40 characters at
    most; fail[n] is 1 for a row to highlight. Returns the number of rows. With a ready SDRAM
    there are four rows:
-     SDRAM  Bus / Byte / Adr / Muster   the four generic tests
+     SDRAM  Bus / Byte / Adr / Pattern  the four generic tests
      Prog and Phase                     program.bin, and the good phase steps of 80 and the step
      Code / Refresh / Status
      line hit/miss clocks, read/write MB/s   the measurements */
@@ -691,7 +691,7 @@ int memtest_rows(char rows[][41], uint8_t fail[])
         p = ok_word(p, " Bus", b);
         p = ok_word(p, "Byte", b + 1);
         p = ok_word(p, "Adr", b + 2);
-        ok_word(p, "Muster", b + 3);
+        ok_word(p, "Pattern", b + 3);
         fail[n] = ((results >> b) & 15) != 15;      /* the four generic tests */
         n++;
         if(i == M_SDRAM) {

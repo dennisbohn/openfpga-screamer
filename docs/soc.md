@@ -517,11 +517,11 @@ acknowledge before the SDRAM slot), lets the CPU run and checks:
   x < 256, and the palette of every frame is `pal[i] = (i << 16) | ((255 - i) << 8) | ((i * 3) & 255)`. The
   testbench compares these pixels in the displayed frame.
 - **Log:** the testbench reads it through the bridge like the Pocket (one word more, the first answer
-  discarded). It expects the header line, no "FAIL", the simulation's windows and, in the first run, "SDRAM
-  slot: ok". Before the start it checks that `soc.v` ignores the loading of the log slot.
+  discarded). It expects the header line, no "FAIL", the simulation's windows and "SDRAM program: ok" (in the
+  first run and in the run after the reset). Before the start it checks that `soc.v` ignores the loading of the log slot.
 - **Resets** like a firmware reload from the menu (only `firmware.bin` reloaded): once while buffer 1 is
   front (in reset, swap request, front buffer and `SYS_SIM` must be 0), and once in the middle of the memory
-  test's SDRAM traffic. The last run must pass like the first, report the SDRAM slot as "skipped" and must
+  test's SDRAM traffic. The last run must pass like the first (also with "SDRAM program: ok") and must
   not swap anything before the CPU's first request.
 
 The SDRAM controller has its own random test (`sim/sdram`, see `docs/memory.md`).
