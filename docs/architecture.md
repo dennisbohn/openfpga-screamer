@@ -113,11 +113,12 @@ loads while the first track is built: the firmware only starts the read (`sound_
   One frame is 1.485 million clocks.
 - **VGA version:** 320x200 with an 8-bit palette like the game's VGA version. The original takes
   its tracks from both sets: `MAPnL` at DETAIL LOW, `MAPnH` from MID (`STARTL.EXE` like
-  `STARTH.EXE`, OpenScreamer `docs/NOTES.md` section 27). How far is drawn is set by DETAIL as in the original:
-  parts up to 52000 units, faces clipped at depth 27808 (LOW, MID) or 43808 (HI). The SVGA
-  version draws just as far (same table at `ds:0x21d8` in `STARTH.EXE`, same comparison with
-  52000^2/4 at `0x8340b`); it only doubles the pixels (focal length 128, result x 2, centre
-  column 319). The core always uses the full H set and the HI distances; DETAIL is only displayed. Cockpit, race info and other static pictures are sprites from the L entries of
+  `STARTH.EXE`, OpenScreamer `docs/NOTES.md` section 27). The original's distances are set by DETAIL: parts up to 52000 units
+  (three immediates of the code, `0x831cb`, `0x8322f`, `0x8a70e`, which nothing writes), faces clipped at depth
+  27808 (LOW, MID) or 43808 (HI). The SVGA version draws just as far (same table at `ds:0x21d8` in
+  `STARTH.EXE`, same comparison with 52000^2/4 at `0x8340b`); it only doubles the pixels (focal length 128,
+  result x 2, centre column 319). The core always uses the full H set and the HI distances times `FAR_SCALE`
+  (1.5, `firmware/track.h`; "Draw distance and level of detail" below); DETAIL is only displayed. Cockpit, race info and other static pictures are sprites from the L entries of
   `GAME.DAT` (`COCKnnAL`, `COCKnnBL`, `CDFRONTL`, `GAMEL`, `IMPLET_L`, `IMPRES_L`), copied 1:1
   pixel-exact into the framebuffer by the blitter. In `GAME.DAT`, L and H mean the 320 x 200 and
   the SVGA pictures, not the DETAIL sets of the `MAPn` files.
@@ -257,6 +258,52 @@ computes the same set: per line both edges at the top and bottom edge. See
   acknowledgement; it does not read `front` across the clock domain.
 - A reset must not fake a swap: it sets request and acknowledgement to 0, after which buffer 0 is
   in front until the drawer swaps (checked in `sim/display` and `sim/soc`).
+
+### Draw distance and level of detail
+
+What the original draws (`STARTL.EXE`, DETAIL HI; `docs/original_geometry.md` 2.1, 2.2, 4.4): the placements
+of the cells of a **window** (the box of two points 57,433 sideways and 56,096 ahead of the camera, turned by
+its heading, with 8192 round it, cut to the view box of the cell the camera is in, if the map gives that cell
+one: 41 to 63 % of a track's cells do), those within 52,000 units, then the sphere test against the view
+and the far plane at 43,808; and for every block a **level of detail** by the distance of its middle: a placed
+block takes level 1 from 12,000 units and level 2 from 16,000, a car's or other moving block from 4,000 and
+7,000 (a car's level 2 is its body alone). The four constants are in the image, nothing writes them, and they
+read -6000, -8000, -4000, -7000 in the running game at DETAIL HI; the reach is three immediates of the code.
+
+The core does the same with two factors (`firmware/track.h`, each a single constant): `FAR_SCALE` (default 1.5)
+on the far plane, the reach, the window's points and the props' reach, `LOD_SCALE` (default 1.5, 0 = no level of
+detail) on the distances of the levels. At 1.0 and 1.0 it is the original's picture. The image carries the
+map's cell table (`tools/make_track.py`, `tb_mmp.c`: key, placements, view box of every cell) so that the walk
+takes the game's cells in the game's order. Against the running original (DOSBox, track 1, the grid and four
+places along the first 32 seconds of the race; `tools/dosram.py walk`, `tools/perf/walkcheck.py`): the window's
+rows and columns and the 638 placements in reach are the same, in the same order, at all five cameras. The rule
+of the levels is read in the disassembly and its constants in RAM; the pictures were compared with raw
+DOSBox screenshots only roughly (the original draws with camera angles in 2048ths of a turn, ours in
+floating point: 32 % of the pixels agree, with or without the levels).
+
+The study on the PC (`tools/perf/study_sweeps.sh`, `study.py`: the six tracks' races of a robot, all
+cars driving, 3,600 frames per row; frame time from the model of `tools/perf/perf_model.py`, which predicts the
+start frames of the simulation to 4.4 % rms, 3 % low):
+
+| FAR_SCALE | LOD_SCALE | pieces | faces looked at | pixels | mean ms | worst ms |
+|---|---|---|---|---|---|---|
+| old firmware | none | 149 | 2,230 | 107,108 | 11.6 | 17.4 |
+| 1.0 | none | 145 | 2,175 | 106,715 | 11.5 | 17.1 |
+| 1.0 | 1.0 | 128 | 956 | 103,670 | 8.9 | 11.8 |
+| 1.0 | 1.5 | 131 | 1,162 | 104,738 | 9.3 | 12.9 |
+| 1.25 | none | 167 | 2,490 | 108,498 | 12.4 | 18.2 |
+| 1.25 | 1.25 | 149 | 1,118 | 105,764 | 9.4 | 12.7 |
+| 1.5 | none | 180 | 2,671 | 109,144 | 12.8 | 19.4 |
+| 1.5 | 1.0 | 157 | 1,047 | 105,669 | 9.4 | 12.7 |
+| 1.5 | 1.5 | 160 | 1,252 | 106,736 | 9.7 | 13.4 |
+
+A longer view alone costs 0.9 ms (1.25) to 1.3 ms (1.5) on average and takes the worst frame to 19.4 ms; the level
+of detail more than pays for it (-2.2 to -3.4 ms, faces looked at -47 to -61 %). At the defaults the placed
+blocks beyond 18,000 units take level 1 and beyond 24,000 level 2, the cars' blocks beyond 6,000 and 10,500. A step
+of the levels as the car drives (150 units a frame) changes 22 pixels of the picture on average (0.03 %; at
+`LOD_SCALE` 1.0: 57), the most 1,151 in a frame (a tree's crown). The far plane at 1.5 is 65,840 units from the
+eye, beyond 2^16: the setup unit and the clipper take it (the simulation's start frames have up to 16 polygons cut at it,
+0 pixels differ from the C models).
 
 ## Race: player, opponents, cameras, effects
 
@@ -908,20 +955,22 @@ first), `PAUSE=1` or `2` the pause or the question over the start (`CD="4,1"`: c
 pressed; compared with DOSBox screenshots: in the radio 0 pixels difference except the blinking
 number).
 
-The six start frames (simulation, fast-forward, near chase camera, frame 2; each 0 pixels
-difference to the C models; "Frame" is the whole time of frame 1, 20 ms = 1.485 M clocks):
+The six start frames (simulation, fast-forward, near chase camera, frame 2, ten cars; each 0 pixels
+difference to the C models; "Frame" is the whole time of frame 1, 20 ms = 1.485 M clocks). Before: the
+original's distances without the level of detail (release 1.0.2's firmware); now: `FAR_SCALE` 1.5 and
+`LOD_SCALE` 1.5. In the frames of tracks 5 (before) and 6 (now) the simulation ran no physics step (about
+0.1 M clocks less), which is added here:
 
-| Track | Placements | Parts | Faces | Pixels | Frame |
-|---|---|---|---|---|---|
-| 1 Palm Town | 1164 | 260 | 2620 | 108,027 | 1,315,412 = 17.7 ms |
-| 2 Lake Valley | 1408 | 243 | 2411 | 113,588 | 1,206,304 = 16.2 ms |
-| 3 Lindburg | 1590 | 235 | 2283 | 98,100 | 1,151,696 = 15.5 ms |
-| 4 Palm Town Night | 1764 | 260 | 2763 | 112,283 | 1,363,361 = 18.4 ms |
-| 5 Sunbeach Hill | 2359 | 249 | 3166 | 120,056 | 1,295,826 = 17.5 ms |
-| 6 Sandrock | 2073 | 265 | 2502 | 132,668 | 1,354,951 = 18.2 ms |
+| Track | Placements | Pieces now | Faces now | Pixels now | Frame before | Frame now |
+|---|---|---|---|---|---|---|
+| 1 Palm Town | 1164 | 255 | 1399 | 107,904 | 1,207,338 = 16.3 ms | 978,485 = 13.2 ms |
+| 2 Lake Valley | 1408 | 247 | 1281 | 111,904 | 1,139,480 = 15.3 ms | 917,296 = 12.4 ms |
+| 3 Lindburg | 1590 | 235 | 1334 | 96,583 | 1,054,694 = 14.2 ms | 884,998 = 11.9 ms |
+| 4 Palm Town Night | 1764 | 264 | 1577 | 110,404 | 1,253,610 = 16.9 ms | 987,983 = 13.3 ms |
+| 5 Sunbeach Hill | 2359 | 278 | 1673 | 118,817 | about 1,302,000 = 17.5 ms | 912,214 = 12.3 ms |
+| 6 Sandrock | 2073 | 296 | 1415 | 132,644 | 1,265,507 = 17.0 ms | about 1,107,000 = 14.9 ms |
 
-Tracks 5 and 6 have more placements than the 2048 `track.c` used to hold (now 2560). The table
-predates routine 160; with it the track 1 start frame is 1,338,092 clocks = 18.0 ms.
+Tracks 5 and 6 have more placements than the 2048 `track.c` used to hold (now 2560).
 
 ## Resource usage
 

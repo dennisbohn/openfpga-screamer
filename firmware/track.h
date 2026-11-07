@@ -95,9 +95,36 @@ const struct blit_font *track_hud_fonts(int *n);
 void track_hud_picture(int k, int *first, int *count);
 const char *track_hud_text(int k);
 
+/* How far the core draws, against the original (STARTL.EXE, DETAIL HI). Two constants, each a factor on the
+   original's distances; 1.0 is the original's picture.
+   FAR_SCALE: the far plane (faces are cut at 43,808 units from the camera), the reach (a placement is
+   looked at while its place is within 52,000), the box of the game's cell window (57,433 sideways, 56,096
+   ahead, 8192 round the camera: the cells it covers are the only ones looked at, also cut to the view box
+   of the cell the camera is in, which the map's data gives and the factor does not change) and the reach of
+   the props and the moving scenery.
+   LOD_SCALE: the distances at which a block takes the next lower level of detail. The original's (STARTL.EXE
+   0x8a504 .. 0x8a554, constants of its image that nothing writes): a placed block (its middle from the camera)
+   at 12,000 units level 1 and at 16,000 level 2, a car's or another moving object's block at 4,000 and 7,000;
+   a block with no mesh at its level is not drawn (the cars' level 2 is the body alone). 0: no level of detail,
+   every block at level 0. */
+#ifndef FAR_SCALE                               /* (-DFAR_SCALE=1.0f on the compiler's line, for tests, wins) */
+#define FAR_SCALE   1.5f
+#endif
+#ifndef LOD_SCALE
+#define LOD_SCALE   1.5f
+#endif
+
 /* The game's DETAIL option, 0 LOW, 1 MID, 2 HI (the default): how deep faces are drawn.
    The track file goes with it: the L set at LOW, the H set from MID up. */
 void track_detail(int level);
+/* The far plane now (units from the camera), as scenery.c needs it */
+float track_far(void);
+
+/* The block of the mesh (its object header at mesh) that is drawn for block b at level of detail
+   rule `moving` (0 a placed block, 1 a car or another moving object) when its middle is dist units
+   from the camera: the block itself at level 0, the one of its lower level, or 0 if the mesh has
+   none there (not drawn). Without the level of detail (LOD_SCALE 0) always the block itself */
+const uint8_t *track_lod_block(const uint8_t *mesh, int b, float dist, int moving);
 
 /* The file's size and its blocks of 256 KB from offset 0x100 on, each with a CRC-32 in the
    header: whether block k (0 .. track_blocks() - 1) arrived as written */

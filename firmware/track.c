@@ -37,11 +37,16 @@
 #define MAX_BLOCKS  8           /* blocks of a mesh drawn (track 1: two, the football helmet's) */
 
 /* How far the game draws (openscreamer docs/NOTES.md, DETAIL): a piece only while its
-   position is within 52000 units of the camera (0x83164: dist^2 >> 2 < 676000000), and
-   every face cut at a depth set by the DETAIL option (the table at 0x21d4: -27808, -27808,
-   -43808, the view's z from the camera, 0x8baa4) */
-#define REACH2      2704000000.0f
+   position is within 52000 units of the camera (0x83164: dist^2 >> 2 < 676000000; three
+   immediates of the code that nothing writes), and every face cut at a depth set by the DETAIL
+   option (the table at 0x21d4: -27808, -27808, -43808, the view's z from the camera, 0x8baa4).
+   The core draws FAR_SCALE times as far (track.h) */
+#define REACH       52000.0f
 static const float far_depth[3] = { 27808.0f, 27808.0f, 43808.0f };     /* LOW, MID, HI */
+/* the game's cell window (0x82e88): two points in the ground plan, ahead of the camera and to its sides, whose
+   box with the 8192 round the camera is the part of the map that is looked at (docs/original_geometry.md 2.1) */
+#define WINDOW_X    57433.0f
+#define WINDOW_Z    56096.0f
 /* The original's lens: screen = centre + 128 x / (128 + z), z the depth from the camera. The
    corners' divide (0x83420) reads TABS\PERSP01.TAB (loaded by 0x4cd4c, its address patched in
    by 0x8ba28): entry z = -65536 x 128 / (128 + z); a cut at the near plane z = 0 (0xd7470)
@@ -136,18 +141,24 @@ struct gpiece { float x, y, ox, oy, r2, c, s; int32_t obj, h; };
 static struct gpiece gpieces[MAX_GROUND];
 static float sin_q[513];                /* sin(2 pi i / 2048) for i = 0..512 */
 static float under_n[3];                /* track_under's face: its normal in world axes (x, y, up) */
-static float far_z = 43808.0f;          /* the far plane of the DETAIL level */
+static float far_scale = FAR_SCALE;     /* (variables, so that the PC tools can try others: tools/perf) */
+static float lod_inv = LOD_SCALE > 0.0f ? 1.0f / LOD_SCALE : 0.0f;     /* 0: no level of detail */
+static float far_z = 43808.0f * FAR_SCALE;      /* the far plane of the DETAIL level */
+static float reach2 = (REACH * FAR_SCALE) * (REACH * FAR_SCALE);       /* the reach, squared */
 static float radius[MAX_OBJ];           /* of each mesh around its origin */
 /* the placements as the culling reads them, from the track's set-up: place as floats (the same
    values), its mesh's reach (-1: no mesh) and class key */
 static struct cpiece { float x, y, h, rad; } cpieces[MAX_PIECES];
 static int16_t cpiece_key[MAX_PIECES];
-/* the placements in groups of 8 as they lie in the file (cell by cell, so close together): each
-   group's box round their places (those with a mesh; none: count 0, it is never looked at), the middle
-   of their heights and the radius round their middle that holds them all (r0), the largest reach of a
-   mesh (rmax). A group out of reach or out of view is passed over at once (draw) */
-#define GROUP       8
-static struct { float x0, y0, x1, y1, ch, r0, rmax; uint16_t count; } groups[MAX_PIECES / GROUP + 1];
+/* The map's cells, from the cell table that ends the image's placements (tools/make_track.py): each one's key
+   (row x 256 + column in the map's grid of 8192 units), its placements (a run, as the game walks them), and the
+   box of what the game draws while the camera is in it, if the map gives one. The game looks only at the
+   placements of the cells its window covers (cell_window); the cells lie in the order of their keys */
+struct vcell { uint16_t key, first, count, has_box; int32_t box[4]; };
+#define CELL_MAGIC  0x4C4C4543u         /* "CELL" */
+#define MAX_CELLS   1024                /* a track has up to 573 */
+static const struct vcell *vcells;
+static int nvcells;
 
 int track_mode;
 void (*track_hw_piece)(const struct gu_piece *p);
@@ -421,32 +432,12 @@ int track_init(void)
         cpieces[i] = (struct cpiece){ (float)pieces[i].x, (float)pieces[i].y, (float)pieces[i].h, ok ? radius[k] : -1.0f };
         cpiece_key[i] = ok ? class_key[k] : 0;
     }
-    for(int g = 0; g * GROUP < npieces; g++) {
-        int first = g * GROUP, n = npieces - first < GROUP ? npieces - first : GROUP, m = 0;
-        float h0 = 0.0f, h1 = 0.0f, rmax = 0.0f;
-        for(int i = first; i < first + n; i++) {
-            const struct cpiece *p = &cpieces[i];
-            if(p->rad < 0.0f) continue;             /* no mesh: never drawn */
-            if(!m++) {
-                groups[g].x0 = groups[g].x1 = p->x;
-                groups[g].y0 = groups[g].y1 = p->y;
-                h0 = h1 = p->h;
-            }
-            if(p->x < groups[g].x0) groups[g].x0 = p->x;
-            if(p->x > groups[g].x1) groups[g].x1 = p->x;
-            if(p->y < groups[g].y0) groups[g].y0 = p->y;
-            if(p->y > groups[g].y1) groups[g].y1 = p->y;
-            if(p->h < h0) h0 = p->h;
-            if(p->h > h1) h1 = p->h;
-            if(p->rad > rmax) rmax = p->rad;
-        }
-        groups[g].count = (uint16_t)m;
-        if(!m) groups[g].x0 = groups[g].x1 = groups[g].y0 = groups[g].y1 = 0.0f;
-        float ex = 0.5f * (groups[g].x1 - groups[g].x0), ey = 0.5f * (groups[g].y1 - groups[g].y0), eh = 0.5f * (h1 - h0);
-        groups[g].ch = 0.5f * (h0 + h1);
-        groups[g].r0 = __builtin_sqrtf(ex * ex + ey * ey + eh * eh);
-        groups[g].rmax = rmax;
-    }
+    const uint32_t *vh = (const uint32_t *)(pieces + npieces);
+    if(vh[0] != CELL_MAGIC || vh[1] > MAX_CELLS) return 0;      /* an image from before the cell table */
+    nvcells = (int)vh[1];
+    vcells = (const struct vcell *)(vh + 3);
+    for(int g = 0; g < nvcells; g++)
+        if(vcells[g].first + vcells[g].count > npieces || (g && vcells[g].key <= vcells[g - 1].key)) return 0;
     return npieces;
 }
 
@@ -754,7 +745,35 @@ void track_cam_axes(const struct track_cam *cam, float f[3], float r[3], float u
 
 void track_detail(int level)
 {
-    far_z = far_depth[level < 0 ? 0 : level > 2 ? 2 : level];
+    far_z = far_depth[level < 0 ? 0 : level > 2 ? 2 : level] * far_scale;
+    reach2 = (REACH * far_scale) * (REACH * far_scale);
+}
+
+float track_far(void)
+{
+    return far_z;
+}
+
+/* The original's level of detail of a block (STARTL.EXE 0x8b04c for placed blocks, 0x8af24 for cars and the other
+   moving objects): the distance of the block's middle from the camera rounded to nearest (even); a placed block's
+   key is -(dist >> 1), +0x2000 for a name that starts with Z, level 0 above -6000, level 1 above -8000 (the
+   distances 12,000 and 16,000), else level 2; a moving block's -dist, -4000 and -7000. The distance is divided by
+   LOD_SCALE first, which moves all the switches out by that factor. */
+static int lod_level(float dist, int moving, int zname)
+{
+    int32_t d = (int32_t)lrintf(dist * lod_inv);
+    int32_t key = moving ? -d : -(d >> 1) + (zname ? 0x2000 : 0);
+    return key > (moving ? -4000 : -6000) ? 0 : key > (moving ? -7000 : -8000) ? 1 : 2;
+}
+
+const uint8_t *track_lod_block(const uint8_t *mesh, int b, float dist, int moving)
+{
+    const uint8_t *blk = mesh + rd32(mesh + 0x18 + 4 * b);
+    if(lod_inv == 0.0f) return blk;
+    int level = lod_level(dist, moving, !moving && blk[0x68] == 'Z');
+    if(!level) return blk;
+    int32_t off = rd32(mesh + 0x18 + 4 * b + 0x104 * level);       /* block b at the level, 0: none */
+    return off ? mesh + off : 0;
 }
 
 uint32_t track_size(void)
@@ -780,6 +799,74 @@ void track_view(const struct rs_clip *clip, struct su_view *v)
     v->cy = (clip->y0 + EYE_LINE(clip->y1 - clip->y0)) * 16;
     v->scale = (uint32_t)(FOCAL * 16.0f);
     v->far8 = (int32_t)((far_z + EYE_BACK) * 256.0f);  /* depths from the eye */
+}
+
+/* The first cell (its number) whose key is not below key, nvcells if none: the cells lie in the order of their keys */
+static int first_cell(uint32_t key)
+{
+    int lo = 0, hi = nvcells;
+    while(lo < hi) {
+        int mid = (lo + hi) / 2;
+        if(vcells[mid].key < key) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+}
+
+/* The rows and columns of cells that the game's walk looks at (STARTL.EXE 0x82e88, docs/original_geometry.md 2.1):
+   two points ahead of the camera and to its sides, WINDOW_X and WINDOW_Z times FAR_SCALE, turned by the view's
+   heading (the camera's heading in 2048ths of a turn, cut towards 0; the matrix of 0x7ff - h, whose sines the
+   game's table has), their box with the 8192 round the camera, cut to the part of the map the camera's cell
+   gives (the box of its array 4, if it has one: each edge is clamped to the window and the two take its place
+   only if they differ, x first), in the map's cells of 8192 units: from row0 and col0 on, the rows and columns
+   n further, n one more if the first and the n-th stay below 0xfe. Rows and columns row0 .. row1, col0 .. col1. */
+static __attribute__((noinline)) void cell_window(float cx, float cy, float yaw, int *row0, int *row1, int *col0, int *col1)
+{
+    const int h = (int)(yaw * 1024.0f / 3.14159274f) & 0x7FF;
+    const int a = 0x7FF - h;
+    const int64_t s = view_sin16(a), c = view_sin16((a + 512) & 2047);
+    const int64_t px = (int64_t)(WINDOW_X * far_scale + 0.5f), pz = (int64_t)(WINDOW_Z * far_scale + 0.5f);
+    int64_t xa = (-px * c - pz * s) >> 14, za = (-pz * c + px * s) >> 14;      /* the point to the left */
+    int64_t xb = (px * c - pz * s) >> 14, zb = (-pz * c - px * s) >> 14;       /* and to the right */
+    int64_t x0 = xa < xb ? xa : xb, x1 = xa < xb ? xb : xa, z0 = za < zb ? za : zb, z1 = za < zb ? zb : za;
+    if(x0 > -0x2000) x0 = -0x2000;
+    if(z0 > -0x2000) z0 = -0x2000;
+    if(x1 < 0x2000) x1 = 0x2000;
+    if(z1 < 0x2000) z1 = 0x2000;
+    const int32_t ix = (int32_t)cx, iz = (int32_t)cy;
+    x0 += ix; x1 += ix; z0 += iz; z1 += iz;
+    if(x0 < -0x100000) x0 = -0x100000;
+    if(x1 > 0xFFFFF) x1 = 0xFFFFF;
+    if(z0 < -0x100000) z0 = -0x100000;
+    if(z1 > 0xFFFFF) z1 = 0xFFFFF;
+    x0 += 0x100000; x1 += 0x100000; z0 += 0x100000; z1 += 0x100000;
+    if(ix >= -0x100000 && ix < 0x100000 && iz >= -0x100000 && iz < 0x100000) {      /* the camera's cell */
+        uint32_t key = (uint32_t)((iz + 0x100000) >> 13) << 8 | (uint32_t)((ix + 0x100000) >> 13);
+        int g = first_cell(key);
+        if(g < nvcells && vcells[g].key == key && vcells[g].has_box) {
+            const int32_t *b = vcells[g].box;
+            int64_t ex0 = b[0] + 0x100000, ex1 = b[2] + 0x100000;
+            ex0 = ex0 < x0 ? x0 : ex0 > x1 ? x1 : ex0;
+            ex1 = ex1 < x0 ? x0 : ex1 > x1 ? x1 : ex1;
+            if(ex0 != ex1) {
+                int64_t ez0 = b[1] + 0x100000, ez1 = b[3] + 0x100000;
+                ez0 = ez0 < z0 ? z0 : ez0 > z1 ? z1 : ez0;
+                ez1 = ez1 < z0 ? z0 : ez1 > z1 ? z1 : ez1;
+                x0 = ex0;
+                x1 = ex1;
+                if(ez0 != ez1) {
+                    z0 = ez0;
+                    z1 = ez1;
+                }
+            }
+        }
+    }
+    *row0 = (int)(z0 >> 13);
+    *col0 = (int)(x0 >> 13);
+    int nrow = (int)((z1 > z0 ? z1 - z0 : z0 - z1) >> 13), ncol = (int)((x1 > x0 ? x1 - x0 : x0 - x1) >> 13);
+    if(*row0 + nrow <= 0xFD) nrow++;
+    if(*col0 + ncol <= 0xFD) ncol++;
+    *row1 = *row0 + nrow;
+    *col1 = *col0 + ncol;
 }
 
 /* the list drawn: key << 16 | i, i (the low half) a piece, or npieces + an object */
@@ -878,16 +965,18 @@ static int multi_pieces(const float c[3], const float f[3], const float r[3], co
             o[i] = (i == 0 ? (float)pc->x : i == 1 ? (float)pc->y : (float)pc->h) +
                    R[3 * i] * t[0] + R[3 * i + 1] * t[1] + R[3 * i + 2] * t[2];
         }
-        struct gu_piece *g = &tmp[b];
-        block_piece(c, f, r, u, m, o, blk, g);
-        g->obj = obj;
-        g->phase = piece_phase;
-        g->mirror = moving;
         float w[3];
         for(int i = 0; i < 3; i++)
             w[i] = o[i] + m[3 * i] * rd16(blk + 4) + m[3 * i + 1] * rd16(blk + 6) + m[3 * i + 2] * rd16(blk + 8) - c[i];
         key[b] = -(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
-        int i = b;
+        const uint8_t *lb = track_lod_block(obj, b, sqrtf(-key[b]), 0);     /* the block at its level (the middle and the key stay level 0's) */
+        if(!lb) continue;
+        struct gu_piece *g = &tmp[b];
+        block_piece(c, f, r, u, m, o, lb, g);
+        g->obj = obj;
+        g->phase = piece_phase;
+        g->mirror = moving;
+        int i = n;
         while(i > 0 && key[ord[i - 1]] > key[b]) { ord[i] = ord[i - 1]; i--; }
         ord[i] = b;
         n++;
@@ -929,7 +1018,7 @@ static uint32_t refl_offsets(const struct track_object *ob, const float f[3], co
 }
 
 /* The view from the point c along forward f, with right r and up u (unit vectors) */
-static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam, const float c[3],
+static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam, float yaw, const float c[3],
                  const float f[3], const float r[3], const float u[3], struct track_object *objs, int nobj,
                  struct track_stats *st)
 {
@@ -951,31 +1040,18 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
     int nv = 0;
     /* the game's key (0x8a7b0): -(sqrt(dist^2 >> 2), rounded, >> 2) */
 #define KEY(d2) (-((int32_t)lrintf(sqrtf((d2) * 0.25f)) >> 2))
-    const float side = __builtin_sqrtf(1.0f + half_w * half_w), top = __builtin_sqrtf(1.0f + up * up),
-                bottom = __builtin_sqrtf(1.0f + down * down);
-    for(int g = 0; g * GROUP < npieces; g++) {
-        if(!groups[g].count) continue;
-        {                                           /* the whole group out of reach (in the plane) */
-            int wx = cx < groups[g].x0, ex = cx > groups[g].x1, sy = cy < groups[g].y0, ny = cy > groups[g].y1;
-            INT_NOW4(wx, ex, sy, ny);
-            float gx = wx ? groups[g].x0 - cx : ex ? cx - groups[g].x1 : 0.0f;
-            float gy = sy ? groups[g].y0 - cy : ny ? cy - groups[g].y1 : 0.0f;
-            if(gx * gx + gy * gy >= REACH2) continue;
+    /* The cells to look at, in the order of the file (so the pieces come in the order of the game's list): those the
+       game's window covers (cell_window), cell by cell as their keys run: the rows' range is found by two binary
+       searches, the columns by a compare */
+    int row0, row1, col0, col1;
+    cell_window(cx, cy, yaw, &row0, &row1, &col0, &col1);
+    const int q0 = row0 > 0 ? first_cell((uint32_t)row0 << 8) : 0, q1 = row1 < 255 ? first_cell((uint32_t)(row1 + 1) << 8) : nvcells;
+    for(int g = q0; g < q1; g++) {
+        {
+            int col = vcells[g].key & 255;
+            if(col < col0 || col > col1) continue;
         }
-        {   /* the whole group out of view: every placement p of it lies within r0 of the middle m, its reach rad is
-               at most rmax, and the placement is out if (n . (p - cam)) > rad (1 + k) for a plane's normal n of
-               length s (the tests below, rewritten): so the group is out if n . (m - cam) > rmax (1 + k) + r0 s
-               (and a margin for the rounding). Near: vf + rad < NEAR, far: vf - rad > far_eye (s = 1, k = 0) */
-            float dx = 0.5f * (groups[g].x0 + groups[g].x1) - cx, dy = 0.5f * (groups[g].y0 + groups[g].y1) - cy, dh = groups[g].ch - ch;
-            float vf = dx * fx + dy * fy + dh * fh + EYE_BACK, vr = dx * rx + dy * ry + dh * rh;
-            float vu = dx * ux + dy * uy + dh * uh, r0 = groups[g].r0 + 8.0f, rm = groups[g].rmax;
-            int o1 = vf + r0 + rm < NEAR, o2 = vf - r0 - rm > far_eye;
-            int o3 = vr - half_w * vf > rm * (1.0f + half_w) + r0 * side, o4 = -vr - half_w * vf > rm * (1.0f + half_w) + r0 * side;
-            int o5 = vu - up * vf > rm * (1.0f + up) + r0 * top, o6 = -vu - down * vf > rm * (1.0f + down) + r0 * bottom;
-            INT_NOW6(o1, o2, o3, o4, o5, o6);
-            if(o1 | o2 | o3 | o4 | o5 | o6) continue;
-        }
-        for(int i = g * GROUP, end = i + (npieces - i < GROUP ? npieces - i : GROUP); i < end; i++) {
+        for(int i = vcells[g].first, end = i + vcells[g].count; i < end; i++) {
             const struct cpiece *pc = &cpieces[i];
             int32_t no_mesh;                            /* (its reach -1, as a whole number) */
             memcpy(&no_mesh, &pc->rad, sizeof no_mesh);
@@ -985,7 +1061,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
             float vf = dx * fx + dy * fy + dh * fh + EYE_BACK, vr = dx * rx + dy * ry + dh * rh;
             float vu = dx * ux + dy * uy + dh * uh;
             /* out of reach or out of view: all the comparisons asked for at once, then one wait for their answers */
-            int o0 = d2 >= REACH2, o1 = vf + rad < NEAR, o2 = vf - rad > far_eye;
+            int o0 = d2 >= reach2, o1 = vf + rad < NEAR, o2 = vf - rad > far_eye;
             int o3 = vr - rad > half_w * (vf + rad), o4 = vr + rad < -half_w * (vf + rad);
             int o5 = vu - rad > up * (vf + rad), o6 = vu + rad < -down * (vf + rad);
             INT_NOW7(o0, o1, o2, o3, o4, o5, o6);
@@ -1093,6 +1169,15 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         float ca = sin2048((uint32_t)pc->t + 512), sa = sin2048((uint32_t)pc->t);
         float dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch;
 
+        /* the level of detail: by the distance of the block's middle (level 0's) from the camera; its matrices,
+           key and sort place stay level 0's. A block the mesh has no level for is not drawn */
+        if(lod_inv != 0.0f) {
+            float lx = rd16(g.blk + 4), ly = rd16(g.blk + 6), lz = rd16(g.blk + 8);
+            float wx = dx + lx * ca - lz * sa, wy = dy + lx * sa + lz * ca, wh = dh + ly;
+            g.blk = track_lod_block(g.obj, 0, sqrtf(wx * wx + wy * wy + wh * wh), 0);
+            if(!g.blk) continue;
+        }
+
         /* local to view: per axis A, A . D + x (Ax cos + Ay sin) + y Ah + z (Ay cos - Ax sin) */
         const float m[9] = { rx * ca + ry * sa, rh, ry * ca - rx * sa,
                              ux * ca + uy * sa, uh, uy * ca - ux * sa,
@@ -1125,7 +1210,7 @@ void track_draw_cam(volatile uint8_t *fb, const struct rs_clip *clip, const stru
     const float c[3] = { cam->x, cam->y, cam->h };
     float f[3], r[3], u[3];
     cam_frame(cam, f, r, u);
-    draw(fb, clip, cam, c, f, r, u, objs, nobj, st);
+    draw(fb, clip, cam, cam->yaw, c, f, r, u, objs, nobj, st);
 }
 
 void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, struct track_stats *st)
@@ -1145,5 +1230,5 @@ void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, 
     rx /= l; ry /= l;
     const float c[3] = { cx, cy, ch }, f[3] = { fx, fy, fh }, r[3] = { rx, ry, 0.0f };
     const float u[3] = { ry * fh, -rx * fh, rx * fy - ry * fx };     /* up = right x forward */
-    draw(fb, clip, 0, c, f, r, u, 0, 0, st);
+    draw(fb, clip, 0, atan2f(fx, -fy), c, f, r, u, 0, 0, st);
 }

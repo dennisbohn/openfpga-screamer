@@ -25,6 +25,9 @@ https://youtu.be/lczQRB2F0cM
 - Music from the game's CD image, or without it the MIDI songs through an FM chip (OPL2, the
   AdLib sound of the original), sound effects and speech
 - 50 frames per second at the Pocket's native 320 x 200 picture, perspective-correct textures
+- A longer view than the original's (1.5 times the distance) with the level of detail of the game's meshes
+  stretched to match; both are constants in `firmware/track.h`. A frame time display in races (hold A, press
+  L and R)
 - Pocket integration: Core Controls remapping, analog sticks and triggers in the dock
 
 Not supported: network play (the menu entry is left out), the link port.

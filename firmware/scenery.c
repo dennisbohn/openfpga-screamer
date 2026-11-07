@@ -16,8 +16,8 @@
 #define KINDS       8           /* rows of OSTACLES (track 1 has 3) */
 #define MOVING_MAX  8           /* rows of ANIMATIONS (track 1 has 5) */
 #define SCRATCH     0x2000      /* MAPnDAT.DTR, then MAPnOST.SPL, at the end of mem */
-#define REACH       43808.0f    /* the far plane (track.c far_z): nothing farther is drawn */
-#define NEAR_MOVE   52000.0f    /* moving scenery moves only this near the player */
+#define REACH       track_far() /* the far plane (track.c far_z): nothing farther is drawn */
+#define NEAR_MOVE   (52000.0f * FAR_SCALE)      /* moving scenery moves only this near the player (the game's reach, moved out with the far plane) */
 #define PROP_RADIUS 800.0f      /* round a prop's origin (the barrier is 580 wide) */
 #define MOVING_RADIUS 12000.0f  /* round a vehicle's (the jet) */
 #define MOVING_BLOCKS 4           /* blocks of a moving thing's mesh (the helicopter has 2) */

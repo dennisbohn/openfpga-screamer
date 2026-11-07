@@ -18,13 +18,14 @@ described in [original_filler.md](original_filler.md); this document ends at the
 | Object matrices, block matrices, all four chains W, F, G1, G (section 4) | bit-identical, 4 blocks of a car |
 | Camera-space position and sort key of all 149 drawn objects (section 3) | bit-identical |
 | Object visibility test: 149 of 189 accepted (section 3) | same set |
-| Cell window (section 2) | same columns |
+| Cell window and the camera cell's box (section 2.1), pieces in reach (2.2), track 1, five cameras | same rows and columns, the same 638 placements in the same order |
+| The level-of-detail constants of 4.4 | -6000, -8000, -4000, -7000 in RAM, DETAIL 2 |
 | Vertex transform and projection, 103 vertices (section 5) | bit-identical |
 | Face row and back-face test, 30 of 48 faces in the same order (section 6) | bit-identical |
 | `TABS\PERSP01.TAB` against the formula (section 5) | all 65664 entries |
 
 Only read, not checked in RAM: the clippers (section 7), the 2D accept/reject in the setup
-(section 8), the reflection path (section 8.5), the cell window in every detail.
+(section 8), the reflection path (section 8.5), the level of detail's switching of the blocks.
 
 ## 0. Conventions
 
@@ -180,6 +181,17 @@ visited: rows row0 .. row0+nrow, columns col0 .. col0+ncol (both inclusive)
 This is **not** `x1 >> 13 - x0 >> 13`; it can be one column more or fewer than the ones
 geometrically touched. Checked: col0*4 = 496, ncol = 6 in RAM as computed.
 
+The box of a cell (`[cell+0x10]`, 24 bytes behind it when `[cell+0x24]` is 1; the cell's array 4) is six int32
+`x0, z0, z0, x1, z1, z1` (the pairs repeat), the map's coordinates; 41 to 63 % of the cells of the six tracks
+have one (90 of 222, 207 of 385, 193 of 365, 172 of 366, 360 of 573, 251 of 418), the others leave the window
+alone, as does a camera outside the map. A box often cuts the window hard: at the grid of track 1 the window's
+115,000 units across become 48,700. Checked in RAM at five cameras (the start grid and four places along the first
+32 seconds of the race, `tools/dosram.py walk`): the window (before and after the box), the columns and rows
+patched into the walk (0x83137, 0x83141) and every record of the in-range list equal to what `tools/perf/walkcheck.py`
+gets from the track image's cell table with the same formulas, 638 records in the same order. The corners'
+constants (0x82b08 ff.), like the reach's immediate, are never written. The moving objects (2.3) are
+taken against the window before the box.
+
 ### 2.2 The in-range list (0x83114 -> 0x83164)
 
 Row by row (z ascending), within it column by column (x ascending), per cell **run 1 first,
@@ -320,7 +332,13 @@ vertices and faces.
 
 **Levels of detail are used on track 1** (e.g. mesh 185 `a5trb`: blocks at 816, 1536, 2224; mesh
 0 `ax1sa`: 816, 5928, 6876). Static blocks switch at a block-centre distance of about 12000 and
-16000 (the `'Z'` surcharge shifts this), cars at 4000 and 7000.
+16000 (the `'Z'` surcharge shifts this), cars at 4000 and 7000. The four constants (`[0x8a504]`,
+`[0x8a508]`, `[0x8a550]`, `[0x8a554]`, read through the bases `0x8a4fc` and `0x8a548` by the two key routines) are
+image constants: the code stores through the view structure (`ds:0x8a594` = `0x8a4fc`) only at +0x10 and
++0x14 .. +0x48, no instruction writes the four, and they are the same at every DETAIL (read in RAM at HI). Every
+mesh of the six tracks has all three levels for its blocks (the cars' level 2 is one block of 6 to 8 faces, the
+body); placed blocks: level 1 has 29 to 41 % of level 0's faces, level 2 13 to 30 %, weighted by placements. One
+mesh on track 3 has a block named `Z...`.
 
 ## 5. Vertex transform and projection (0x8a628 -> 0x83380)
 
@@ -627,4 +645,5 @@ Pure painter's algorithm without a depth buffer: objects far -> near, blocks of 
   reader found; likewise ds:0x8b554 = 0x17700000 per block.
 - The view settings (0x8a510..0x8a53c) for views other than the 200-row one (cockpit: 132) are
   not read out.
-- Where the cell box (run 4 of an MMP cell) comes from and whether every cell has one.
+- Where the cell box (array 4 of an MMP cell) comes from (a visibility table of the map's builder, probably); not
+  every cell has one (2.1).
