@@ -1,16 +1,21 @@
 /*
- * Time attack's ghost (the game's mode 4, car.h; openscreamer docs/NOTES.md section 20). The
- * game records the player's run (0x231d0), keeps a lap that beat the last one (or the first) as
- * REPLAYS\MAPn.ATK (0x1fd64 -> 0x1b964) and, after RESUME or PLAY AGAIN, races it as a second car
- * that nothing collides with (0x12e14 -> 0x1ba3c, 0x14d28; played back by 0x23018 and 0x23308):
- * the recorded car model on the grid place it was recorded from, the player on the other one
- * (0x13ded, 0x1bb33), its lap the one to beat (0x1d268), the player second while it is further
- * round (0x20418). At the finish (0x23ef0) a lap slower than the ghost's, or as slow, is TRY
- * AGAIN; else YOU MADE IT! and the run is kept.
+ * Time attack's ghost (the game's mode 4, car.h; openscreamer docs/NOTES.md section 20).
+ * The game's rules:
+ *   - It records the player's run (original: STARTL.EXE 0x231d0). It keeps a lap that beat the
+ *     last one, or the first lap, as REPLAYS\MAPn.ATK (0x1fd64 -> 0x1b964).
+ *   - After RESUME or PLAY AGAIN it races the kept run as a second car that nothing collides
+ *     with (0x12e14 -> 0x1ba3c, 0x14d28; played back by 0x23018 and 0x23308). The ghost is the
+ *     recorded car model on the grid place it was recorded from. The player takes the other
+ *     place (0x13ded, 0x1bb33).
+ *   - The ghost's lap is the lap to beat (0x1d268). The player is second while the ghost is
+ *     further round (0x20418).
+ *   - At the finish (0x23ef0) a lap slower than the ghost's, or as slow, is TRY AGAIN.
+ *     Otherwise it is YOU MADE IT! and the run is kept.
  *
- * Here: a pose every GHOST_STEP physics steps from the set-up on (the game's are one a frame),
- * played back through the original's cubic (0x22724) at the same step, the angles turned
- * between two poses; each track's best kept in the save file ATTACK.DAT (save.h).
+ * In this core a pose is recorded every GHOST_STEP physics steps from the set-up on (the
+ * game's poses are one a frame). The playback goes through the original's cubic (0x22724) at
+ * the same step, and the angles are turned between two poses. Each track's best run is kept in
+ * the save file ATTACK.DAT (save.h).
  */
 #pragma once
 #include <stdint.h>
@@ -20,11 +25,15 @@
 #define GHOST_MAX       3000    /* poses: 240 s from the set-up */
 #define GHOST_TRACKS    6
 
-/* The save file's layout, little-endian (one per track, the game's REPLAYS\MAPn.ATK): 16 bytes
-   of header, then n poses of 20 bytes; 16 + 20 x n bytes are used. A pose: the car's place in
-   whole units, its heading, pitch and roll as drawn (65536 = 2 pi), and in info its progress
-   round the race (car_progress) x 64 in bits 0-12, bits 13 and 14 the texture frame's "slow"
-   and "not braking" (0x2000, 0x4000, car_draw's phase << 2). */
+/*
+ * The save file's layout, little-endian. There is one run for each track, in place of the
+ * game's REPLAYS\MAPn.ATK. It has 16 bytes of header and then n poses of 20 bytes; the file
+ * uses 16 + 20 x n bytes.
+ * A pose holds the car's place in whole units and its heading, pitch and roll as drawn
+ * (65536 = 2 pi). Its field info holds the car's progress round the race (car_progress) x 64
+ * in bits 0-12. Bits 13 and 14 are the texture frame's "slow" and "not braking" (0x2000,
+ * 0x4000; car_draw's phase << 2).
+ */
 struct ghost_pose { int32_t x, y, z; int16_t yaw, pitch, roll; uint16_t info; };
 struct ghost_file {
     char magic[4];              /* "ATK1"; anything else: no run kept */
@@ -35,28 +44,31 @@ struct ghost_file {
     struct ghost_pose pose[GHOST_MAX];
 };
 
-/* RESUME on the menu's page 3 (0x28c3c): race the track's kept run; NEW (0x28c0f): alone. A run
-   kept sets it (0x1fded), so PLAY AGAIN races it. */
+/* RESUME on page 3 of the menu (original: STARTL.EXE 0x28c3c) races the track's kept run; NEW
+   (0x28c0f) races alone. A run that is kept sets this (0x1fded), so PLAY AGAIN races it. */
 extern int ghost_resume;
 
-/* Track n's set-up for the car of CARS.DTR row car, before car_init(): the ghost, in time attack
-   with ghost_resume and a kept run of track n, and an empty recording */
+/* Sets up track n for the car of CARS.DTR row car, before car_init(). In time attack with
+   ghost_resume and a kept run of track n there is a ghost. The recording starts empty. */
 void ghost_init(int n, int car);
-/* the player's grid place in time attack: 0 the last opponent's, 1 the one after (the other
-   one than the ghost's); the ghost's lap in seconds, 0 without one */
+/* ghost_slot() is the player's grid place in time attack: 0 for the last opponent's, 1 for
+   the one after it (the other one than the ghost's). ghost_time() is the ghost's lap in
+   seconds, 0 without a ghost. */
 int ghost_slot(void);
 float ghost_time(void);
-/* One step, at the end of car_step(): the player's pose recorded every GHOST_STEP steps */
+/* One step, at the end of car_step(): records the player's pose every GHOST_STEP steps. */
 void ghost_step(void);
-/* At the finish with the lap's time: 1 if it counts (no ghost, or faster than it: 0x23ef0),
-   then the run is kept once the race has ended (ghost_end) */
+/* At the finish, with the lap's time. Returns 1 if the lap counts (no ghost, or faster than
+   it: original 0x23ef0). Then the run is kept once the race has ended (ghost_end). */
 int ghost_finish(float total);
-/* The race ended (PLAY AGAIN? answered): a run that counted becomes the track's best */
+/* The race has ended (PLAY AGAIN? is answered): a run that counted becomes the track's best. */
 void ghost_end(void);
-/* 1 while the ghost is further round than the player (the running order, 0x20418) */
+/* Returns 1 while the ghost is further round than the player (the running order, original:
+   STARTL.EXE 0x20418). */
 int ghost_ahead(void);
-/* The ghost as an object for track_draw_cam() (up to max), its blocks made when it comes up in
-   the drawing */
+/* Puts the ghost into objs (up to max) as an object for track_draw_cam(). Its blocks are made
+   when it comes up in the drawing. Returns how many objects. */
 int ghost_objects(struct track_object *objs, int max);
-/* Track n's kept run (1 .. GHOST_TRACKS), for saving and loading; 0 for another n */
+/* Returns track n's kept run (n is 1 .. GHOST_TRACKS), for saving and loading, or 0 for any
+   other n. */
 struct ghost_file *ghost_track(int n);

@@ -1,6 +1,10 @@
 /*
- * The race screen (hud.h). Places, fonts and colours from the game (docs/NOTES.md section 12,
- * OpenScreamer's hud_draw), the radar and the cockpit's dashboard from STARTL.EXE.
+ * The race screen as lists of blitter commands (see hud.h). Entry points: hud_build() (the race
+ * screen), hud_dash() (the cockpit's dashboard), hud_cd() (the CD player of the pause),
+ * hud_question() (PLAY AGAIN?), and hud_cockpit_init() and hud_cd_init() which prepare their
+ * pictures.
+ * The places, fonts and colours are the game's (openscreamer docs/NOTES.md section 12,
+ * OpenScreamer's hud_draw). The radar and the cockpit's dashboard are read from STARTL.EXE.
  */
 #include "hud.h"
 #include <math.h>
@@ -12,9 +16,10 @@
 #include "tb_hud.h"
 #include "hw.h"
 
-/* the radar's zoom: the option at 0x1d2a0 (0 off, 1, 2, 3 = 24, 48, 72 through the table at
-   0x23a58), 1 when there is no CHOICE.DAT (0x1bc3e sets 0x20810, 0x27775 takes it): 24, one
-   pixel 32768 / 24 units */
+/* The radar's zoom. The game has it as an option (original: STARTL.EXE 0x1d2a0): 0 is off, and
+   1, 2 and 3 give 24, 48 and 72 through the table at 0x23a58. Without CHOICE.DAT the option is
+   1 (0x1bc3e sets 0x20810, 0x27775 takes it). The core always uses that zoom, 24. One pixel
+   is then 32768 / 24 units. */
 #define RADAR_ZOOM  24
 #define MAX_WALLS   1024
 
@@ -23,13 +28,14 @@ static const struct blit_image *img;
 static const struct blit_font *font;
 static int nfont;
 
-/* the cockpit's dashboard: its boxes (tb_hud_picture()'s table, then the pixels) and the
-   numbers of its section of CARS.DTR */
+/* The cockpit's dashboard: its boxes (the table of tb_hud_picture(), then the pixels) and the
+   numbers of its section of CARS.DTR. */
 #define DASH_NUMBERS    29
 static struct { const uint8_t *mem; int32_t at[DASH_NUMBERS]; int ok; } dash;
-static const uint8_t *cd_front;         /* the CD player's front, boxes as the dashboard's */
+static const uint8_t *cd_front;         /* the CD player's front, as boxes like the dashboard */
 
-/* the list started for framebuffer buffer, the race screen section at hand */
+/* Starts the list l for the framebuffer `buffer` and fetches the race screen section (its
+   images and fonts), which the other functions draw from. */
 static void begin(struct blit_list *l, int buffer)
 {
     int nimg;
@@ -39,11 +45,14 @@ static void begin(struct blit_list *l, int buffer)
     font = track_hud_fonts(&nfont);
 }
 
+/* Draws the text s at (x, y) in font f and the colour. Returns its width, or 0 if the font
+   does not exist. */
 static int text(struct blit_list *l, int x, int y, const char *s, int f, int colour)
 {
     return f < nfont ? blit_text(l, base, img, &font[f], x, y, s, colour, 1) : 0;
 }
 
+/* Draws the text s in the middle of the 320-pixel-wide screen at row y. */
 static void centred(struct blit_list *l, int y, const char *s, int f, int colour)
 {
     if(f >= nfont) return;
@@ -51,7 +60,7 @@ static void centred(struct blit_list *l, int y, const char *s, int f, int colour
     text(l, (320 - w) / 2, y, s, f, colour);
 }
 
-/* the picture's boxes at their places */
+/* Draws picture k of the race screen section: each of its boxes at its own place. */
 static void picture(struct blit_list *l, int k)
 {
     int first, count;
@@ -60,7 +69,8 @@ static void picture(struct blit_list *l, int k)
         blit_copy(l, base + img[i].off, img[i].w, img[i].h, img[i].w, img[i].x, img[i].y, BLIT_COPY, 0);
 }
 
-/* a picture as boxes (tb_hud_picture()'s table, then the pixels) at their places */
+/* Draws a picture that is stored as boxes (as tb_hud_picture() makes it): a count, the table
+   of the boxes (struct blit_image), then the pixels. Each box goes to its own place. */
 static void boxes(struct blit_list *l, const uint8_t *m)
 {
     const struct blit_image *b = (const struct blit_image *)(m + 4);
@@ -69,15 +79,15 @@ static void boxes(struct blit_list *l, const uint8_t *m)
         blit_copy(l, m + b[i].off, b[i].w, b[i].h, b[i].w, b[i].x, b[i].y, BLIT_COPY, 0);
 }
 
-/* sprite n with its offset, at (x, y) */
+/* Draws sprite n at (x, y), moved by the sprite's own offset. */
 static void sprite(struct blit_list *l, int x, int y, int n)
 {
     const struct blit_image *s = &img[n];
     blit_copy(l, base + s->off, s->w, s->h, s->w, x + s->x, y + s->y, BLIT_COPY, 0);
 }
 
-/* sprite n with its offset at (x, y), cut at the box [x0, x1) x [y0, y1) as the game's sprites
-   are (0x25ab0) */
+/* Draws sprite n at (x, y), moved by its offset, and cut at the box [x0, x1) x [y0, y1) as the
+   game cuts its sprites (original: STARTL.EXE 0x25ab0). */
 static void sprite_cut(struct blit_list *l, int x, int y, int n, int x0, int y0, int x1, int y1)
 {
     const struct blit_image *s = &img[n];
@@ -89,8 +99,8 @@ static void sprite_cut(struct blit_list *l, int x, int y, int n, int x0, int y0,
     if(w > 0 && h > 0) blit_copy(l, base + s->off + sy * s->w + sx, w, h, s->w, px, py, BLIT_COPY, 0);
 }
 
-/* The game's shift by 14 in the radar's walls: arithmetic, and one lower again when the result
-   is negative (0x1062e: sar, then dec if negative) */
+/* The game's shift right by 14 in the radar's walls (original: STARTL.EXE 0x1062e): an
+   arithmetic shift, and a negative result is then decremented by one (sar, then dec). */
 static int32_t sar14(int32_t v)
 {
     int32_t r = v >> 14;
@@ -98,20 +108,26 @@ static int32_t sar14(int32_t v)
 }
 
 /*
- * The radar (0x23a68, last in the race screen 0x23400). Its window is darkened by the 3D
- * units before the race screen (efx_radar_piece). The walls (0x1057c): those of the 17 x 17
- * grid cells round the player's cell (a wall belongs to the cell its middle is in: so on all
- * six tracks), each end turned nose-up round (40, 160) in the game's whole numbers: (end - car)
- * >> 2 times the engine's sine and cosine (amplitude 32768) >> 14, times the zoom >> 14; lines
- * in colour 255 (ds:0x55b) cut at the window (the game cuts them before it draws, here each
- * pixel is; lines wholly outside are left out). Then each opponent as sprite 5 at 39 - x zoom
- * / 32768, 159 + z zoom / 32768 of its place turned the same way (0x2216c, floats, cut to
- * whole numbers), and the player as sprite 4 at (38, 158) (0x23d59), cut at the window.
+ * Draws the radar (original: STARTL.EXE 0x23a68, last in the race screen 0x23400). Its window
+ * is darkened by the 3D units before the race screen (efx_radar_piece). The radar then shows:
+ *   1. The walls (original: 0x1057c). They are the walls of the 17 x 17 grid cells round the
+ *      player's cell. A wall belongs to the cell its middle is in; this holds on all six
+ *      tracks. Each end of a wall is turned nose-up round (40, 160), in the game's whole
+ *      numbers: (end - car) >> 2 times the engine's sine and cosine (amplitude 32768) >> 14,
+ *      times the zoom >> 14. The lines have colour 255 (original: ds:0x55b). The game cuts a
+ *      line at the window before it draws it; here the blitter cuts each pixel. Lines wholly
+ *      outside the window are left out.
+ *   2. Each opponent as sprite 5 at 39 - x zoom / 32768, 159 + z zoom / 32768, where (x, z) is
+ *      its place turned the same way (original: 0x2216c; floats, cut to whole numbers).
+ *   3. The player as sprite 4 at (38, 158) (original: 0x23d59).
+ * The sprites are cut at the window.
  */
 static void radar(struct blit_list *l)
 {
-    /* the walls' ends side by side and each one's grid cell; the file has them cell by cell,
-       row by row, so row r's are row_at[r] .. row_at[r + 1] - 1 (else all are looked at) */
+    /* The walls are copied once for the track: their ends side by side, and the grid cell of
+       each. The file lists the walls cell by cell, row by row, so the walls of row r are
+       row_at[r] .. row_at[r + 1] - 1. If the file is not in that order (in_rows is 0), all
+       walls are looked at. */
     static const struct track_wall *seen;
     static struct { int32_t x1, y1, x2, y2; } end[MAX_WALLS];
     static uint8_t cell[MAX_WALLS][2];
@@ -145,7 +161,8 @@ static void radar(struct blit_list *l)
         first = row_at[cz < 0 ? 0 : cz > 256 ? 256 : cz];
         last = row_at[cz + 17 < 0 ? 0 : cz + 17 > 256 ? 256 : cz + 17];
     }
-    /* the heading in 2048ths of a turn (ds:0xe38, 0xe3c), cut, and its sine and cosine */
+    /* The heading in 2048ths of a turn (original: ds:0xe38, 0xe3c), with the fraction cut off,
+       and its sine and cosine. */
     int32_t a = (int32_t)(c->yaw * 1024.0f / 3.14159274f) & 0x7FF;
     float ar = (float)a * (3.14159265f / 1024.0f);
     int32_t sn = (int32_t)lrintf(sinf(ar) * 32768.0f), cs = (int32_t)lrintf(cosf(ar) * 32768.0f);
@@ -155,14 +172,17 @@ static void radar(struct blit_list *l)
     for(int i = first; i < last; i++) {
         if((uint32_t)(cell[i][0] - cx) > 16u || (uint32_t)(cell[i][1] - cz) > 16u) continue;
         int32_t sx[2], sy[2];
-        for(int e = 0; e < 2; e++) {
-            int32_t dx = ((e ? end[i].x2 : end[i].x1) - px) >> 2, dz = ((e ? end[i].y2 : end[i].y1) - pz) >> 2;
+        for(int e = 0; e < 2; e++) {                    /* the wall's two ends, turned and zoomed */
+            int32_t dx = ((e ? end[i].x2 : end[i].x1) - px) >> 2,
+                    dz = ((e ? end[i].y2 : end[i].y1) - pz) >> 2;
             int32_t rx = sar14(dx * cs) + sar14(dz * sn), rz = sar14(dz * cs - dx * sn);
             sx[e] = 40 - sar14(RADAR_ZOOM * rx);
             sy[e] = 160 + sar14(RADAR_ZOOM * rz);
         }
-        if((sx[0] < EFX_RADAR_X0 && sx[1] < EFX_RADAR_X0) || (sx[0] >= EFX_RADAR_X1 && sx[1] >= EFX_RADAR_X1) ||
-           (sy[0] < EFX_RADAR_Y0 && sy[1] < EFX_RADAR_Y0) || (sy[0] >= EFX_RADAR_Y1 && sy[1] >= EFX_RADAR_Y1))
+        if((sx[0] < EFX_RADAR_X0 && sx[1] < EFX_RADAR_X0) ||
+           (sx[0] >= EFX_RADAR_X1 && sx[1] >= EFX_RADAR_X1) ||
+           (sy[0] < EFX_RADAR_Y0 && sy[1] < EFX_RADAR_Y0) ||
+           (sy[0] >= EFX_RADAR_Y1 && sy[1] >= EFX_RADAR_Y1))
             continue;
         blit_line(l, sx[0], sy[0], sx[1], sy[1], EFX_RADAR_X0, EFX_RADAR_Y0, EFX_RADAR_X1, EFX_RADAR_Y1, 255);
         lines++;
@@ -179,7 +199,8 @@ static void radar(struct blit_list *l)
     efx_radar_lines = lines;
 }
 
-/* a few numbers as text (no printf in the firmware) */
+/* Writes v as decimal digits at p, with at least `digits` digits (leading zeros), and a final
+   0. Returns the pointer to that 0. The firmware has no printf. */
 static char *put_dec(char *p, uint32_t v, int digits)
 {
     char t[10];
@@ -190,7 +211,8 @@ static char *put_dec(char *p, uint32_t v, int digits)
     return p;
 }
 
-/* mm:ss:hh, the seconds cut off as the game's float to int (0x4d7b4) does */
+/* Writes the time t in seconds at p as mm:ss:hh (minutes, seconds, hundredths). The fractions
+   are cut off, as the game's float to int conversion does (original: STARTL.EXE 0x4d7b4). */
 static void clock_text(char *p, float t)
 {
     int whole = (int)t, hund = (int)((t - (float)whole) * 100.0f);
@@ -201,7 +223,8 @@ static void clock_text(char *p, float t)
     put_dec(p, (uint32_t)hund, 2);
 }
 
-/* dash_needle: three lines from the pivot (and a pixel to each side of it) to the tip */
+/* Draws a needle (dash_needle): three lines to the tip, one from the pivot (px, py) and one
+   from a pixel to each side of it. len is its length; angle is in radians. */
 static void needle(struct blit_list *l, int px, int py, int len, float angle, int colour)
 {
     float a = angle - 2.0f, b = a + 1.5707964f;
@@ -211,8 +234,8 @@ static void needle(struct blit_list *l, int px, int py, int len, float angle, in
     blit_line(l, (int)((float)px - sinf(b)), (int)((float)py + cosf(b)), tx, ty, 0, 0, 320, 200, colour);
 }
 
-/* the race screen proper (0x234a5 on): the labels and the overlay's instruments (0x2367c), the
-   countdown, lap, position, the clocks, the radar */
+/* Draws the race screen proper (original: STARTL.EXE 0x234a5 on): the labels, the instruments
+   of the overlay (0x2367c), the countdown, the lap, the position, the clocks and the radar. */
 static void race_screen(struct blit_list *l, int overlay, int rank)
 {
     const struct car_state *c = car_state();
@@ -220,7 +243,7 @@ static void race_screen(struct blit_list *l, int overlay, int rank)
     char buf[16];
 
     if(overlay != 1) picture(l, 0);                     /* IMPLET_L: LAP, POSITION, the clocks */
-    if(overlay == 2) {                                  /* overlay 2 (0x237fc) */
+    if(overlay == 2) {                                  /* overlay 2 (original: 0x237fc) */
         picture(l, 1);                                  /* IMPRES_L: the rev counter */
         buf[0] = 1;                                     /* fixed pitch */
         put_dec(buf + 1, (uint32_t)(c->speed * 0.017f), 3);
@@ -244,8 +267,9 @@ static void race_screen(struct blit_list *l, int overlay, int rank)
     text(l, 8, 0x38, buf, 3, 2);
     clock_text(buf, r->lap);
     text(l, 8, 0x48, buf, 3, 2);
-    /* the third clock: the lap to beat (0x1d268, the text at 0x1f88): the track's record, in
-       time attack the ghost's lap, after the finish the race's best */
+    /* The third clock is the lap to beat (original: STARTL.EXE 0x1d268, the text at 0x1f88).
+       It shows the track's record; in time attack the ghost's lap; after the finish the race's
+       best lap. */
     clock_text(buf, car_lap_record());
     text(l, 8, 0x58, buf, 3, 2);
     uint32_t t0 = rdcycle();
@@ -260,8 +284,9 @@ void hud_build(struct blit_list *l, int buffer, int overlay)
     char buf[16], *p;
     int rank = opp_player_rank();
 
-    /* the replay (0x2346c): of the race screen only an R at (8, 170), font 0 colour 6, while
-       bit 7 of the game's 100 Hz tick (0x107fd) is set; the start lights and the end as ever */
+    /* The replay (original: STARTL.EXE 0x2346c): of the race screen only an R at (8, 170),
+       font 0, colour 6, while bit 7 of the game's 100 Hz tick (0x107fd) is set. The start
+       lights and the end are drawn as in a race. */
     if(car_replay()) {
         if((int)(r->clock * 100.0f) & 0x80) text(l, 8, 0xAA, "R", 0, 6);
     } else
@@ -269,14 +294,15 @@ void hud_build(struct blit_list *l, int buffer, int overlay)
 
     if(r->clock < 8.0f) sprite(l, 0x78, 0x36, (int)r->clock / 2);     /* the start lights */
 
-    /* the end (0x21048): GREAT! for the winner, the position (1ST .. 10TH POSITION), the total
-       time; or TIME OVER. The special modes (0x24174, 0x241ac, 0x24204): YOU MADE IT! or TRY AGAIN,
-       PERFECT! under it (car.h). */
+    /* The end (original: STARTL.EXE 0x21048): GREAT! for the winner, then the position (1ST ..
+       10TH POSITION) and the total time; or TIME OVER. In the special modes (0x24174, 0x241ac,
+       0x24204) it is YOU MADE IT! or TRY AGAIN, with PERFECT! under it (car.h). */
     if(r->finished && (car_mode & CAR_ALONE)) {
         centred(l, 0x5A, track_hud_text(13 + r->made_it), 0, 2);
         if(r->perfect) centred(l, 0x78, track_hud_text(15), 0, 2);
     } else if(r->finished) {
         if(rank == 1) centred(l, 0x3E, track_hud_text(11), 0, 2);
+        /* The line is the place's text (1ST .. 10TH), a space and the text of line 0 (POSITION). */
         p = buf;
         const char *t = track_hud_text(rank >= 1 && rank <= 10 ? rank : 10), *pos = track_hud_text(0);
         while(*t && p < buf + 6) *p++ = *t++;
@@ -294,7 +320,7 @@ void hud_build(struct blit_list *l, int buffer, int overlay)
         centred(l, 0x5A, track_hud_text(22), 0, 2);
 }
 
-/* the word w (len bytes) is s */
+/* Returns 1 if the word w (len bytes, not terminated) is the string s. */
 static int same(const uint8_t *w, uint32_t len, const char *s)
 {
     uint32_t k = 0;
@@ -302,9 +328,12 @@ static int same(const uint8_t *w, uint32_t len, const char *s)
     return k == len && !s[k];
 }
 
-/* The numbers of section name in a .DTR text (t, n bytes): from the line after the one it
-   heads, each word d<number> in turn up to END_LIST; a word from * on comments out the rest of
-   its line. 1 if there are count of them. */
+/*
+ * Reads the numbers of section `name` in a DTR text t (n bytes) into v. The section starts on
+ * the line after the one whose first word is `name`. From there each word of the form
+ * d<number> (for example d-5) is read in turn, up to END_LIST. A word that starts with '*'
+ * makes the rest of its line a comment. Returns 1 if count numbers were read, else 0.
+ */
 static int dtr_numbers(const uint8_t *t, uint32_t n, const char *name, int32_t *v, int count)
 {
     int on = 0, got = 0;
@@ -342,8 +371,9 @@ int hud_cockpit_init(const uint8_t *game, uint32_t game_size, const uint8_t *gen
                      const struct car_spec *sp, uint8_t *mem, uint32_t cap, uint8_t *scratch,
                      uint32_t scratch_cap)
 {
-    /* COCK and the name from its fifth letter on (the model's digits, 0x13725), A or B (0x1371a)
-       and L.PKC (0x1b25f); the section COCK, the digits, L (0x1374c) */
+    /* The picture's file name is COCK, then the car's name from its fifth letter on (the
+       model's digits, original: STARTL.EXE 0x13725), then A or B (0x1371a) and L.PKC (0x1b25f).
+       The section in CARS.DTR is named COCK, the digits and L (0x1374c). */
     char pic[24] = "COCK", sec[24];
     int k = 4;
     for(int i = 4; i < 12 && sp->name[i] && k < 12; i++) pic[k++] = sp->name[i];
@@ -355,13 +385,15 @@ int hud_cockpit_init(const uint8_t *game, uint32_t game_size, const uint8_t *gen
     dash.ok = 0;
     struct dat_entry e;
     uint32_t n;
-    if(!dat_find(game, game_size, pic, &e) || !(n = dat_extract(game, game_size, &e, scratch, scratch_cap)) ||
+    if(!dat_find(game, game_size, pic, &e) ||
+       !(n = dat_extract(game, game_size, &e, scratch, scratch_cap)) ||
        !tb_hud_picture(scratch, n, mem, cap))
         return 0;
-    if(!dat_find(gen, gen_size, "CARS.DTR", &e) || !(n = dat_extract(gen, gen_size, &e, scratch, scratch_cap)) ||
+    if(!dat_find(gen, gen_size, "CARS.DTR", &e) ||
+       !(n = dat_extract(gen, gen_size, &e, scratch, scratch_cap)) ||
        !dtr_numbers(scratch, n, sec, dash.at, DASH_NUMBERS))
         return 0;
-    while(!(MEM_STATUS & MEM_WRITES_IDLE))              /* the boxes in the SDRAM for the blitter */
+    while(!(MEM_STATUS & MEM_WRITES_IDLE))              /* wait until the SDRAM has the boxes */
         ;
     dash.mem = mem;
     dash.ok = 1;
@@ -371,13 +403,15 @@ int hud_cockpit_init(const uint8_t *game, uint32_t game_size, const uint8_t *gen
 void hud_dash(struct blit_list *l, int buffer)
 {
     begin(l, buffer);
-    picture(l, 0);                                      /* IMPLET_L first (0x236b9) */
+    picture(l, 0);                                      /* IMPLET_L first (original: 0x236b9) */
     if(!dash.ok) return;
     boxes(l, dash.mem);
     const int32_t *d = dash.at;
     needle(l, d[2], d[3], d[0], car_speed_needle(), 255);
     needle(l, d[5], d[6], d[0], car_needle(), 255);
-    /* the lamp: a sprite of GAMEL.SPR, the first image of the section's table up to the fonts' */
+    /* The gear lamp is a sprite of GAMEL.SPR. Its images are the first ones of the section's
+       table, before the fonts' images. d[1] is the first lamp sprite, and d[8 + 3 * gear],
+       d[9 + 3 * gear] is the lamp's place for the gear. */
     int gear = car_state()->gear, n = d[1] + gear;
     if(gear >= 0 && gear <= 6 && n >= 0 && nfont > 0 && n < (int)font[0].first_image)
         sprite(l, d[8 + 3 * gear], d[9 + 3 * gear], n);
@@ -389,16 +423,17 @@ int hud_cd_init(const uint8_t *game, uint32_t game_size, uint8_t *mem, uint32_t 
     struct dat_entry e;
     uint32_t n;
     cd_front = 0;
-    if(!dat_find(game, game_size, "CDFRONTL.PKC", &e) || !(n = dat_extract(game, game_size, &e, scratch, scratch_cap)) ||
-       !tb_hud_picture(scratch, n, mem, cap))
+    if(!dat_find(game, game_size, "CDFRONTL.PKC", &e) ||
+       !(n = dat_extract(game, game_size, &e, scratch, scratch_cap)) || !tb_hud_picture(scratch, n, mem, cap))
         return 0;
-    while(!(MEM_STATUS & MEM_WRITES_IDLE))              /* the boxes in the SDRAM for the blitter */
+    while(!(MEM_STATUS & MEM_WRITES_IDLE))              /* wait until the SDRAM has the boxes */
         ;
     cd_front = mem;
     return 1;
 }
 
-/* the list started with the still picture, opaque */
+/* Starts the list l with the still picture pic (320 x 200 bytes), drawn opaque over the whole
+   screen. */
 static void still(struct blit_list *l, int buffer, const uint8_t *pic)
 {
     begin(l, buffer);
@@ -407,7 +442,7 @@ static void still(struct blit_list *l, int buffer, const uint8_t *pic)
 
 void hud_cd(struct blit_list *l, int buffer, const uint8_t *pic, const struct cd_player *c)
 {
-    /* per button its x, sprite and pressed sprite (0x1f1c) */
+    /* For each button: its x, its sprite and its pressed sprite (original: STARTL.EXE 0x1f1c). */
     static const uint8_t button[7][3] = { { 59, 7, 11 }, { 83, 8, 12 }, { 113, 9, 13 }, { 137, 10, 14 },
                                           { 167, 57, 59 }, { 167, 58, 60 }, { 217, 61, 62 } };
     static const char name[3][3] = { "CD", "FX", "MU" };
@@ -416,7 +451,7 @@ void hud_cd(struct blit_list *l, int buffer, const uint8_t *pic, const struct cd
     if(cd_front) boxes(l, cd_front);
     for(int i = 0; c->last > c->first && i <= c->last - c->first; i++) {
         if(c->first + i == c->track && c->blink) continue;
-        char s[8] = { 3 };                              /* "\x03%d" (0xd05): no column before */
+        char s[8] = { 3 };                              /* "\x03%d" (original: 0xd05): no column before */
         put_dec(s + 1, (uint32_t)(c->first + i), 0);
         text(l, 0x40 + 13 * (i >= 10 ? i - 10 : i), 0x4E + (i >= 10 ? 7 : 0), s, 5, 9);
     }
@@ -425,7 +460,7 @@ void hud_cd(struct blit_list *l, int buffer, const uint8_t *pic, const struct cd
     sprite(l, button[c->button][0], 0x61, button[c->button][c->pressed ? 2 : 1]);
     if(c->button > 3) {
         text(l, 0x40, 0x45, name[c->chan], 5, 3);
-        for(int i = 0; i < c->vol / 1024 && i < 32; i++)  /* (32: 0x7fff's, a list's room) */
+        for(int i = 0; i < c->vol / 1024 && i < 32; i++)  /* 32 strokes at most: 0x7fff's, a list's room */
             blit_fill(l, 0x55 + 3 * i, 0x45, 1, 6, stroke[i / 10]);
     }
 }

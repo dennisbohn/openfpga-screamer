@@ -1,5 +1,8 @@
 /*
- * The effects through MAPn.SMG (efx.h): the table, the meshes, the radar's quad.
+ * The effects through MAPn.SMG (see efx.h): loads the table and the meshes, builds the radar's
+ * quad and the darkening tables.
+ * Entry points: efx_init() at the track's start, efx_radar_piece() for the radar's quad, and
+ * the getters efx_shadow(), efx_smoke(), efx_darken() and efx_table().
  */
 #include "efx.h"
 #include "dat.h"
@@ -9,10 +12,10 @@
 
 #define SMG_SIZE    16384               /* 64 rows of 256 palette indices */
 #define SMG_RADAR   63                  /* the row the radar's texels pick */
-#define SMG_GLASS   62                  /* routine 192's: no see-through texture of a track uses 48..62 */
+#define SMG_GLASS   62                  /* routine 192's row; no see-through texture of a track uses 48..62 */
 #define MESH_MAX    0x2000
 
-/* where things lie in mem */
+/* Where things lie in mem (byte offsets). */
 #define AT_SMG      0x0000              /* MAPn.SMG with the radar's row, kept for the C models */
 #define AT_SHADOW   0x4000
 #define AT_SMOKE    0x6000
@@ -21,10 +24,10 @@
 #define TEX_SIZE    4
 #define AT_GLASS    0x8800              /* routine 192's texture: texels 62, rows of 256 bytes */
 #define AT_GLASS_REC 0x9000             /* its texture record */
-/* its texture record and material: the last 32 bytes of mem */
+/* The radar's texture record and material are the last 32 bytes of mem. */
 
-/* the radar's mesh: one block that is its own object (vertex and texture coordinate offsets
-   from it as from an object), every face row the one face */
+/* The radar's mesh is one block that is its own object, so the vertex and texture coordinate
+   offsets count from the block. Every face row holds the one face. */
 #define R_VERTS     0x80
 #define R_UVS       0x98
 #define R_ROW       0xB0
@@ -53,14 +56,16 @@ static int32_t rd32(const uint8_t *p)
     return (int32_t)(p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24);
 }
 
-/* entry name of the container into out (at most max bytes): its size, 0 if it is missing */
+/* Extracts the entry `name` of the container into out (at most max bytes). Returns its size,
+   or 0 if it is missing. */
 static uint32_t entry(const uint8_t *gfx, uint32_t size, const char *name, uint8_t *out, uint32_t max)
 {
     struct dat_entry e;
     return dat_find(gfx, size, name, &e) ? dat_extract(gfx, size, &e, out, max) : 0;
 }
 
-/* a .3DX file whose first block lies inside it */
+/* Extracts the .3DX file `name` into out. Returns out, or 0 if the file is missing or its first
+   block does not lie inside it. */
 static const uint8_t *mesh(const uint8_t *gfx, uint32_t size, const char *name, uint8_t *out)
 {
     uint32_t n = entry(gfx, size, name, out, MESH_MAX);
@@ -69,11 +74,16 @@ static const uint8_t *mesh(const uint8_t *gfx, uint32_t size, const char *name, 
     return blk > 0 && (uint32_t)blk + 0x80 <= n ? out : 0;
 }
 
-/* The radar's darkening (0x25870, the first of its two tables: factor 0.75 at 0x2587b; the
-   second, 0.6, is not the radar's): for each colour the first palette entry nearest to it at
-   0.75 of its brightness, in the 6-bit values of MAPn.COL (the track file has them times 4),
-   squared distances in floats from 22100000 down (0x259ad) as the game; its clamp at 255
-   never bites on 6-bit values */
+/*
+ * The radar's darkening table, as the game builds it (original: STARTL.EXE 0x25870). For each
+ * colour, out[colour] is the first palette entry that is nearest to the colour at the fraction
+ * f of its brightness. The game builds two such tables. The first has the factor 0.75 (original:
+ * 0x2587b) and is the radar's; the second has 0.6 and is used for routine 192 (see glass()).
+ * The colours are the 6-bit values of MAPn.COL; the track file has them times 4, so pal is
+ * shifted right by 2. The distances are squared, in floats, and the search starts at 22100000
+ * and goes down (original: 0x259ad), as in the game. The game's clamp at 255 never takes effect
+ * on 6-bit values, so it is not coded.
+ */
 void efx_darken_table(const uint32_t *pal, uint8_t out[256], float f)
 {
     static float v[256][3];
@@ -91,9 +101,13 @@ void efx_darken_table(const uint32_t *pal, uint8_t out[256], float f)
     }
 }
 
-/* The radar's quad: corners (0, 0), (R_SIDE, 0), (R_SIDE, -R_SIDE), (0, -R_SIDE) (x right, y
-   up), the normal towards +z, the whole texture over it; material and texture record in the
-   last 32 bytes of mem, which must lie within a face's reach of the MLB */
+/*
+ * Builds the radar's quad in m (a block that is its own object, see R_VERTS), with its texture
+ * in tex and its material and texture record in the last 32 bytes before end. The corners are
+ * (0, 0), (R_SIDE, 0), (R_SIDE, -R_SIDE) and (0, -R_SIDE), with x to the right and y up. The
+ * normal points towards +z, and the whole texture lies over the quad. The material must be
+ * within a face's reach of the MLB (a 16-bit offset). Returns m, or 0 if it is not.
+ */
 static const uint8_t *radar_mesh(uint8_t *m, uint8_t *tex, uint8_t *end, const uint8_t *mlb)
 {
     uint8_t *rec = end - 32, *mat = end - 16;
@@ -110,7 +124,7 @@ static const uint8_t *radar_mesh(uint8_t *m, uint8_t *tex, uint8_t *end, const u
     wr32(mat + 8, TEX_SIZE);
     wr32(mat + 12, TEX_SIZE);
 
-    wr32(m, R_SIDE);                                    /* (the bounding radius) */
+    wr32(m, R_SIDE);                                    /* the bounding radius */
     wr32(m + 0x10, 4);                                  /* vertices */
     wr32(m + 0x14, 1);                                  /* faces */
     wr32(m + 0x1C, R_VERTS);
@@ -133,12 +147,16 @@ static const uint8_t *radar_mesh(uint8_t *m, uint8_t *tex, uint8_t *end, const u
     return m;
 }
 
-/* Routine 192 (0xcae84; track 5's station): one colour that is not drawn, each pixel under the
-   face taken through the second table 0x25870 builds, 0.6 of its brightness ([0xbcb1c] =
-   0x15cbc + 0x100, the column loop 0xccad0) -- tinted glass. Drawn as a see-through face
-   (routine 224) whose texels all pick the table's row SMG_GLASS: each such material of the
-   track's MLB (the table up to its first texture record) is turned into one over the
-   texture here */
+/*
+ * Routine 192 is tinted glass (original: STARTL.EXE 0xcae84; the station of track 5). A face of
+ * this routine has one colour that is not drawn. Instead each pixel under the face is taken
+ * through the second table that 0x25870 builds, which has 0.6 of the brightness (original:
+ * [0xbcb1c] = 0x15cbc + 0x100, the column loop at 0xccad0).
+ * The core draws it as a see-through face (routine 224) whose texels all pick the table's
+ * row SMG_GLASS. This function writes that texture (tex) and its record (rec), and turns each
+ * routine 192 material of the track's MLB into a routine 224 material over them. The MLB
+ * starts with its table of materials, which ends where the first texture record begins.
+ */
 static void glass(uint8_t *tex, uint8_t *rec, const uint8_t *mlb)
 {
     for(int y = 0; y < 2 * TEX_SIZE; y++)
@@ -175,14 +193,14 @@ int efx_init(const uint8_t *gfx, uint32_t gfx_size, int n, const uint8_t *mlb, c
         efx_darken_table(pal, smg + SMG_RADAR * 256, 0.75f);
         efx_darken_table(pal, smg + SMG_GLASS * 256, 0.6f);
         glass(mem + AT_GLASS, mem + AT_GLASS_REC, mlb);
-        for(uint32_t a = 0; a < SMG_SIZE; a++)          /* nothing blended is drawn now */
+        for(uint32_t a = 0; a < SMG_SIZE; a++)          /* the table into the rasterizer, one entry a write */
             RS_SMG = a << 8 | smg[a];
         rs_smg = smg;                                   /* the C models' copy (raster.h) */
         radar = radar_mesh(mem + AT_RADAR, mem + AT_TEX, mem + cap, mlb);
     }
     shadow = mesh(gfx, gfx_size, "SHADOW.3DX", mem + AT_SHADOW);
     smoke = mesh(gfx, gfx_size, "SMOKE.3DX", mem + AT_SMOKE);
-    while(!(MEM_STATUS & MEM_WRITES_IDLE))              /* all of it in the SDRAM for the 3D units */
+    while(!(MEM_STATUS & MEM_WRITES_IDLE))              /* wait until the SDRAM has it all */
         ;
     return ok && radar && shadow && smoke;
 }
@@ -207,15 +225,19 @@ const uint8_t *efx_smoke(void)
     return smoke;
 }
 
-/* The window's corners at a quarter pixel in from its edges' lines (3.75 .. 75.75, 124.25 ..
-   196.25): the same pixels with the rasterizer's rule (a pixel whose centre is inside) and
-   with the game's for routine 224 (the point below and right of the pixel's corner, 0xcd97a),
-   whichever the blend draws with. Depth 256: 1/16 pixel there is 256 / scale view units. */
+/*
+ * Makes the radar's quad a piece for the geometry unit. It lies at depth 256, where 1/16 pixel
+ * is 256 / scale view units. The corners are a quarter pixel away from the window's edge lines
+ * (x 3.75 .. 75.75, y 124.25 .. 196.25). Then a pixel whose centre is inside, and the game's
+ * rule for routine 224 (the point below and right of the pixel's corner, original: STARTL.EXE
+ * 0xcd97a), cover the same pixels, whichever the blend draws with.
+ */
 int efx_radar_piece(const struct su_view *v, struct gu_piece *g)
 {
     if(!radar) return 0;
     const int32_t f = 256, x16 = EFX_RADAR_X0 * 16 - 4, y16 = EFX_RADAR_Y0 * 16 + 4;
-    int32_t per = (int32_t)(((int64_t)f << 16) / v->scale);    /* view units per 1/16 pixel, 16 fraction bits */
+    /* view units per 1/16 pixel, 16 fraction bits */
+    int32_t per = (int32_t)(((int64_t)f << 16) / v->scale);
     for(int k = 0; k < 9; k++) g->m[k] = 0;
     g->m[0] = per;
     g->m[4] = per;
@@ -224,7 +246,7 @@ int efx_radar_piece(const struct su_view *v, struct gu_piece *g)
     g->t[1] = (int32_t)(((int64_t)(v->cy - y16) * f << 8) / v->scale);
     g->t[2] = f << 8;
     g->e[0] = g->e[1] = 0;
-    g->e[2] = -(f << 8);                                /* the eye on the -z side: the face is seen */
+    g->e[2] = -(f << 8);                                /* the eye on the -z side, so the face is seen */
     g->row = 0;
     g->mirror = 0;
     g->phase = 0;

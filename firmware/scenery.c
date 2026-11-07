@@ -1,7 +1,9 @@
 /*
- * The props and the moving scenery (scenery.h): placed at the track's start, each with its
- * block; a step moves the ones that move and makes their blocks again, a frame hands those in
- * reach to the drawing.
+ * The props and the moving scenery (see scenery.h for the rules). Both are set up at the
+ * track's start with their blocks. A step moves the props that are in the air and the moving
+ * things. A prop gets its new block in the step; a moving thing gets its block when it is
+ * drawn. A frame hands the ones within reach to the drawing.
+ * Entry points: scenery_init(), scenery_step(), scenery_objects(), scenery_hits().
  */
 #include <math.h>
 #include <string.h>
@@ -17,26 +19,29 @@
 #define MOVING_MAX  8           /* rows of ANIMATIONS (track 1 has 5) */
 #define SCRATCH     0x2000      /* MAPnDAT.DTR, then MAPnOST.SPL, at the end of mem */
 #define REACH       track_far() /* the far plane (track.c far_z): nothing farther is drawn */
-#define NEAR_MOVE   (52000.0f * track_far_scale())      /* moving scenery moves only this near the player (the game's reach, moved out with the far plane) */
+/* Moving scenery moves only this near the player. The game's reach is 52000; the core moves it
+   out with the far plane. */
+#define NEAR_MOVE   (52000.0f * track_far_scale())
 #define PROP_RADIUS 800.0f      /* round a prop's origin (the barrier is 580 wide) */
-#define MOVING_RADIUS 12000.0f  /* round a vehicle's (the jet) */
+#define MOVING_RADIUS 12000.0f  /* round a vehicle's origin (the jet) */
 #define MOVING_BLOCKS 4           /* blocks of a moving thing's mesh (the helicopter has 2) */
-#define FRAMES      (DRIVE_DT * 30.0f)  /* the game's frames in a step, on a PC of 30 a second */
+#define FRAMES      (DRIVE_DT * 30.0f)  /* the game's frames in a step; a frame is 1/30 s on a PC */
 #define HALF_PI     1.5707964f
 
 struct prop {
     float x, y, h, yaw, pitch, roll;    /* pitch and roll as car_flat_block() takes them */
     float dx, dy, v, vz;                /* thrown: direction, speed, upward speed */
-    int flying, gone, key, hit;         /* hit: knocked over once, counted (+0x3c) */
+    int flying, gone, key, hit;         /* gone: stopped off the track. key: its class key for
+                                           drawing. hit: knocked over once, counted (+0x3c). */
     const uint8_t *mesh;
     struct track_block b;
 };
 struct moving {
     const uint8_t *spl, *mesh;          /* its spline (count, start, nodes of 56 bytes), its .3DX */
-    int node, half, key;
+    int node, half, key;                /* the piece it is on: node and half, see moving_place() */
     int sound, voice;                   /* its effect (sound.h) or -1, the handle of its voice */
-    float u, speed, x, y, h, yaw;
-    float last;                         /* its distance from the ear a step before */
+    float u, speed, x, y, h, yaw;       /* u: 0..1 along the piece; speed in units/s */
+    float last;                         /* its distance from the ear in the previous step */
     struct track_block b[MOVING_BLOCKS];    /* its mesh's blocks (the helicopter: body, rotor) */
     int nb;
 };
@@ -50,15 +55,21 @@ static int32_t rd32(const uint8_t *p)
     return (int32_t)(p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24);
 }
 
-/* entry name of the container into out (at most max bytes): its size, 0 if it is missing */
+/* Extracts the entry `name` of the container into out (at most max bytes). Returns its size,
+   or 0 if it is missing. */
 static uint32_t entry(const uint8_t *file, uint32_t size, const char *name, uint8_t *out, uint32_t max)
 {
     struct dat_entry e;
     return dat_find(file, size, name, &e) ? dat_extract(file, size, &e, out, max) : 0;
 }
 
-/* Up to max rows of section sec (OSTACLES, ANIMATIONS) of a DTR text, their first four cells
-   as written ("sawtruck", "f16000", "d0": a type letter, then the value; "" if missing); how many */
+/*
+ * Reads the rows of section sec (OSTACLES or ANIMATIONS) of a DTR text t (n bytes). A row has
+ * up to four cells. Each cell is stored as written, a string such as "sawtruck", "f16000" or
+ * "d0": for a number, a type letter and then the value. A missing cell is "". A line that is
+ * empty or starts with '*' is skipped, and the section ends at END_LIST. At most max rows are
+ * read into cell[row][column]. Returns the number of rows.
+ */
 static int rows(const uint8_t *t, uint32_t n, const char *sec, char cell[][4][16], int max)
 {
     uint32_t len = (uint32_t)strlen(sec), p = 0;
@@ -82,7 +93,7 @@ static int rows(const uint8_t *t, uint32_t n, const char *sec, char cell[][4][16
     return r;
 }
 
-/* a cell's number after its type letter ("f16000", "d2") */
+/* The number in a cell after its type letter ("f16000", "d2"). */
 static float number(const char *cell)
 {
     float v = 0.0f, scale = 0.0f;
@@ -96,13 +107,16 @@ static float number(const char *cell)
     return scale > 0.0f ? v / scale : v;
 }
 
-/* the .3DX file a cell names ("sawtruck" -> AWTRUCK.3DX) into mem; 0 if it is not there */
+/* Extracts the .3DX file that a cell names into mem at `at` ("sawtruck" gives AWTRUCK.3DX: a
+   mesh name starts with 's', which is not part of the file name). Returns the mesh, or 0 if
+   it is not there or is not a valid mesh. */
 static const uint8_t *mesh(const uint8_t *gfx, uint32_t gfx_size, const char *cell)
 {
     char name[16];
     int k = 0;
     if(cell[0] != 's') return 0;
-    for(const char *c = cell + 1; *c && k < 11; c++) name[k++] = (char)(*c >= 'a' && *c <= 'z' ? *c - 32 : *c);
+    for(const char *c = cell + 1; *c && k < 11; c++)
+        name[k++] = (char)(*c >= 'a' && *c <= 'z' ? *c - 32 : *c);
     memcpy(name + k, ".3DX", 5);
     uint32_t m = entry(gfx, gfx_size, name, at, (uint32_t)(end - at));
     int32_t blk = m >= 0x340 && rd32(at + 0x14) >= 1 ? rd32(at + 0x18) : 0;
@@ -112,7 +126,7 @@ static const uint8_t *mesh(const uint8_t *gfx, uint32_t gfx_size, const char *ce
     return out;
 }
 
-/* the heading along the path at its point nearest to (x, y): forward = (sin yaw, -cos yaw) */
+/* The heading along the path at its point nearest to (x, y): forward = (sin yaw, -cos yaw). */
 static float path_heading(float x, float y)
 {
     uint32_t n = track_path_length(), best = 0;
@@ -136,7 +150,7 @@ static void prop_block(struct prop *p)
     car_flat_block(p->mesh, p->x, p->y, p->h, p->yaw, p->pitch, p->roll, &p->b);
 }
 
-/* lying on the surface under it: its tilt there (negated, as car_flat_block takes it) */
+/* Lays the prop on the surface under it: its tilt there, negated as car_flat_block() takes it. */
 static void prop_tilt(struct prop *p)
 {
     float pitch, roll;
@@ -145,25 +159,32 @@ static void prop_tilt(struct prop *p)
     p->roll = -roll;
 }
 
-/* node k of a moving thing's spline, and the one after it */
+/* Node k of a moving thing's spline. A node is 56 bytes after the 8 byte header: +12 height,
+   +16 the next node, +20 and +32 the handles (x, y). */
 static const uint8_t *node(const struct moving *m, int k)
 {
     return m->spl + 8 + 56 * k;
 }
 
+/* The node after node k, or node 0 if the file names none that exists. */
 static int next(const struct moving *m, int k)
 {
     int nx = rd32(node(m, k) + 16);
     return nx >= 0 && nx < rd32(m->spl) ? nx : 0;
 }
 
-/* its place on the curve (opp.c's piece and curve: the three handles of its half of the piece
-   from its node to the next, the quadratic B-spline over them), its height the nodes' run
-   straight between them, its heading along the curve */
+/*
+ * Sets the moving thing's place from its node, half and u. This is the opponents' piece and
+ * curve (opp.c): a piece is half of the stretch from a node to the next. Its three control
+ * points are the handles of that half, and the curve is the quadratic B-spline over them. The
+ * height runs straight from one node's height to the next. The heading follows the curve.
+ * If len is given, it receives the length of the curve's derivative at u (units per unit of u).
+ */
 static void moving_place(struct moving *m, float *len)
 {
     const uint8_t *n = node(m, m->node), *nn = node(m, next(m, m->node));
-    const uint8_t *pa = m->half ? n + 32 : n + 20, *pb = m->half ? nn + 20 : n + 32, *pc = m->half ? nn + 32 : nn + 20;
+    const uint8_t *pa = m->half ? n + 32 : n + 20, *pb = m->half ? nn + 20 : n + 32,
+                  *pc = m->half ? nn + 32 : nn + 20;
     float u = m->u, w0 = (1.0f - u) * (1.0f - u) * 0.5f, w2 = u * u * 0.5f, w1 = 1.0f - w0 - w2, der[2];
     float p[2];
     for(int j = 0; j < 2; j++) {
@@ -179,6 +200,18 @@ static void moving_place(struct moving *m, float *len)
     if(len) *len = sqrtf(der[0] * der[0] + der[1] * der[1]);
 }
 
+/*
+ * Sets up the props and the moving scenery of track n.
+ *   1. The track's MAPnDAT.DTR goes into the last SCRATCH bytes of mem. The meshes are put
+ *      into the rest of mem, from its start, as far as `at` has handed it out.
+ *   2. The first column of the OSTACLES rows names the mesh of each kind of prop.
+ *   3. The ANIMATIONS rows give the moving scenery: mesh, speed, spline and sound. MAPnANM.SPL
+ *      is kept in mem and cut into its splines (each is a node count, a start node and the
+ *      nodes). A row whose spline does not exist or has fewer than 2 nodes is left out.
+ *   4. The props' places come from one spline, MAPnOST.SPL: each node is a prop, its height
+ *      field the kind. A node that is not on the drivable surface is left out.
+ * Returns the number of props in *nprop and of moving things in *nmove.
+ */
 void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uint32_t gfx_size, int n,
                   uint8_t *mem, uint32_t cap, int *nprop, int *nmove)
 {
@@ -193,13 +226,14 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
     name[3] = (char)('0' + n);
     uint32_t dtr = entry(dat, dat_size, name, scratch, SCRATCH);
 
-    /* the props: the first column of OSTACLES names each kind's mesh */
+    /* The props: the first column of OSTACLES names each kind's mesh. */
     const uint8_t *kind_mesh[KINDS];
     int nk = rows(scratch, dtr, "OSTACLES", cell, KINDS);
     for(int k = 0; k < nk; k++) kind_mesh[k] = mesh(gfx, gfx_size, cell[k][0]);
 
-    /* the moving scenery: its spline file kept in mem, each row's mesh; the fourth column names
-       its sound, a row of the track's own SOUND_FX (after SFXSBASE.DTR's: snd_init first) */
+    /* The moving scenery: its spline file stays in mem, and each row gives a mesh. The fourth
+       column names the row's sound, a row of the track's own SOUND_FX section. Those rows come
+       after the ones of SFXSBASE.DTR, so snd_init() must have run first. */
     int na = rows(scratch, dtr, "ANIMATIONS", cell, MOVING_MAX);
     int sounds = snd_add_list(scratch, dtr);
     memcpy(name + 4, "ANM.SPL", 8);
@@ -208,14 +242,14 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
     at += (anm_len + 3) & ~3u;
     const uint8_t *spline[MOVING_MAX];
     int ns = 0;
-    for(uint32_t p = 0; p + 8 <= anm_len && ns < MOVING_MAX; ) {
+    for(uint32_t p = 0; p + 8 <= anm_len && ns < MOVING_MAX; ) {        /* cut the file into splines */
         int32_t count = rd32(anm + p);
         if(count < 1 || p + 8 + 56 * (uint32_t)count > anm_len) break;
         spline[ns++] = anm + p;
         p += 8 + 56 * (uint32_t)count;
     }
     for(int k = 0; k < na && nmoving < MOVING_MAX; k++) {
-        int s = (int)number(cell[k][2]);
+        int s = (int)number(cell[k][2]);        /* the third column: the spline's number */
         if(s < 0 || s >= ns || rd32(spline[s]) < 2) continue;
         const uint8_t *ms = mesh(gfx, gfx_size, cell[k][0]);
         if(!ms) continue;
@@ -225,14 +259,14 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
         m->mesh = ms;
         m->node = rd32(m->spl + 4) >= 0 && rd32(m->spl + 4) < rd32(m->spl) ? rd32(m->spl + 4) : 0;
         m->key = track_class_key(ms);
-        m->speed = number(cell[k][1]);
+        m->speed = number(cell[k][1]);          /* the second column: the speed */
         m->sound = sounds >= 0 && cell[k][3][0] ? sounds + (int)number(cell[k][3]) : -1;
         m->voice = -1;
         moving_place(m, 0);
     }
 
-    /* the props' places: one spline, each node a prop; MAPnOST.SPL, in cone carnage MAPnCNG.SPL,
-       in slalom MAPnSLA.SPL (0x14fb4) */
+    /* The props' places: one spline, each node a prop. The file is MAPnOST.SPL, in cone
+       carnage MAPnCNG.SPL and in slalom MAPnSLA.SPL (original: STARTL.EXE 0x14fb4). */
     memcpy(name + 4, car_mode == CAR_CONES ? "CNG.SPL" : car_mode == CAR_SLALOM ? "SLA.SPL" : "OST.SPL", 8);
     uint32_t len = entry(dat, dat_size, name, scratch, SCRATCH);
     int32_t count = len >= 8 ? rd32(scratch) : 0;
@@ -253,14 +287,18 @@ void scenery_init(const uint8_t *dat, uint32_t dat_size, const uint8_t *gfx, uin
         prop_tilt(p);
         prop_block(p);
     }
-    while(!(MEM_STATUS & MEM_WRITES_IDLE))      /* the meshes in the SDRAM for the geometry unit */
+    while(!(MEM_STATUS & MEM_WRITES_IDLE))      /* wait until the SDRAM has the meshes */
         ;
     *nprop = nprops;
     *nmove = nmoving;
 }
 
-/* the player against a prop, knocked flying with the hit's sample, and a prop in the air
-   (0x124c0, 0x205b4) */
+/*
+ * One step of the props. First it tests the player against each prop that is not flying: if
+ * one of the player's two circles touches it, the prop is thrown and the hit sound plays
+ * (original: STARTL.EXE 0x124c0). Then it moves each prop that is in the air (original:
+ * 0x205b4) and makes its block for the new place.
+ */
 static void props_step(void)
 {
     const struct car_state *c = car_state();
@@ -278,7 +316,7 @@ static void props_step(void)
                 p->vz = c->speed * 0.02f;
                 p->v = c->speed * 1.4f;
                 p->flying = 1;
-                hits += !p->hit;                /* the first time only (0x126a4) */
+                hits += !p->hit;                /* each prop counts once (original: STARTL.EXE 0x126a4) */
                 p->hit = 1;
                 snd_play(SND_HIT);
             }
@@ -291,7 +329,9 @@ static void props_step(void)
         p->v -= DRIVE_DT * 2000.0f;
         if(p->v < 0.0f) p->v = 0.0f;
         int grass, off = !track_under(p->x, p->y, &ground, &grass);
-        if(off) {                               /* turned back; the ground where it is */
+        if(off) {                               /* it left the drivable area: it goes back to the place
+                                                   it came from and turns round; the ground is taken
+                                                   at its own height */
             ground = p->h;
             p->x = ox;
             p->y = oy;
@@ -301,14 +341,14 @@ static void props_step(void)
         }
         p->vz -= DRIVE_DT * 500.0f;
         p->h += p->vz * FRAMES;
-        if(p->h <= ground) {
+        if(p->h <= ground) {                    /* it hit the ground: bounce, keeping 0.8 of its fall speed */
             p->h = ground;
             p->vz = -p->vz * 0.8f;
             if(fabsf(p->vz) < 50.0f) p->vz = 0.0f;
             if(p->v == 0.0f && p->vz == 0.0f) {
                 p->flying = 0;
                 if(off) p->gone = 1;
-                else {                          /* on its side along the slope (0x20880) */
+                else {                          /* on its side along the slope (original: 0x20880) */
                     float roll = p->roll;
                     track_under(p->x, p->y, &ground, &grass);
                     prop_tilt(p);
@@ -321,24 +361,28 @@ static void props_step(void)
     }
 }
 
-/* the moving scenery near the player along its spline (0x20944, 0x20b0c) */
+/*
+ * One step of the moving scenery (original: STARTL.EXE 0x20944, 0x20b0c). A thing that is near
+ * the player moves its speed x DRIVE_DT along its curve. A step may cross several pieces
+ * (at most 8). Each piece is half of the stretch between two nodes.
+ */
 static void moving_step(void)
 {
     const struct car_state *c = car_state();
     for(int k = 0; k < nmoving; k++) {
         struct moving *m = &moving[k];
         if(fabsf(c->x - m->x) >= NEAR_MOVE || fabsf(c->y - m->y) >= NEAR_MOVE) continue;
-        float left = m->speed * DRIVE_DT;
+        float left = m->speed * DRIVE_DT;       /* the distance still to move in this step */
         for(int guard = 0; guard < 8 && left > 0.0f; guard++) {
             float len;
             moving_place(m, &len);
             if(len < 1.0f) len = 1.0f;
             float du = left / len;
-            if(m->u + du < 1.0f) {
+            if(m->u + du < 1.0f) {              /* it stays in this piece */
                 m->u += du;
                 break;
             }
-            left -= (1.0f - m->u) * len;
+            left -= (1.0f - m->u) * len;        /* it reaches the end of the piece: go on in the next */
             m->u = 0.0f;
             if(m->half == 0) m->half = 1;
             else {
@@ -350,13 +394,18 @@ static void moving_step(void)
     }
 }
 
-/* 0x21b80: the moving scenery's sounds, heard from the camera (car_step set the ear): within
-   40000 at ((40000 - d) / 40000)^2, panned, pitch 65536 + the Doppler shift */
+/*
+ * Plays the moving scenery's sounds as heard from the camera (original: STARTL.EXE 0x21b80;
+ * car_step sets the ear). A sound is heard within 40000 units. Its volume is
+ * ((40000 - d) / 40000)^2 for the distance d. It is panned, and its pitch is 65536 plus the
+ * Doppler shift.
+ */
 static void moving_sound(void)
 {
     for(int k = 0; k < nmoving; k++) {
         struct moving *m = &moving[k];
-        if(m->sound >= 0) m->voice = snd_at(m->voice, m->sound, m->x, m->y, 40000.0f, 32767.0f, 65536.0f, &m->last);
+        if(m->sound >= 0)
+            m->voice = snd_at(m->voice, m->sound, m->x, m->y, 40000.0f, 32767.0f, 65536.0f, &m->last);
     }
 }
 
@@ -373,9 +422,12 @@ void scenery_step(void)
     moving_sound();
 }
 
-/* moving thing k's blocks, made when it is drawn, from its place now (the CPU's time before
-   the first piece is the frame's; once the pieces go, the geometry unit's work is); its
-   textures play by the clock (0x153e3: the record's phase -1), the rotor's 20 frames */
+/*
+ * Makes moving thing k's blocks from its place in this step, when it comes up in the drawing. (The CPU's
+ * time before the first piece goes to the geometry unit counts towards the frame; once the
+ * pieces go, the geometry unit's work does.) Its textures play by the clock (original:
+ * STARTL.EXE 0x153e3: the record's phase is -1); the rotor has 20 frames.
+ */
 static int moving_make(int k, const struct track_cam *cam, struct track_object *obj)
 {
     struct moving *m = &moving[k];
@@ -393,7 +445,8 @@ int scenery_objects(const struct track_cam *cam, struct track_object *objs, int 
         struct moving *m = &moving[k];
         float dx = m->x - cam->x, dy = m->y - cam->y;
         if(dx * dx + dy * dy > (REACH + MOVING_RADIUS) * (REACH + MOVING_RADIUS)) continue;
-        objs[n++] = (struct track_object){ m->x, m->y, m->h, MOVING_RADIUS, 0, 0, moving_make, k, m->key, 0, 0 };
+        objs[n++] = (struct track_object){ m->x, m->y, m->h, MOVING_RADIUS, 0, 0, moving_make, k, m->key,
+                                           0, 0 };
     }
     for(int k = 0; k < nprops && n < max; k++) {
         const struct prop *p = &props[k];

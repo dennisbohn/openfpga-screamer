@@ -1,7 +1,10 @@
 /*
- * The intro (intro.h): the numbers are STARTL.EXE's, read as openscreamer's port/src/main.c
- * (intro_*) has them and checked in the program: the logos 0x279fc, the credits 0x27b64, the
- * fade 0x27d28, the cars' cameras 0x1a920 and the one shown 0x1aeb4, 0x19d82, 0x27e64.
+ * The intro's cameras, logos and credits (see intro.h). The numbers are STARTL.EXE's. They are
+ * read as OpenScreamer's port/src/main.c (intro_*) has them and were checked in the program:
+ * the logos (original: 0x279fc), the credits (0x27b64), the fade (0x27d28), the cars' cameras
+ * (0x1a920) and the one shown (0x1aeb4, 0x19d82, 0x27e64).
+ * Entry points: intro_init() (pictures and text), intro_start() (a new run on a track),
+ * intro_step() (one step of 1/50 s), intro_camera(), intro_text(), intro_level(), intro_leave().
  */
 #include "intro.h"
 #include "dat.h"
@@ -15,12 +18,12 @@
 #define DT          DRIVE_DT
 #define PI          3.1415927f
 #define LINES       256             /* ATTR.TXT's lines, its '*' lines not counted */
-#define BLOCK_LINES 20              /* a block's lines eased (0x11ce54) */
+#define BLOCK_LINES 20              /* a block's lines eased (original: 0x11ce54) */
 #define POSTS       64              /* MAPnCAM.SPL's nodes (14 .. 29) */
-#define STAY        4.0f            /* a block stays 4 s (0x100ed6) */
-#define NEAR        1500.0f         /* a camera closing in stops 1500 from its car (0x100934) */
-#define CHANGE      10.0f           /* another car every 1000 ticks of 1/100 s (0x27e64) */
-#define COLOUR      2               /* the credits' colour, font 0 (0x27c29) */
+#define STAY        4.0f            /* a block stays 4 s (original: 0x100ed6) */
+#define NEAR        1500.0f         /* a camera closing in stops 1500 from its car (original: 0x100934) */
+#define CHANGE      10.0f           /* another car every 1000 ticks of 1/100 s (original: 0x27e64) */
+#define COLOUR      2               /* the credits' colour, font 0 (original: 0x27c29) */
 
 static const uint8_t *hud;
 static const struct blit_image *img;
@@ -29,38 +32,54 @@ static uint32_t nimg, nfont;
 static char text[2048];
 static const char *line[LINES];
 static int nline;
-static int32_t post[POSTS][3];          /* x, y, height; |height| % 10 its code */
+static int32_t post[POSTS][3];          /* x, y, height; |height| % 10 is the post's code */
 static int nposts;
 
-/* 0x11ce40 (bit 2: leaving, 3: the credits are over), the block and its first line, out (the
-   lines on their way out), the block's clock, the lines' and the logo's offsets, the fade */
+/* The credits' state.
+   state: the game's 0x11ce40. 0 = the credits run. 2 = leaving (bit 2: the fade is on, the
+          credits still run). 3 = the credits are over (the fade is on). 4 = faded out.
+   block: the credits block now shown; first: the index of its first line.
+   out: 1 while the block's lines are on their way out.
+   clock: the block's clock; xo: each line's x offset; logo_x: the logo's offset.
+   level: the fade, 1 whole down to 0. */
 static int state, block, first, out, xo[BLOCK_LINES];
 static float clock, logo_x, level;
-/* each car's camera (+0x4f8 ..): the post (+0x554), new there this step (+0x564), closing in
-   (+0x568), its distance a step before (+0x55c), where the camera stands and looks and what is
-   left of a flight from where it stood (0x19ad8, 0x19ef0); the car's place a step before */
+/* Each car's camera (original: +0x4f8 ..):
+   post: the post it stands on (+0x554).
+   fresh: it is new on that post in this step (+0x564).
+   zoom: it is closing in (+0x568).
+   fly: it is in a flight from where it stood earlier (0x19ad8, 0x19ef0).
+   prev: the car's distance from the post in the previous step (+0x55c).
+   px, py: the car's place in the previous step.
+   at: where the camera stands and looks.
+   d: what is left of a flight, as the difference from where the camera stood. */
 static struct cam { int post, fresh, zoom, fly; float prev, px, py; struct track_cam at, d; } cams[OPP_MAX];
-static int shown, pending, next_car;    /* 0x110a14, 0x110a18; lined up when the 10 s are up */
+/* shown: the car shown (original: 0x110a14). pending: the car lined up to be shown next
+   (0x110a18). next_car: set when the 10 s are up, so another car is lined up. */
+static int shown, pending, next_car;
 static float change;
 
-int intro_init(const uint8_t *graf, uint32_t graf_size, const uint8_t *local, uint32_t local_size, uint8_t *mem,
-               uint32_t cap, uint8_t *scratch, uint32_t scratch_cap)
+int intro_init(const uint8_t *graf, uint32_t graf_size, const uint8_t *local, uint32_t local_size,
+               uint8_t *mem, uint32_t cap, uint8_t *scratch, uint32_t scratch_cap)
 {
     struct dat_entry e;
-    uint32_t spr_n = dat_find(graf, graf_size, "LOGOL.SPR", &e) ? dat_extract(graf, graf_size, &e, scratch, scratch_cap) : 0;
+    uint32_t spr_n = dat_find(graf, graf_size, "LOGOL.SPR", &e) ?
+                     dat_extract(graf, graf_size, &e, scratch, scratch_cap) : 0;
     uint32_t used = (spr_n + 3) & ~3u, fnt_n = 0;
     if(used < scratch_cap && dat_find(graf, graf_size, "ATTRL.FNT", &e))
         fnt_n = dat_extract(graf, graf_size, &e, scratch + used, scratch_cap - used);
-    if(!spr_n || !fnt_n || !tb_hud_build(scratch, spr_n, scratch + used, fnt_n, scratch, 0, scratch, 0, scratch, 0, mem, cap))
+    if(!spr_n || !fnt_n ||
+       !tb_hud_build(scratch, spr_n, scratch + used, fnt_n, scratch, 0, scratch, 0, scratch, 0, mem, cap))
         return 0;
     hud = mem;
     nimg = (uint32_t)(hud[0] | hud[1] << 8 | hud[2] << 16 | (uint32_t)hud[3] << 24);
     nfont = (uint32_t)(hud[4] | hud[5] << 8 | hud[6] << 16 | (uint32_t)hud[7] << 24);
     img = (const struct blit_image *)(hud + 8);
     font = (const struct blit_font *)(hud + 8 + 12 * nimg);
-    /* ATTR.TXT's lines, each ended where its \r or \n was */
-    uint32_t n = dat_find(local, local_size, "ATTR.TXT", &e) ? dat_extract(local, local_size, &e, (uint8_t *)text,
-                                                                           sizeof text - 1) : 0;
+    /* Cut ATTR.TXT into lines. Each line ends at its CR or LF, and a LF after that is skipped.
+       A line that starts with '*' is a comment and is dropped. */
+    uint32_t n = dat_find(local, local_size, "ATTR.TXT", &e) ?
+                 dat_extract(local, local_size, &e, (uint8_t *)text, sizeof text - 1) : 0;
     nline = 0;
     for(uint32_t i = 0; i < n && nline < LINES;) {
         uint32_t end = i;
@@ -75,14 +94,16 @@ int intro_init(const uint8_t *graf, uint32_t graf_size, const uint8_t *local, ui
 
 void intro_start(const uint8_t *dat, uint32_t dat_size, int n)
 {
-    static int32_t spl[2 + 14 * POSTS];         /* count, start, nodes of 14 words: ?, x, y, height */
+    /* The file: count, start, then nodes of 14 words (word 0 is not used, then x, y, height). */
+    static int32_t spl[2 + 14 * POSTS];
     char name[16] = "MAPnCAM.SPL";
     struct dat_entry e;
     name[3] = (char)('0' + n);
     uint32_t len = dat && dat_find(dat, dat_size, name, &e) && e.size <= sizeof spl ?
                    dat_extract(dat, dat_size, &e, (uint8_t *)spl, sizeof spl) : 0;
     nposts = 0;
-    for(int32_t k = 0; len >= 8 && k < spl[0] && k < POSTS && 8 + 56 * (uint32_t)(k + 1) <= len; k++, nposts++)
+    for(int32_t k = 0; len >= 8 && k < spl[0] && k < POSTS && 8 + 56 * (uint32_t)(k + 1) <= len;
+        k++, nposts++)
         memcpy(post[k], spl + 2 + 14 * k + 1, sizeof post[k]);
     state = block = first = out = 0;
     clock = 0.0f;
@@ -97,9 +118,10 @@ void intro_start(const uint8_t *dat, uint32_t dat_size, int n)
     change = 0.0f;
 }
 
-/* The camera at post p looking at the car at (x, y, h), the way the trackside one does
-   (car.c): straight at it, down by the angle the height between them gives; closing in, moved
-   on towards it until it is 1500 away (0x1a920) */
+/* Returns the camera at post p looking at the car at (x, y, h), as the trackside camera does
+   (car.c): straight at the car, tilted down by the angle that the height between them gives.
+   If zoom is set, the camera closes in: it is moved towards the car until it is NEAR (1500)
+   away (original: STARTL.EXE 0x1a920). */
 static struct track_cam place(int p, float x, float y, float h, int zoom)
 {
     float dx = (float)post[p][0] - x, dy = (float)post[p][1] - y, dh = (float)post[p][2] - h;
@@ -115,6 +137,7 @@ static struct track_cam place(int p, float x, float y, float h, int zoom)
     return c;
 }
 
+/* Brings the angle a into -PI .. PI. */
 static float wrap(float a)
 {
     while(a > PI) a -= 2.0f * PI;
@@ -122,12 +145,20 @@ static float wrap(float a)
     return a;
 }
 
-/* Car k's camera (0x1a920): the post nearest it on the ground (a post at its very place passed
-   over); new there, its distance a step before is that from where the car was then. Closing in
-   by the post's code: bit 1 always, bit 2 while the car goes away from it, bit 4 while it comes.
-   A change of that at the same post flies there (0x19ad8, view-table row 4 asked for as 2): what
-   lies between where the camera stood and where it now belongs dies away as when the view
-   changes (0x19ef0: the place by damp[90], the angles by 0x19 a step); a new post cuts. */
+/*
+ * Works out car k's camera for this step (original: STARTL.EXE 0x1a920).
+ *   - The camera is on the post nearest the car on the ground. A post at the car's very place
+ *     is passed over.
+ *   - When the camera is new on a post, the previous step's distance is taken from where the
+ *     car was then.
+ *   - Whether it closes in is decided by the post's code: code & 1 always, code & 2 while the
+ *     car goes away from the post, code & 4 while it comes closer.
+ *   - If closing in changes while the post stays, the camera flies there (original: 0x19ad8;
+ *     view-table row 4 asked for as 2). The difference between where the camera stood and
+ *     where it belongs in this step dies away as when the view changes (0x19ef0): the place by
+ *     drive_damp(90), the angles by drive_damp(0x19) in a step. A new post cuts, with no
+ *     flight.
+ */
 static void car_cam(int k)
 {
     struct cam *c = &cams[k];
@@ -166,7 +197,8 @@ static void car_cam(int k)
         c->d.h *= kp;
         c->d.yaw *= ka;
         c->d.pitch *= ka;
-        c->fly = fabsf(c->d.x) + fabsf(c->d.y) + fabsf(c->d.h) > 4.0f || fabsf(c->d.yaw) + fabsf(c->d.pitch) > 0.01f;
+        c->fly = fabsf(c->d.x) + fabsf(c->d.y) + fabsf(c->d.h) > 4.0f ||
+                 fabsf(c->d.yaw) + fabsf(c->d.pitch) > 0.01f;
     }
     c->zoom = zoom;
     c->prev = best;
@@ -175,12 +207,16 @@ static void car_cam(int k)
     c->py = y;
 }
 
-/* The credits' block (0x27b64): each line eased from 350 to its place (0 in, -400 out:
-   stiffness 0x5a, whole pixels); one out past -360 ends the block's stay. After 4 s the lines go
-   out, and once they are out the next block comes; after the last block the state is 3, which
-   leaves. The logo (0x279fc): with the first two blocks sprites 0 and 1, eased in from -320 and
-   out with the lines (0x50); from the third on sprite 2, in (0x5a), out with the last block,
-   block 18, to -340 (0x50). */
+/*
+ * Moves the credits one step (original: STARTL.EXE 0x27b64). A block of lines is eased in
+ * from an x offset of 350 to its place (0). After STAY seconds (4 s) the lines go out,
+ * eased to -400. The stiffness is 0x5a and the offsets are whole pixels. A line that is out
+ * past -360 ends the block's stay, and once the lines are out the next block comes. After the
+ * last block the state is 3, which leaves.
+ * The logo (original: 0x279fc): with the first two blocks it is sprites 0 and 1, eased in
+ * from -320 and out with the lines (0x50). From the third block on it is sprite 2, eased in
+ * (0x5a), and out with the last block, block 18, to -340 (0x50).
+ */
 static void credits(void)
 {
     if(block < 2) logo_x = (logo_x + (float)(out * 320)) * drive_damp(0x50) - (float)(out * 320);
@@ -210,7 +246,7 @@ int intro_step(void)
 {
     if(state == 4) return 1;
     if(state != 3) credits();
-    if(state & 2) {                             /* 0x27d28: picture and sound out in a second */
+    if(state & 2) {                             /* original: 0x27d28: picture and sound out in a second */
         if((level -= DT) <= 0.0f) {
             level = 0.0f;
             state = 4;
@@ -222,7 +258,8 @@ int intro_step(void)
     }
     int n = opp_count();
     for(int k = 0; k < n && k < OPP_MAX; k++) car_cam(k);
-    if(next_car && n > 0) {                     /* 0x19d82: the next car at another post */
+    if(next_car && n > 0) {                     /* original: 0x19d82. Line up the next car whose camera
+                                                   is on another post than the shown car's. */
         next_car = 0;
         for(int tries = 0; tries < n; tries++) {
             pending = (pending + 1) % n;
@@ -230,7 +267,8 @@ int intro_step(void)
         }
     }
     if(shown >= n) shown = 0;
-    if(cams[shown].fresh && pending != shown && pending < n) shown = pending;   /* 0x1aef3 */
+    /* When the shown car's camera moves to a new post, switch to the car lined up (original: 0x1aef3). */
+    if(cams[shown].fresh && pending != shown && pending < n) shown = pending;
     struct track_cam ear;
     intro_camera(&ear);
     snd_ear(&ear);
@@ -265,11 +303,13 @@ void intro_text(struct blit_list *l)
     if(state == 3 || state == 4 || !hud) return;
     uint32_t s = block < 2 ? (uint32_t)block : 2;
     const struct blit_image *m = &img[s];
-    /* the sum in a wider type than float, as the x87 forms it (0x27a8c..0x27aa4: fild, fadd, then
-       fistp truncating): the logo rests one pixel left of its middle while logo_x is a little
-       below 0, and does not jump to it when float would round the sum up (after about 3.5 s) */
+    /* The sum is formed in a wider type than float, as the x87 forms it (original: STARTL.EXE
+       0x27a8c..0x27aa4: fild, fadd, then fistp, which truncates). While logo_x is a little below
+       0, the logo rests one pixel left of its middle. With float arithmetic the sum would round
+       up after about 3.5 s, and the logo would jump to the middle. */
     int x = (int)((double)((320 - (int)m->w) >> 1) + (double)logo_x), y = block < 2 ? 24 * block + 4 : 4;
-    if(x + m->x + (int)m->w > 0 && x + m->x < 320) blit_copy(l, hud + m->off, m->w, m->h, m->w, x + m->x, y + m->y, BLIT_COPY, 0);
+    if(x + m->x + (int)m->w > 0 && x + m->x < 320)
+        blit_copy(l, hud + m->off, m->w, m->h, m->w, x + m->x, y + m->y, BLIT_COPY, 0);
     int i = 0, k = first;
     do {
         if(i < BLOCK_LINES && k < nline && line[k][0]) {
