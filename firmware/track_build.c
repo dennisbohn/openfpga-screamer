@@ -27,6 +27,7 @@
 #include "track_build.h"
 #include "bytes.h"
 #include "dat.h"
+#include "track.h"
 #include "tb_mmp.h"
 #include "tb_spl.h"
 #include "tb_gfx.h"
@@ -37,7 +38,6 @@
 int track_build_difficulty = 1;         /* NORMAL, as make_track.py */
 
 #define FIRST       0x100       /* the first section, after the header */
-#define BLOCK       0x40000     /* bytes per CRC block */
 #define MAX_BLOCKS  28          /* the CRCs that fit into the header (0x90 .. 0x100) */
 #define SECTIONS    14          /* the sections in offs[] and counts[], in the order of the table above */
 #define MODELS      7           /* AUTO00.3DX .. AUTO06.3DX */
@@ -231,7 +231,7 @@ uint32_t track_build(const struct track_files *f, int n, uint8_t *out, uint32_t 
 
     /* The header: the offsets and counts as make_track.py packs them (the layout is at the top
        of track.c), then the CRC of each block. */
-    uint32_t size = b.pos, blocks = (size - FIRST + BLOCK - 1) / BLOCK;
+    uint32_t size = b.pos, blocks = (size - FIRST + TRACK_CRC_BLOCK - 1) / TRACK_CRC_BLOCK;
     if(blocks > MAX_BLOCKS) return (uint32_t)fail(&b, "image size");
     memcpy(out, "SCRK", 4);
     put_le32(out + 0x04, 6);
@@ -254,7 +254,7 @@ uint32_t track_build(const struct track_files *f, int n, uint8_t *out, uint32_t 
     put_le32(out + 0x88, size);
     put_le32(out + 0x8C, blocks);
     for(uint32_t k = 0; k < blocks; k++) {  /* the last block may be shorter */
-        uint32_t o = FIRST + k * BLOCK, e = size - o < BLOCK ? size : o + BLOCK;
+        uint32_t o = FIRST + k * TRACK_CRC_BLOCK, e = size - o < TRACK_CRC_BLOCK ? size : o + TRACK_CRC_BLOCK;
         put_le32(out + 0x90 + 4 * k, crc32(out + o, out + e));
     }
     info->cycles = now() - t0;

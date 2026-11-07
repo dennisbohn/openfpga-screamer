@@ -31,7 +31,7 @@
  *   0x7C     ground colour                             the low 8 bits are used
  *   0x80     opponents: offset, 0x84 size              curves and numbers (track_opp_count)
  *   0x88     size of the image in bytes
- *   0x8C     number of CRC blocks (BLOCK bytes each, from offset 0x100)
+ *   0x8C     number of CRC blocks (TRACK_CRC_BLOCK bytes each, from offset 0x100)
  *   0x90     one CRC-32 per block, up to 0x100
  *
  * The cell table ends the placements: "CELL" (0x4C4C4543), int32 number of cells, int32 0,
@@ -82,7 +82,6 @@
 #include <math.h>
 #include <string.h>
 
-#define BLOCK       0x40000     /* bytes per CRC block (tools/make_track.py) */
 #define MAX_PIECES  2560        /* placements (H set): track 1 has 1164, track 5 the most, 2359 */
 #define MAX_OBJ     512         /* meshes; up to 360 on a track */
 #define MAX_BLOCKS  8           /* blocks of a mesh drawn (track 1: two, the football helmet's) */
@@ -967,11 +966,12 @@ int track_blocks(void)
     return nblocks;
 }
 
-/* Whether CRC block k of the image (BLOCK bytes from offset 0x100 on; the last one may be shorter)
+/* Whether CRC block k of the image (TRACK_CRC_BLOCK bytes from offset 0x100 on; the last one may be shorter)
    has the CRC-32 that the header holds at 0x90 + 4 k. */
 int track_block_ok(int k)
 {
-    uint32_t o = 0x100 + (uint32_t)k * BLOCK, e = o + BLOCK < file_size ? o + BLOCK : file_size;
+    uint32_t o = 0x100 + (uint32_t)k * TRACK_CRC_BLOCK,
+             e = o + TRACK_CRC_BLOCK < file_size ? o + TRACK_CRC_BLOCK : file_size;
     return o < e && crc32(file_start + o, file_start + e) == (uint32_t)ld32s(file_start + 0x90 + 4 * k);
 }
 

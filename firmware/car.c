@@ -104,7 +104,6 @@ static struct { int on, bounces, view; float height, vy, pitch, roll, pitch_rate
    sideways it is at the wheels. [k][0] is to the right and [k][1] forward. The order of k is
    front-left, rear-left, front-right, rear-right. */
 static float corner[4][2];
-#define MAX_WALLS   1024
 /* Which side of each wall the track is on: +1 on the side of the wall's normal, else -1. */
 static float wall_in[MAX_WALLS];
 

@@ -7,8 +7,6 @@
  */
 #include "setup.h"
 
-#define FB_STRIDE 320
-
 static int64_t clamp64(int64_t v, int64_t lo, int64_t hi)
 {
     return v < lo ? lo : v > hi ? hi : v;
