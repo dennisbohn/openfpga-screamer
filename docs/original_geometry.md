@@ -18,7 +18,7 @@ described in [original_filler.md](original_filler.md); this document ends at the
 | Object matrices, block matrices, all four chains W, F, G1, G (section 4) | bit-identical, 4 blocks of a car |
 | Camera-space position and sort key of all 149 drawn objects (section 3) | bit-identical |
 | Object visibility test: 149 of 189 accepted (section 3) | same set |
-| Cell window and the camera cell's box (section 2.1), pieces in reach (2.2), track 1, five cameras | same rows and columns, the same 638 placements in the same order |
+| Cell window and the camera cell's box (section 2.1), pieces in reach (2.2), track 1, nine cameras | same rows and columns, the same 1,191 placements in the same order |
 | The level-of-detail constants of 4.4 | -6000, -8000, -4000, -7000 in RAM, DETAIL 2 |
 | Vertex transform and projection, 103 vertices (section 5) | bit-identical |
 | Face row and back-face test, 30 of 48 faces in the same order (section 6) | bit-identical |
@@ -185,11 +185,12 @@ The box of a cell (`[cell+0x10]`, 24 bytes behind it when `[cell+0x24]` is 1; th
 `x0, z0, z0, x1, z1, z1` (the pairs repeat), the map's coordinates; 41 to 63 % of the cells of the six tracks
 have one (90 of 222, 207 of 385, 193 of 365, 172 of 366, 360 of 573, 251 of 418), the others leave the window
 alone, as does a camera outside the map. A box often cuts the window hard: at the grid of track 1 the window's
-115,000 units across become 48,700. Checked in RAM at five cameras (the start grid and four places along the first
+115,000 units across become 48,700. Checked in RAM at nine cameras (two runs: the start grid and three or four places along the first
 32 seconds of the race, `tools/dosram.py walk`): the window (before and after the box), the columns and rows
 patched into the walk (0x83137, 0x83141) and every record of the in-range list equal to what `tools/perf/walkcheck.py`
-gets from the track image's cell table with the same formulas, 638 records in the same order. The corners'
-constants (0x82b08 ff.), like the reach's immediate, are never written. The moving objects (2.3) are
+gets from the track image's cell table with the same formulas, 1,191 records in the same order. The corners'
+constants (0x82b08 ff.) and the reach's immediate (0x284af100 at 0x831cc, 0x83230, 0x8a70f, read while the race
+runs) are never written. The moving objects (2.3) are
 taken against the window before the box.
 
 ### 2.2 The in-range list (0x83114 -> 0x83164)

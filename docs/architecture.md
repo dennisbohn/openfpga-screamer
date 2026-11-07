@@ -274,9 +274,9 @@ The core does the same with two factors (`firmware/track.h`, each a single const
 on the far plane, the reach, the window's points and the props' reach, `LOD_SCALE` (default 1.5, 0 = no level of
 detail) on the distances of the levels. At 1.0 and 1.0 it is the original's picture. The image carries the
 map's cell table (`tools/make_track.py`, `tb_mmp.c`: key, placements, view box of every cell) so that the walk
-takes the game's cells in the game's order. Against the running original (DOSBox, track 1, the grid and four
-places along the first 32 seconds of the race; `tools/dosram.py walk`, `tools/perf/walkcheck.py`): the window's
-rows and columns and the 638 placements in reach are the same, in the same order, at all five cameras. The rule
+takes the game's cells in the game's order. Against the running original (DOSBox, track 1, two runs: the grid and
+three or four places along the first 32 seconds of the race; `tools/dosram.py walk`, `tools/perf/walkcheck.py`): the
+window's rows and columns and the 1,191 placements in reach are the same, in the same order, at all nine cameras. The rule
 of the levels is read in the disassembly and its constants in RAM; the pictures were compared with raw
 DOSBox screenshots only roughly (the original draws with camera angles in 2048ths of a turn, ours in
 floating point: 32 % of the pixels agree, with or without the levels).

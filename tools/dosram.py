@@ -259,7 +259,7 @@ def dump(g, label):
     0x11099c that the game renders with, and the camera record C), the cell window (0x82e88: the window
     before and after the camera cell's view box, the box itself, all in the map's coordinates + 2^20 where
     the game adds it), the cells' columns and rows it visits, the pieces in reach (0x83164's list, then the
-    moving objects) and the level-of-detail constants (0x8a504, 0x8a508, 0x8a550, 0x8a554) and the DETAIL"""
+    moving objects), the level-of-detail constants (0x8a504, 0x8a508, 0x8a550, 0x8a554), the reach and the far plane as they stand in the code, and the DETAIL"""
     dw = lambda a: struct.unpack("<i", g.flat(a, 4))[0]
     v = struct.unpack("<3i3i", g.flat(0x11099c, 0x18))        # pitch, heading, roll (2048 = a turn), x, height, z
     c = g.flat(0x110a1c, 0x40)
@@ -270,6 +270,8 @@ def dump(g, label):
            "box": [dw(0x82b6c), dw(0x82b74), dw(0x82b78), dw(0x82b80)],          # the camera cell's box + 2^20 (+-2e9: none)
            "col0x4": dw(0x83137), "ncol": dw(0x83141),
            "lod": [dw(0x8a504), dw(0x8a508), dw(0x8a550), dw(0x8a554)],
+           "reach_immediates": [dw(0x831cc), dw(0x83230), dw(0x8a70f)],            # dist^2 >> 2 < K in the code: 676000000 = 0x284af100 each
+           "far": dw(0xd7a20),                                                   # the far plane the faces are cut at (-43808 at HI)
            "detail": struct.unpack("<i", g.ptr(struct.unpack("<I", g.flat(0x102de8, 4))[0] + 8, 4))[0]}
     n = dw(0x82248)
     lst = g.flat(0x500f0, 8 * n)
