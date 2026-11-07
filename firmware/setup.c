@@ -1,6 +1,9 @@
 /*
- * Setup unit C model (setup.h). Every >> of a signed value is arithmetic (rounds down), as
- * in the hardware; the products fit 64 bits.
+ * The setup unit as a C model (see setup.h for what it does and for its number formats).
+ * Every >> of a signed value is arithmetic and rounds down, as in the hardware. The products
+ * fit in 64 bits.
+ * Entry points: su_clip() cuts a polygon, su_project() projects a corner, su_triangle() works
+ * out one triangle's setup, su_polygon8() runs all three and draws the triangles.
  */
 #include "setup.h"
 
@@ -11,7 +14,7 @@ static int64_t clamp64(int64_t v, int64_t lo, int64_t hi)
     return v < lo ? lo : v > hi ? hi : v;
 }
 
-/* bit length: 0 for 0, else 1 + the index of the highest one */
+/* Bit length: 0 for 0, else 1 + the index of the highest one bit. */
 static int bitlen(uint64_t v)
 {
     int n = 0;
@@ -22,14 +25,16 @@ static int bitlen(uint64_t v)
     return n;
 }
 
-/* v (bit length l >= 1) shifted to 16 bits, its highest one at bit 15; bits below are lost */
+/* Shifts v (bit length l >= 1) to 16 bits, so that its highest one bit is bit 15. The bits
+   below are lost. The result is the input of the reciprocal table (rs_recip). */
 static uint32_t norm16(uint64_t v, int l)
 {
     return (uint32_t)(l >= 16 ? v >> (l - 16) : v << (16 - l));
 }
 
-/* distance from plane k, >= 0 inside: near (depth 128), the guard band (|r|, |u| up to
-   SU_GUARD times the depth), far */
+/* The distance of corner c from plane k, 8 fraction bits; it is >= 0 inside. The planes are the
+   near plane (depth 128), the four sides of the guard band (|r|, |u| up to SU_GUARD times the
+   depth) and the far plane. */
 static int64_t plane(const struct su_view *v, const struct su_fixed *c, int k)
 {
     int64_t g = (int64_t)c->f * SU_GUARD;
@@ -43,11 +48,19 @@ static int64_t plane(const struct su_view *v, const struct su_fixed *c, int k)
     }
 }
 
+/* a + (b - a) t, with t16 = t in 16 fraction bits */
 static int32_t lerp(int32_t a, int32_t b, int64_t t16)
 {
     return (int32_t)(a + ((((int64_t)b - a) * t16) >> 16));
 }
 
+/*
+ * Cuts the polygon in (n corners) against the six planes, in plane order. The first pass
+ * finds, for each corner, the planes it lies outside of. A polygon wholly outside one plane is
+ * dropped. Then each plane that has a corner outside is processed in turn: corners inside are
+ * kept, and a new corner is made on each edge that crosses the plane. Returns the number of
+ * corners in out (at most SU_MAX_POLY), or 0 if fewer than 3 are left.
+ */
 int su_clip(const struct su_view *v, const struct su_fixed *in, int n, struct su_fixed *out)
 {
     struct su_fixed buf[2][SU_MAX_POLY];
@@ -72,7 +85,8 @@ int su_clip(const struct su_view *v, const struct su_fixed *in, int n, struct su
             int64_t da = plane(v, a, k), db = plane(v, b, k);
             if(da >= 0) q[m++] = *a;
             if((da >= 0) != (db >= 0)) {
-                /* t = |da| / (|da| + |db|) with 16 fraction bits from the table */
+                /* The new corner lies at t = |da| / (|da| + |db|) on the edge, with 16
+                   fraction bits, from the reciprocal table. */
                 uint64_t ea = (uint64_t)(da < 0 ? -da : da), d = ea + (uint64_t)(db < 0 ? -db : db);
                 int l = bitlen(d);
                 int64_t t16 = (int64_t)((ea * rs_recip(norm16(d, l))) >> l);
@@ -103,9 +117,10 @@ void su_project(const struct su_view *v, const struct su_fixed *c, struct su_poi
     /* r / f and u / f with 16 fraction bits, within +-16 */
     int64_t px = clamp64(((int64_t)r * rc) >> l, -(1 << 20) + 1, (1 << 20) - 1);
     int64_t py = clamp64(((int64_t)u * rc) >> l, -(1 << 20) + 1, (1 << 20) - 1);
-    /* on whole pixels, the fraction cut off, as the game's projection does (0x83420: the
-       high word of a 16.16 x; its fillers take whole pixels): corners of neighbouring pieces
-       a few units apart land on the same pixel, and the joins have no cracks */
+    /* The position is cut to whole pixels (the low 4 bits are cleared), as the game's projection
+       does (original: STARTL.EXE 0x83420: the high word of a 16.16 x; its fillers take whole
+       pixels). Corners of neighbouring pieces a few units apart then land on the same pixel,
+       and the joins have no cracks. */
     int64_t x = (((int64_t)v->cx << 16) + (int64_t)v->scale * px) >> 16;
     int64_t y = (((int64_t)v->cy << 16) - (int64_t)v->scale * py) >> 16;
     p->x = (int32_t)clamp64(x, -32768, 32767) & ~15;
@@ -132,7 +147,8 @@ int su_triangle(const struct su_point p[3], struct rs_vertex pos[3], struct rs_t
     int ld = bitlen(ad);
     uint32_t rcd = rs_recip(norm16(ad, ld));                 /* 2^(16 + ld) / |d| */
 
-    /* Q, U, V at the corners: Q = rc scaled to the triangle's largest */
+    /* Q, U and V at the corners. Q is rc, scaled by the corner's bit length against the
+       smallest one, so that all three corners use the same scale. */
     int lmin = p[0].l < p[1].l ? p[0].l : p[1].l;
     if(p[2].l < lmin) lmin = p[2].l;
     int64_t a[3][3];
@@ -143,7 +159,8 @@ int su_triangle(const struct su_point p[3], struct rs_vertex pos[3], struct rs_t
         a[2][i] = clamp64(p[i].tr >> (10 + di), -(1 << 26), (1 << 26) - 1);
     }
 
-    /* the reference pixel: corner 0's, on the screen; offsets of its centre from corner 0 */
+    /* The reference pixel is corner 0's pixel, held on the screen. fx, fy: the offset of its
+       centre from corner 0, in 1/16 pixel. */
     int32_t xr = p[0].x >> 4, yr = p[0].y >> 4;
     xr = xr < 0 ? 0 : xr > FB_STRIDE - 1 ? FB_STRIDE - 1 : xr;
     yr = yr < 0 ? 0 : yr > 199 ? 199 : yr;
@@ -151,6 +168,8 @@ int su_triangle(const struct su_point p[3], struct rs_vertex pos[3], struct rs_t
     s->yr = yr;
     int64_t fx = 16 * xr + 8 - p[0].x, fy = 16 * yr + 8 - p[0].y;
 
+    /* The plane through the three corners for Q, U and V (k = 0, 1, 2): nx, ny are the
+       numerators of the change per pixel in x and y, and d is the denominator. */
     for(int k = 0; k < 3; k++) {
         int64_t da1 = a[k][1] - a[k][0], da2 = a[k][2] - a[k][0];
         int64_t nx = da1 * dy2 - da2 * dy1, ny = da2 * dx1 - da1 * dx2;
@@ -158,7 +177,7 @@ int su_triangle(const struct su_point p[3], struct rs_vertex pos[3], struct rs_t
             nx = -nx;
             ny = -ny;
         }
-        /* per pixel, 8 fraction bits: 4096 n / d */
+        /* The change per pixel, 8 fraction bits: 4096 n / d. */
         int64_t gx = clamp64((nx * rcd + ((int64_t)1 << (ld + 3))) >> (ld + 4), INT32_MIN, INT32_MAX);
         int64_t gy = clamp64((ny * rcd + ((int64_t)1 << (ld + 3))) >> (ld + 4), INT32_MIN, INT32_MAX);
         s->dx[k] = (int32_t)gx;
@@ -179,7 +198,7 @@ uint32_t su_polygon8(volatile uint8_t *fb, const struct rs_clip *clip, const str
     if(n < 3) return 0;
     su_project(v, &out[0], &p[0]);
     su_project(v, &out[1], &p[1]);
-    for(int i = 2; i < n; i++) {
+    for(int i = 2; i < n; i++) {                /* the fan: corner 0 with each pair of neighbours */
         struct rs_vertex pos[3];
         struct rs_tex_setup s;
         su_project(v, &out[i], &p[2]);

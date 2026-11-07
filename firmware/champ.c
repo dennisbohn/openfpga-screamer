@@ -1,13 +1,18 @@
 /*
- * The championship (champ.h): the stage table of 0x22b8 and its rules, 0x29acc (a race's
+ * The championship (see champ.h): the stage table of 0x22b8 and its rules, 0x29acc (a race's
  * result), 0x292c8 (ENTER on the standings), 0x290a5 and 0x29141 (a league or everything won).
+ * All addresses are in STARTL.EXE.
+ * Entry points: choice_defaults() and choice_record() for the saved settings and records,
+ * champ_at() for the stage table, and champ_new(), champ_resume(), champ_total(),
+ * champ_result() and champ_enter() for the progress through the stages.
  */
 #include "champ.h"
 #include <string.h>
 
 _Static_assert(sizeof(struct choice_dat) == CHOICE_SIZE, "CHOICE.DAT's layout");
 
-static const int points[11] = { 24, 9, 7, 5, 0, 0, 0, 0, 0, 0, 0 };    /* per place (0x21ec) */
+/* The points for a place, indexed by place (original: 0x21ec). */
+static const int points[11] = { 24, 9, 7, 5, 0, 0, 0, 0, 0, 0, 0 };
 
 void choice_defaults(void)
 {
@@ -29,8 +34,10 @@ void choice_defaults(void)
     choice.difficulties = 2;
 }
 
-/* time t into the five of r ahead of the first it is not slower than, the rest a place down
-   (the totals' modes with them, mode >= 0, not the laps'); its place, 5 if it is not among them */
+/* Puts time t into the five times of r, ahead of the first time that t is not slower than.
+   The slower times move down one place and the last one drops out. flag, the player's name
+   and, if mode >= 0, mode are stored with the time. The totals pass a mode, the laps do not.
+   Returns the place (0..4), or 5 if t is not among the five. */
 static int record_put(struct choice_rec *r, float t, int flag, int mode)
 {
     int at = 0;
@@ -56,17 +63,24 @@ void choice_record(int n, float lap, float total, int three_laps, int mode)
     if(three_laps) record_put(&choice.race[n - 1], total, 0, mode);
 }
 
-/* The table is regular (the dump of 0x22b8 checked against this): league L's thirteen stages
-   from 13 L, a text screen and the standings for each race in turn, the league won after the
-   sixth; the Bullet league's sixth standings lead to stage 51 instead. A text screen's league
-   picks the opponents, the standings' heads their title (block 6 + L). */
+/*
+ * Returns stage s of the table. The table is regular, so the function computes it. It was
+ * checked against a dump of the game's table at 0x22b8.
+ * League L has its thirteen stages from 13 L on. For each of the six races in turn it has a
+ * text screen and then the standings. The thirteenth stage says that the league is won, after
+ * the sixth race. Its track field (+0x08 in the game's entry) is the next level. In the Bullet
+ * league the sixth standings lead to stage 51 instead.
+ * A text screen's league picks the opponents. The standings' heads show their title (block
+ * 6 + L).
+ */
 struct champ_stage champ_at(int s)
 {
     struct champ_stage st = { CHAMP_END, 0, 0, 0, 0, s == 51 ? 18 : 19, 0, 0, s == 51 ? 6 : 4, 2 };
     if(s < 0 || s > 50) return st;
     int L = s / 13, i = s % 13;
-    st = (struct champ_stage){ CHAMP_TEXT, L, i / 2 + 1, i / 2, 42 + 4 * L, i ? 17 : 10 + L, 0, 0, i ? 5 : L, 3 };
-    if(i == 12) {                               /* the league won: the next one's level (+0x08) */
+    st = (struct champ_stage){ CHAMP_TEXT, L, i / 2 + 1, i / 2, 42 + 4 * L,
+                               i ? 17 : 10 + L, 0, 0, i ? 5 : L, 3 };
+    if(i == 12) {                               /* league won: its track field is the next level */
         static const int pic[3] = { 0, 1, 7 };
         st = (struct champ_stage){ CHAMP_LEAGUE_WON, L, L + 1, 0, 0, 14 + L, s + 1, s + 1, pic[L], 2 };
     } else if(i & 1) {
@@ -101,9 +115,12 @@ int champ_total(void)
     return choice.total = t;
 }
 
-/* 0x29acc: the place, time and points into the race's row; the stage on to the standings,
-   which RESUME comes back to; out of reach (2) once even wins in the races left would not
-   make the league's score */
+/*
+ * Stores a race's result (original: STARTL.EXE 0x29acc): the place, the time and the points
+ * go into the race's row. The stage moves on to the standings, which RESUME comes back to.
+ * The result is out of reach (failed = 2) when even wins in the races left would not make the
+ * league's score. reach is the points so far plus 9 for each race left.
+ */
 void champ_result(int left, int time_over, int place, float time)
 {
     if(left) return;
@@ -124,10 +141,13 @@ int champ_enter(void)
     switch(st.kind) {
     case CHAMP_TEXT:
         return CHAMP_RACE;
-    case CHAMP_STANDINGS: {                     /* 0x292c8: in the first three (the Bullet league:
-                                                   first), in time, the score after the sixth */
+    case CHAMP_STANDINGS: {                     /* original: 0x292c8. The player goes on if placed in
+                                                   the first three (in the Bullet league: first), in
+                                                   time, and with the score needed after the sixth
+                                                   race. */
         int pos = choice.pos[st.race];
-        if(pos < 4 && !choice.failed && (st.league < 3 || pos == 1) && (st.race < 5 || champ_total() >= st.need)) {
+        if(pos < 4 && !choice.failed && (st.league < 3 || pos == 1) &&
+           (st.race < 5 || champ_total() >= st.need)) {
             if(st.race == 5) {                  /* a new league: its table empty */
                 choice.stage = choice.prev = st.next;
                 for(int i = 0; i < 6; i++) choice.pos[i] = -1;
@@ -135,19 +155,20 @@ int champ_enter(void)
                 choice.prev = choice.stage;
                 choice.stage = st.next;
             }
-        } else {                                /* LOSER!!, RESUME: the race again */
+        } else {                                /* LOSER!!. RESUME then runs the race again. */
             choice.prev = choice.stage - 1;
             choice.stage = st.fail;
         }
         return CHAMP_NEXT;
     }
-    case CHAMP_LEAGUE_WON:                      /* 0x290a5: one more track to choose from */
+    case CHAMP_LEAGUE_WON:                      /* original: 0x290a5. One more track to choose from. */
         if(choice.level < st.track) choice.level = st.track;
         choice.prev = choice.stage;
         choice.stage = st.next;
         return CHAMP_NEXT;
-    default:                                    /* 0x29141: all won, the Bullet, the mirrored
-                                                   tracks and AFTERBURNER; then the main menu */
+    default:                                    /* original: 0x29141. Everything is won: the Bullet, the
+                                                   mirrored tracks and AFTERBURNER. Then the main
+                                                   menu. */
         if(st.text == 18) {
             choice.bullet = 1;
             choice.level = 9;
