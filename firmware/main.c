@@ -547,6 +547,7 @@ enum { RACE_LEAVE, RACE_AGAIN, RACE_REPLAY };   /* how a race ends: NO, YES, its
 static struct car_input rec[REC_MAX];
 static uint32_t rec_n;
 static int rec_full;
+static int pocket_race_logged;              /* the race's long status block went to debug.txt once on the Pocket (it fills the 4 KB) */
 static uint32_t bench_frames;           /* the benchmark's race (bench.h): the pictures to count, 0 an ordinary race */
 
 /* The race on track n with the car of CARS.DTR row car until SELECT, or OVER_STEPS after its end
@@ -823,7 +824,8 @@ static int run_track(int n, int car, int replay)
             fps_drawn = drawn;
             fps_frame = VID_FRAME(st);
         }
-        if (!bench_frames && ((drawn % 250 == 2 && !sim_race) || drawn == check_at)) {     /* (the 4 KB log has room for one big line) */
+        if (!bench_frames && (sim ? ((drawn % 250 == 2 && !sim_race) || drawn == check_at)
+                                  : (drawn == check_at && !pocket_race_logged++))) {   /* (the 4 KB log has room for one big block) */
             dlog_str("track frame ");
             dlog_dec((int32_t)drawn);
             dlog_str(": car ");
@@ -1472,7 +1474,7 @@ static void bench_run(void)
     track_build_difficulty = opt.difficulty == 3 ? 4 : opt.difficulty;
     opp_bullet = track_build_difficulty > 2;
     speech_on = 0;
-    dlog_keep(BENCH_LOG_BYTES);
+    dlog_keep(MARK_ROOM + BENCH_LOG_BYTES);
     for (int n = 1; n <= BENCH_TRACKS; n++) {
         bench_frames = BENCH_FRAMES;
         if (race(n, 0)) {
@@ -1481,8 +1483,9 @@ static void bench_run(void)
         }
         bench_frames = 0;
     }
-    dlog_keep(0);
+    dlog_keep(0);                               /* the result may use the room kept for it and for the marks */
     bench_log(rows, ok, track_far_scale(), track_lod_scale());
+    dlog_keep(MARK_ROOM);
     bench_show(rows, ok);
 }
 
@@ -1703,6 +1706,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     menu_options_load();
     volumes();
     config_load();                  /* screamer.cfg: how far the core draws (config.h) */
+    dlog_keep(MARK_ROOM);           /* the rest of the log leaves room for the marks (mark.h) */
     if (files_missing()) files_loop(0);         /* a file the game needs is missing: the list, for ever */
     int sim = (SYS_FLAGS & FLAG_SIM) != 0;
     const uint32_t *shown = sim ? 0 : first_picture(intro_track());    /* the simulation's race: none */

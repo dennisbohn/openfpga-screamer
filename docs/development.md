@@ -123,7 +123,7 @@ the firmware of an earlier commit does.
 
 For hunting what the picture did at one place (a building that is gone for a frame): in a race, hold A and press X
 (`firmware/mark.c`) to write `mark 3 track 4 view 2 frame 812: x y h yaw pitch roll | ...` to `debug.txt` with the camera of
-that picture and of 15, 30 and 45 frames before (a press comes late; view 9 is the free camera) and `MARK 3` on the screen. Hold A and press Y for the
+that picture and of 15, 30 and 45 frames before (a press comes late; view 9 is the free camera) and `MARK 3` on the screen (the log keeps 1,600 bytes for them, about ten; the race's long status block with the timeline goes to the log once a session on the Pocket, it had filled the 4 KB in the first race). Hold A and press Y for the
 free camera: the cars, the clock and the scenery stand still, the camera flies (D-pad forward / back / turn, L R down / up,
 Y X tilt, B fast), A with X marks the place, Start gives the car's camera back. `tools/perf/mark_test.c` tests the lines and the
 camera's directions on the host. The marks are for the PC: the walk tools (`tools/perf`) take their cameras from them.

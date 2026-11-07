@@ -12,6 +12,9 @@ void dlog_str(const char *s) { strcat(logbuf, s); }
 void dlog_char(char c) { char b[2] = { c, 0 }; strcat(logbuf, b); }
 void dlog_dec(int32_t v) { char b[16]; sprintf(b, "%d", v); strcat(logbuf, b); }
 uint32_t dlog_free(void) { return room; }
+static uint32_t kept_room;
+uint32_t dlog_kept(void) { return kept_room; }
+void dlog_keep(uint32_t b) { kept_room = b; }
 #include "../../firmware/hw.h"
 #include "../../firmware/track.h"
 /* the camera's axes as track.c has them (forward, right, up in the game's x, y, height), for a level roll */
@@ -61,6 +64,10 @@ int main(void)
     room = MARK_BYTES - 1;
     logbuf[0] = 0;
     same("no room: nothing is written", mark_save(1, 0, 20) == 0 && logbuf[0] == 0 ? "nothing" : "written", "nothing");
+    kept_room = 1600;
+    room = MARK_BYTES + 100;                     /* (dlog_free: what is there with the kept room given back) */
+    logbuf[0] = 0;
+    same("a mark takes the kept room and puts it back", mark_save(1, 0, 20) != 0 && kept_room == 1600 ? "ok" : "wrong", "ok");
     /* the free camera */
     struct track_cam c = { 0 };
     free_cam_step(&c, KEY_UP);

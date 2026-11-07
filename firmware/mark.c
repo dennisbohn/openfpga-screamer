@@ -53,7 +53,13 @@ void mark_push(const struct track_cam *c)
 
 int mark_save(int track, int view, uint32_t frame)
 {
-    if (!pushed || dlog_free() < MARK_BYTES) return 0;
+    if (!pushed) return 0;
+    uint32_t room = dlog_kept();                /* the room kept for marks (and the benchmark's result) is theirs to use */
+    dlog_keep(0);
+    if (dlog_free() < MARK_BYTES) {
+        dlog_keep(room);
+        return 0;
+    }
     marks++;
     dlog_str("mark ");
     dlog_dec(marks);
@@ -75,5 +81,6 @@ int mark_save(int track, int view, uint32_t frame)
         }
     }
     dlog_char('\n');
+    dlog_keep(room);
     return marks;
 }

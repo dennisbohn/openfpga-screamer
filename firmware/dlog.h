@@ -26,6 +26,7 @@ void dlog_hex(uint32_t v);      /* 8 digits */
 /* Stop the appends bytes sooner than the end, to keep room for lines that must get in (a benchmark's result): 0 gives
    the room back. Nothing already written is touched */
 void dlog_keep(uint32_t bytes);
+uint32_t dlog_kept(void);       /* the room dlog_keep holds back now */
 uint32_t dlog_free(void);       /* the bytes still free before the limit (dlog_keep's room is not counted) */
 void dlog_trap(void);           /* for the trap handler: init if needed, open the reserve,
                                    finish a cut-off line */

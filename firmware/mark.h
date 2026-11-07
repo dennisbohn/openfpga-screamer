@@ -20,6 +20,7 @@
 #define MARK_STEP   15              /* frames between the cameras a mark writes */
 #define MARK_POSES  4               /* the cameras a mark writes: now and three earlier ones */
 #define MARK_BYTES  220             /* debug.txt's room a mark needs at most */
+#define MARK_ROOM   1600            /* the room debug.txt keeps for marks (dlog_keep): ten of them */
 
 #define FREE_SPEED  160.0f          /* units a frame (a picture) */
 #define FREE_FAST   6.0f            /* times that with B held */

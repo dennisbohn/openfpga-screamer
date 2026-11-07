@@ -24,9 +24,17 @@ void dlog_init(void)
     limit = DLOG_SIZE - DLOG_RESERVE;
 }
 
+static uint32_t kept;           /* the room held back (dlog_keep) */
+
 void dlog_keep(uint32_t bytes)
 {
+    kept = bytes;
     if (limit) limit = DLOG_SIZE - DLOG_RESERVE - bytes;
+}
+
+uint32_t dlog_kept(void)
+{
+    return kept;
 }
 
 uint32_t dlog_free(void)
