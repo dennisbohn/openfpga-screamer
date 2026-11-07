@@ -2,8 +2,8 @@
 
 The programs for the core's RISC-V CPU, in two parts:
 
-- `firmware.bin`, the boot loader in the boot RAM (`boot.c`): shows LOADING, runs the self-tests and the memory
-  test, checks and starts the program. At most 32 KB; the build fails above that.
+- `firmware.bin`, the boot loader in the boot RAM (`boot.c`): self-tests, memory test, checks and starts the
+  program. At most 32 KB; the build fails above that.
 - `program.bin`, the game, in the SDRAM from `0x1300_0000` (`main.c`), running through the CPU's caches. Its
   header holds the size, a CRC-32 and the entry point.
 

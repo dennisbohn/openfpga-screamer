@@ -764,8 +764,9 @@ menu, and again when the main menu (page 0, no page open) has stood 30 s without
   each intro and wraps to 0 after 5 (`0x27f06`). The race is set up like a normal one, but directly
   (`0x128dc`, no loading picture: the screen stays black), with the menu music.
   - At the core's start only, the track's loading picture is shown. This deviates from the original, so that
-    start-up does not stay black for long (`first_picture` in `main.c`). Until then the boot loader shows
-    the word LOADING in the small console font (`show_loading` in `boot.c`), from about 50 ms after the start. Right after `CHOICE.DAT`, the
+    start-up does not stay black for long (`first_picture` in `main.c`). The Pocket shows the core's video
+    only about a second after the CPU starts (measured with a text that the boot loader held for 5 s), which
+    is when this picture is up; a text drawn earlier is not seen. Right after `CHOICE.DAT`, the
     program loads `LOCAL.DAT` and from `GRAF.DAT` only the table of contents, `MENUL.SPR`, `MENUL.FNT` and
     `LOADnL.PCX` (about 100 KB). It shows the picture as before a race, loads the rest of the menus behind
     it, builds the track and loads the sounds. Then it fades out as before a race. The log gives the time
