@@ -27,6 +27,7 @@
 #include "track_build.h"
 #include "bytes.h"
 #include "dat.h"
+#include "hw.h"
 #include "track.h"
 #include "tb_mmp.h"
 #include "tb_spl.h"
@@ -41,18 +42,6 @@ int track_build_difficulty = 1;         /* NORMAL, as make_track.py */
 #define MAX_BLOCKS  28          /* the CRCs that fit into the header (0x90 .. 0x100) */
 #define SECTIONS    14          /* the sections in offs[] and counts[], in the order of the table above */
 #define MODELS      7           /* AUTO00.3DX .. AUTO06.3DX */
-
-/* The CPU's cycle counter, for the cycles in track_build_info. It is 0 on the PC. */
-#ifdef __riscv
-static inline uint32_t now(void)
-{
-    uint32_t c;
-    __asm__ volatile ("csrr %0, cycle" : "=r"(c));
-    return c;
-}
-#else
-static inline uint32_t now(void) { return 0; }
-#endif
 
 /* The state of one build: out (cap bytes, pos the next free byte) takes the image, scratch
    (scratch_cap bytes, used of them taken) the unpacked entries. */
@@ -91,9 +80,9 @@ static const char *name(struct build *b, const char *end, char buf[16])
 static int extract(struct build *b, const uint8_t *file, uint32_t size, const struct dat_entry *e,
                    uint8_t *to, uint32_t room)
 {
-    uint32_t t0 = now();
+    uint32_t t0 = rdcycle();
     int ok = e->size > 0 && dat_extract(file, size, e, to, room) == e->size;
-    b->info->unpack_cycles += now() - t0;
+    b->info->unpack_cycles += rdcycle() - t0;
     return ok || fail(b, e->name);
 }
 
@@ -173,7 +162,7 @@ static int models(struct build *b, const struct track_files *f)
 uint32_t track_build(const struct track_files *f, int n, uint8_t *out, uint32_t cap,
                      uint8_t *scratch, uint32_t scratch_cap, struct track_build_info *info)
 {
-    uint32_t t0 = now();
+    uint32_t t0 = rdcycle();
     struct build b = { .out = out, .scratch = scratch, .cap = cap, .pos = FIRST, .scratch_cap = scratch_cap,
                        .track = "MAP0", .info = info };
     info->fail[0] = 0;
@@ -257,6 +246,6 @@ uint32_t track_build(const struct track_files *f, int n, uint8_t *out, uint32_t 
         uint32_t o = FIRST + k * TRACK_CRC_BLOCK, e = size - o < TRACK_CRC_BLOCK ? size : o + TRACK_CRC_BLOCK;
         put_le32(out + 0x90 + 4 * k, crc32(out + o, out + e));
     }
-    info->cycles = now() - t0;
+    info->cycles = rdcycle() - t0;
     return size;
 }

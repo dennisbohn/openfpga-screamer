@@ -79,6 +79,7 @@
 #endif
 #include "bytes.h"
 #include "crc32.h"
+#include "hw.h"
 #include <math.h>
 #include <string.h>
 
@@ -249,14 +250,7 @@ static int nvcells;
 int track_mode;
 void (*track_hw_piece)(const struct gu_piece *p);
 
-/* The CPU's cycle counter, for the statistics in track_stats. It is 0 on the PC. */
 #ifdef __riscv
-static inline uint32_t now(void)
-{
-    uint32_t c;
-    __asm__ volatile ("csrr %0, cycle" : "=r"(c));
-    return c;
-}
 /* INT_NOWn asks for the FPU's answers to n comparisons (whole numbers) before any of them is used.
    An answer comes back late, and a use right after its question waits for it. When the questions
    are asked one after the other, the answers come back side by side and the CPU waits once.
@@ -269,7 +263,6 @@ static inline uint32_t now(void)
 #define INT_NOW8(a, b, c, d, e, f, g, h) \
     __asm__ ("" : "+r"(a), "+r"(b), "+r"(c), "+r"(d), "+r"(e), "+r"(f), "+r"(g), "+r"(h))
 #else
-static inline uint32_t now(void) { return 0; }
 #define INT_NOW2(a, b) ((void)0)
 #define INT_NOW4(a, b, c, d) ((void)0)
 #define INT_NOW6(a, b, c, d, e, f) ((void)0)
@@ -1257,7 +1250,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
                  const float c[3], const float f[3], const float r[3], const float u[3],
                  struct track_object *objs, int nobj, struct track_stats *st)
 {
-    uint32_t t_start = now();
+    uint32_t t_start = rdcycle();
     st->pieces = st->faces = st->triangles = st->see_through = st->vertices = st->objects = 0;
     const float cx = c[0], cy = c[1], ch = c[2];
     const float fx = f[0], fy = f[1], fh = f[2], rx = r[0], ry = r[1], rh = r[2];
@@ -1359,7 +1352,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         }
         for(int n = 0; n < nv; n++) to[at[((uint32_t)from[n] ^ 0x80000000u) >> sh & 255]++] = from[n];
     }
-    uint32_t t_pieces = now();
+    uint32_t t_pieces = rdcycle();
     st->cyc_cull = t_pieces - t_start;
 #ifdef TRACK_DUMP                               /* the PC renderer (tools/render.sh): prints the list drawn */
     for(int k = 0; k < nv; k++)
@@ -1398,10 +1391,10 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
                 g.phase = ob->b[b].phase;
                 g.refl = refl;
                 st->pieces++;
-                uint32_t t0 = now();
+                uint32_t t0 = rdcycle();
                 if(track_mode == TRACK_HW) track_hw_piece(&g);
                 else gu_draw(fb, clip, &view, mlb, &g, &gst);
-                t_out += now() - t0;
+                t_out += rdcycle() - t0;
             }
             continue;
         }
@@ -1411,10 +1404,10 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
             int nb = multi_pieces(c, f, r, u, pc, gs);
             for(int b = 0; b < nb; b++) {
                 st->pieces++;
-                uint32_t t0 = now();
+                uint32_t t0 = rdcycle();
                 if(track_mode == TRACK_HW) track_hw_piece(&gs[b]);
                 else gu_draw(fb, clip, &view, mlb, &gs[b], &gst);
-                t_out += now() - t0;
+                t_out += rdcycle() - t0;
             }
             continue;
         }
@@ -1455,17 +1448,17 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
            tells which faces are turned away. */
         face_eye(g.blk, -dx * ca - dy * sa, -dh, dx * sa - dy * ca, &g);
         st->pieces++;
-        uint32_t t0 = now();
+        uint32_t t0 = rdcycle();
         if(track_mode == TRACK_HW) track_hw_piece(&g);
         else gu_draw(fb, clip, &view, mlb, &g, &gst);
-        t_out += now() - t0;
+        t_out += rdcycle() - t0;
     }
     st->faces = gst.faces;
     st->triangles = gst.triangles;
     st->see_through = gst.see_through;
     st->vertices = gst.vertices;
     st->cyc_out = t_out;                        /* handing the pieces on (the hook or the C models) */
-    st->cyc_piece = now() - t_pieces - t_out;   /* each piece's place in view space, the rest of the loop */
+    st->cyc_piece = rdcycle() - t_pieces - t_out; /* each piece's place in view space, the rest of the loop */
 }
 
 /* Draws the view from the camera; the arguments are described at track_draw_cam in track.h. */
