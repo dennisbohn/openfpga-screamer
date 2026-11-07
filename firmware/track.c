@@ -1,6 +1,6 @@
 /*
  * The track (track.h). The file (tools/make_track.py): "SCRK", version 6, then MAPn.MLB and
- * MAPn.UNR unchanged, the palette, the placements, the camera path, the ground index, the
+ * MAPn.UNR unchanged, the palette, the placements and the map's cell table, the camera path, the ground index, the
  * markers, the cars, the car models, road points and walls, the start, the race screen, the
  * backdrop and its ground colour, the opponents' curves and numbers.
  *
