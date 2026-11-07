@@ -1,10 +1,13 @@
-"""Draw docs/resources.svg: the FPGA resource budget of the last build.
+"""Draws docs/resources.svg: the FPGA resource budget of the last build.
 
-Usage: python tools/make_budget_svg.py [fit.rpt] [out.svg]
-
-The measured numbers come from the fitter report of the last Quartus build
-(core/src/fpga/output_files/ap_core.fit.rpt, table "Fitter Resource Utilization by
-Entity").
+Usage: python -I tools/make_budget_svg.py [fit.rpt] [out.svg]      (run from the repository root)
+  fit.rpt  the fitter report of the last Quartus build (default
+           core/src/fpga/output_files/ap_core.fit.rpt, the table "Fitter Resource Utilization by
+           Entity")
+  out.svg  the picture (default docs/resources.svg)
+The numbers are measured: they come from the report. MEASURED below says which hierarchy nodes
+make up each bar. The picture has two parts: the share of the FPGA used for each resource, and the
+logic per component.
 """
 import re
 import sys
@@ -55,7 +58,7 @@ MEASURED = [
     ("Audio: 32-voice mixer + music, I²S", "audio", [(1, SOC + "|audio:au")]),
     ("FM music: OPL2 chip + write queue", "audio", [(1, SOC + "|opl:fm_unit")]),
 ]
-# the SoC's own logic (bus, registers, arbiters): the SoC minus everything measured inside it
+# The SoC's own logic (bus, registers, arbiters): the SoC minus everything measured inside it.
 SOC_REST = ("Bus, registers, arbiters", "mem")
 
 TIMING_LIMIT = 0.80         # logic utilisation above which timing closure gets hard
@@ -219,12 +222,14 @@ def main():
         if res == "alm":
             lx = X0 + PW * TIMING_LIMIT
             svg.add(f'<line x1="{lx:.1f}" y1="{group_top - 4}" x2="{lx:.1f}" y2="{y - 6}" class="limit"/>')
-            svg.text(lx - 6, y + 8, f"above ~{round(TIMING_LIMIT * 100)} % timing closure gets hard", "m", "end")
+            svg.text(lx - 6, y + 8, f"above ~{round(TIMING_LIMIT * 100)} % timing closure gets hard",
+                     "m", "end")
             y += 14
     grid_bottom = y
     for p in (0, 25, 50, 75, 100):
         x = X0 + PW * p / 100
-        svg.parts.insert(0, f'<line x1="{x:.1f}" y1="{grid_top}" x2="{x:.1f}" y2="{grid_bottom}" class="{"base" if p == 0 else "grid"}"/>')
+        svg.parts.insert(0, f'<line x1="{x:.1f}" y1="{grid_top}" x2="{x:.1f}" y2="{grid_bottom}" '
+                            f'class="{"base" if p == 0 else "grid"}"/>')
 
     # section 2: logic per component
     y += 34
@@ -246,7 +251,8 @@ def main():
     grid2_bottom = y + 4
     for v in range(0, scale_max + 1, 1000):
         x = X0 + PW * v / scale_max
-        svg.parts.insert(0, f'<line x1="{x:.1f}" y1="{grid2_top}" x2="{x:.1f}" y2="{grid2_bottom}" class="{"base" if v == 0 else "grid"}"/>')
+        svg.parts.insert(0, f'<line x1="{x:.1f}" y1="{grid2_top}" x2="{x:.1f}" y2="{grid2_bottom}" '
+                            f'class="{"base" if v == 0 else "grid"}"/>')
 
     y += 36
     svg.text(40, y, "Numbers read by tools/make_budget_svg.py from the fitter report of the last build.", "s")
@@ -257,7 +263,8 @@ def main():
 
     a, m, d = share(2, CAPACITY["alm"]), share(3, CAPACITY["m10k"]), share(4, CAPACITY["dsp"])
     biggest = [c[0] for c in sorted(comps, key=lambda c: -c[2])[:3]]
-    aria = (f"FPGA resource budget: logic {a} percent, {'above' if a > 80 else 'below'} the 80 percent limit; "
+    aria = (f"FPGA resource budget: logic {a} percent, "
+            f"{'above' if a > 80 else 'below'} the 80 percent limit; "
             f"block RAM {m} percent; DSP {d} percent. Largest items: {', '.join(biggest)}.")
 
     light = "\n".join(f"    --{k}: {lc};" for k, _, lc, _ in GROUPS)
@@ -289,7 +296,8 @@ def main():
 </style>"""
 
     doc = [
-        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {height:.0f}" width="{WIDTH}" height="{height:.0f}" '
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {WIDTH} {height:.0f}" '
+        f'width="{WIDTH}" height="{height:.0f}" '
         f'role="img" aria-label="{escape(aria)}">',
         "<title>FPGA resource budget</title>",
         style,

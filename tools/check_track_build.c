@@ -1,10 +1,12 @@
 /*
  * Host test of the track build on the Pocket (firmware/track_build.c), run by
- * tools/check_track_build.sh: the image from the five original containers, built as the
- * firmware builds it, compared byte for byte with the image tools/make_track.py made from
- * the same files. The output buffer starts out filled with junk, as the SDRAM is.
+ * tools/check_track_build.sh. The image from the five original containers is built as the
+ * firmware builds it, and compared byte for byte with the image that tools/make_track.py made
+ * from the same files. The output buffer starts out filled with junk, as the SDRAM does, so that
+ * a byte the build does not write shows up as a difference.
  *
  * Usage: check_track_build <game folder> <reference image> [n]     n: the track, default 1
+ * Prints PASS (exit status 0) or FAIL with the first difference and the section that holds it.
  */
 #include "../firmware/track_build.h"
 #include <stdio.h>
@@ -12,8 +14,10 @@
 #include <string.h>
 
 #define CAP         (7u << 20)      /* room for the image, as main.c gives it */
-#define SCRATCH     0x2A0000u       /* and the scratch: BUILD_SCRATCH up to the program */
+#define SCRATCH     0x2A0000u       /* and for the scratch memory: BUILD_SCRATCH up to the program */
 
+/* Reads the file dir/name into a new buffer (one byte longer than the file), stores its size in
+   *size and prints name and size. Exits with status 2 if the file cannot be read. */
 static uint8_t *slurp(const char *dir, const char *name, uint32_t *size)
 {
     char path[1024];
@@ -33,7 +37,10 @@ static uint8_t *slurp(const char *dir, const char *name, uint32_t *size)
 
 int main(int argc, char **argv)
 {
-    if(argc != 3 && argc != 4) { fprintf(stderr, "usage: %s <game folder> <reference image> [n]\n", argv[0]); return 2; }
+    if(argc != 3 && argc != 4) {
+        fprintf(stderr, "usage: %s <game folder> <reference image> [n]\n", argv[0]);
+        return 2;
+    }
     int track = argc == 4 ? atoi(argv[3]) : 1;
     char gfx[32], data[32];
     snprintf(gfx, sizeof gfx, "GFX/MAP%dH.DAT", track);
@@ -55,7 +62,8 @@ int main(int argc, char **argv)
     if(!size) { printf("FAIL: track_build stopped at \"%s\"\n", info.fail); return 1; }
     printf("built: %u bytes, reference: %u bytes\n", size, ref_size);
 
-    /* the first difference, named by the reference's section that holds it */
+    /* The first difference, named by the section of the reference that holds it. at[] gives the
+       header offsets of the sections' offsets (the layout is in tools/make_track.py). */
     static const char *const names[] = { "MLB", "UNR", "palette", "placements", "camera path",
         "ground index", "markers", "cars", "car models", "road points", "walls", "race screen",
         "backdrop", "opponents" };
@@ -67,7 +75,8 @@ int main(int argc, char **argv)
     if(differ) {
         const char *in = "header";
         for(int s = 0; s < 14; s++) {
-            uint32_t o = ref[at[s]] | ref[at[s] + 1] << 8 | ref[at[s] + 2] << 16 | (uint32_t)ref[at[s] + 3] << 24;
+            uint32_t o = ref[at[s]] | ref[at[s] + 1] << 8 | ref[at[s] + 2] << 16 |
+                         (uint32_t)ref[at[s] + 3] << 24;
             if(first >= o) in = names[s];
         }
         printf("%u bytes differ, the first at 0x%x (%s): 0x%02x, expected 0x%02x\n", differ, first, in,

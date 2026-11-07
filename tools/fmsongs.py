@@ -1,11 +1,15 @@
-"""The songs of a MUSIC.DAT, read independently of firmware/fm.c: tools/fmcheck.sh runs this first.
+"""Reads the songs of a MUSIC.DAT independently of firmware/fm.c. tools/fmcheck.sh runs this first.
 
 Usage: python -I tools/fmsongs.py <MUSIC.DAT> [folder to unpack the banks and songs into]
 
-Per song: the header, the tracks (channel, events, length in ticks), the kinds of messages in them, the
-notes, and the song's length: it is played round again when every track has ended (firmware/fm.c).
-Everything the firmware's parser has to cope with is looked for here: a message other than the ones
-the driver knows, a track that does not end with FF 2F, bytes after the end. Exit status 1 for any.
+Per song the script prints the header, the tracks (channel, events, length in ticks), the kinds of
+messages in them, the notes, and the song's length. A song is played round again when every track
+has ended (firmware/fm.c).
+The script also looks for everything that the firmware's parser has to cope with: a message other
+than the ones the driver knows, a track that does not end with FF 2F, and bytes after the end.
+Any of these gives exit status 1. If a folder is given, it receives the unpacked files and, for
+each song, a file <song>.notes with the song's length in ticks and its number of notes
+(tools/fmcheck.sh reads it).
 """
 import os
 import struct
@@ -28,6 +32,7 @@ def delay(d, p):
 
 
 def song(name, d):
+    """Parses the HMP song d. Returns a dictionary with its rate, tracks, message kinds and problems (bad)."""
     bad = []
     if d[:14] != b"HMIMIDIP013195":
         bad.append("no HMIMIDIP013195 header")
@@ -92,14 +97,17 @@ def song(name, d):
             bad.append("track %d does not end with FF 2F" % t)
         elif p != end:
             bad.append("track %d: %d bytes after FF 2F" % (t, end - p))
-        tracks.append(dict(num=num, chan=chan, events=events, ticks=tick, notes=notes, drums=drums, by_tick=by_tick))
+        tracks.append(dict(num=num, chan=chan, events=events, ticks=tick, notes=notes, drums=drums,
+                           by_tick=by_tick))
         pos = end
     if pos != len(d) and any(d[pos:]):
-        bad.append("%d bytes after the last track, not all zero" % (len(d) - pos))   # (zeros: one a track, unused)
+        # Zero bytes after the last track are allowed (one a track, unused); anything else is a problem.
+        bad.append("%d bytes after the last track, not all zero" % (len(d) - pos))
     return dict(name=name, rate=rate, tracks=tracks, kinds=kinds, bad=bad)
 
 
 def main():
+    """Prints the summary of every song in the file and returns the exit status."""
     path = sys.argv[1]
     out = sys.argv[2] if len(sys.argv) > 2 else None
     data = datfile.read(path)
@@ -126,13 +134,13 @@ def main():
         for b in s["bad"]:
             print("   PROBLEM:", b)
             status = 1
-        # the notes at one tick: how many a chord can hold, to see the driver's nine voices at work
+        # The notes at one tick: how many a chord can hold, to see the driver's nine voices at work.
         by_tick = {}
         for t in s["tracks"]:
             for k, v in t["by_tick"].items():
                 by_tick[k] = by_tick.get(k, 0) + v
         print("   most note-ons in one tick: %d" % max(by_tick.values()))
-        # python's own count of every tick's note-ons for fmcheck's comparison with the firmware
+        # The .notes file holds the song's length in ticks and its notes, for tools/fmcheck.sh.
         if out:
             with open(os.path.join(out, e.name + ".notes"), "w") as f:
                 f.write("%d %d\n" % (length, notes + drums))

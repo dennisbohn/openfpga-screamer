@@ -1,15 +1,19 @@
 /*
- * The FM music's sequencer and driver (firmware/fm.c) on the PC, against a model of the
- * hardware's queue (core/src/fpga/core/opl.v): plays MUSICn.HMP of a MUSIC.DAT for some seconds
- * with the firmware calling fm_frame() every 20 ms, and
- *   trace:  prints every write the firmware queues:  tick register value   (tools/fmcheck.sh
- *           compares it with openscreamer's driver)
- *   else:   a summary: the song's rounds and notes, the writes, how late the model releases them
- *           (the queue spaces them 129 chip clocks apart) and how true the ticks' times are.
+ * fmdump - the FM music's sequencer and driver (firmware/fm.c) on the PC, against a model of the
+ * hardware's queue (core/src/fpga/core/opl.v).
+ *
+ * The program plays MUSICn.HMP of a MUSIC.DAT for some seconds, with the firmware calling
+ * fm_frame() every 20 ms. The output depends on the last argument:
+ *   trace    every write that the firmware queues: "tick register value" (tools/fmcheck.sh
+ *            compares it with openscreamer's driver, tools/host/fmref.c)
+ *   events   every write with its time in chip samples from the song's first tick (sim/opl/tb.cpp
+ *            plays them on the real chip into a WAV file)
+ *   (none)   a summary: the song's rounds and notes, the writes, how late the model releases them
+ *            (the queue spaces them 129 chip clocks apart), and how true the ticks' times are
  * Usage: fmdump <MUSIC.DAT> <song 1..7> <seconds> [trace|events]
- *   events: every write with its time in chip samples from the song's first tick (sim/opl/tb.cpp plays
- *   them on the real chip into a WAV file)
- *   FMJITTER=1: the frames come 20 to 45 ms apart instead of 20 ms.
+ *   FMJITTER=1 in the environment: the frames come 20 to 45 ms apart instead of 20 ms.
+ * Built by tools/fmcheck.sh with -DFM_HOST, which makes fm.c call the fm_host_* functions below
+ * instead of the hardware.
  */
 #include <math.h>
 #include <stdio.h>
@@ -19,7 +23,7 @@
 
 uint32_t fm_host_tick, fm_host_rounds, fm_host_notes;
 
-/* the model: time in cens (chip clocks), 72 to a sample */
+/* The model of the hardware's queue. Time is counted in cens (chip clocks), 72 to a sample. */
 #define CEN_PER_SAMPLE 72
 #define SPACE_CENS     129
 #define QUEUE_LEN      256
@@ -28,14 +32,20 @@ static int run;
 static struct { uint32_t word; double due; } q[QUEUE_LEN];
 static int head, fill;
 static uint64_t next_free;
-static int tracing;                         /* 1 trace: tick, register, value; 2 events: time in samples, register, value */
+/* 1 trace: tick, register, value; 2 events: time in samples, register, value */
+static int tracing;
 static double song_start;
 static long writes, released, late_1ms, late_8ms, dropped_full, max_fill, pushed_not_run;
 static double max_late, sum_late;
 static double first_due = -1, last_due;
 static uint32_t last_tick_pushed;
 
+/* The model's time in chip samples. */
 static double samples(void) { return (double)cens / CEN_PER_SAMPLE; }
+
+/* The functions that the firmware's fm.c calls in place of the hardware registers (see fm.c):
+   the 16-bit sample counter, the queue's fill level, a write into the queue, the control word
+   (bit 0: run; clearing it empties the queue) and the gain (ignored here). */
 
 uint32_t fm_host_now(void) { return (uint32_t)(cens / CEN_PER_SAMPLE) & 0xFFFF; }
 uint32_t fm_host_fill(void) { return (uint32_t)fill; }
@@ -49,6 +59,8 @@ void fm_host_ctrl(uint32_t r)
     }
 }
 
+/* A write queued by the firmware: the word holds the register, the value and, in its upper 16 bits,
+   the sample counter value at which the write is due. The write is stored with its due time. */
 void fm_host_put(uint32_t word)
 {
     if (!run) {
@@ -74,12 +86,12 @@ void fm_host_put(uint32_t word)
     if (tracing == 2) printf("%.1f %02x %02x\n", due - song_start, (word >> 8) & 0xFF, word & 0xFF);
 }
 
-/* the queue's hardware up to time `to` (in cens): the first write is made when its time has come
-   and 129 cens after the one before */
+/* Runs the queue's hardware up to time `to` (in cens). A write is released when its time has come
+   and 129 cens after the previous one. The lateness of each release is recorded. */
 static void advance(uint64_t to)
 {
     while (cens < to) {
-        if (!run || fill == 0) {                                /* nothing to release: to the end */
+        if (!run || fill == 0) {                                /* nothing to release: jump to the end */
             cens = to;
             break;
         }
@@ -111,6 +123,8 @@ static void advance(uint64_t to)
     }
 }
 
+/* Plays the song through the model, then prints the trace or the summary. In trace mode the number
+   of ticks that ran goes to the standard error, for tools/fmcheck.sh. */
 int main(int argc, char **argv)
 {
     if (argc < 4) {
@@ -137,9 +151,9 @@ int main(int argc, char **argv)
         fprintf(stderr, "fm_init: no banks and songs in %s\n", argv[1]);
         return 1;
     }
-    cens = (uint64_t)(12345.6 * CEN_PER_SAMPLE);                /* (not at zero: the 16 bits count on) */
+    cens = (uint64_t)(12345.6 * CEN_PER_SAMPLE);                /* not zero: the 16-bit counter runs on */
     double t0 = samples();
-    song_start = t0 + 1500;                                     /* (the first tick's time, fm.c LEAD) */
+    song_start = t0 + 1500;                                     /* the first tick's time (LEAD in fm.c) */
     if (!fm_play(song)) {
         fprintf(stderr, "fm_play(%d) failed\n", song);
         return 1;
@@ -169,12 +183,14 @@ int main(int argc, char **argv)
     printf("song %d: %.1f s, %ld frames, %u ticks run, %u rounds, %u notes, %u without a voice\n",
            song, seconds, frames, fm_host_tick, fm_host_rounds, fm_host_notes, lost);
     printf("  writes %ld (%.1f a tick), released %ld, dropped (full) %ld, queue at most %ld of %d\n",
-           writes, (double)writes / (fm_host_tick ? fm_host_tick : 1), released, dropped_full, max_fill, QUEUE_LEN);
+           writes, (double)writes / (fm_host_tick ? fm_host_tick : 1), released, dropped_full, max_fill,
+           QUEUE_LEN);
     printf("  release lateness: mean %.1f samples, max %.1f (%.2f ms), over 1 ms %ld, over 8 ms %ld; "
            "frames without room %u, times behind %u\n",
-           released ? sum_late / (double)released : 0.0, max_late, max_late / 49.7159, late_1ms, late_8ms, full, behind);
-    /* the ticks' times: the last write queued is of tick `last_tick_pushed` or of the one before;
-       it should be due at start + tick x 3579545 / 8640 (120 ticks a second) samples after the start */
+           released ? sum_late / (double)released : 0.0, max_late, max_late / 49.7159, late_1ms, late_8ms,
+           full, behind);
+    /* The ticks' times: the last write queued belongs to tick `last_tick_pushed` or to the one before.
+       It should be due at start + tick x 3579545 / 8640 samples (120 ticks a second). */
     double expect = (t0 + 1500) + (double)last_tick_pushed * 3579545.0 / 8640.0;
     printf("  last write queued: tick %u due at %.1f, ideal %.1f (error %.1f samples)\n",
            last_tick_pushed, last_due - t0, expect - t0, last_due - expect);

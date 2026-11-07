@@ -1,12 +1,14 @@
 #!/bin/sh
-# The cull must hand the same pieces to the geometry unit, in the same order, as before a change of it.
-# Counting copies of the firmware of a reference commit and of this tree (tools/perf/framestats.sh build,
-# perf_patch.py: a hash of the sorted list of pieces, and the pieces, faces, triangles and vertices counted by
-# the C models) draw the same frames: the road sweeps with 0, 1 and 4 cars (160 frames a track) and a robot's
-# race of each track; every frame's hash and counters must be equal.
+# Checks that a change of the cull hands the same pieces to the geometry unit, in the same order.
+# Two counting copies of the firmware are built (tools/perf/framestats.sh build, with perf_patch.py):
+# one of a reference commit and one of this tree. They draw the same frames: the road sweeps with
+# 0, 1 and 4 cars (160 frames a track) and a robot's race of each track. For every frame, a hash of
+# the sorted list of pieces and the pieces, faces, triangles and vertices counted by the C models
+# must be equal.
 # Usage: tools/perf/check_cull.sh <reference commit> [tracks]       (default tracks 1 2 3 4 5 6)
-# Needs: build/check/track<n>.bin (tools/make_track.py, made by tools/simcheck.sh or tools/render.sh), the game's folder
-# (GAME_DIR) for the races. About 3 minutes.
+# Needs: Docker; build/check/track<n>.bin (tools/make_track.py; tools/simcheck.sh and tools/render.sh
+# make it); the game's folder (GAME_DIR) for the races. It takes about 3 minutes.
+# Output: one line per track and kind of run, then "ok: ..." or "FAIL: ...". Results are in build/stats/out/.
 set -e
 root=$(cd "$(dirname "$0")/../.." && pwd)
 ref=$1
@@ -14,6 +16,7 @@ shift
 tracks=${*:-1 2 3 4 5 6}
 [ -n "$ref" ] || { echo "usage: check_cull.sh <reference commit> [tracks]"; exit 2; }
 cd "$root"
+# Unpack the reference commit and build the counting copies of both trees (the reference with tag ref).
 old=build/ref_tree
 mkdir -p build/stats/out
 rm -rf "$old"
@@ -21,6 +24,7 @@ mkdir -p "$old"
 git archive "$ref" | tar -x -C "$old"
 TAG=ref REF=--ref sh tools/perf/framestats.sh build "$root/$old" > /dev/null
 sh tools/perf/framestats.sh build > /dev/null
+# Per track: the same sweeps and the same race on both trees, then compare the CSV files.
 bad=0
 for n in $tracks; do
     img=build/check/track$n.bin

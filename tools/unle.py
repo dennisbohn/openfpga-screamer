@@ -4,8 +4,8 @@ unle.py - extract a loadable flat image from the DOS/4GW-bound LE
 executable STARTL.EXE (Screamer, Graffiti/Virgin 1995).
 
 From OpenScreamer (GPL-3.0, github.com/ItsDanik/openscreamer, tools/unle.py, taken from its
-git history), with --fixups added. Here tools/dis.sh runs it once per program into build/exe/
-(made from the player's own game files, never part of the repository).
+git history), with --fixups added. Here tools/dis.sh runs it once per program into build/exe/.
+The images are made from the player's own game files and are never part of the repository.
 
 Why this exists
 ---------------
@@ -22,7 +22,12 @@ pass is needed -- we only have to undo the page packing.
 
 Usage
 -----
-    python3 tools/unle.py STARTL.EXE -o build/screamer_flat.bin
+    python3 tools/unle.py STARTL.EXE -o build/screamer_flat.bin [--fixups] [--map layout.json]
+
+    -o      the flat image to write (default screamer_flat.bin)
+    --fixups  apply the LE fixup records, so that every pointer in the image is its real flat address
+    --map   also write the layout (header, objects, entry point) as JSON
+    The script prints the header, the objects with their bases and the entry point.
 
 Then import the flat image into Ghidra as raw x86:LE:32:
     analyzeHeadless <proj> <name> -import build/screamer_flat.bin \
@@ -39,6 +44,7 @@ from pathlib import Path
 
 
 def parse_le(data: bytes):
+    """The LE header fields and the object table of the executable's bytes, as (header, objects)."""
     if data[:2] != b"MZ":
         sys.exit("not an MZ executable")
 
@@ -146,6 +152,7 @@ def apply_fixups(data, hdr, objects, img):
 
 
 def main():
+    """Reads the executable, lays its pages out at their virtual addresses and writes the flat image."""
     ap = argparse.ArgumentParser()
     ap.add_argument("exe")
     ap.add_argument("-o", "--out", default="screamer_flat.bin")

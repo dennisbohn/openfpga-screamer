@@ -1,14 +1,21 @@
 #!/bin/sh
-# Build the CPU firmware (firmware/) in Docker with the pinned toolchain of firmware/docker/
-# (image screamer-fw:trixie-20261005, built on first use) and copy firmware.bin (the boot
-# loader) and program.bin (the program in the SDRAM) to build/assets/, from where
-# tools/package.sh puts them on the SD card.
-# Usage: tools/fw.sh                 the release firmware (debug.h: none of the measuring and diagnostic code), copied to build/assets/
-#        tools/fw.sh DEBUG=1         the firmware for development in build/firmware-debug/, not copied: the frame time display, the
-#                                    benchmark, marks and free camera, the statistics and timeline; the simulation and the PC tools
-#                                    that read the log (tools/simcheck.sh) use it
-#        tools/fw.sh FAULT=IFETCH    a fault test for sim/soc in build/firmware-IFETCH/, not copied
-# Output: build/firmware/{firmware,program}.elf, .bin, .lst (disassembly), .map
+# Builds the CPU firmware (firmware/) in Docker with the pinned toolchain of firmware/docker/
+# (image screamer-fw:trixie-20261005, built on first use). The result is firmware.bin (the boot
+# loader) and program.bin (the program that runs from the SDRAM).
+#
+# Usage: tools/fw.sh                 the release firmware: none of the measuring and diagnostic code
+#                                    (firmware/debug.h). Copied to build/assets/screamer/Chainy.Screamer/,
+#                                    from where tools/package.sh puts it on the SD card.
+#        tools/fw.sh DEBUG=1         the development firmware in build/firmware-debug/, not copied. It has
+#                                    the frame time display, the benchmark, the marks and the free camera,
+#                                    the statistics and the timeline. The simulation and the PC tools
+#                                    that read the log (tools/simcheck.sh) use it.
+#        tools/fw.sh FAULT=IFETCH    a fault test for sim/soc in build/firmware-IFETCH/, not copied.
+# Needs: Docker (Git Bash on Windows works).
+# Output: build/<dir>/{firmware,program}.elf, .bin, .lst (disassembly), .map, where <dir> is
+#         firmware, firmware-debug or firmware-<FAULT>.
+# The script stops if firmware.bin is larger than the 32 KB boot RAM or program.bin is larger than
+# data slot 2 (1 MB, core/data.json).
 set -e
 root=$(cd "$(dirname "$0")/.." && pwd)
 image="screamer-fw:trixie-20261005"

@@ -1,17 +1,21 @@
 #!/bin/sh
-# The FM music on the PC: firmware/fm.c (tools/host/fmdump.c) plays every song of the game's
-# MUSIC.DAT against a model of the hardware's write queue, and its register writes are compared,
-# tick by tick, with the writes of openscreamer's driver (port/src/music.c, GPL-3.0, from the
-# game's HMIMDRV.386), which is built here from where it is (copied into build/ only).
+# Checks the firmware's FM music on the PC against openscreamer's driver.
+# firmware/fm.c (through tools/host/fmdump.c) plays every song of the game's MUSIC.DAT against a
+# model of the hardware's write queue. Its register writes are compared, tick by tick, with the
+# writes of openscreamer's driver (port/src/music.c, GPL-3.0, taken from the game's HMIMDRV.386).
+# The driver's sources are copied into build/ only, never into the repository.
 # tools/fmsongs.py reads the songs independently first (tracks, messages, lengths, notes).
-# Usage: tools/fmcheck.sh [song ...]       default all seven
-#   GAME_DIR (default "C:/GOG Games/Screamer"), OPENSCREAMER (required: the path of an
-#   openscreamer checkout); build/fmcheck/ gets the work.
-#   SECONDS_RUN=s: how long each song plays (default its length plus 10 s: a full round and more).
+# Usage: tools/fmcheck.sh [song ...]       default: all seven songs
+#   GAME_DIR       the game's folder (default "C:/GOG Games/Screamer")
+#   OPENSCREAMER   required: the path of an openscreamer checkout
+#   SECONDS_RUN=s  how long each song plays (default: its length plus 10 s, a full round and more)
+# Needs: Docker and Python. The work goes to build/fmcheck/.
+# Output: per song, "identical" or "DIFFERENT" with the first differences, then fmdump's summary.
+# The script runs itself a second time inside the container (--inner) to compile and compare.
 set -e
 root=$(cd "$(dirname "$0")/.." && pwd)
 if [ "$1" = "--inner" ]; then
-    # inside the container: /w the repository
+    # Inside the container: /w is the repository.
     shift
     cd /w/build/fmcheck
     gcc -O2 -w -DFM_HOST -I /w/firmware -o fmdump /w/tools/host/fmdump.c /w/firmware/fm.c /w/firmware/dat.c -lm
@@ -40,8 +44,8 @@ fi
 
 game=${GAME_DIR:-C:/GOG Games/Screamer}
 os=${OPENSCREAMER:?set OPENSCREAMER to the path of an openscreamer checkout}
-# music.c and fmchip.h are copied into build/ (not part of the repository) with an empty port.h
-# beside them, so that music.c does not take openscreamer's own (it replaces fopen and the like)
+# music.c and fmchip.h are copied into build/ (not part of the repository). An empty port.h is put
+# beside them, so that music.c does not take openscreamer's own port.h, which replaces fopen and the like.
 mkdir -p "$root/build/fmcheck/ref"
 cp "$os/port/src/music.c" "$os/port/src/fmchip.h" "$root/build/fmcheck/ref/"
 : > "$root/build/fmcheck/ref/port.h"

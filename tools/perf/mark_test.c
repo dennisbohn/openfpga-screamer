@@ -1,5 +1,8 @@
-/* The marks (firmware/mark.c): the line a mark writes, the cameras 15, 30 and 45 frames earlier, a race that is younger than that,
-   a log with no room. Stubs for the log. */
+/* Host test of the marks (firmware/mark.c). It checks the line that a mark writes, the cameras 15, 30
+   and 45 frames earlier, a race that is younger than that, and a log with no room. Then it checks
+   the free camera's movements. A stub stands in for the log.
+   Build in tools/perf: gcc -Wall -Wextra -DDEBUG=1 -I../../firmware mark_test.c -o mark_test -lm
+   The program exits with 1 if a check fails. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -17,7 +20,7 @@ uint32_t dlog_kept(void) { return kept_room; }
 void dlog_keep(uint32_t b) { kept_room = b; }
 #include "../../firmware/hw.h"
 #include "../../firmware/track.h"
-/* the camera's axes as track.c has them (forward, right, up in the game's x, y, height), for a level roll */
+/* The camera's axes as track.c has them (forward, right, up in the game's x, y, height), for a level roll. */
 void track_cam_axes(const struct track_cam *c, float f[3], float r[3], float u[3])
 {
     float sy = sinf(c->yaw), cy = cosf(c->yaw), sp = sinf(c->pitch), cp = cosf(c->pitch);
@@ -68,7 +71,7 @@ int main(void)
     room = MARK_BYTES + 100;                     /* (dlog_free: what is there with the kept room given back) */
     logbuf[0] = 0;
     same("a mark takes the kept room and puts it back", mark_save(1, 0, 20) != 0 && kept_room == 1600 ? "ok" : "wrong", "ok");
-    /* the free camera */
+    /* The free camera. */
     struct track_cam c = { 0 };
     free_cam_step(&c, KEY_UP);
     same("up moves along the view", c.y < -159.9f && c.y > -160.1f && fabsf(c.x) < 0.01f && c.h == 0.0f ? "ok" : "wrong", "ok");

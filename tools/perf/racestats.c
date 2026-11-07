@@ -1,15 +1,20 @@
 /*
- * Frame statistics along a race (docs/development.md, "Frame statistics"): a race on the PC with a robot
- * at the keys (the one of tools/host/render.c: gas held, the d-pad towards the path 20 points ahead, the
- * brake in sharp turns), the player and all the opponents driving, the scene as main.c makes it (the
- * game's chase camera, the cars where they are, shadows and smoke, props), drawn every `every` steps with
- * the counters of perf_patch.py; one CSV line per frame, as framestats.c has it plus the step and the
- * player's speed. Built and run by tools/perf/framestats.sh. Not part of the firmware.
+ * racestats - frame statistics along a race (docs/development.md, "Frame statistics").
+ *
+ * A race runs on the PC with a robot at the keys (the one of tools/host/render.c: gas held, the
+ * d-pad towards the path point 20 ahead, the brake in sharp turns). The player and all the
+ * opponents drive. The scene is made as main.c makes it: the game's chase camera, the cars where
+ * they are, shadows and smoke, props. Every `every` steps a frame is drawn with the counters of
+ * perf_patch.py and written as one CSV line: the columns of framestats.c plus the step and the
+ * player's speed.
+ * Built and run by tools/perf/framestats.sh. Not part of the firmware.
  *
  * Usage: racestats <track image> <MAPnH.DAT> <MAPn.DAT> <label> <out.csv> <steps> <every> <n> [car]
- *   steps  the race's length in game steps (1/50 s); it ends sooner 250 steps after the finish
+ *   steps  the race's length in game steps (1/50 s); it ends sooner, 250 steps after the finish
  *   every  a frame every `every` steps (the first 300 steps are the start lights: the grid, 10 cars)
- * FARSCALE, LODSCALE in the environment as framestats has them.
+ *   n      the track's number
+ *   car    the player's row of CARS.DTR (default 0)
+ * FARSCALE and LODSCALE in the environment, as framestats has them.
  */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -38,18 +43,25 @@ void perf_set_scales(float far_scale, float lod_scale);     /* track.c's copy (p
 #define SCENERY_MEM ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE - 0x20000))
 #define MAX_OBJECTS 64
 
+/* Maps the SDRAM (twice: cached and uncached view) and the register area at the firmware's
+   addresses, as tools/host/render.c does. */
 static void map(void)
 {
     int fd = memfd_create("sdram", 0);
     if (fd < 0 || ftruncate(fd, SDRAM_SIZE)
-        || mmap((void *)(uintptr_t)SDRAM_BASE, SDRAM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED
-        || mmap((void *)(uintptr_t)SDRAM_UBASE, SDRAM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED
-        || mmap((void *)0xF0000000u, 0x4000000u, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) == MAP_FAILED) {
+        || mmap((void *)(uintptr_t)SDRAM_BASE, SDRAM_SIZE, PROT_READ | PROT_WRITE,
+                MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED
+        || mmap((void *)(uintptr_t)SDRAM_UBASE, SDRAM_SIZE, PROT_READ | PROT_WRITE,
+                MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED
+        || mmap((void *)0xF0000000u, 0x4000000u, PROT_READ | PROT_WRITE,
+                MAP_PRIVATE | MAP_ANONYMOUS | MAP_FIXED, -1, 0) == MAP_FAILED) {
         perror("map");
         exit(1);
     }
 }
 
+/* Reads at most max bytes of the file into memory at at; returns the number read. Exits if the
+   file is missing. */
 static uint32_t load(const char *path, uint8_t *at, uint32_t max)
 {
     FILE *f = fopen(path, "rb");
@@ -59,7 +71,7 @@ static uint32_t load(const char *path, uint8_t *at, uint32_t max)
     return n;
 }
 
-/* the robot of tools/host/render.c */
+/* The robot of tools/host/render.c (its comment there explains it): returns the keys for step. */
 static uint32_t robot(uint32_t step)
 {
     static uint32_t at;
@@ -88,16 +100,19 @@ static uint32_t robot(uint32_t step)
 int main(int argc, char **argv)
 {
     if (argc < 10) {
-        fprintf(stderr, "usage: racestats <image> <MAPnH.DAT> <MAPn.DAT> <label> <out.csv> <steps> <every> <n> [car]\n");
+        fprintf(stderr,
+                "usage: racestats <image> <MAPnH.DAT> <MAPn.DAT> <label> <out.csv> <steps> <every> <n> [car]\n");
         return 2;
     }
     map();
-    int steps_max = atoi(argv[6]), every = atoi(argv[7]), n = atoi(argv[8]), car = argc > 9 ? atoi(argv[9]) : 0;
+    int steps_max = atoi(argv[6]), every = atoi(argv[7]), n = atoi(argv[8]),
+        car = argc > 9 ? atoi(argv[9]) : 0;
     MEM_STATUS = MEM_LOCKED | MEM_READY | MEM_WRITES_IDLE;
     load(argv[1], TEX_FILE, 0x700000);
     if (!track_open(TEX_FILE) || !track_init()) { fprintf(stderr, "track image not usable\n"); return 1; }
     if (getenv("FARSCALE") || getenv("LODSCALE"))
-        perf_set_scales(getenv("FARSCALE") ? (float)atof(getenv("FARSCALE")) : 0.0f, getenv("LODSCALE") ? (float)atof(getenv("LODSCALE")) : -1.0f);
+        perf_set_scales(getenv("FARSCALE") ? (float)atof(getenv("FARSCALE")) : 0.0f,
+                        getenv("LODSCALE") ? (float)atof(getenv("LODSCALE")) : -1.0f);
     uint32_t gfx_size = load(argv[2], GFX_FILE, 0x400000);
     efx_init(GFX_FILE, gfx_size, n, track_mlb(), track_palette(), EFX_MEM, EFX_SIZE);
     uint32_t data_size = load(argv[3], DATA_FILE, 0x40000);
@@ -141,19 +156,21 @@ int main(int argc, char **argv)
         nobj += ghost_objects(objs + nobj, MAX_OBJECTS - nobj);
         nobj += car_effects(&cam, objs + nobj, MAX_OBJECTS - nobj);
         nobj += scenery_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
-        uint32_t c1 = perf_c.lod_c1, c2 = perf_c.lod_c2, cd = perf_c.lod_cd;      /* counted when the cars were made */
+        /* The level-of-detail counters of the cars were counted when the cars were made; keep them. */
+        uint32_t c1 = perf_c.lod_c1, c2 = perf_c.lod_c2, cd = perf_c.lod_cd;
         perf_reset();
         perf_c.lod_c1 = c1; perf_c.lod_c2 = c2; perf_c.lod_cd = cd;
         const struct rs_clip clip = { 0, 0, FB_W, FB_H };
         memset(&ts, 0, sizeof ts);
         track_mode = TRACK_MODEL;
         track_draw_cam(FB(0), &clip, &cam, objs, nobj, &ts);
-        fprintf(out, "%s,race,%u,%.0f,%.0f,%.0f,%d,%u,%u,%u,%u,%u", argv[4], steps, cam.x, cam.y, cam.h, opp_count() + 1, ts.pieces,
-                ts.faces, ts.triangles, ts.vertices, ts.objects);
+        fprintf(out, "%s,race,%u,%.0f,%.0f,%.0f,%d,%u,%u,%u,%u,%u", argv[4], steps, cam.x, cam.y, cam.h,
+                opp_count() + 1, ts.pieces, ts.faces, ts.triangles, ts.vertices, ts.objects);
         perf_row(out);
         fprintf(out, ",%.0f,%d\n", car_state()->speed, opp_player_rank());
     }
     fclose(out);
-    fprintf(stderr, "%s: %u steps, %d laps, finished %d\n", argv[4], steps, car_race()->laps, car_race()->finished);
+    fprintf(stderr, "%s: %u steps, %d laps, finished %d\n",
+            argv[4], steps, car_race()->laps, car_race()->finished);
     return 0;
 }

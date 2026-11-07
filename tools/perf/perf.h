@@ -1,10 +1,13 @@
 /*
- * Frame statistics for the PC renderer (docs/development.md, "Frame statistics"). Included into the
- * firmware's track.c, geom.c, setup.c and raster.c copies by tools/perf/perf_patch.py (gcc -include);
- * the firmware itself is not changed. Counters of what one frame asks of the CPU and the units, plus
- * two cache models fed with the addresses the C models read:
+ * perf.h - frame statistics for the PC renderer (docs/development.md, "Frame statistics").
+ *
+ * tools/perf/perf_patch.py puts calls into copies of the firmware's track.c, geom.c, setup.c and
+ * raster.c, and gcc includes this header into them (-include); the firmware itself is not changed.
+ * The header declares counters of what one frame asks of the CPU and the units, and two cache models
+ * that are fed with the addresses the C models read:
  *   the rasterizer's texture cache (16 KB, direct mapped, lines of 32 bytes: raster_tex.v)
  *   the geometry unit's read cache (4 KB, direct mapped, lines of 32 bytes: geom.v)
+ * tools/perf/perf.c implements the functions.
  */
 #pragma once
 #include <stdint.h>
@@ -27,7 +30,7 @@ struct perf_counts {
 };
 
 extern struct perf_counts perf_c;
-void perf_reset(void);                      /* counters and both caches (a cold frame) */
+void perf_reset(void);                      /* clears the counters and both caches (a cold frame) */
 void perf_gu_rd(const void *p, uint32_t len);   /* the geometry unit reads len bytes at p */
-void perf_header(FILE *f);                  /* ",groups,grp_skipped,..." */
-void perf_row(FILE *f);                     /* ",12,34,..." */
+void perf_header(FILE *f);                  /* writes the column names: ",cells_rows,cells,..." */
+void perf_row(FILE *f);                     /* writes the counters: ",12,34,..." */

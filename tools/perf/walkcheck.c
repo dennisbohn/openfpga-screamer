@@ -1,11 +1,17 @@
 /*
- * The firmware's cell window and cell table against the original's walk (tools/perf/walkcheck.py): track.c itself
- * (included, so that its statics are in reach) gives, for a camera, the rows and columns of the cells it looks at
- * (cell_window) and, from the image's cell table, the placements of those cells whose place is within the reach
- * with the game's own integer test (0x83164: dist^2 >> 2 < 676000000, 64 bits), in the order the game lists them.
- * Not part of the firmware. Built by tools/perf/walkcheck.py in the counting copy of the firmware.
+ * walkcheck - the firmware's cell window and cell table, to be compared with the original's walk
+ * (tools/perf/walkcheck.py).
  *
- * Usage: walkcheck <track image> < lines "x height z yaw" (the view's position, the camera's heading in radians)
+ * track.c is included, so that its static data are in reach. For a camera the program prints the
+ * rows and columns of the cells that the camera looks at (cell_window). From the image's cell table
+ * it then prints the placements of those cells whose place is within the reach, in the order the
+ * game lists them. The reach test is the game's own integer test, in 64 bits:
+ * dist^2 >> 2 < 676000000 (original: STARTL.EXE 0x83164).
+ * Not part of the firmware. tools/perf/framestats.sh builds it into the counting copy of the
+ * firmware (the build command) and runs it (the walk command).
+ *
+ * Usage: walkcheck <track image> < lines "x height z yaw"
+ *   Each line is a camera: the view's position and the camera's heading in radians.
  * Output per line: "W row0 row1 col0 col1" and one "P object x height z" for each placement in reach.
  */
 #define _GNU_SOURCE
@@ -21,8 +27,10 @@ int main(int argc, char **argv)
 {
     int fd = memfd_create("sdram", 0);
     if (argc < 2 || fd < 0 || ftruncate(fd, SDRAM_SIZE)
-        || mmap((void *)(uintptr_t)SDRAM_BASE, SDRAM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED
-        || mmap((void *)(uintptr_t)SDRAM_UBASE, SDRAM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED) {
+        || mmap((void *)(uintptr_t)SDRAM_BASE, SDRAM_SIZE, PROT_READ | PROT_WRITE,
+                MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED
+        || mmap((void *)(uintptr_t)SDRAM_UBASE, SDRAM_SIZE, PROT_READ | PROT_WRITE,
+                MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED) {
         perror("map");
         return 1;
     }
@@ -42,7 +50,8 @@ int main(int argc, char **argv)
             if (row < row0 || row > row1 || col < col0 || col > col1) continue;
             for (int i = vcells[g].first; i < vcells[g].first + vcells[g].count; i++) {
                 int64_t dx = pieces[i].x - x, dy = pieces[i].y - z, dh = pieces[i].h - h;
-                if ((int32_t)(uint32_t)((dx * dx + dy * dy + dh * dh) >> 2) < 676000000)       /* (the low 32 bits, signed: jge) */
+                /* The game compares the low 32 bits of the sum as a signed number (a jge). */
+                if ((int32_t)(uint32_t)((dx * dx + dy * dy + dh * dh) >> 2) < 676000000)
                     printf("P %d %d %d %d\n", pieces[i].obj, pieces[i].x, pieces[i].h, pieces[i].y);
             }
         }

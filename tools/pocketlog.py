@@ -1,7 +1,10 @@
-"""The Pocket's debug log (debug.txt, data slot 1) in a few lines: the header, loading, the
-checks, any failure, and a table of the race's samples (every 250 frames).
+"""Prints the Pocket's debug log (debug.txt, data slot 1) in a few lines.
 
-Usage: python tools/pocketlog.py [debug.txt]     (default: I:/Saves/screamer/Chainy.Screamer/debug.txt)
+Usage: python -I tools/pocketlog.py [debug.txt]
+       default file: I:/Saves/screamer/Chainy.Screamer/debug.txt (the SD card as drive I:)
+
+Output: the header line, the lines about loading and the checks, any failure, and a table of the
+race samples (one every 250 frames). The debug firmware (tools/fw.sh DEBUG=1) writes the log.
 """
 import re
 import sys
@@ -10,6 +13,7 @@ FRAME = 1485000         # clocks of a 50 Hz frame at 74.25 MHz
 
 
 def field(line, pattern):
+    """The first group of the regular expression in the line, or "?" if it does not match."""
     m = re.search(pattern, line)
     return m.group(1) if m else "?"
 
@@ -34,8 +38,10 @@ def main():
     for l in rows:
         cyc = field(l, r"fps \d+, frame (\d+)")
         pct = f"{int(cyc) * 100 // FRAME} %" if cyc != "?" else "?"
-        print(f"  {field(l, r'track frame (\d+)'):>5}  {field(l, r'(\d+) km/h'):>5}  {field(l, r'gear (\d+)'):>4}"
-              f"  {field(l, r'place (\d+)'):>5}  {field(l, r'(\d+) faces'):>5}  {field(l, r'cars in view (\d+)'):>4}"
+        print(f"  {field(l, r'track frame (\d+)'):>5}  {field(l, r'(\d+) km/h'):>5}"
+              f"  {field(l, r'gear (\d+)'):>4}"
+              f"  {field(l, r'place (\d+)'):>5}  {field(l, r'(\d+) faces'):>5}"
+              f"  {field(l, r'cars in view (\d+)'):>4}"
               f"  {field(l, r'fps (\d+)'):>3}  {cyc:>9}  {pct:>6}")
     if len(text) >= 4000:
         print("  (the log is full: 4 KB, later samples are cut off)")

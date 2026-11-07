@@ -1,15 +1,28 @@
 /*
- * Why is a placement drawn from one camera and not from the next? track.c itself (included, so that its statics are in reach)
- * runs the cull of draw() for the cameras it is given, placement by placement, and says for each why it was left out:
- *   W  its cell is outside the game's window (cell_window, with the camera cell's box)     R  out of reach (d2 >= reach2)
- *   1  behind the near plane   2  beyond the far plane   3 4  right / left of the view   5 6  above / below the view
- *   L  the block has no mesh at the level of detail its distance gives (the cull passed it)   V  drawn
- * Not part of the firmware (tools/perf/dropcheck.sh builds it in the counting copy, like walkcheck).
+ * dropcheck - why is a placement drawn from one camera and not from the next?
  *
- * Usage: dropcheck <track image> <lines of the screen's height> [radius] < cameras "x y h yaw pitch" (the mark lines of debug.txt:
- *        yaw and pitch in radians; x, y, h in units)
- * Output: for each placement within the radius (default 30000 units) of any camera whose states differ between the cameras:
- *         "P index object x y h rad | state camera 1, camera 2, ..." and the distances of it from the cameras
+ * track.c is included, so that its static data are in reach. The program runs the cull of draw()
+ * for each of the cameras it is given, placement by placement, and tells for each placement why it
+ * was left out. The states are:
+ *   W  its cell is outside the game's window (cell_window, with the camera cell's box)
+ *   R  out of reach (d2 >= reach2)
+ *   1  behind the near plane         2  beyond the far plane
+ *   3  right of the view             4  left of the view
+ *   5  above the view                6  below the view
+ *   V  drawn
+ * A block that has no mesh at the level of detail of its distance still shows as V: the program
+ * does not look at the level of detail.
+ * Not part of the firmware. tools/perf/framestats.sh builds it in the counting copy, like walkcheck
+ * (the build command), and runs it (the drop command).
+ *
+ * Usage: dropcheck <track image> <lines of the screen's height> [radius] < cameras
+ *   The cameras are lines "x y h yaw pitch" on the standard input: the mark lines of debug.txt.
+ *   Yaw and pitch are in radians; x, y and h in units.
+ * Output: for each placement within the radius (default 30000 units) of any camera whose states
+ *   differ between the cameras: "P index object x y h rad | state camera 1, camera 2, ..." and the
+ *   distances of the placement from the cameras.
+ * Environment: DROP_ALL lists every placement near a camera, also those whose states do not differ.
+ *   DROP_ROWS and DROP_DRAW add the two checks described below.
  */
 #define _GNU_SOURCE
 #include <stdio.h>
@@ -26,8 +39,10 @@ int main(int argc, char **argv)
 {
     int fd = memfd_create("sdram", 0);
     if (argc < 3 || fd < 0 || ftruncate(fd, SDRAM_SIZE)
-        || mmap((void *)(uintptr_t)SDRAM_BASE, SDRAM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED
-        || mmap((void *)(uintptr_t)SDRAM_UBASE, SDRAM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED) {
+        || mmap((void *)(uintptr_t)SDRAM_BASE, SDRAM_SIZE, PROT_READ | PROT_WRITE,
+                MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED
+        || mmap((void *)(uintptr_t)SDRAM_UBASE, SDRAM_SIZE, PROT_READ | PROT_WRITE,
+                MAP_SHARED | MAP_FIXED, fd, 0) == MAP_FAILED) {
         perror("map");
         return 1;
     }
@@ -40,11 +55,12 @@ int main(int argc, char **argv)
     const float radius = argc > 3 ? (float)atof(argv[3]) : 30000.0f;
     struct track_cam cams[MAXCAM];
     int nc = 0;
-    while (nc < MAXCAM && scanf("%f %f %f %f %f", &cams[nc].x, &cams[nc].y, &cams[nc].h, &cams[nc].yaw, &cams[nc].pitch) == 5) {
+    while (nc < MAXCAM && scanf("%f %f %f %f %f", &cams[nc].x, &cams[nc].y, &cams[nc].h,
+                                &cams[nc].yaw, &cams[nc].pitch) == 5) {
         cams[nc].roll = 0.0f;
         nc++;
     }
-    /* each placement's cell, and for each camera the window and the cell's state */
+    /* Each placement's cell, and for each camera the window and the cell's state. */
     static int in_win[MAXCAM][MAX_PIECES];
     static int cell_of[MAX_PIECES];
     for (int g = 0; g < nvcells; g++)
@@ -59,7 +75,8 @@ int main(int argc, char **argv)
         int row0, row1, col0, col1;
         cell_window(cams[k].x, cams[k].y, cams[k].yaw, &row0, &row1, &col0, &col1);
         printf("camera %d: %.0f %.0f %.0f yaw %.4f pitch %.4f: window rows %d..%d columns %d..%d (far %.0f reach %.0f)\n",
-               k + 1, cams[k].x, cams[k].y, cams[k].h, cams[k].yaw, cams[k].pitch, row0, row1, col0, col1, far_z, sqrtf(reach2));
+               k + 1, cams[k].x, cams[k].y, cams[k].h, cams[k].yaw, cams[k].pitch,
+               row0, row1, col0, col1, far_z, sqrtf(reach2));
         for (int i = 0; i < npieces; i++) {
             int row = vcells[cell_of[i]].key >> 8, col = vcells[cell_of[i]].key & 255;
             in_win[k][i] = row >= row0 && row <= row1 && col >= col0 && col <= col1;
@@ -106,7 +123,8 @@ int main(int argc, char **argv)
             if (k && strcmp(st[k], st[0])) differ = 1;
         }
         if (!near_any || (!differ && !getenv("DROP_ALL"))) continue;
-        printf("P %d obj %d at %d %d %d rad %.0f |", i, pieces[i].obj, pieces[i].x, pieces[i].y, pieces[i].h, pc->rad);
+        printf("P %d obj %d at %d %d %d rad %.0f |",
+               i, pieces[i].obj, pieces[i].x, pieces[i].y, pieces[i].h, pc->rad);
         for (int k = 0; k < nc; k++) printf(" %s", st[k]);
         printf(" | dist");
         for (int k = 0; k < nc; k++) printf(" %.0f", dist[k]);
@@ -115,10 +133,14 @@ int main(int argc, char **argv)
         printf("\n");
     }
 
-    for (int k = 0; k < nc; k++) printf("camera %d: %d placements pass the cull, %d of them within 12000 units\n", k + 1, count_v[k], count_near[k]);
-    /* DROP_ROWS: the camera from the first to the last of the cameras in many steps, and for each placement that passes the cull the
-       face row its view picks (face_eye) and whether that row draws anything: gu_draw leaves a piece out when the row's offset is 0
-       or the block has more than GU_MAX_VERT vertices; a run of steps where that happens is what shows as a building gone */
+    for (int k = 0; k < nc; k++)
+        printf("camera %d: %d placements pass the cull, %d of them within 12000 units\n",
+               k + 1, count_v[k], count_near[k]);
+    /* DROP_ROWS: the camera moves from the first to the last of the cameras in many steps. For each
+       placement that passes the cull, the check finds the face row that the view picks (face_eye) and
+       whether that row draws anything: gu_draw leaves a piece out when the row's offset is 0 or the
+       block has more than GU_MAX_VERT vertices. A run of steps where that happens shows as a building
+       that is gone. */
     if (getenv("DROP_ROWS") && nc >= 2) {
         const int steps = 600;
         for (int i = 0; i < npieces; i++) {
@@ -149,20 +171,26 @@ int main(int argc, char **argv)
                 rows_seen |= 1 << g.row;
                 int bad = ro <= 0 || nvert > GU_MAX_VERT || nvert < 0;
                 if (bad) {
-                    if (bad_from < 0) { bad_from = st; snprintf(what, sizeof what, "row %d offset %d vertices %d", g.row, (int)ro, (int)nvert); }
+                    if (bad_from < 0) {
+                        bad_from = st;
+                        snprintf(what, sizeof what, "row %d offset %d vertices %d",
+                                 g.row, (int)ro, (int)nvert);
+                    }
                     last_bad = st;
                     nbad++;
                 }
             }
             if (nbad && near_steps)
                 printf("ROWS placement %d obj %d at %d %d %d rad %.0f: %d of %d near steps draw nothing (steps %d..%d of %d, %s), rows seen 0x%04x\n",
-                       i, pieces[i].obj, pieces[i].x, pieces[i].y, pieces[i].h, pc->rad, nbad, near_steps, bad_from, last_bad, steps, what, rows_seen);
+                       i, pieces[i].obj, pieces[i].x, pieces[i].y, pieces[i].h, pc->rad, nbad, near_steps,
+                       bad_from, last_bad, steps, what, rows_seen);
         }
     }
 
-    /* DROP_DRAW: for each placement that passes the cull within 15000 units of a camera, what draw() would hand on and gu_draw
-       (the C model) then draws from it: faces, vertices, pixels, summed over its blocks; a piece that draws less (or nothing)
-       from one camera than from the next is what shows as gone */
+    /* DROP_DRAW: for each placement that passes the cull within 15000 units of a camera, the check
+       finds what draw() would hand on and what gu_draw (the C model) then draws from it: faces,
+       vertices and pixels, summed over the placement's blocks. A piece that draws less (or nothing)
+       from one camera than from the next shows as gone. */
     if (getenv("DROP_DRAW")) {
         static uint8_t scratch[FB_W * 200];
         for (int i = 0; i < npieces; i++) {
@@ -181,10 +209,12 @@ int main(int argc, char **argv)
                 float rad = pc->rad, dx = pc->x - cx, dy = pc->y - cy, dh = pc->h - ch;
                 float d2 = dx * dx + dy * dy + dh * dh;
                 if (d2 > 15000.0f * 15000.0f) continue;
-                float vf = dx * f[0] + dy * f[1] + dh * f[2] + EYE_BACK, vr = dx * r[0] + dy * r[1] + dh * r[2];
+                float vf = dx * f[0] + dy * f[1] + dh * f[2] + EYE_BACK,
+                      vr = dx * r[0] + dy * r[1] + dh * r[2];
                 float vu = dx * u[0] + dy * u[1] + dh * u[2];
-                if (!in_win[k][i] || d2 >= reach2 || vf + rad < NEAR || vf - rad > far_eye || vr - rad > half_w * (vf + rad) ||
-                    vr + rad < -half_w * (vf + rad) || vu - rad > up * (vf + rad) || vu + rad < -down * (vf + rad)) continue;
+                if (!in_win[k][i] || d2 >= reach2 || vf + rad < NEAR || vf - rad > far_eye ||
+                    vr - rad > half_w * (vf + rad) || vr + rad < -half_w * (vf + rad) ||
+                    vu - rad > up * (vf + rad) || vu + rad < -down * (vf + rad)) continue;
                 pass[k] = 1;
                 any = 1;
                 struct su_view view;
@@ -211,7 +241,8 @@ int main(int argc, char **argv)
                         const float m[9] = { r[0] * ca + r[1] * sa, r[2], r[1] * ca - r[0] * sa,
                                              u[0] * ca + u[1] * sa, u[2], u[1] * ca - u[0] * sa,
                                              f[0] * ca + f[1] * sa, f[2], f[1] * ca - f[0] * sa };
-                        const float o[3] = { dx * r[0] + dy * r[1] + dh * r[2], dx * u[0] + dy * u[1] + dh * u[2],
+                        const float o[3] = { dx * r[0] + dy * r[1] + dh * r[2],
+                                             dx * u[0] + dy * u[1] + dh * u[2],
                                              dx * f[0] + dy * f[1] + dh * f[2] + EYE_BACK };
                         for (int q = 0; q < 9; q++) g.m[q] = (int32_t)(m[q] * 65536.0f);
                         for (int q = 0; q < 3; q++) g.t[q] = (int32_t)(o[q] * 256.0f);
@@ -220,15 +251,19 @@ int main(int argc, char **argv)
                         ng = 1;
                     }
                 }
-                for (int b = 0; b < ng; b++) pixels[k] += gu_draw((volatile uint8_t *)scratch, &clip, &view, mlb, &gs[b], &gst);
+                for (int b = 0; b < ng; b++)
+                    pixels[k] += gu_draw((volatile uint8_t *)scratch, &clip, &view, mlb, &gs[b], &gst);
                 faces[k] = gst.faces;
                 verts[k] = gst.vertices;
             }
             int differ = 0;
             for (int k = 1; k < nc; k++) differ |= (faces[k] != faces[0]) || (pass[k] != pass[0]);
             if (!any || !differ) continue;
-            printf("DRAW placement %d obj %d at %d %d %d rad %.0f |", i, pieces[i].obj, pieces[i].x, pieces[i].y, pieces[i].h, pc->rad);
-            for (int k = 0; k < nc; k++) printf(" [%s faces %u verts %u px %u]", pass[k] ? "cull ok" : "culled", faces[k], verts[k], pixels[k]);
+            printf("DRAW placement %d obj %d at %d %d %d rad %.0f |",
+                   i, pieces[i].obj, pieces[i].x, pieces[i].y, pieces[i].h, pc->rad);
+            for (int k = 0; k < nc; k++)
+                printf(" [%s faces %u verts %u px %u]", pass[k] ? "cull ok" : "culled", faces[k], verts[k],
+                       pixels[k]);
             printf("\n");
         }
     }

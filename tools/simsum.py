@@ -1,9 +1,11 @@
-"""A SoC simulation log (tools/sim.sh soc ...) in a few lines, against a baseline.
+"""Summarises a SoC simulation log (tools/sim.sh soc ...) in a few lines and compares it with a baseline.
 
-Usage: python tools/simsum.py <log> [--save]
-  prints the verdict, the pixel check, loading and building the track, and the first race
-  frame's counts, each with its change against build/sim/baseline.json; --save makes this run
-  the baseline.
+Usage: python -I tools/simsum.py <log> [--save]
+
+Prints the verdict, the pixel check, the loading and building of the track, and the counts of the
+first race frame (the log line "track frame 2:"). Each count is followed by its change against
+build/sim/baseline.json. --save makes this run the new baseline.
+tools/simcheck.sh calls this script after the simulation.
 """
 import json
 import os
@@ -15,6 +17,7 @@ COUNTS = ("pieces", "faces", "px", "cpu", "geometry", "setup", "raster", "misses
 
 
 def counts(line):
+    """The numbers of COUNTS found in one "track frame" log line, as a dictionary."""
     out = {}
     for k in COUNTS:
         if k == "frame":
@@ -22,7 +25,9 @@ def counts(line):
             if m:
                 out[k] = int(m.group(1))
             continue
-        m = re.search(r"(\d+) " + k + r"\b" if k in ("pieces", "faces", "px") else r"\b" + k + r" (\d+)", line)
+        # "pieces", "faces" and "px" follow their number in the log; the others precede it.
+        m = re.search(r"(\d+) " + k + r"\b" if k in ("pieces", "faces", "px") else r"\b" + k + r" (\d+)",
+                      line)
         if m:
             out[k] = int(m.group(1))
     return out
@@ -33,11 +38,13 @@ def main():
     log, save = sys.argv[1], "--save" in sys.argv
     text = open(log, encoding="latin-1").read()
     lines = text.splitlines()
-    verdict = next((l for l in lines if l.startswith(("PASS", "FAIL"))), "no verdict (did it time out or crash?)")
+    verdict = next((l for l in lines if l.startswith(("PASS", "FAIL"))),
+                   "no verdict (did it time out or crash?)")
     print(verdict[:110])
     for l in lines:
         if l.startswith(("%Error", "%Warning")) or "error:" in l:
             print(" ", l[:160])
+    # The first log line that starts with the prefix p, or None.
     first = lambda p: next((l for l in lines if l.startswith(p)), None)
     for p in ("track check:", "game files:", "track image:"):
         l = first(p)

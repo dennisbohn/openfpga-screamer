@@ -1,8 +1,9 @@
 #!/bin/sh
-# Negative tests of the memory test (docs/memory.md): sim/soc with one fault built into a
-# memory model per run. The memory test must report exactly the tests named below, no
-# more and no fewer; tb.cpp compares SYS_SIM and checks that the log reports a failure.
-# The runs go in parallel, each with its own Verilator build.
+# Negative tests of the memory test (docs/memory.md): sim/soc runs with one fault built into a
+# memory model per run. The memory test must report exactly the tests named below, no more and
+# no fewer; tb.cpp compares SYS_SIM and checks that the log reports a failure.
+# The runs go in parallel, each with its own Verilator build (tools/sim.sh).
+# Needs: Docker, and a firmware built by tools/fw.sh.
 # Usage: tools/sim_faults.sh [firmware.bin]     (default build/firmware/firmware.bin)
 # Output: build/sim/faults/<name>.txt per run, a summary at the end; exit 1 if one failed.
 #
@@ -13,7 +14,7 @@ fw=${1:-build/firmware/firmware.bin}
 cd "$root" || exit 1
 mkdir -p build/sim/faults
 
-# name, defines, expected SYS_SIM
+# One case per line: name | Verilator defines that build in the fault | expected SYS_SIM
 cases="
 dqm_swap|-DSDRAM_FAULT_DQM_SWAP=1|80001F7F
 dq8_stuck0|-DSDRAM_FAULT_DQ_STUCK0=256|8000180F

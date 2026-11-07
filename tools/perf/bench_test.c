@@ -1,5 +1,8 @@
-/* The benchmark's result lines (firmware/bench.c) on a known summary: the debug.txt line and the screen's row, the row of a
-   track that could not be set up, and that the whole log has a line for each of the six tracks. Stubs for the console and the log. */
+/* Host test of the benchmark's result lines (firmware/bench.c). It checks, for a known summary:
+   the debug.txt line and the screen's row, the row of a track that could not be set up, and that the
+   whole log has a line for each of the six tracks. Stubs stand in for the console and the log.
+   Build in tools/perf: gcc -Wall -Wextra -DDEBUG=1 -I../../firmware bench_test.c -o bench_test -lm
+   The program exits with 1 if a check fails. */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,7 +11,8 @@
 static char logbuf[4096];
 void dlog_str(const char *s) { strcat(logbuf, s); }
 void dlog_dec(int32_t v) { char b[16]; sprintf(b, "%d", v); strcat(logbuf, b); }
-#define con_text real_con_text          /* the real fmt_str, fmt_udec and fmt_scale; the text drawing is a stub */
+/* The real fmt_str, fmt_udec and fmt_scale are used; the text drawing is a stub. */
+#define con_text real_con_text
 #include "../../firmware/console.c"
 #undef con_text
 void dlog_scale(float v) { char b[16]; fmt_scale(b, v); strcat(logbuf, b); }

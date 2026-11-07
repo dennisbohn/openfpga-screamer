@@ -1,8 +1,13 @@
-"""Turn one of Screamer's 320x200 PCX pictures into the core's screen.bin.
+"""Turns one of Screamer's 320x200 PCX pictures into a screen.bin file, the input of the display testbench.
 
-Usage: python make_screen.py <GRAF.DAT> <NAME.PCX> <screen.bin> [preview.png]
+Usage: python tools/make_screen.py <GRAF.DAT> <NAME.PCX> <screen.bin> [preview.png]
+  (without -I: the script imports datfile.py from its own folder)
+  GRAF.DAT    the container that holds the picture
+  NAME.PCX    the picture in it, 320 x 200 pixels, 8 bits, run-length coded
+  screen.bin  the output; preview.png, if given, is the picture as a PNG
 
-screen.bin (65,024 bytes), loaded by the Pocket to bridge address 0:
+screen.bin has 65,024 bytes. The display testbench (sim/display, docs/development.md) writes two
+such files through its bridge window to the two frame buffers, starting at bridge address 0:
   0x0000-0x03FF  palette, 256 x 4 bytes: R, G, B, 0 (8 bits each)
   0x0400-...     pixels, 320 x 200 palette indices, row by row
 """
@@ -17,6 +22,7 @@ WIDTH, HEIGHT = 320, 200
 
 
 def decode_pcx(pcx):
+    """Decodes a 320 x 200 PCX picture; returns the pixels (palette indices) and the 768-byte palette."""
     xmin, ymin, xmax, ymax = struct.unpack_from("<4H", pcx, 4)
     bpp, planes, stride = pcx[3], pcx[65], struct.unpack_from("<H", pcx, 66)[0]
     w, h = xmax - xmin + 1, ymax - ymin + 1
@@ -41,6 +47,7 @@ def decode_pcx(pcx):
 
 
 def write_png(path, pixels, palette):
+    """Writes the picture (palette indices and the RGB palette) as a PNG file."""
     rgb = b"".join(b"\0" + b"".join(palette[i * 3:i * 3 + 3] for i in pixels[y * WIDTH:(y + 1) * WIDTH])
                    for y in range(HEIGHT))
 
@@ -53,6 +60,7 @@ def write_png(path, pixels, palette):
 
 
 def main():
+    """Extracts the picture from the container and writes screen.bin and, if asked, the preview."""
     graf, name, out = sys.argv[1:4]
     pixels, palette = decode_pcx(datfile.extract(datfile.read(graf), name))
     for path in sys.argv[3:5]:
