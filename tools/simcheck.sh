@@ -9,6 +9,7 @@
 #   track screen instead of the race, its third frame checked (with SIM_TRACK chosen); SIM_MENU=2:
 #   the car screen (the first car chosen).
 #   SIM_FW=dir: the firmware folder to run (default build/firmware), e.g. a copy of an earlier build.
+#   SIM_FRAMES=n: the simulation's timeout in frames (default 400; --full on track 6 needs more: its image takes 4.4 s to build).
 #   --save: this run becomes the baseline the summary compares with. The log goes to
 #   build/sim/<name>.log (name default "check"), the sound of the run to build/sim/audio.wav
 #   (SIM_WAV names another file).
@@ -43,7 +44,7 @@ start=$(date +%s)
 rc=0
 SIM_QUICK=$quick SIM_IMAGE=$image SIM_TRACK=$n SIM_GAME=${SIM_GAME:-build/gamedata} SIM_WAV=${SIM_WAV:-build/sim/audio.wav} \
     sh tools/sim.sh soc \
-    "${SIM_FW:-build/firmware}/firmware.bin" "build/sim/$name" 400 > "build/sim/$name.log" 2>&1 || rc=$?
+    "${SIM_FW:-build/firmware}/firmware.bin" "build/sim/$name" "${SIM_FRAMES:-400}" > "build/sim/$name.log" 2>&1 || rc=$?
 echo "simulation ${quick:+(quick) }exit $rc after $(( $(date +%s) - start )) s, log build/sim/$name.log"
 python -I tools/simsum.py "build/sim/$name.log" $save
 exit $rc
