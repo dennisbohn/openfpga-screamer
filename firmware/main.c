@@ -567,14 +567,12 @@ static int rec_full;
  */
 
 /*
- * What the steps of a pass hand to one another. The members of the first group are set before the first
- * pass, those of the second group are made in each pass.
- *
- * The state that lives from one pass to the next (fade, drawn, ask and the other variables of run_track) is
- * not part of it. It stays in local variables, because as members of a struct it changes how the compiler
- * allocates the registers of the loop.
+ * What the steps of a pass hand to one another. The state that lives from one pass to the next (fade, drawn,
+ * ask and the other variables of run_track) is not part of it. It stays in local variables, because as
+ * members of a struct it changes how the compiler allocates the registers of the loop.
  */
 struct race_frame {
+    /* Set before the first pass. */
     const uint32_t *pal;                /* the track's palette */
     int dash_ok;                        /* the player's car has a dashboard for the cockpit view */
     uint32_t sim;                       /* the simulation runs the core */
@@ -586,6 +584,7 @@ struct race_frame {
     uint32_t sim_race;
     uint32_t check_at;                  /* the picture that is checked against the C models (on the Pocket:
                                            only logged) */
+    /* Made in each pass. */
     uint32_t keys, joy, trig;           /* the buttons, the stick and the triggers */
     uint32_t press;                     /* the buttons that went down since the last physics step */
     uint32_t t_frame;                   /* the cycle count at the start of the pass */
