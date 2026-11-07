@@ -13,7 +13,7 @@ static struct {
     struct ft_frame worst;          /* the longest of them */
     int on;                         /* the overlay */
     uint32_t o_max, o_late;         /* since it was switched on */
-    uint32_t o_last, o_faces, o_pieces;
+    uint32_t o_last, o_faces, o_pieces, o_tiny;
     uint32_t ring[RING], ring_at, ring_n;
     uint64_t ring_sum;
 } ft;
@@ -49,6 +49,7 @@ void ft_frame(const struct ft_frame *f)
     ft.o_last = f->work;
     ft.o_faces = f->faces;
     ft.o_pieces = f->npieces;
+    ft.o_tiny = f->tiny;
     ft.ring_sum += f->work;                     /* (two steps: the difference of two uint32_t is not negative) */
     ft.ring_sum -= ft.ring[ft.ring_at];
     ft.ring[ft.ring_at] = f->work;
@@ -96,7 +97,7 @@ static char *fmt_scale(char *p, float v)
     return p;
 }
 
-void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg, float far_scale, float lod_scale)
+void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg, float far_scale, float lod_scale, float tiny_px)
 {
     char line[CON_COLS + 1], *p;
     if (!ft.ring_n) return;
@@ -106,8 +107,11 @@ void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg, float far_scale, floa
     fmt_udec(fmt_str(p, "  late "), ft.o_late);
     con_text(fb, 0, 0, line, fg, bg);
     p = fmt_udec(fmt_str(line, "faces "), ft.o_faces);
-    p = fmt_udec(fmt_str(p, "  pieces "), ft.o_pieces);
-    p = fmt_scale(fmt_str(p, "  F "), far_scale);           /* (40 columns: "faces 1841  pieces 262  F 2.00  L 2.50") */
-    fmt_scale(fmt_str(p, "  L "), lod_scale);
+    fmt_udec(fmt_str(p, "  pieces "), ft.o_pieces);
     con_text(fb, 0, 1, line, fg, bg);
+    p = fmt_scale(fmt_str(line, "F "), far_scale);          /* (40 columns: "F 2.00  L 2.50  tiny 1.00: 137 out") */
+    p = fmt_scale(fmt_str(p, "  L "), lod_scale);
+    p = fmt_scale(fmt_str(p, "  tiny "), tiny_px);
+    if (tiny_px > 0.0f) fmt_udec(fmt_str(p, ": "), ft.o_tiny);
+    con_text(fb, 0, 2, line, fg, bg);
 }

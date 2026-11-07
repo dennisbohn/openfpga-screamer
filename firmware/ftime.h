@@ -23,6 +23,7 @@ struct ft_frame {
     uint32_t wait;                  /* waiting for the rasterizer (w) */
     uint32_t faces, npieces;        /* faces looked at, pieces handed on */
     uint32_t where;                 /* where on the track: the marker the car reached */
+    uint32_t tiny;                  /* placements left out for being tiny (track_set_tiny) */
 };
 
 void ft_reset(void);                /* a new race: the statistics start again (the overlay stays as it is) */
@@ -31,6 +32,6 @@ int ft_overlay_on(void);
 void ft_frame(const struct ft_frame *f);
 /* the race so far as debug.txt's first line carries it, after p: " avg 11.2 max 17.9 late 0 | a1.3 c1.4 s7.1 h0.3 w0.0 f873 p219 m5" */
 char *ft_head(char *p);
-/* the overlay (two lines, top left) into the framebuffer fb, in colours fg on bg; the numbers are the frames up to the last;
-   the second line also gives the far plane's and the level of detail's factors in force (screamer.cfg) */
-void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg, float far_scale, float lod_scale);
+/* the overlay (three lines, top left) into the framebuffer fb, in colours fg on bg; the numbers are the frames up to the last;
+   the third line gives the settings in force (screamer.cfg: far, lod, tiny) and how many placements the last frame left out */
+void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg, float far_scale, float lod_scale, float tiny_px);

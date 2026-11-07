@@ -11,14 +11,25 @@ int slot_read(uint32_t id, uint32_t o, uint32_t a, uint32_t l) { (void)id; (void
 void track_set_scales(float f, float l) { (void)f; (void)l; }
 float track_far_scale(void) { return 1.5f; }
 float track_lod_scale(void) { return 1.5f; }
+void track_set_tiny(float p) { (void)p; }
+float track_tiny(void) { return 0.0f; }
 #include "../../firmware/config.c"
 
 static int fails;
 
+static void tt(const char *text, float tiny0, float tiny1, unsigned flags)
+{
+    float f = 1.5f, l = 1.5f, ti = tiny0;
+    unsigned got = config_parse(text, (uint32_t)strlen(text), &f, &l, &ti);
+    int ok = ti > tiny1 - 0.0005f && ti < tiny1 + 0.0005f && got == flags;
+    printf("%-4s tiny %.3f flags %u  <- \"%s\"\n", ok ? "ok" : "FAIL", ti, got, text);
+    fails += !ok;
+}
+
 static void t(const char *text, float far0, float lod0, float far1, float lod1, unsigned flags)
 {
-    float f = far0, l = lod0;
-    unsigned got = config_parse(text, (uint32_t)strlen(text), &f, &l);
+    float f = far0, l = lod0, ti = 0.0f;
+    unsigned got = config_parse(text, (uint32_t)strlen(text), &f, &l, &ti);
     int ok = f > far1 - 0.0005f && f < far1 + 0.0005f && l > lod1 - 0.0005f && l < lod1 + 0.0005f && got == flags;
     printf("%-4s far %.3f lod %.3f flags %u  <- \"%s\"%s\n", ok ? "ok" : "FAIL", f, l, got,
            strchr(text, '\n') ? "(lines)" : text, ok ? "" : "  (expected far/lod/flags differ)");
@@ -40,5 +51,11 @@ int main(void)
     t("far = 2 3", 1.5f, 1.5f, 1.5f, 1.5f, CFG_BAD);
     t("far=2.5\nfar=1.75", 1.5f, 1.5f, 1.75f, 1.5f, CFG_FAR);        /* the last one counts */
     t("far = 1.5 # the first value", 1.0f, 1.0f, 1.5f, 1.0f, CFG_FAR);
+    tt("tiny = 1", 0.0f, 1.0f, CFG_TINY);
+    tt("Tiny=0,5 x", 0.0f, 0.5f, CFG_TINY);
+    tt("tiny = off", 2.0f, 0.0f, CFG_TINY);
+    tt("tiny = 20", 0.0f, 8.0f, CFG_TINY | CFG_CLAMPED);
+    tt("tin = 1\ntinyx = 2", 3.0f, 3.0f, CFG_BAD);
+    tt("far = 2\ntiny = 1", 0.0f, 1.0f, CFG_FAR | CFG_TINY);
     return fails ? 1 : 0;
 }

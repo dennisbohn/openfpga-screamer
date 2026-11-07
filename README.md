@@ -57,18 +57,20 @@ Copy the following folders and files from the game's install folder to
 
 ### Settings
 
-An optional text file `screamer.cfg` in `Assets/screamer/common/` sets how far the core draws. Two lines, each a factor
-on the original's distances (1.0 is the original's picture; the default is 1.5 for both):
+An optional text file `screamer.cfg` in `Assets/screamer/common/` sets how far the core draws. `far` and `lod` are
+factors on the original's distances (1.0 is the original's picture; the default is 1.5 for both):
 
 ```
 far = 1.5
 lod = 1.5
+tiny = 0
 ```
 
 `far` is the view distance, `lod` the distance at which things switch to a coarser mesh (`lod = off` turns that
-off). Larger numbers show more, and more far away, but take more time per frame; the frame time display (hold A,
-then press L and R) shows the factors in use next to the times. `#` starts a comment. Without the file, the
-defaults apply.
+off), `tiny` the size in pixels below which a thing is not drawn at all (`0`: everything is drawn, `1`: what would be
+under one pixel across is left out). Larger `far` and `lod` show more, and more far away, but take more time per frame;
+the frame time display (hold A, then press L and R) shows the settings in use and how many things `tiny` left out.
+`#` starts a comment. Without the file, the defaults apply.
 
 Saves and the debug log go to `Saves/screamer/Chainy.Screamer/`. `debug.txt` helps when
 something goes wrong; the Pocket writes it when the core is quit.

@@ -128,7 +128,9 @@ syntax: `far = 2.0`, `lod = 2.5`, `lod = off`) replaces them at the start (`trac
 0.5 .. 3.0 and lod 0, 0.5 .. 4.0; its line goes to `debug.txt` ("config: screamer.cfg: far 2.00 lod 2.50"), the
 numbers in force are on the frame time display's second line, and values above 2.0 have not been measured (2.0 for
 both: 0 pixels differ from the C models on all six tracks, a race's frames 0.1 to 0.9 ms longer than at 1.5).
-`tools/perf/config_test.c` runs the parser on texts a player might write (a comma as the decimal point, a
+`tiny = 1` (pixels across, 0 .. 8, default 0 = the original's picture) leaves out the placements whose sphere is projected
+smaller than that (`track_set_tiny`: one multiplication per placement in view, `rad < depth * tiny / 256`; counted in
+`track_stats.tiny`, shown on the display's third line). `tools/perf/config_test.c` runs the parser on texts a player might write (a comma as the decimal point, a
 trailing x, comments, out-of-range numbers, unknown names), `tools/perf/ftime_test.c` the display's mean and its
 second line; both compile with the host's gcc and stub out the rest. For a test of one value without a file,
 `-DFAR_SCALE=1.25f` on the compiler's line overrides the defaults, e.g. `DEFS="-DFAR_SCALE=1.0f -DLOD_SCALE=0"

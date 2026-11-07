@@ -16,5 +16,6 @@ Optional: a text file screamer.cfg in this folder sets how far the core draws (t
 
   far = 1.5     the view distance
   lod = 1.5     where things switch to a coarser mesh (off: never)
+  tiny = 0      things that would be smaller than this many pixels are not drawn (0: all are)
 
 https://github.com/dennisbohn/openfpga-screamer

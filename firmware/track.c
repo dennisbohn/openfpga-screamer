@@ -145,6 +145,8 @@ static float far_scale = FAR_SCALE;     /* (variables, so that the PC tools can 
 static float lod_scale = LOD_SCALE;     /* the level of detail's factor in force (0: none) */
 static float lod_inv;                   /* 1 / lod_scale, 0 for none: no level of detail (set in track_init) */
 static int detail_level = 2;            /* the DETAIL option in force (track_detail) */
+static float tiny_px;                   /* the limit below which a placement is left out (track_set_tiny), pixels across */
+static float tiny_k;                    /* tiny_px / (2 FOCAL): a sphere of radius r at depth z is smaller if r < z tiny_k */
 static float far_z = 43808.0f * FAR_SCALE;      /* the far plane of the DETAIL level */
 static float reach2 = (REACH * FAR_SCALE) * (REACH * FAR_SCALE);       /* the reach, squared */
 static float radius[MAX_OBJ];           /* of each mesh around its origin */
@@ -766,6 +768,17 @@ void track_set_scales(float far, float lod)
     track_detail(detail_level);                 /* the far plane and the reach with the new factor */
 }
 
+void track_set_tiny(float px)
+{
+    tiny_px = px;
+    tiny_k = px / (2.0f * FOCAL);
+}
+
+float track_tiny(void)
+{
+    return tiny_px;
+}
+
 float track_far_scale(void)
 {
     return far_scale;
@@ -1056,7 +1069,7 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
                  struct track_stats *st)
 {
     uint32_t t_start = now();
-    st->pieces = st->faces = st->triangles = st->see_through = st->vertices = st->objects = 0;
+    st->pieces = st->faces = st->triangles = st->see_through = st->vertices = st->objects = st->tiny = 0;
     const float cx = c[0], cy = c[1], ch = c[2];
     const float fx = f[0], fy = f[1], fh = f[2], rx = r[0], ry = r[1], rh = r[2];
     const float ux = u[0], uy = u[1], uh = u[2];
@@ -1099,6 +1112,10 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
             int o5 = vu - rad > up * (vf + rad), o6 = vu + rad < -down * (vf + rad);
             INT_NOW7(o0, o1, o2, o3, o4, o5, o6);
             if(o0 | o1 | o2 | o3 | o4 | o5 | o6) continue;
+            if(rad < vf * tiny_k) {                     /* smaller than the limit across (the focal length 128 is in tiny_k) */
+                st->tiny++;
+                continue;
+            }
             vis[nv++] = (KEY(d2) + cpiece_key[i]) * 65536 + i;
         }
     }

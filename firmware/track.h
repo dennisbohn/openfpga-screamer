@@ -120,6 +120,11 @@ const char *track_hud_text(int k);
 void track_set_scales(float far_scale, float lod_scale);
 float track_far_scale(void);
 float track_lod_scale(void);
+/* A placement whose sphere (its mesh's radius round its place) is projected smaller than px pixels across is not
+   handed on (counted in track_stats.tiny); 0 (the default) is the original's picture, which draws every placement
+   in reach. The test is one multiplication per placement that is in view */
+void track_set_tiny(float px);
+float track_tiny(void);
 
 /* The game's DETAIL option, 0 LOW, 1 MID, 2 HI (the default): how deep faces are drawn.
    The track file goes with it: the L set at LOW, the H set from MID up. */
@@ -150,6 +155,7 @@ struct track_stats {
        space, handing the pieces on (the hook or the C models) */
     uint32_t cyc_cull, cyc_piece, cyc_out;
     uint32_t objects;                           /* objects in view */
+    uint32_t tiny;                              /* placements in view left out for being smaller than the tiny limit */
 };
 
 /* Where pieces go: the C models of the geometry unit, the setup unit and the rasterizer
