@@ -68,7 +68,7 @@ This section answers which source file does what.
 This section answers how to read the frame times in a race. The display exists only in a debug build
 (`tools/fw.sh DEBUG=1`); a release has none of this.
 
-In a race, hold A and press L and R to show the frame times in two lines at the top of the screen. Nothing
+In a race, hold A and press L and R to show the frame times in three lines at the top of the screen. Nothing
 else in a race uses A, and while A is held, L and R shift no gear. The same keys switch the display off
 again.
 
@@ -77,8 +77,10 @@ The first line looks like this: `12.3 ms  avg 11.8  max 17.9  late 0`. It shows:
 - the last frame's work in milliseconds (from the swap to the end of the picture, with the display itself),
 - the mean of the last second,
 - the longest frame,
-- the frames over 20 ms since the display was switched on (switch it off and on to start again),
-- then the faces and pieces of the last frame.
+- the frames over 20 ms since the display was switched on (switch it off and on to start again).
+
+The second line gives the faces and pieces of the last frame. The third line gives the settings in use,
+for example `F 2.00  L 1.20`: the factors `far` and `lod` (see `screamer.cfg` in the main README).
 
 The numbers come from the cycle counter that the frame timeline reads (`ftime.c`). Counting costs a few dozen
 instructions a frame. The display itself costs about 0.2 ms (15,000 clocks) while it is on, and it is off at
