@@ -162,12 +162,12 @@ int main(int argc, char **argv)
                 if (sqrtf(dx * dx + dy * dy + dh * dh) > 12000.0f) continue;
                 near_steps++;
                 const uint8_t *obj = unr_blob + unr_off[pieces[i].obj];
-                const uint8_t *blk = obj + rd32(obj + 0x18);
+                const uint8_t *blk = obj + ld32s(obj + 0x18);
                 float ca = sin2048((uint32_t)pieces[i].t + 512), sa = sin2048((uint32_t)pieces[i].t);
                 struct gu_piece g;
                 memset(&g, 0, sizeof g);
                 face_eye(blk, -dx * ca - dy * sa, -dh, dx * sa - dy * ca, &g);
-                int32_t ro = rd32(blk + 0x28 + 4 * g.row), nvert = rd32(blk + 0x10);
+                int32_t ro = ld32s(blk + 0x28 + 4 * g.row), nvert = ld32s(blk + 0x10);
                 rows_seen |= 1 << g.row;
                 int bad = ro <= 0 || nvert > GU_MAX_VERT || nvert < 0;
                 if (bad) {
@@ -232,7 +232,7 @@ int main(int argc, char **argv)
                     g.blk = block_of(pieces[i].obj, &g.obj);
                     int drop = 0;
                     if (lod_inv != 0.0f) {
-                        float lx = rd16(g.blk + 4), ly = rd16(g.blk + 6), lz = rd16(g.blk + 8);
+                        float lx = ld16s(g.blk + 4), ly = ld16s(g.blk + 6), lz = ld16s(g.blk + 8);
                         float wx = dx + lx * ca - lz * sa, wy = dy + lx * sa + lz * ca, wh = dh + ly;
                         g.blk = track_lod_block(g.obj, 0, sqrtf(wx * wx + wy * wy + wh * wh), 0);
                         drop = !g.blk;
