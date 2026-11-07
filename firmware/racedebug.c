@@ -110,32 +110,33 @@ void race_debug_frame(uint32_t t_frame, uint32_t drawn)
     }
 }
 
-/* The key chords of the frame time overlay, the marks and the free camera. A with L and R switches the overlay
-   on or off. Nothing else in the race uses A, but L and R change gears. While A is held they are held back
-   (swallow), so the chord, pressed with A first, changes no gear. */
-void race_debug_keys(uint32_t keys, uint32_t *press, int view)
+/* The key chords of the frame time overlay, the marks and the free camera. A with L and R switches the
+   overlay on or off. Nothing else in the race uses A, but L and R change gears. While A is held they are held
+   back (swallow), so the chord, pressed with A first, changes no gear. */
+uint32_t race_debug_keys(uint32_t keys, uint32_t press, int view)
 {
     struct race_debug *d = &race_dbg;
     const int chord = (keys & (KEY_A | KEY_L | KEY_R)) == (KEY_A | KEY_L | KEY_R);
     if (chord && !d->chord_before) ft_overlay_toggle();
     d->chord_before = chord;
-    if (!d->bench_frames && (keys & KEY_A) && (*press & KEY_X)) {      /* A held, X pressed: write a mark */
+    if (!d->bench_frames && (keys & KEY_A) && (press & KEY_X)) {      /* A held, X pressed: write a mark */
         d->mark_no = mark_save(d->track, d->free_cam ? 9 : view, d->drawn);    /* view 9 is the free camera */
         d->mark_show = 75;
     }
-    if (!d->bench_frames && (keys & KEY_A) && (*press & KEY_Y)) {      /* A held, Y pressed: free camera */
+    if (!d->bench_frames && (keys & KEY_A) && (press & KEY_Y)) {      /* A held, Y pressed: free camera */
         d->free_cam = !d->free_cam;
         d->free_c = d->last_cam;                /* it starts where the car's camera is */
     }
-    if (d->free_cam && (*press & KEY_START)) {  /* START gives the car's camera back; it does not pause */
+    if (d->free_cam && (press & KEY_START)) {  /* START gives the car's camera back; it does not pause */
         d->free_cam = 0;
-        *press &= ~KEY_START;
+        press &= ~KEY_START;
     }
     if (keys & KEY_A) {
         d->swallow |= keys & (KEY_L | KEY_R);
-        *press &= ~KEY_X;                       /* A with X writes a mark instead of changing the view */
+        press &= ~KEY_X;                       /* A with X writes a mark instead of changing the view */
     }
     d->swallow &= keys;
+    return press;
 }
 
 void race_debug_physics_begin(void)

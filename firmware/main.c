@@ -553,10 +553,32 @@ static struct car_input rec[REC_MAX];
 static uint32_t rec_n;
 static int rec_full;
 
+/* The steps of a pass of the race loop are inlined into run_track, so that the loop compiles as if it were
+   written out in one piece. */
+#define RACE_STEP   static inline __attribute__((always_inline))
+
+/* What the steps of a pass hand to one another. The first members are set before the first pass, the others
+   are made in each pass. The state that lives from one pass to the next (fade, drawn, ask and the other
+   variables of run_track) is not part of it. It stays in local variables, because the compiler allocates
+   the registers of the loop differently when they are members of a struct. */
+struct race_frame {
+    const uint32_t *pal;                /* the track's palette */
+    int dash_ok;                        /* the player's car has a dashboard for the cockpit view */
+    uint32_t sim;                       /* the simulation runs the core */
+    uint32_t sim_race;                  /* the simulation's long race: see run_track; else 0 */
+    uint32_t check_at;                  /* the picture that is checked against the C models */
+    uint32_t keys, joy, trig;           /* the buttons, the stick and the triggers */
+    uint32_t press;                     /* the buttons that went down since the last physics step */
+    uint32_t t_frame;                   /* the cycle count at the start of the pass */
+    int nobj;                           /* the objects in view */
+    int cockpit;                        /* the 3D view stops short of the dashboard */
+    volatile uint8_t *fb;               /* the buffer that is drawn */
+};
+
 /* The simulation ends one frame after the checked one. It reports its result, then the camera and the car of
    the checked frame, which are set against the original's (tools/dosram.py cam). Places are in game units,
    angles in 1/10000 radian. */
-static inline __attribute__((always_inline)) void sim_report(void)
+RACE_STEP void sim_report(void)
 {
     SYS_SIM = SIM_DONE | results;
     dlog_str("SYS_SIM=");
@@ -572,6 +594,115 @@ static inline __attribute__((always_inline)) void sim_report(void)
         dlog_dec((int32_t)v[i]);
     }
     dlog_char('\n');
+}
+
+/* Sets up the race on track n with car number car: the ghost, the cars, the view of the car, the dashboard
+   and the hook that hands pieces to the geometry unit. Returns 1 if the dashboard is there. */
+RACE_STEP int race_enter(int n, int car, int replay, int car_v)
+{
+    ghost_init(n, car);
+    car_init(car, replay);
+    opp_init(car);
+    car_view(car_v);
+    int dash_ok = dashboard_init();
+    track_mode = TRACK_HW;
+    track_hw_piece = hw_piece;
+    GU_MLB = (uint32_t)((uintptr_t)track_mlb() - SDRAM_BASE);
+    GU_INVAL = 1;
+    return dash_ok;
+}
+
+/* Stage 1, input: waits for the previous swap, reads the keys and keeps the music fed. Returns the video
+   status of the new picture. In the benchmark (debug build) the gas is held and no controller is read. */
+RACE_STEP uint32_t race_input(struct race_frame *f, uint32_t drawn)
+{
+    uint32_t st = next_frame();
+    f->keys = race_dbg.bench_frames ? KEY_B : IN_KEY;
+    f->t_frame = rdcycle();
+    f->joy = race_dbg.bench_frames ? 0 : IN_JOY;
+    f->trig = race_dbg.bench_frames ? 0 : IN_TRIG;
+    race_debug_frame(f->t_frame, drawn);
+    music_frame();                          /* the music ring is kept filled (music.h) */
+    tl_mark(TL_MUSIC);
+    frames_shown = drawn;
+    return st;
+}
+
+/* Stage 3, camera: places the camera and collects the objects (cars, shadows, smoke, props) to draw. */
+RACE_STEP void race_objects(struct race_frame *f, struct track_cam *cam, struct track_object *objs)
+{
+    car_camera(cam);
+    race_debug_camera(cam, f->keys);
+    int nobj = car_object(cam, &objs[0]);
+    nobj += opp_objects(objs + nobj, MAX_OBJECTS - nobj);
+    nobj += ghost_objects(objs + nobj, MAX_OBJECTS - nobj);
+    nobj += car_effects(cam, objs + nobj, MAX_OBJECTS - nobj);
+    nobj += scenery_objects(cam, objs + nobj, MAX_OBJECTS - nobj);
+    f->nobj = nobj;
+}
+
+/* Stage 4, scene, first part: the backdrop (original: STARTL.EXE 0x83a68) and the palette. The blitter copies
+   the backdrop while the CPU culls the scene. The first piece for the geometry unit waits until the blitter
+   is done (hw_piece). st is the video status of the pass; fade is the fade level. */
+RACE_STEP void race_backdrop(struct race_frame *f, uint32_t st, int32_t fade, const struct rs_clip *clip,
+                             struct track_cam *cam)
+{
+    f->fb = FB(!(st & VID_FRONT));
+    draw_buf = !(st & VID_FRONT);
+    blit_start(&back, (int)draw_buf);
+    track_backdrop_blit(&back, clip, cam);
+    race_debug_backdrop();
+    back_wait = 1;
+    hw_blit(&back);
+    pal_faded(f->pal, fade);
+}
+
+/* Stage 4, scene, second part: the pieces go from the CPU to the geometry unit, its faces to the setup unit,
+   and the triangles to the rasterizer. ts gets what the scene came to. */
+RACE_STEP void race_draw(struct race_frame *f, struct track_object *objs, struct track_cam *cam,
+                         const struct rs_clip *clip, struct track_stats *ts)
+{
+    race_debug_scene_begin();
+    track_draw_cam(0, clip, cam, objs, f->nobj, ts);
+    race_debug_scene_end();
+}
+
+/* Stage 5, race screen with the cockpit: the dashboard comes before the radar window, which darkens it too.
+   The blitter draws the dashboard once the scene is done, and the CPU makes the race screen's list
+   meanwhile. Then the CPU waits for both and widens the clip to the whole screen, so that the window is
+   clipped to it. radar is the piece of the radar window; it is drawn if has_radar. */
+RACE_STEP void race_cockpit_screen(int has_radar, struct gu_piece *radar)
+{
+    hud_dash(&dashboard, (int)draw_buf);
+    hw_blit(&dashboard);
+    hud_build(&hud, (int)draw_buf, 1);
+    while (RS_DRAW & RS_BUSY)
+        ;
+    RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
+    if (has_radar) hw_piece(radar);
+}
+
+/* Stage 5, race screen without the cockpit: the radar window comes first, then the list of the instruments.
+   The question PLAY AGAIN? (ask) has no race screen. */
+RACE_STEP void race_plain_screen(int ask, int has_radar, struct gu_piece *radar)
+{
+    if (has_radar) hw_piece(radar);
+    if (ask) blit_start(&hud, (int)draw_buf);                   /* the question has no race screen */
+    else hud_build(&hud, (int)draw_buf, car_overlay() ? 2 : 0); /* no dashboard: the instruments */
+}
+
+/* Stage 6, frame end: waits until the rasterizer has drawn everything, lets the simulation check the picture
+   against the C models, and gives the picture to the statistics of the debug build. */
+RACE_STEP void race_finish(struct race_frame *f, uint32_t st, int ask, uint32_t drawn, uint32_t steps_now,
+                           const struct rs_clip *clip, struct track_cam *cam, struct track_object *objs,
+                           struct track_stats *ts)
+{
+    while (RS_DRAW & RS_BUSY)
+        ;
+    race_debug_measure(ts);
+    if (f->sim && drawn == f->check_at)
+        track_check(f->fb, clip, cam, objs, f->nobj, &back, f->cockpit ? &dashboard : 0, &hud);
+    race_debug_report(st, f->fb, ask, steps_now, ts);
 }
 
 /*
@@ -602,7 +733,8 @@ static inline __attribute__((always_inline)) void sim_report(void)
  */
 static int run_track(int n, int car, int replay)
 {
-    const uint32_t *pal = track_palette();
+    struct race_frame f;
+    f.pal = track_palette();
     int32_t fade = 0;                           /* fade-in level, 0 to 0x8000 */
     snd_fade(0);
     music_fade(0);
@@ -614,56 +746,34 @@ static int run_track(int n, int car, int replay)
         rec_n = 0;
         rec_full = 0;
     }
-    ghost_init(n, car);
-    car_init(car, replay);
-    opp_init(car);
-    car_view(car_v);
-    int dash_ok = dashboard_init();
-    track_mode = TRACK_HW;
-    track_hw_piece = hw_piece;
-    GU_MLB = (uint32_t)((uintptr_t)track_mlb() - SDRAM_BASE);
-    GU_INVAL = 1;
-    /* The simulation's race (tools/sim.sh: SIM_RACE_FRAMES, and the keys in SIM_KEYS). The testbench offers
-       data slot RACE_SLOT with the size n. core/data.json does not have this slot, so on the Pocket sim_race
-       is 0 and the race is an ordinary one. With n set, the countdown of the start lights runs at once before
-       the first picture, and the n-th frame after the green light is checked and reported instead of the
-       third. */
-    const uint32_t sim = SYS_FLAGS & FLAG_SIM;
-    uint32_t sim_race = sim ? slot_size(RACE_SLOT) : 0;
-    uint32_t check_at = 2 + sim_race;           /* the frame checked against the C models (on the Pocket: only
-                                                   logged) */
-    race_debug_start(n, sim != 0, sim_race, check_at, col_text, col_bg);
+    f.dash_ok = race_enter(n, car, replay, car_v);
+    f.sim = SYS_FLAGS & FLAG_SIM;
+    f.sim_race = f.sim ? slot_size(RACE_SLOT) : 0;
+    f.check_at = 2 + f.sim_race;
+    race_debug_start(n, f.sim != 0, f.sim_race, f.check_at, col_text, col_bg);
     for (;;) {
-        /* Stage 1, input: wait for the previous swap, read the keys, keep the music fed. In the benchmark
-           (debug build) the gas is held and no controller is read. */
-        uint32_t st = next_frame(), keys = race_dbg.bench_frames ? KEY_B : IN_KEY, t_frame = rdcycle();
-        uint32_t joy = race_dbg.bench_frames ? 0 : IN_JOY, trig = race_dbg.bench_frames ? 0 : IN_TRIG;
-        /* joy and trig: the stick and the triggers */
-        race_debug_frame(t_frame, drawn);
-        music_frame();                          /* the music ring is kept filled (music.h) */
-        tl_mark(TL_MUSIC);
-        frames_shown = drawn;
+        uint32_t st = race_input(&f, drawn);
         if (race_dbg.bench_frames && drawn > race_dbg.bench_frames)
             return RACE_LEAVE;                  /* the benchmark has its pictures */
-        if (sim && drawn == check_at + 1) sim_report();
-        uint32_t press = keys & ~keys_before;   /* the keys that went down since the last step */
-        race_debug_keys(keys, &press, car_v);
+        if (f.sim && drawn == f.check_at + 1) sim_report();
+        f.press = f.keys & ~keys_before;        /* the keys that went down since the last step */
+        f.press = race_debug_keys(f.keys, f.press, car_v);
         /* The question PLAY AGAIN? was announced in the last pass, which drew its picture. */
         if (ask) return play_again(st);
         if (replay) {
             /* The replay ends when B, START or SELECT skip it, or when its controls run out. */
-            if ((press & (KEY_B | KEY_START | KEY_SELECT)) || rec_at >= rec_n) ask = 1;
+            if ((f.press & (KEY_B | KEY_START | KEY_SELECT)) || rec_at >= rec_n) ask = 1;
         } else {
             /* START pauses the race, but not before its first picture or after its end. The keys held at the
                end of the pause do not count as presses, and the time of the pause is not made up by physics
                steps. The pass ends at once, without a picture. */
-            if ((press & KEY_START) && drawn && !car_race()->finished && !car_race()->game_over) {
+            if ((f.press & KEY_START) && drawn && !car_race()->finished && !car_race()->game_over) {
                 pause_race(st);
                 keys_before = IN_KEY;
                 last_frame = VID_FRAME(VID_STATUS);
                 continue;
             }
-            if (press & KEY_SELECT) ask = 1;
+            if (f.press & KEY_SELECT) ask = 1;
             /* The end screen has been up for OVER_STEPS steps and the commentary has finished. A finished
                race of the normal game is replayed (original: STARTL.EXE 0x1fe45). A finished race of the
                championship goes on by itself (0x1fe86). In all other cases the question follows. */
@@ -686,7 +796,7 @@ static int run_track(int n, int car, int replay)
             snd_fade(fade);
             music_fade(fade);
         }
-        if (press & KEY_X) car_view(++car_v);                           /* X changes the view */
+        if (f.press & KEY_X) car_view(++car_v);                         /* X changes the view */
         efx_cyc_objects = efx_cyc_radar = 0;    /* efx.c adds its cycles here; the debug log reads them */
         race_debug_physics_begin();
         for (uint32_t k = 0; k < steps_now && (!replay || rec_at < rec_n); k++) {
@@ -694,98 +804,58 @@ static int run_track(int n, int car, int replay)
             if (replay)
                 w = rec[rec_at++];              /* taken from the recording */
             else {
-                w = car_keys(keys & ~race_dbg.swallow, keys_before & ~race_dbg.swallow, joy, trig);
+                w = car_keys(f.keys & ~race_dbg.swallow, keys_before & ~race_dbg.swallow, f.joy, f.trig);
                 if (rec_n < REC_MAX) rec[rec_n++] = w;                  /* and recorded for the replay */
                 else rec_full = 1;
             }
             car_step(&w);
             opp_step();
             scenery_step();
-            keys_before = keys;
+            keys_before = f.keys;
             /* In the simulation's race and in the benchmark the countdown of the start lights runs at once:
                one more step is added until the race is on. */
-            if ((sim_race || race_dbg.bench_frames) && !car_race()->on && k == steps_now - 1) steps_now++;
+            if ((f.sim_race || race_dbg.bench_frames) && !car_race()->on && k == steps_now - 1) steps_now++;
             if (car_race()->finished || car_race()->game_over) over++;  /* steps since the end of the race */
         }
-        if (race_dbg.free_cam) keys_before = keys;      /* the loop above keeps keys_before, but it did not run */
+        if (race_dbg.free_cam) keys_before = f.keys;    /* the loop keeps keys_before, but it did not run */
         race_debug_physics_end(steps_now);
         track_clock(steps_now);                 /* the animation clock of the track's textures */
 
-        /* Stage 3, camera: place the camera and collect the objects (cars, shadows, smoke, props) to draw. */
+        /* Stage 3, camera: the objects to draw, and the 3D view. */
         struct track_cam cam;
         static struct track_object objs[MAX_OBJECTS];
-        car_camera(&cam);
-        race_debug_camera(&cam, keys);
-        int nobj = car_object(&cam, &objs[0]);
-        nobj += opp_objects(objs + nobj, MAX_OBJECTS - nobj);
-        nobj += ghost_objects(objs + nobj, MAX_OBJECTS - nobj);
-        nobj += car_effects(&cam, objs + nobj, MAX_OBJECTS - nobj);
-        nobj += scenery_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
+        race_objects(&f, &cam, objs);
         /* The 3D view is the whole screen. In the cockpit it is the first 132 lines (car_view_lines), with
            the eye line 85 lines down (track_view), and the dashboard covers the rest. Without a dashboard,
            and for the question, the view is the whole screen of 320 x 200 (original: STARTL.EXE 0x219d0). */
-        int cockpit = dash_ok && car_cockpit() && !ask;
-        const struct rs_clip clip = { 0, 0, FB_W, cockpit ? car_view_lines() : FB_H };
+        f.cockpit = f.dash_ok && car_cockpit() && !ask;
+        const struct rs_clip clip = { 0, 0, FB_W, f.cockpit ? car_view_lines() : FB_H };
         struct su_view view;
         track_view(&clip, &view);
 
-        /* Stage 4, scene. First the backdrop (original: STARTL.EXE 0x83a68). The blitter copies it while the
-           CPU culls the scene. The first piece for the geometry unit waits until the blitter is done
-           (hw_piece). */
-        volatile uint8_t *fb = FB(!(st & VID_FRONT));
-        draw_buf = !(st & VID_FRONT);
-        blit_start(&back, (int)draw_buf);
-        track_backdrop_blit(&back, &clip, &cam);
-        race_debug_backdrop();
-        back_wait = 1;
-        hw_blit(&back);
-        pal_faded(pal, fade);
-
-        /* Then the pieces: from the CPU to the geometry unit, its faces to the setup unit, and the triangles
-           to the rasterizer. */
+        /* Stage 4, scene: the backdrop, then the pieces. */
+        race_backdrop(&f, st, fade, &clip, &cam);
         struct track_stats ts;
         GU_MODE = draw_buf << 8;                /* the units draw into the back buffer */
         RS_CLIP0 = RS_XY(clip.x0, clip.y0);
         RS_CLIP1 = RS_XY(clip.x1, clip.y1);
         su_view_regs(&view);
-        race_debug_scene_begin();
-        track_draw_cam(0, &clip, &cam, objs, nobj, &ts);
-        race_debug_scene_end();
+        race_draw(&f, objs, &cam, &clip, &ts);
 
         /* Stage 5, race screen. The radar is a darkened window over the scene (efx.h). The replay and the
            question have none (original: STARTL.EXE 0x2346c). The race screen is a list for the blitter, which
-           draws it once the scene is done.
-           With the cockpit, the dashboard comes before the radar window, which darkens it too. The blitter
-           draws the dashboard once the scene is done, and the CPU makes the race screen's list meanwhile.
-           Then the CPU waits for both and widens the clip to the whole screen, so that the window is clipped
-           to it. */
+           draws it once the scene is done. */
         struct gu_piece radar;
         int has_radar = !replay && !ask && efx_radar_piece(&view, &radar);
         race_debug_screen_begin();
-        if (cockpit) {
-            hud_dash(&dashboard, (int)draw_buf);
-            hw_blit(&dashboard);
-            hud_build(&hud, (int)draw_buf, 1);
-            while (RS_DRAW & RS_BUSY)
-                ;
-            RS_CLIP1 = RS_XY(track_clip.x1, track_clip.y1);
-            if (has_radar) hw_piece(&radar);
-        } else {
-            if (has_radar) hw_piece(&radar);
-            if (ask) blit_start(&hud, (int)draw_buf);                   /* the question has no race screen */
-            else hud_build(&hud, (int)draw_buf, car_overlay() ? 2 : 0); /* no dashboard: the instruments */
-        }
+        if (f.cockpit)
+            race_cockpit_screen(has_radar, &radar);
+        else
+            race_plain_screen(ask, has_radar, &radar);
         hw_blit(&hud);
         race_debug_screen_end();
 
-        /* Stage 6, frame end. Wait until the rasterizer has drawn everything. The simulation checks the
-           picture against the C models. */
-        while (RS_DRAW & RS_BUSY)
-            ;
-        race_debug_measure(&ts);
-        if (sim && drawn == check_at)
-            track_check(fb, &clip, &cam, objs, nobj, &back, cockpit ? &dashboard : 0, &hud);
-        race_debug_report(st, fb, ask, steps_now, &ts);
+        race_finish(&f, st, ask, drawn, steps_now, &clip, &cam, objs, &ts);
         VID_SWAP = 1;                           /* show the finished picture */
         log_race_head(++drawn);
     }

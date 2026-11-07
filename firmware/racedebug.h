@@ -87,9 +87,9 @@ void race_debug_start(int track, int sim, uint32_t sim_race, uint32_t check_at, 
 void race_debug_frame(uint32_t t_frame, uint32_t drawn);
 
 /* The keys of the picture. A with L and R switches the overlay, A with X writes a mark and A with Y switches
-   the free camera (mark.h). view is the car's view. *press may lose bits that these keys have taken: X
-   while A is held, and START that gives the car's camera back. */
-void race_debug_keys(uint32_t keys, uint32_t *press, int view);
+   the free camera (mark.h). view is the car's view. Returns press, the buttons that went down, without the
+   ones that these keys have taken: X while A is held, and START that gives the car's camera back. */
+uint32_t race_debug_keys(uint32_t keys, uint32_t press, int view);
 
 /* The physics of the picture runs between these two calls. steps is the number it made. The end sets the
    timeline's mark TL_PHYS. */
@@ -168,7 +168,7 @@ static const struct race_debug race_dbg = { 0, 0, 0 };
 #define race_debug_init()                               ((void)0)
 #define race_debug_start(track, sim, sim_race, check_at, fg, bg)    ((void)0)
 #define race_debug_frame(t_frame, drawn)                ((void)(t_frame))   /* t_frame has no other use */
-#define race_debug_keys(keys, press, view)              ((void)0)
+#define race_debug_keys(keys, press, view)              (press)
 #define race_debug_physics_begin()                      ((void)0)
 #define race_debug_physics_end(steps)                   ((void)0)
 #define race_debug_camera(cam, keys)                    ((void)0)
@@ -177,8 +177,9 @@ static const struct race_debug race_dbg = { 0, 0, 0 };
 #define race_debug_scene_end()                          ((void)0)
 #define race_debug_screen_begin()                       ((void)0)
 #define race_debug_screen_end()                         ((void)0)
-#define race_debug_measure(ts)                          ((void)0)
-#define race_debug_report(st, fb, ask, steps_now, ts)   ((void)0)
+#define race_debug_measure(ts)                          ((void)(ts))
+#define race_debug_report(st, fb, ask, steps_now, ts) \
+    ((void)(st), (void)(ask), (void)(steps_now), (void)(ts))
 #define log_race_head(n)                                ((void)(n))     /* the pictures are still counted */
 #define race_debug_bench(race)                          ((void)0)
 #define piece_time_begin()                              ((void)0)
