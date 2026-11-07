@@ -29,11 +29,13 @@ static void check(const char *what, const uint32_t *w, int n, double expect_ms)
         f.work = w[i];
         ft_frame(&f);
     }
-    ft_draw(0, 1, 0);
+    ft_draw(0, 1, 0, 1.5f, 0.0f);
     double ms = 0;
     const char *a = strstr(drawn[0], "avg ");
     if(a) ms = atof(a + 4);
     int ok = a && ms > expect_ms - 0.11 && ms < expect_ms + 0.11;
+    fails += strstr(drawn[1], "  F 1.50  L off") == 0;       /* (second line: the factors) */
+    printf("second line \"%s\"\n", drawn[1]);
     printf("%s: the line \"%s\", the mean should be %.1f: %s\n", what, drawn[0], expect_ms, ok ? "ok" : "WRONG");
     fails += !ok;
 }

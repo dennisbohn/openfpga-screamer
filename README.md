@@ -26,8 +26,8 @@ https://youtu.be/lczQRB2F0cM
   AdLib sound of the original), sound effects and speech
 - 50 frames per second at the Pocket's native 320 x 200 picture, perspective-correct textures
 - A longer view than the original's (1.5 times the distance) with the level of detail of the game's meshes
-  stretched to match; both are constants in `firmware/track.h`. A frame time display in races (hold A, press
-  L and R)
+  stretched to match; both factors can be changed in an optional file, `screamer.cfg` (see *Settings*). A frame
+  time display in races (hold A, press L and R)
 - Pocket integration: Core Controls remapping, analog sticks and triggers in the dock
 
 Not supported: network play (the menu entry is left out), the link port.
@@ -54,6 +54,21 @@ Copy the following folders and files from the game's install folder to
 | `./DATA/` | The game's data: track data, texts, sound effects, and the MIDI songs (`MUSIC.DAT`) that the original played through an AdLib card when it found no CD. |
 | `./SCREAM.gog` | The CD image with the game's music. |
 | `./SCREAM.DAT` | The cue sheet of the CD image. |
+
+### Settings
+
+An optional text file `screamer.cfg` in `Assets/screamer/common/` sets how far the core draws. Two lines, each a factor
+on the original's distances (1.0 is the original's picture; the default is 1.5 for both):
+
+```
+far = 1.5
+lod = 1.5
+```
+
+`far` is the view distance, `lod` the distance at which things switch to a coarser mesh (`lod = off` turns that
+off). Larger numbers show more, and more far away, but take more time per frame; the frame time display (hold A,
+then press L and R) shows the factors in use next to the times. `#` starts a comment. Without the file, the
+defaults apply.
 
 Saves and the debug log go to `Saves/screamer/Chainy.Screamer/`. `debug.txt` helps when
 something goes wrong; the Pocket writes it when the core is quit.

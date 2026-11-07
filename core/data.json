@@ -288,6 +288,17 @@
                 "extensions": ["dat"],
                 "size_maximum": 262144,
                 "address": "0x11F40000"
+            },
+            {
+                "name": "screamer.cfg",
+                "id": 26,
+                "required": false,
+                "deferload": true,
+                "parameters": "0x08",
+                "filename": "screamer.cfg",
+                "extensions": ["cfg"],
+                "size_maximum": 1024,
+                "address": "0x13F70000"
             }
         ]
     }

@@ -114,6 +114,12 @@ const char *track_hud_text(int k);
 #define LOD_SCALE   1.5f
 #endif
 
+/* The two factors in force: the constants above unless config.c (screamer.cfg) has set others. Call it before
+   the race's track_init; lod 0 is no level of detail */
+void track_set_scales(float far_scale, float lod_scale);
+float track_far_scale(void);
+float track_lod_scale(void);
+
 /* The game's DETAIL option, 0 LOW, 1 MID, 2 HI (the default): how deep faces are drawn.
    The track file goes with it: the L set at LOW, the H set from MID up. */
 void track_detail(int level);

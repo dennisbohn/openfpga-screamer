@@ -123,7 +123,15 @@ the firmware of an earlier commit does.
 
 `FAR_SCALE` and `LOD_SCALE` in `firmware/track.h` set how far the core draws and how far out its blocks keep their
 detail, each a factor on the original's distances (`docs/architecture.md`, "Draw distance and level of detail");
-`-DFAR_SCALE=1.25f` on the compiler's line overrides them for a test, e.g. `DEFS="-DFAR_SCALE=1.0f -DLOD_SCALE=0"
+they are the defaults: the optional file `screamer.cfg` (data slot 26, `firmware/config.c`, `config.h` has the
+syntax: `far = 2.0`, `lod = 2.5`, `lod = off`) replaces them at the start (`track_set_scales`), kept within far
+0.5 .. 3.0 and lod 0, 0.5 .. 4.0; its line goes to `debug.txt` ("config: screamer.cfg: far 2.00 lod 2.50"), the
+numbers in force are on the frame time display's second line, and values above 2.0 have not been measured (2.0 for
+both: 0 pixels differ from the C models on all six tracks, a race's frames 0.1 to 0.9 ms longer than at 1.5).
+`tools/perf/config_test.c` runs the parser on texts a player might write (a comma as the decimal point, a
+trailing x, comments, out-of-range numbers, unknown names), `tools/perf/ftime_test.c` the display's mean and its
+second line; both compile with the host's gcc and stub out the rest. For a test of one value without a file,
+`-DFAR_SCALE=1.25f` on the compiler's line overrides the defaults, e.g. `DEFS="-DFAR_SCALE=1.0f -DLOD_SCALE=0"
 tools/render.sh ...`. For the PC tools `FARSCALE` and `LODSCALE` in the environment do the same without compiling
 again. `tools/perf/study_sweeps.sh` runs the study's matrix (every combination of the far plane's factor 1.0 /
 1.25 / 1.5 and the level of detail's none / 1.0 / 1.25 / 1.5 over a robot's race on each track) and

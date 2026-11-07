@@ -142,7 +142,9 @@ static struct gpiece gpieces[MAX_GROUND];
 static float sin_q[513];                /* sin(2 pi i / 2048) for i = 0..512 */
 static float under_n[3];                /* track_under's face: its normal in world axes (x, y, up) */
 static float far_scale = FAR_SCALE;     /* (variables, so that the PC tools can try others: tools/perf) */
-static float lod_inv;                   /* 1 / LOD_SCALE, 0 for none: no level of detail (set in track_init) */
+static float lod_scale = LOD_SCALE;     /* the level of detail's factor in force (0: none) */
+static float lod_inv;                   /* 1 / lod_scale, 0 for none: no level of detail (set in track_init) */
+static int detail_level = 2;            /* the DETAIL option in force (track_detail) */
 static float far_z = 43808.0f * FAR_SCALE;      /* the far plane of the DETAIL level */
 static float reach2 = (REACH * FAR_SCALE) * (REACH * FAR_SCALE);       /* the reach, squared */
 static float radius[MAX_OBJ];           /* of each mesh around its origin */
@@ -337,7 +339,7 @@ int track_init(void)
     walls = (const struct track_wall *)(f + rd32(f + 0x54));
     nwalls = rd32(f + 0x58);
     start = (const struct start *)(f + 0x5C);
-    lod_inv = lod_scale_inv(LOD_SCALE);
+    lod_inv = lod_scale_inv(lod_scale);
     unr_count = rd32(unr + 4);
     if(unr_count > MAX_OBJ || npieces > MAX_PIECES || npath < LOOK + 2 || ncars < 1 || nmodels < 1) return 0;
     unr_off = (const int32_t *)(unr + 8);
@@ -751,8 +753,27 @@ void track_cam_axes(const struct track_cam *cam, float f[3], float r[3], float u
 
 void track_detail(int level)
 {
-    far_z = far_depth[level < 0 ? 0 : level > 2 ? 2 : level] * far_scale;
+    detail_level = level < 0 ? 0 : level > 2 ? 2 : level;
+    far_z = far_depth[detail_level] * far_scale;
     reach2 = (REACH * far_scale) * (REACH * far_scale);
+}
+
+void track_set_scales(float far, float lod)
+{
+    far_scale = far;
+    lod_scale = lod;
+    lod_inv = lod_scale_inv(lod);
+    track_detail(detail_level);                 /* the far plane and the reach with the new factor */
+}
+
+float track_far_scale(void)
+{
+    return far_scale;
+}
+
+float track_lod_scale(void)
+{
+    return lod_scale;
 }
 
 float track_far(void)

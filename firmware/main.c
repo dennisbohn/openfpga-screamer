@@ -36,6 +36,7 @@
 #include "save.h"
 #include "intro.h"
 #include "ftime.h"
+#include "config.h"
 
 uint32_t frames_shown;            /* read by the trap handler */
 
@@ -774,7 +775,7 @@ static int run_track(int n, int car, int replay)
            question's picture is not a frame of the race, the simulation's check is not the frame's work, and the first frame
            of the simulation's race (the start lights' countdown run at once, 300 steps) is not a frame at all */
         if (!ask && !(sim_race && drawn == 0)) {
-            if (ft_overlay_on()) ft_draw(fb, ov_fg, ov_bg);
+            if (ft_overlay_on()) ft_draw(fb, ov_fg, ov_bg, track_far_scale(), track_lod_scale());
             struct ft_frame ff = { rdcycle() - t_frame - t_check, t_pre, ts.cyc_cull, ts.cyc_piece + ts.cyc_out, 0, rdcycle() - t_wait,
                                    ts.faces, ts.pieces, (uint32_t)car_marker() };
             ff.post = t_wait - t_frame - t_pre - ts.cyc_cull - ts.cyc_piece - ts.cyc_out;
@@ -1604,6 +1605,7 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     save_load();                    /* first: until then an exit would save the SDRAM as it is */
     menu_options_load();
     volumes();
+    config_load();                  /* screamer.cfg: how far the core draws (config.h) */
     if (files_missing()) files_loop(0);         /* a file the game needs is missing: the list, for ever */
     int sim = (SYS_FLAGS & FLAG_SIM) != 0;
     const uint32_t *shown = sim ? 0 : first_picture(intro_track());    /* the simulation's race: none */

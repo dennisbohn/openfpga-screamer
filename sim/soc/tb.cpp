@@ -483,8 +483,16 @@ int main(int argc, char **argv) {
         int found = 0, wanted = 0;
         for (const Slot &slot : slots) {
             if (slot.id <= 2 || slot.save) continue;
-            wanted++;
             std::string path = std::string(game) + "/" + slot.name;
+            if (slot.name == "screamer.cfg") {          // not a game file: the player's settings, loaded if there, not counted
+                std::vector<uint8_t> f;
+                if (read_file(path, f) && !f.empty()) {
+                    s.files[slot.id] = f;
+                    printf("%s/%s: %zu bytes (slot %u, optional)\n", game, slot.name.c_str(), f.size(), slot.id);
+                }
+                continue;
+            }
+            wanted++;
             if (slot.name.size() > 4 && slot.name.compare(slot.name.size() - 4, 4, ".gog") == 0) {
                 s.cd_size = file_size(path);            // the CD image: read where asked
                 if (s.cd_size) {

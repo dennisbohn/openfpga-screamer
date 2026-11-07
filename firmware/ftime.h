@@ -31,5 +31,6 @@ int ft_overlay_on(void);
 void ft_frame(const struct ft_frame *f);
 /* the race so far as debug.txt's first line carries it, after p: " avg 11.2 max 17.9 late 0 | a1.3 c1.4 s7.1 h0.3 w0.0 f873 p219 m5" */
 char *ft_head(char *p);
-/* the overlay (two lines, top left) into the framebuffer fb, in colours fg on bg; the numbers are the frames up to the last */
-void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg);
+/* the overlay (two lines, top left) into the framebuffer fb, in colours fg on bg; the numbers are the frames up to the last;
+   the second line also gives the far plane's and the level of detail's factors in force (screamer.cfg) */
+void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg, float far_scale, float lod_scale);

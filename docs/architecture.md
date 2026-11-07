@@ -89,6 +89,9 @@ game files plus the CD image and two save slots:
   banks `MELODIC.BNK` and `DRUM.BNK`. It is read whole, once, when the FM music is first needed (see
   "FM music"): at start if there is no CD image or the Pocket menu's Music Source says FM Synth,
   else when that is chosen.
+- `screamer.cfg` (slot 26, up to 1 KB, optional, in the common folder): the factors of the draw distance and the
+  level of detail (`firmware/config.c`). It is read once at the start into a buffer of the program's own and
+  parsed; without it the constants of `track.h` stay.
 
 `GAME.DAT`, `GEN.DAT`, `LOCAL.DAT` and `SOUND.DAT` are loaded once. `SOUND.DAT` (1.9 MB, 1.3 s)
 loads while the first track is built: the firmware only starts the read (`sound_start` in
