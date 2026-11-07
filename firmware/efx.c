@@ -192,11 +192,6 @@ int efx_table(void)
     return table;
 }
 
-const uint8_t *efx_smg(void)
-{
-    return table ? smg_kept : 0;
-}
-
 const uint8_t *efx_darken(void)
 {
     return table ? smg_kept + SMG_RADAR * 256 : 0;

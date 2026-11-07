@@ -18,6 +18,14 @@ static int lower(int c)
     return c >= 'A' && c <= 'Z' ? c + 'a' - 'A' : c;
 }
 
+/* the name collected from a line (len letters, the first 5 kept) is want */
+static int name_is(const char *name, int len, const char *want)
+{
+    int i = 0;
+    while (want[i] && i < len && name[i] == want[i]) i++;
+    return !want[i] && i == len;
+}
+
 /* The number at *p (up to end): digits, a point or comma and more digits, no sign. 0 if there is none; *p is behind it */
 static int number(const char **p, const char *end, float *v)
 {
@@ -63,9 +71,9 @@ unsigned config_parse(const char *s, uint32_t n, float *far_scale, float *lod_sc
             k++;
             line++;
         }
-        int is_far = k == 3 && name[0] == 'f' && name[1] == 'a' && name[2] == 'r';
-        int is_lod = k == 3 && name[0] == 'l' && name[1] == 'o' && name[2] == 'd';
-        int is_bench = DEBUG && k == 5 && name[0] == 'b' && name[1] == 'e' && name[2] == 'n' && name[3] == 'c' && name[4] == 'h';
+        int is_far = name_is(name, k, "far");
+        int is_lod = name_is(name, k, "lod");
+        int is_bench = DEBUG && name_is(name, k, "bench");
         while (line < le && (*line == ' ' || *line == '\t')) line++;
         if (!(is_far || is_lod || is_bench) || line == le || (*line != '=' && *line != ':')) {
             found |= CFG_BAD;
@@ -104,15 +112,6 @@ unsigned config_parse(const char *s, uint32_t n, float *far_scale, float *lod_sc
     return found;
 }
 
-/* "1.50" */
-static void log_scale(float v)
-{
-    int h = (int)(v * 100.0f + 0.5f);
-    dlog_dec(h / 100);
-    dlog_str(h % 100 < 10 ? ".0" : ".");
-    dlog_dec(h % 100);
-}
-
 static uint32_t buf[CONFIG_MAX / 4];
 static int bench_on;
 
@@ -141,8 +140,8 @@ void config_load(void)
     }
     track_set_scales(far, lod);
     dlog_str("far ");
-    log_scale(far);
+    dlog_scale(far);
     dlog_str(" lod ");
-    if (lod == 0.0f) dlog_str("off"); else log_scale(lod);
+    dlog_scale(lod);
     dlog_str(DEBUG && bench_on ? ", benchmark\n" : "\n");
 }

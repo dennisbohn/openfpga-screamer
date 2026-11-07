@@ -23,6 +23,7 @@ void dlog_char(char c);
 void dlog_str(const char *s);
 void dlog_dec(int32_t v);
 void dlog_hex(uint32_t v);      /* 8 digits */
+void dlog_scale(float v);       /* a factor as fmt_scale() writes it: "1.50", "off" for 0 */
 /* Stop the appends bytes sooner than the end, to keep room for lines that must get in (a benchmark's result): 0 gives
    the room back. Nothing already written is touched */
 void dlog_keep(uint32_t bytes);

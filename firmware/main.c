@@ -204,7 +204,6 @@ static void tl_log(void)
 #else
 #define tl_begin(t)     ((void)(t))
 #define tl_mark(tag)    ((void)0)
-#define tl_log()        ((void)0)
 #define TL_SCENE(v)     ((void)0)
 #endif
 
@@ -1506,8 +1505,8 @@ static void bench_show(const struct ft_summary *rows, const int *ok)
         fb_fill(fb, 0, 0, FB_W, FB_H, BG);
         fb_fill(fb, 0, 0, FB_W, 8, FG);
         con_text(fb, 1, 0, "SCREAMER - BENCHMARK", BG, FG);
-        p = ft_scale(fmt_str(line, "far "), track_far_scale());
-        ft_scale(fmt_str(p, "  lod "), track_lod_scale());
+        p = fmt_scale(fmt_str(line, "far "), track_far_scale());
+        fmt_scale(fmt_str(p, "  lod "), track_lod_scale());
         con_text(fb, 1, 2, line, GREEN_, BG);
         con_text(fb, 1, 4, BENCH_SCREEN_HEAD, GREY_, BG);
         for (int t = 0; t < BENCH_TRACKS; t++) {

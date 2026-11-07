@@ -109,10 +109,10 @@ const char *track_hud_text(int k);
    a block with no mesh at its level is not drawn (the cars' level 2 is the body alone). 0: no level of detail,
    every block at level 0. */
 #ifndef FAR_SCALE                               /* (-DFAR_SCALE=1.0f on the compiler's line, for tests, wins) */
-#define FAR_SCALE   1.8f
+#define FAR_SCALE   2.0f
 #endif
 #ifndef LOD_SCALE
-#define LOD_SCALE   1.4f
+#define LOD_SCALE   1.2f
 #endif
 
 /* The two factors in force: the constants above unless config.c (screamer.cfg) has set others. Call it before
@@ -133,9 +133,8 @@ float track_far(void);
    none there (not drawn). Without the level of detail (LOD_SCALE 0) always the block itself */
 const uint8_t *track_lod_block(const uint8_t *mesh, int b, float dist, int moving);
 
-/* The file's size and its blocks of 256 KB from offset 0x100 on, each with a CRC-32 in the
-   header: whether block k (0 .. track_blocks() - 1) arrived as written */
-uint32_t track_size(void);
+/* The file's blocks of 256 KB from offset 0x100 on, each with a CRC-32 in the header: whether
+   block k (0 .. track_blocks() - 1) arrived as written */
 int track_blocks(void);
 int track_block_ok(int k);
 
@@ -225,6 +224,3 @@ void track_cam_axes(const struct track_cam *cam, float f[3], float r[3], float u
    road), the objects after them. Up to 32 objects. */
 void track_draw_cam(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam,
                     struct track_object *objs, int nobj, struct track_stats *st);
-
-/* The view from path position pos (path points, 8 fraction bits), clipped to clip */
-void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, struct track_stats *st);

@@ -25,8 +25,8 @@ https://youtu.be/lczQRB2F0cM
 - Music from the game's CD image, or without it the MIDI songs through an FM chip (OPL2, the
   AdLib sound of the original), sound effects and speech
 - 50 frames per second at the Pocket's native 320 x 200 picture, perspective-correct textures
-- A longer view than the original's (1.8 times the distance) with the level of detail of the game's meshes
-  stretched to match (1.4 times); both factors can be changed in an optional file, `screamer.cfg` (see *Settings*)
+- A longer view than the original's (2.0 times the distance) with the level of detail of the game's meshes
+  stretched to match (1.2 times); both factors can be changed in an optional file, `screamer.cfg` (see *Settings*)
 - Pocket integration: Core Controls remapping, analog sticks and triggers in the dock
 
 Not supported: network play (the menu entry is left out), the link port.
@@ -60,8 +60,8 @@ An optional text file `screamer.cfg` in `Assets/screamer/common/` changes how fa
 factors on the original's distances (1.0 is the original's picture). Without the file the core uses these values:
 
 ```
-far = 1.8
-lod = 1.4
+far = 2.0
+lod = 1.2
 ```
 
 `far` is the view distance, `lod` the distance at which things switch to a coarser mesh (`lod = off` turns that

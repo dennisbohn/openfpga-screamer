@@ -92,3 +92,16 @@ char *fmt_hex(char *p, uint32_t v, int digits)
     *p = 0;
     return p;
 }
+
+char *fmt_scale(char *p, float v)
+{
+    if (v <= 0.0f)
+        return fmt_str(p, "off");
+    uint32_t h = (uint32_t)(v * 100.0f + 0.5f);
+    p = fmt_udec(p, h / 100);
+    *p++ = '.';
+    *p++ = (char)('0' + h % 100 / 10);
+    *p++ = (char)('0' + h % 10);
+    *p = 0;
+    return p;
+}

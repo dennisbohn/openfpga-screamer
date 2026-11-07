@@ -18,8 +18,6 @@ struct dat_entry { char name[17]; uint32_t offset, stored, size, method; };
 
 /* Records in the directory, up to the first one with an empty name; 0 if malformed */
 uint32_t dat_count(const uint8_t *file, uint32_t file_size);
-/* Record i (0 .. dat_count() - 1): 1 if it exists */
-int dat_entry_at(const uint8_t *file, uint32_t file_size, uint32_t i, struct dat_entry *e);
 /* The first record named name (ASCII letters in either case): 1 if found */
 int dat_find(const uint8_t *file, uint32_t file_size, const char *name, struct dat_entry *e);
 /* Entry e into out: returns e->size, or 0 if out_max is smaller, the data lies outside the

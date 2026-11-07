@@ -14,7 +14,7 @@ If a file is missing, the core lists the missing files when it starts.
 Optional: a text file screamer.cfg in this folder changes how far the core draws. Each number is a
 factor on the original's distance; without the file the core uses these:
 
-  far = 1.8     the view distance
-  lod = 1.4     where things switch to a coarser mesh (off: never)
+  far = 2.0     the view distance
+  lod = 1.2     where things switch to a coarser mesh (off: never)
 
 https://github.com/dennisbohn/openfpga-screamer

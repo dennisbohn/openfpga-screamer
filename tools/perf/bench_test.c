@@ -8,8 +8,10 @@
 static char logbuf[4096];
 void dlog_str(const char *s) { strcat(logbuf, s); }
 void dlog_dec(int32_t v) { char b[16]; sprintf(b, "%d", v); strcat(logbuf, b); }
-char *fmt_str(char *p, const char *s) { while((*p = *s++)) p++; return p; }
-char *fmt_udec(char *p, uint32_t v) { return p + sprintf(p, "%u", v); }
+#define con_text real_con_text          /* the real fmt_str, fmt_udec and fmt_scale; the text drawing is a stub */
+#include "../../firmware/console.c"
+#undef con_text
+void dlog_scale(float v) { char b[16]; fmt_scale(b, v); strcat(logbuf, b); }
 int con_text(volatile uint8_t *fb, int col, int row, const char *s, uint8_t fg, uint8_t bg)
 {
     (void)fb; (void)col; (void)row; (void)s; (void)fg; (void)bg;

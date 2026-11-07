@@ -273,12 +273,12 @@ block takes level 1 from 12,000 units and level 2 from 16,000, a car's or other 
 7,000 (a car's level 2 is its body alone). The four constants are in the image, nothing writes them, and they
 read -6000, -8000, -4000, -7000 in the running game at DETAIL HI; the reach is three immediates of the code.
 
-The core does the same with two factors (`firmware/track.h`, each a single constant): `FAR_SCALE` (default 1.8)
+The core does the same with two factors (`firmware/track.h`, each a single constant): `FAR_SCALE` (default 2.0)
 on the far plane, the reach, the window's points, the props' reach (the camera cell's view box is kept only at 1.0
 or less: a box cut the window to what the original showed however large the factor, tripling it changed the cells walked
 by 3 % on track 5; scaled with the factor its edge, which moves by a cell as the camera crosses cells and by a row with the
 window's length, put the far buildings of track 5, 50,000 units away, in and out of the picture from frame to frame, found
-with the marks of `docs/development.md`, "Marks and the free camera"), `LOD_SCALE` (default 1.4, 0 = no level of
+with the marks of `docs/development.md`, "Marks and the free camera"), `LOD_SCALE` (default 1.2, 0 = no level of
 detail) on the distances of the levels. At 1.0 and 1.0 it is the original's picture. The image carries the
 map's cell table (`tools/make_track.py`, `tb_mmp.c`: key, placements, view box of every cell) so that the walk
 takes the game's cells in the game's order. Against the running original (DOSBox, track 1, two runs: the grid and
@@ -972,7 +972,7 @@ number).
 The six start frames (simulation, fast-forward, near chase camera, frame 2, ten cars; each 0 pixels
 difference to the C models; "Frame" is the whole time of frame 1, 20 ms = 1.485 M clocks). Before: the
 original's distances without the level of detail (release 1.0.2's firmware); now (measured at `FAR_SCALE` 1.5 and
-`LOD_SCALE` 1.5; the release has 1.8 and 1.4). The frame before of track 5 ran no physics step in the simulation (about 0.09 M clocks
+`LOD_SCALE` 1.5; the release has 2.0 and 1.2). The frame before of track 5 ran no physics step in the simulation (about 0.09 M clocks
 less), which is added here:
 
 | Track | Placements | Pieces now | Faces now | Pixels now | Frame before | Frame now |

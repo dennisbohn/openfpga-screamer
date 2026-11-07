@@ -28,28 +28,6 @@ static uint32_t norm16(uint64_t v, int l)
     return (uint32_t)(l >= 16 ? v >> (l - 16) : v << (16 - l));
 }
 
-/* float to 8 fraction bits: |v| 256 truncated, below 1/256 zero, from 2^23 on (and infinity,
-   NaN) 2^31 - 1, the sign applied after */
-int32_t su_fix8(float v)
-{
-    union { float f; uint32_t u; } b = { v };
-    uint32_t e = b.u >> 23 & 255, m = (b.u & 0x7FFFFFu) | 0x800000u, a;
-    if(e >= 150) a = 0x7FFFFFFFu;
-    else if(e >= 142) a = m << (e - 142);
-    else if(e > 118) a = m >> (142 - e);
-    else a = 0;
-    return b.u >> 31 ? -(int32_t)a : (int32_t)a;
-}
-
-void su_fix(const struct su_corner *c, struct su_fixed *x)
-{
-    x->r = su_fix8(c->r);
-    x->u = su_fix8(c->u);
-    x->f = su_fix8(c->f);
-    x->s = (int32_t)clamp64(su_fix8(c->s), -(1 << 23), (1 << 23) - 1);
-    x->t = (int32_t)clamp64(su_fix8(c->t), -(1 << 23), (1 << 23) - 1);
-}
-
 /* distance from plane k, >= 0 inside: near (depth 128), the guard band (|r|, |u| up to
    SU_GUARD times the depth), far */
 static int64_t plane(const struct su_view *v, const struct su_fixed *c, int k)
@@ -188,15 +166,6 @@ int su_triangle(const struct su_point p[3], struct rs_vertex pos[3], struct rs_t
         s->a[k] = (int32_t)clamp64(a[k][0] + ((gx * fx + gy * fy + 2048) >> 12), INT32_MIN, INT32_MAX);
     }
     return 1;
-}
-
-uint32_t su_polygon(volatile uint8_t *fb, const struct rs_clip *clip, const struct su_view *v,
-                    const struct su_corner *c, int n, const struct rs_texture *tex, uint8_t colour)
-{
-    struct su_fixed in[SU_MAX_IN];
-    if(n < 3 || n > SU_MAX_IN) return 0;
-    for(int i = 0; i < n; i++) su_fix(&c[i], &in[i]);
-    return su_polygon8(fb, clip, v, in, n, tex, colour);
 }
 
 uint32_t su_polygon8(volatile uint8_t *fb, const struct rs_clip *clip, const struct su_view *v,

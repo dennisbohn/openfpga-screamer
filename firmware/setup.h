@@ -6,8 +6,8 @@
  * works out per triangle what the rasterizer needs: screen positions and, textured, the
  * planes of Q, U, V (raster.h, rs_tex_setup).
  *
- * Fixed point throughout, the inputs are floats as the CPU has them:
- *   - each value to fixed point with 8 fraction bits (su_fix8: truncated towards zero,
+ * Fixed point throughout, the inputs have 8 fraction bits (s and t saturated at +-2^23):
+ *   - each value to fixed point with 8 fraction bits (truncated towards zero,
  *     saturated at +-(2^31 - 1)); s and t saturated at +-2^23
  *   - cut (su_clip): near f >= 128, guard |r|, |u| <= 14 f, far f <= the view's far depth;
  *     only at the planes a corner of the polygon lies outside of, in that order; a new
@@ -25,10 +25,6 @@
 #pragma once
 #include <stdint.h>
 #include "raster.h"
-
-/* a corner in view space: r right, u up, f forward (f > 0, after the near plane), and its
-   texel position s, t */
-struct su_corner { float r, u, f, s, t; };
 
 /* the projection: the screen position of the view axis in 1/16 pixel, the focal length in
    pixels times 16, and the far plane's depth with 8 fraction bits */
@@ -50,9 +46,6 @@ struct su_point {
     int64_t sr, tr;                 /* s rc and t rc (s, t with 8 fraction bits) */
 };
 
-int32_t su_fix8(float v);
-void su_fix(const struct su_corner *c, struct su_fixed *x);
-
 /* The polygon in (n corners) cut at the planes into out; returns its corners, 0 if less
    than 3 are left */
 int su_clip(const struct su_view *v, const struct su_fixed *in, int n, struct su_fixed *out);
@@ -63,12 +56,8 @@ void su_project(const struct su_view *v, const struct su_fixed *c, struct su_poi
    Returns 0 for a textured triangle without area (the hardware leaves it out). */
 int su_triangle(const struct su_point p[3], struct rs_vertex pos[3], struct rs_tex_setup *s, int textured);
 
-/* A polygon of n corners (3, 4) through the model: cut, projected, a fan of triangles,
-   drawn with the rasterizer's C model into fb (rs_textured_fx with tex, else rs_triangle in
-   colour). Returns the pixels drawn. */
-uint32_t su_polygon(volatile uint8_t *fb, const struct rs_clip *clip, const struct su_view *v,
-                    const struct su_corner *c, int n, const struct rs_texture *tex, uint8_t colour);
-
-/* The same with the corners already in fixed point (as the geometry unit hands them over) */
+/* A polygon of n corners (3, 4), in fixed point as the geometry unit hands them over, through the model: cut,
+   projected, a fan of triangles, drawn with the rasterizer's C model into fb (rs_textured_fx with tex, else
+   rs_triangle in colour). Returns the pixels drawn. */
 uint32_t su_polygon8(volatile uint8_t *fb, const struct rs_clip *clip, const struct su_view *v,
                      const struct su_fixed *c, int n, const struct rs_texture *tex, uint8_t colour);

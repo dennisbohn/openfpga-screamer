@@ -51,9 +51,6 @@ struct rs_texture {
  */
 extern const uint8_t *rs_smg;
 
-uint32_t rs_textured(volatile uint8_t *fb, const struct rs_clip *clip,
-                     const struct rs_tvertex v[3], const struct rs_texture *tex);
-
 /*
  * The same in fixed point, bit for bit what the hardware draws. Per triangle a reference
  * pixel and, for Q (= 1/z scaled below 2^24), U (= u/256 Q) and V, the value at its centre

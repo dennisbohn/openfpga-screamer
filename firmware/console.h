@@ -33,3 +33,5 @@ char *fmt_str(char *p, const char *s);
 char *fmt_udec(char *p, uint32_t v);
 char *fmt_dec(char *p, int32_t v);
 char *fmt_hex(char *p, uint32_t v, int digits);
+/* a factor with two decimals ("1.50"), "off" for 0 (screamer.cfg's far and lod) */
+char *fmt_scale(char *p, float v);

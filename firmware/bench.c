@@ -13,21 +13,14 @@ static void log_ms(uint32_t cycles)
     dlog_str(b);
 }
 
-static void log_scale(float v)
-{
-    char b[16];
-    ft_scale(b, v);
-    dlog_str(b);
-}
-
 void bench_log_row(int track, const struct ft_summary *s, float far_scale, float lod_scale)
 {
     dlog_str("bench track ");
     dlog_dec(track);
     dlog_str(": far ");
-    log_scale(far_scale);
+    dlog_scale(far_scale);
     dlog_str(" lod ");
-    log_scale(lod_scale);
+    dlog_scale(lod_scale);
     dlog_str(", ");
     dlog_dec((int32_t)s->frames);
     dlog_str(" frames avg ");

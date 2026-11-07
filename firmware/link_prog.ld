@@ -68,7 +68,7 @@ SECTIONS
         __bss_end = .;
     } > SDRAM
 
-    ASSERT(__hot_end - __hot_start <= 8192, "the hot code (tl_mark, hw_piece, face_eye, block_piece, draw) is over 8 KB: it would collide with itself in the I-cache")
+    ASSERT(__hot_end - __hot_start <= 8192, "the hot code (hw_piece, face_eye, block_piece, draw, and tl_mark in a debug build) is over 8 KB: it would collide with itself in the I-cache")
 
     __stack_top = 0x00008000;       /* top of the 32 KB boot RAM */
 

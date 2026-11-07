@@ -86,6 +86,13 @@ void dlog_char(char c)
     last = c;
 }
 
+void dlog_scale(float v)
+{
+    char buf[12];
+    fmt_scale(buf, v);
+    dlog_str(buf);
+}
+
 void dlog_str(const char *s)
 {
     while (*s)

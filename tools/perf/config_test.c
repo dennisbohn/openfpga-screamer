@@ -6,6 +6,7 @@
 
 void dlog_str(const char *s) { (void)s; }
 void dlog_dec(int32_t v) { (void)v; }
+void dlog_scale(float v) { (void)v; }
 uint32_t slot_size(uint32_t id) { (void)id; return 0; }
 int slot_read(uint32_t id, uint32_t o, uint32_t a, uint32_t l) { (void)id; (void)o; (void)a; (void)l; return -1; }
 void track_set_scales(float f, float l) { (void)f; (void)l; }
@@ -29,7 +30,7 @@ static void t(const char *text, float far0, float lod0, float far1, float lod1, 
 int main(void)
 {
     {   /* the release's settings */
-        int ok = FAR_SCALE == 1.8f && LOD_SCALE == 1.4f;
+        int ok = FAR_SCALE == 2.0f && LOD_SCALE == 1.2f;
         printf("%-4s defaults far %.2f lod %.2f\n", ok ? "ok" : "FAIL", (double)FAR_SCALE, (double)LOD_SCALE);
         fails += !ok;
     }

@@ -26,7 +26,6 @@ int efx_init(const uint8_t *gfx, uint32_t gfx_size, int n, const uint8_t *mlb, c
 /* 1 once MAPn.SMG went into the rasterizer; the table as it did (row 63 the radar's, 16384
    bytes, kept in mem for the C models), 0 before */
 int efx_table(void);
-const uint8_t *efx_smg(void);
 
 /* The radar's darkening (below): per colour the darker one, 256 bytes; 0 without the table */
 const uint8_t *efx_darken(void);

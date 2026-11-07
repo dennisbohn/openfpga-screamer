@@ -100,19 +100,6 @@ char *ft_head(char *p)
     return fmt_udec(fmt_str(p, " m"), ft.worst.where);
 }
 
-/* a factor with two decimals ("1.50"), "off" for 0 */
-char *ft_scale(char *p, float v)
-{
-    if (v <= 0.0f) return fmt_str(p, "off");
-    uint32_t h = (uint32_t)(v * 100.0f + 0.5f);
-    p = fmt_udec(p, h / 100);
-    *p++ = '.';
-    *p++ = (char)('0' + h % 100 / 10);
-    *p++ = (char)('0' + h % 10);
-    *p = 0;
-    return p;
-}
-
 void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg, float far_scale, float lod_scale)
 {
     char line[CON_COLS + 1], *p;
@@ -125,7 +112,7 @@ void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg, float far_scale, floa
     p = fmt_udec(fmt_str(line, "faces "), ft.o_faces);
     fmt_udec(fmt_str(p, "  pieces "), ft.o_pieces);
     con_text(fb, 0, 1, line, fg, bg);
-    p = ft_scale(fmt_str(line, "F "), far_scale);          /* ("F 2.00  L 2.50") */
-    ft_scale(fmt_str(p, "  L "), lod_scale);
+    p = fmt_scale(fmt_str(line, "F "), far_scale);          /* ("F 2.00  L 2.50") */
+    fmt_scale(fmt_str(p, "  L "), lod_scale);
     con_text(fb, 0, 2, line, fg, bg);
 }

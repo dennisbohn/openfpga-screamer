@@ -48,16 +48,14 @@ and package versions pinned); the script builds the image on first use. The resu
 | `sound.c`, `speech.c`, `music.c` | sound effects, the race commentary, the music: streamed from the CD image, or the MIDI songs on the FM chip |
 | `fm.c` | the FM music: HMI's song player and OPL2 driver, queueing the chip's register writes with their times |
 | `files.c` | the list of the game's files with [OK] or [MISSING], shown when one is missing |
-| `ftime.c` | the race's frame times: the timing overlay and the statistics on `debug.txt`'s first line |
-| `config.c` | `screamer.cfg`: far, lod and bench, read at the start |
-| `mark.c` | marks (hold A, press X: the camera's place and the three before it to `debug.txt`) and the free camera (hold A, press Y) |
-| `bench.c` | the benchmark's result lines (`bench = 1`: every track raced once, the frame times in `debug.txt` and on the screen) |
+| `config.c` | `screamer.cfg`: far and lod (and bench in a debug build), read at the start |
+| `ftime.c`, `mark.c`, `bench.c` | the debug build only (`debug.h`, `tools/fw.sh DEBUG=1`): the race's frame times with the timing overlay and the statistics on `debug.txt`'s first line; marks (hold A, press X: the camera's place and the three before it to `debug.txt`) and the free camera (hold A, press Y); the benchmark's result lines (`bench = 1`: every track raced once, the frame times in `debug.txt` and on the screen) |
 | `console.c`, `screen.c`, `dlog.c`, `selftest.c`, `memtest.c`, `trap.c` | text drawing, the test band, the debug log, self-tests, the memory test, the trap handler |
 | `font8x8_basic.h` | font from [dhepper/font8x8](https://github.com/dhepper/font8x8) (public domain), unchanged |
 
 ## Frame time display
 
-In a race, hold A and press L and R (nothing else in a race uses A; while A is held L and R shift no
+In a debug build (`tools/fw.sh DEBUG=1`; a release has none of this), in a race, hold A and press L and R (nothing else in a race uses A; while A is held L and R shift no
 gear) to show the frame times in two lines at the top of the screen; the same again switches them off.
 `12.3 ms  avg 11.8  max 17.9  late 0`: the last frame's work in milliseconds (from the swap to the end of the
 picture, with the display itself), the mean of the last second, the longest frame and the frames over 20 ms
@@ -75,8 +73,9 @@ started, the content is from this run (a file of only zeros means the CPU never 
 only reload the firmware from the menu, that is a reset, and the previous run's log stays until
 the new firmware clears it; the checksum in the second line shows which firmware wrote it.
 
-The first line is rewritten after every frame: if its counter stands still, the firmware hung
-there. In a race it also carries the frame times of the race so far, e.g.
+In a debug build the first line is rewritten after every frame: if its counter stands still, the firmware
+hung there (a release writes it at the start and leaves it). In a race a debug build also carries the frame
+times of the race so far, e.g.
 `frames drawn: 1234 avg 11.2 max 17.9 late 0 | a1.3 c1.4 s7.1 h0.3 w0.0 f873 p219 m5`: the mean and the
 longest frame in milliseconds, how many frames took over 20 ms (late: below 50 pictures a second), and what
 the longest frame was made of: `a` before the scene (music, physics, backdrop), `c` the cull, `s` handing

@@ -7,8 +7,9 @@
 #include <stdint.h>
 
 static char drawn[3][64];
-char *fmt_str(char *p, const char *s) { while((*p = *s++)) p++; return p; }
-char *fmt_udec(char *p, uint32_t v) { return p + sprintf(p, "%u", v); }
+#define con_text real_con_text          /* the real fmt_str, fmt_udec and fmt_scale; the text drawing is a stub */
+#include "../../firmware/console.c"
+#undef con_text
 int con_text(volatile uint8_t *fb, int col, int row, const char *s, uint8_t fg, uint8_t bg)
 {
     (void)fb; (void)col; (void)fg; (void)bg;

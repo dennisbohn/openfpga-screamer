@@ -32,9 +32,8 @@ struct ft_summary {
     uint32_t faces_avg, faces_worst, pieces_avg, pieces_worst;
 };
 void ft_summary(struct ft_summary *s);
-/* cycles as milliseconds with one decimal ("12.3") and a factor with two ("1.50", "off" for 0), written at p; the end */
+/* cycles as milliseconds with one decimal ("12.3"), written at p; the end */
 char *ft_ms(char *p, uint32_t cycles);
-char *ft_scale(char *p, float v);
 
 void ft_reset(void);                /* a new race: the statistics start again (the overlay stays as it is) */
 void ft_overlay_toggle(void);       /* the overlay on or off; on, its maximum and late count start again */

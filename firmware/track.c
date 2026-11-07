@@ -62,7 +62,6 @@ static const float far_depth[3] = { 27808.0f, 27808.0f, 43808.0f };     /* LOW, 
 #define FOCAL       128.0f
 #define EYE_BACK    128.0f
 #define EYE_LINE(h) ((h) * 65 / 100)
-#define CAM_UP      700.0f      /* camera over the player's line */
 #define LOOK        12          /* path points ahead for the direction of view */
 #define PI          3.14159265f
 
@@ -803,11 +802,6 @@ const uint8_t *track_lod_block(const uint8_t *mesh, int b, float dist, int movin
     return off ? mesh + off : 0;
 }
 
-uint32_t track_size(void)
-{
-    return file_size;
-}
-
 int track_blocks(void)
 {
     return nblocks;
@@ -1242,24 +1236,4 @@ void track_draw_cam(volatile uint8_t *fb, const struct rs_clip *clip, const stru
     float f[3], r[3], u[3];
     cam_frame(cam, f, r, u);
     draw(fb, clip, cam, cam->yaw, c, f, r, u, objs, nobj, st);
-}
-
-void track_draw(volatile uint8_t *fb, const struct rs_clip *clip, uint32_t pos, struct track_stats *st)
-{
-    /* the camera on the player's line, looking LOOK points ahead and a little down */
-    uint32_t i0 = (pos >> 8) % (uint32_t)npath, i1 = (i0 + 1) % (uint32_t)npath;
-    uint32_t il = (i0 + LOOK) % (uint32_t)npath;
-    float fr = (float)(pos & 255) / 256.0f;
-    float cx = path[i0].x + (path[i1].x - path[i0].x) * fr;
-    float cy = path[i0].y + (path[i1].y - path[i0].y) * fr;
-    float ch = path[i0].h + (path[i1].h - path[i0].h) * fr + CAM_UP;
-    float fx = path[il].x - cx, fy = path[il].y - cy, fh = path[il].h + CAM_UP - 250.0f - ch;
-    float l = __builtin_sqrtf(fx * fx + fy * fy + fh * fh);
-    fx /= l; fy /= l; fh /= l;
-    float rx = fy, ry = -fx;                    /* right = forward x up, level */
-    l = __builtin_sqrtf(rx * rx + ry * ry);
-    rx /= l; ry /= l;
-    const float c[3] = { cx, cy, ch }, f[3] = { fx, fy, fh }, r[3] = { rx, ry, 0.0f };
-    const float u[3] = { ry * fh, -rx * fh, rx * fy - ry * fx };     /* up = right x forward */
-    draw(fb, clip, 0, atan2f(fx, -fy), c, f, r, u, 0, 0, st);
 }

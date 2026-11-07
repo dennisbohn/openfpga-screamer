@@ -43,14 +43,6 @@ static void record(const uint8_t *r, struct dat_entry *e)
     e->method = rd32(r + 28);
 }
 
-int dat_entry_at(const uint8_t *file, uint32_t file_size, uint32_t i, struct dat_entry *e)
-{
-    if (i >= dat_count(file, file_size)) return 0;
-    uint32_t records;
-    record(directory(file, file_size, &records) + i * REC, e);
-    return 1;
-}
-
 static int upper(int c) { return c >= 'a' && c <= 'z' ? c - 32 : c; }
 
 int dat_find(const uint8_t *file, uint32_t file_size, const char *name, struct dat_entry *e)
