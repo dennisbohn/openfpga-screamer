@@ -301,8 +301,15 @@ A longer view alone costs 0.9 ms (1.25) to 1.3 ms (1.5) on average and takes the
 of detail more than pays for it (-2.2 to -3.4 ms, faces looked at -47 to -61 %). At the defaults the placed
 blocks beyond 18,000 units take level 1 and beyond 24,000 level 2, the cars' blocks beyond 6,000 and 10,500. A step
 of the levels as the car drives (150 units a frame) changes 22 pixels of the picture on average (0.03 %; at
-`LOD_SCALE` 1.0: 57), the most 1,151 in a frame (a tree's crown). The far plane at 1.5 is 65,840 units from the
-eye, beyond 2^16: the setup unit and the clipper take it (the simulation's start frames have up to 16 polygons cut at it,
+`LOD_SCALE` 1.0: 57), the most 1,151 in a frame (a tree's crown).
+
+In the simulation (tracks 1, 4, 5, 6; the gas held from the green light, the first 105 frames with all ten cars,
+the countdown's frame left out; `debug.txt`'s first line) the frames took 13.4 to 14.5 ms on average and 18.3 to 19.4 ms
+at most, none over 20 ms; the firmware before this change (original distances, no level of detail) took 17.0 to
+17.6 ms, 21.9 to 22.7 ms at most, two frames over 20 ms on each track. The longest frame has 7 ms before the scene: the physics
+catching up after the first frame.
+
+The far plane at 1.5 is 65,840 units from the eye, beyond 2^16: the setup unit and the clipper take it (the simulation's start frames have up to 16 polygons cut at it,
 0 pixels differ from the C models).
 
 ## Race: player, opponents, cameras, effects
