@@ -1,14 +1,13 @@
 /*
- * The program (program.bin, data slot 2) in the SDRAM, started by the boot loader with its
- * results (docs/soc.md). With the game's original files in data slots 3-20 it shows the track
- * screen and the car screen (menu.c: left and right choose, B or START take the track or car, Y
- * or SELECT go back from the cars to the tracks), builds the track chosen from them
- * (track_build.c) and puts the player's car on it (car.c): B accelerates, Y
- * brakes, left and right steer, L and R change gear on a manual car, X changes the view; the CPU picks and sorts the pieces (track.c), the geometry unit, setup unit and
- * rasterizer draw them. START pauses the race (the game's CD player); 5 s after a finished
- * race its replay (B, START or SELECT skip it); SELECT, time over or the replay's end ask PLAY
- * AGAIN? (YES the race again, NO the track screen).
- * Without all the files it needs, the screen of files.c lists them with [OK] or [MISSING].
+ * The main program of the core (program.bin, data slot 2). The boot loader copies it into the SDRAM and
+ * starts it with the boot results (docs/soc.md). Entry point: prog_main().
+ *
+ * With the game's original files in data slots 3-20 it plays the game: the intro, the main menu and its
+ * pages, the track and car screens, the race with its pause, replay and PLAY AGAIN? question, and the
+ * championship. For a race it builds the track from the game's files (track_build.c) and puts the player's
+ * car on it (car.c). Each frame the CPU picks and sorts the pieces to draw (track.c); the geometry unit,
+ * setup unit and rasterizer draw them. Without all the files it needs, the screen of files.c lists them
+ * as [OK] or [MISSING].
  */
 #include "hw.h"
 #include "console.h"
@@ -39,13 +38,26 @@
 #include "config.h"
 #include "debug.h"
 #if DEBUG
+/* Debug build: the benchmark (bench.h) and the marks and free camera (mark.h). */
 #include "bench.h"
 #include "mark.h"
 #endif
 
-uint32_t frames_shown;            /* read by the trap handler */
+/*
+ * Layout of this file:
+ *   - the SDRAM map and the data slots, then helpers for debug.txt and the debug timeline
+ *   - hw_piece, hw_blit and the check of a picture against the C models
+ *   - fades, the pause (pause_race) and the question PLAY AGAIN? (play_again)
+ *   - run_track: the race loop, one picture per pass
+ *   - loading the game's files and the set-up of what a race needs (load_*, effects, scenery, sounds)
+ *   - menu_screen, the loading screen, track_ready and race (a whole race with its replays)
+ *   - the benchmark of the debug build, the intro, the championship and files_loop
+ *   - prog_main: the order in which the game goes through its screens
+ */
 
-#define STACK_FILL  0x57AC57ACu /* marks unused stack, for the high-water mark */
+uint32_t frames_shown;            /* frames swapped in so far; trap.c prints it */
+
+#define STACK_FILL  0x57AC57ACu /* pattern in unused stack; stack_used() finds how far it was overwritten */
 #define STACK_LOW   0x6000u     /* the stack may grow down to here (link.ld keeps the boot loader below) */
 
 static uint32_t results;        /* SYS_SIM bits 20..0, from the boot loader */
@@ -53,35 +65,42 @@ static uint8_t col_bg = COL_BG, col_text = COL_TEXT, col_dim = COL_DIM, col_aler
 
 #define TEX_FILE    ((const volatile uint8_t *)(SDRAM_BASE + 0x2100000))  /* the track image, up to 7 MB */
 
-/* The game's containers (core/data.json with the same addresses and limits) above the track
-   image, in struct track_files' order: the track's GFX and DATA containers (data slots 3 and 5
-   for track 1, 9-13 and 14-18 for tracks 2-6), each track's at the same place, and GAME.DAT,
-   GEN.DAT, LOCAL.DAT (slots 4, 6, 7), loaded once; the build's scratch after them, up to the
-   program */
+/*
+ * The game's containers are read into the SDRAM above the track image. Their addresses and size limits are
+ * those of core/data.json. game_files[] lists them in the order of struct track_files:
+ *     0  MAP#H.DAT   the track's GFX container   (data slot 3 for track 1, slots 9-13 for tracks 2-6)
+ *     1  GAME.DAT    data slot 4
+ *     2  MAP#.DAT    the track's DATA container  (data slot 5 for track 1, slots 14-18 for tracks 2-6)
+ *     3  GEN.DAT     data slot 6
+ *     4  LOCAL.DAT   data slot 7
+ * Entries 0 and 2 change with the track and always use the same place. Entries 1, 3 and 4 are read once.
+ * The scratch memory of the track build and of the unpackers follows them, up to the program.
+ */
 #define GAME_SLOT   3
-#define TRACK_FILES 5u          /* containers 0 and 2 (bits): the track's */
-#define FIXED_FILES 0x1Au       /* 1, 3, 4: the ones that stay */
-#define LOCAL_FILES 0x10u       /* 4: LOCAL.DAT, early for the first picture's LOADING */
-#define IMAGE_SLOT  30          /* the simulation only: the finished track image (load_image) */
-#define RACE_SLOT   29          /* the simulation only: its size, the frames after the green light
-                                   (run_track) */
-#define TRACK_SLOT  28          /* the simulation only: its size, the track raced (none: track 1) */
-#define MENU_CHECK_SLOT 27      /* the simulation only: its size, a screen of the menu instead (1 the
-                                   track screen, 2 the car screen; menu_screen) */
+#define TRACK_FILES 5u          /* mask over game_files: the two containers of a track (0 and 2) */
+#define FIXED_FILES 0x1Au       /* mask: the containers that stay loaded (1, 3 and 4) */
+#define LOCAL_FILES 0x10u       /* mask: LOCAL.DAT (4) alone; read early for LOADING in the first picture */
+/* Data slots that only the simulation offers. The testbench provides them; core/data.json does not have them,
+   so on the Pocket their size is 0. */
+#define IMAGE_SLOT  30          /* the finished track image, used instead of building it (load_image) */
+#define RACE_SLOT   29          /* its size: the frames after the green light to race (run_track) */
+#define TRACK_SLOT  28          /* its size: the track to race; without it the track of CHOICE.DAT is raced */
+#define MENU_CHECK_SLOT 27      /* its size: show a menu screen, not a race (1 track screen, 2 car screen) */
 static const struct game_file { const char *name; uint32_t addr, max; } game_files[5] = {
-    { "MAP#H.DAT", SDRAM_BASE + 0x2800000, 0x400000 },     /* # the track's number */
+    { "MAP#H.DAT", SDRAM_BASE + 0x2800000, 0x400000 },     /* '#' stands for the track's number */
     { "GAME.DAT",  SDRAM_BASE + 0x2C00000, 0x100000 },
     { "MAP#.DAT",  SDRAM_BASE + 0x2D00000, 0x40000 },
     { "GEN.DAT",   SDRAM_BASE + 0x2D40000, 0x10000 },
     { "LOCAL.DAT", SDRAM_BASE + 0x2D50000, 0x10000 },
 };
 #define BUILD_SCRATCH   (SDRAM_BASE + 0x2D60000)
-static struct track_files game;         /* where they are, as loaded */
-static int track_loaded;                /* the track whose two containers are loaded, 0 none */
-/* The track and car screens' files (menu.h): of GFX/MENU.DAT and GFX/GRAF.DAT (data slots 19
-   and 20, core/data.json with the same addresses and limits) only the parts they need, each at
-   its place in the file; their pictures, sprites and fonts after them. Below the sounds, where
-   nothing else writes: loaded once. */
+static struct track_files game;         /* where the containers are, as loaded */
+static int track_loaded;                /* the track whose two containers are loaded; 0 for none */
+
+/* The menu files (menu.h). Of GFX/MENU.DAT and GFX/GRAF.DAT (data slots 19 and 20) only the parts the menu
+   screens need are read, each at its offset in the file. Addresses and limits are those of core/data.json.
+   MENU_MEM follows them and holds their pictures, sprites and fonts. This memory lies below the sound
+   effects, where nothing else writes, so the files are loaded once. */
 #define MENU_SLOT   19
 #define GRAF_SLOT   20
 #define MENU_FILE   (SDRAM_BASE + 0x200000)
@@ -89,31 +108,32 @@ static int track_loaded;                /* the track whose two containers are lo
 #define MENU_MAX    0x400000
 #define MENU_MEM    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0xA00000))
 #define MENU_SIZE   0x80000
-/* the intro's logos and font (intro.h), after the menu's */
+/* The intro's logos and font (intro.h), after the menu's memory. */
 #define INTRO_MEM   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0xA80000))
 #define INTRO_SIZE  0x40000
 static int intro_ok;
-/* the effects through MAPn.SMG (efx.h): 64 KB right under the track image, so that the radar's
-   material at its end lies within a face's reach (32 KB) of the image's MLB */
+/* The effects of MAPn.SMG (efx.h) get 64 KB right below the track image. The radar's material is at the end
+   of this block, so it is within a face's reach (32 KB) of the image's MLB (the material file). */
 #define EFX_SIZE    0x10000
 #define EFX_MEM     ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE))
-/* the cockpit's dashboard as blitter boxes (hud.h), 64 KB under the effects; unpacked through
-   the build's scratch, which is free by then */
+/* The cockpit's dashboard as blitter boxes (hud.h): 64 KB below the effects. It is unpacked through the
+   build's scratch memory, which is free by then. */
 #define DASH_SIZE   0x10000
 #define DASH_MEM    ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE - DASH_SIZE))
-/* the props and moving scenery (scenery.h): their meshes, 64 KB under the dashboard */
+/* The meshes of the props and the moving scenery (scenery.h): 64 KB below the dashboard. */
 #define SCENERY_SIZE 0x10000
 #define SCENERY_MEM ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x2100000 - EFX_SIZE - DASH_SIZE - SCENERY_SIZE))
-/* the sound effects' container SOUND.DAT (data slot 8, core/data.json with the same address and
-   limit), 2 MB under the props below the track image; the mixer plays its samples from there */
+/* The sound effects container SOUND.DAT (data slot 8; address and limit as in core/data.json) takes up to
+   2 MB below the props memory, which lies below the track image. The mixer plays its samples from there. */
 #define SOUND_SLOT  8
 #define SOUND_MEM   (SDRAM_BASE + 0x1C00000)
 #define SOUND_MAX   0x200000
-#define MAX_OBJECTS 64          /* the player's car, the opponents and their shadows, the player's
-                                   shadow and smoke, the props and vehicles in reach (track.c draws up to 64) */
+/* Objects in one picture: the player's car, the opponents and their shadows, the player's shadow and smoke,
+   and the props and vehicles in reach. track.c draws up to 64. */
+#define MAX_OBJECTS 64
 
-/* Mark the free stack in the boot RAM up to 256 bytes below the stack pointer, find how
-   deep it was used later */
+/* Fills the unused stack in the boot RAM with STACK_FILL, from STACK_LOW up to 256 bytes below the stack
+   pointer. stack_used() later tells how deep the stack has been used. */
 static void __attribute__((noinline)) stack_fill(void)
 {
     uintptr_t sp;
@@ -122,6 +142,8 @@ static void __attribute__((noinline)) stack_fill(void)
         *p = STACK_FILL;
 }
 
+/* The most stack that has been used so far, in bytes (the part of the boot RAM from the lowest word that
+   no longer holds STACK_FILL up to the end of the RAM). */
 static uint32_t stack_used(void)
 {
     uint32_t *p = (uint32_t *)STACK_LOW;
@@ -130,6 +152,8 @@ static uint32_t stack_used(void)
     return BOOTRAM_SIZE - (uint32_t)(uintptr_t)p;
 }
 
+/* Rewrites the first line of debug.txt in place (dlog.h): the program's name, the text what and the number n.
+   A loop that calls it every frame (files_loop) shows after a hang how many frames were drawn. */
 static void log_head(const char *what, uint32_t n)
 {
     char buf[DLOG_HEAD + 16];
@@ -138,7 +162,8 @@ static void log_head(const char *what, uint32_t n)
 }
 
 #if DEBUG
-/* the race's first line: the frames drawn, then the frame times so far and the longest frame's parts (ftime.h) */
+/* Debug build: the race's first line of debug.txt. It holds the frames drawn, the frame times so far and
+   the parts of the longest frame (ftime.h). */
 static void log_race_head(uint32_t n)
 {
     char buf[DLOG_HEAD + 64];
@@ -146,26 +171,36 @@ static void log_race_head(uint32_t n)
     dlog_head(buf);
 }
 #else
-#define log_race_head(n)    ((void)(n))         /* (a release rewrites no line of statistics every frame) */
+#define log_race_head(n)    ((void)(n))         /* a release does not rewrite the statistics line */
 #endif
 
-static uint32_t draw_buf;               /* the back buffer, for the hardware's draw commands */
-static int back_wait;                   /* the backdrop is with the blitter: the first piece waits */
+static uint32_t draw_buf;               /* the back buffer (0 or 1) that the draw commands go to */
+static int back_wait;                   /* the blitter still copies the backdrop: the first piece must wait */
 #if DEBUG
-static uint32_t draw_wait;              /* cycles the DRAW writes waited for the rasterizer */
-static uint32_t back_clocks, back_cycles;   /* the blitter's clocks for it, the CPU's wait */
+/* Debug build: what the timeline and the statistics line report about waiting. */
+static uint32_t draw_wait;              /* CPU cycles spent writing pieces to the geometry unit (hw_piece) */
+static uint32_t back_clocks, back_cycles;   /* the blitter's clocks for the backdrop; the CPU's wait for it */
 #endif
 
 #if DEBUG
-/* The frame's timeline (tools/make_timeline_svg.py draws it): at each mark the cycles since
-   the frame began, the busy clocks of the geometry unit, setup unit, rasterizer and blitter
-   and the CPU's cycles writing to them, each as its counter holds it (cleared during the
-   frame; a mark follows every clear). Two buffers: the last whole frame is logged. */
-enum { TL_START, TL_PHYS, TL_PREP, TL_CULL, TL_PIECES, TL_SCENE, TL_CLEAR, TL_HUD, TL_WAIT, TL_END, TL_MUSIC };
+/*
+ * Debug build: the frame timeline (tools/make_timeline_svg.py draws it from the log).
+ * At each mark in a frame one record is stored:
+ *     t     CPU cycles since the frame began
+ *     gu, su, rs, bl   the busy clocks of the geometry unit, setup unit, rasterizer and blitter, as their
+ *           counters hold them (the frame clears the counters at some points and sets a mark after each
+ *           clear)
+ *     wait  CPU cycles spent so far on writing pieces to the geometry unit (draw_wait)
+ *     tag   which mark it is (TL_*)
+ * Two buffers alternate. One is filled by the frame that runs; the last whole frame, in the other, is logged.
+ */
+enum { TL_START, TL_PHYS, TL_PREP, TL_CULL, TL_PIECES, TL_SCENE, TL_CLEAR, TL_HUD, TL_WAIT, TL_END,
+       TL_MUSIC };
 #define TL_MAX 48
 static struct tl_mark { uint32_t t, gu, su, rs, bl, wait, tag; } tl[2][TL_MAX];
 static uint32_t tl_n[2], tl_cur, tl_t0, tl_pieces, tl_scene;
 
+/* Stores a record with this tag, if the buffer has room. */
 static void tl_mark(uint32_t tag)
 {
     uint32_t n = tl_n[tl_cur];
@@ -176,15 +211,18 @@ static void tl_mark(uint32_t tag)
     }
 }
 
+/* Starts the timeline of a new frame in the other buffer. t_frame is the cycle count at the frame's start. */
 static void tl_begin(uint32_t t_frame)
 {
     tl_cur ^= 1;
     tl_t0 = t_frame;
     tl_pieces = 0;
-    tl[tl_cur][0] = (struct tl_mark){ 0, 0, 0, 0, 0, 0, TL_START };    /* the units idle: the last frame waited */
+    /* The first record is all zeros: the units are idle, because the last frame waited for them. */
+    tl[tl_cur][0] = (struct tl_mark){ 0, 0, 0, 0, 0, 0, TL_START };
     tl_n[tl_cur] = 1;
 }
 
+/* Writes the last whole frame's records to debug.txt, six to a line. */
 static void tl_log(void)
 {
     const uint32_t c = tl_cur ^ 1;
@@ -200,20 +238,22 @@ static void tl_log(void)
     }
     dlog_char('\n');
 }
+/* TL_SCENE(1) while the scene is drawn: hw_piece then marks the first piece and every eighth one after it. */
 #define TL_SCENE(v)     (tl_scene = (v))
 #else
+/* A release has no timeline. */
 #define tl_begin(t)     ((void)(t))
 #define tl_mark(tag)    ((void)0)
 #define TL_SCENE(v)     ((void)0)
 #endif
 
-#define CHECK_BUF   ((volatile uint8_t *)(SDRAM_BASE + 0x100000))  /* the C model's picture */
-#define STILL_MEM   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x110000))    /* the pause's and PLAY AGAIN?'s
-                                                                           picture (still) */
+#define CHECK_BUF   ((volatile uint8_t *)(SDRAM_BASE + 0x100000))  /* the picture of the C models */
+#define STILL_MEM   ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x110000))    /* the still picture of the pause and
+                                                                           of PLAY AGAIN? */
 #define CD_MEM      ((uint8_t *)(uintptr_t)(SDRAM_BASE + 0x120000))    /* the CD player's front (hud.h) */
 #define CD_SIZE     0x10000
 
-/* the projection into the setup unit's registers */
+/* Writes the projection of a view (centre, scale, far plane) to the setup unit's registers. */
 static void su_view_regs(const struct su_view *v)
 {
     SU_CENTRE = RS_XY(v->cx, v->cy);
@@ -221,11 +261,14 @@ static void su_view_regs(const struct su_view *v)
     SU_FAR = (uint32_t)v->far8;
 }
 
-/* a piece into the geometry unit's buffer: its place in view space and its mesh; a word
-   waits only while the buffer is full */
+/* Sends one piece to the geometry unit: its place in view space and the mesh block to draw (19 words, see
+   GU_PUSH in docs/soc.md). A write waits only while the unit's buffer is full. track.c calls this function
+   for every piece (track_hw_piece). The first piece of a frame waits until the blitter has finished the
+   backdrop, because the scene is drawn over it. */
 static void hw_piece(const struct gu_piece *g)
 {
 #if DEBUG
+    /* Debug build: timeline marks at the first piece and at every eighth one, and the time spent writing. */
     if (tl_scene) {
         if (tl_pieces++ == 0)
             tl_mark(TL_CULL);
@@ -234,66 +277,73 @@ static void hw_piece(const struct gu_piece *g)
     }
     uint32_t t0 = rdcycle();
 #endif
-    if (back_wait) {                    /* the scene goes over the backdrop */
+    if (back_wait) {
         while (RS_DRAW & RS_BUSY)
             ;
 #if DEBUG
+        /* Debug build: what the backdrop cost, in blitter clocks and in CPU cycles of waiting. */
         back_clocks = BL_CLOCKS;
         back_cycles = rdcycle() - t0;
         t0 = rdcycle();
 #endif
         back_wait = 0;
     }
-    for (int k = 0; k < 9; k++) GU_PUSH = (uint32_t)g->m[k];
-    for (int k = 0; k < 3; k++) GU_PUSH = (uint32_t)g->t[k];
-    for (int k = 0; k < 3; k++) GU_PUSH = (uint32_t)g->e[k];
-    GU_PUSH = (uint32_t)((uintptr_t)g->obj - SDRAM_BASE);
+    for (int k = 0; k < 9; k++) GU_PUSH = (uint32_t)g->m[k];        /* matrix, local to view space */
+    for (int k = 0; k < 3; k++) GU_PUSH = (uint32_t)g->t[k];        /* origin of the piece in view space */
+    for (int k = 0; k < 3; k++) GU_PUSH = (uint32_t)g->e[k];        /* the eye in the piece's frame */
+    GU_PUSH = (uint32_t)((uintptr_t)g->obj - SDRAM_BASE);           /* mesh and block: SDRAM byte addresses */
     GU_PUSH = (uint32_t)((uintptr_t)g->blk - SDRAM_BASE);
+    /* Bits 2..0 and 4 are the row (face list), bit 3 marks a mirrored block of a moving part, bits 29..16 are
+       the texture phase. */
     GU_PUSH = ((uint32_t)g->row & 7) | (uint32_t)(g->mirror != 0) << 3 | ((uint32_t)g->row & 8) << 1 |
               (g->phase & 0x3FFF) << 16;
-    GU_PUSH = g->refl;
+    GU_PUSH = g->refl;                                              /* phase and offsets of the reflection */
 #if DEBUG
-    draw_wait += rdcycle() - t0;
+    draw_wait += rdcycle() - t0;                /* debug build: add the time of this piece's writes */
 #endif
 }
 
-/* the palette entry nearest to an RGB colour, for text on the track's palette */
+/* Returns the index of the entry of the 256-colour palette pal that is nearest to the colour (r, g, b), by
+   the squared distance in RGB. Used to find colours for text on the track's palette. */
 static uint8_t nearest(const volatile uint32_t *pal, int r, int g, int b)
 {
     uint32_t best = ~0u;
     uint8_t n = 0;
     for (int i = 0; i < 256; i++) {
-        int dr = (int)(pal[i] >> 16 & 255) - r, dg = (int)(pal[i] >> 8 & 255) - g, db = (int)(pal[i] & 255) - b;
+        int dr = (int)(pal[i] >> 16 & 255) - r, dg = (int)(pal[i] >> 8 & 255) - g,
+            db = (int)(pal[i] & 255) - b;
         uint32_t d = (uint32_t)(dr * dr + dg * dg + db * db);
         if (d < best) { best = d; n = (uint8_t)i; }
     }
     return n;
 }
 
-/*
- * The flythrough: the camera drives the player's line; every frame the counts on screen,
- * every 250 frames a line in the log
- */
+/* The lists of blitter commands that the frame in progress draws from. They are also used for the check
+   against the C models. */
 static const struct rs_clip track_clip = { 0, 0, FB_W, FB_H };     /* the whole screen, as the game's views */
-static struct blit_list hud;            /* this frame's race screen, for the blitter (and the check) */
-static struct blit_list back;           /* this frame's backdrop, the same */
-static struct blit_list dashboard;      /* the cockpit's dashboard, the same */
+static struct blit_list hud;            /* this frame's race screen */
+static struct blit_list back;           /* this frame's backdrop */
+static struct blit_list dashboard;      /* the cockpit's dashboard */
 
-/* the blitter's commands (blit.v): a copy's first word is its SDRAM byte address */
+/* Sends the commands of a blitter list to the blitter (blit.v; docs/soc.md, BL_PUSH), four words each. For a
+   copy or a font command, the first word is the SDRAM byte address of the source, which is computed here from
+   the list's source pointer. */
 static void hw_blit(const struct blit_list *l)
 {
     for (int i = 0; i < l->n; i++) {
         const uint32_t *c = l->c[i];
         uint32_t kind = c[1] >> 28 & 3;
-        BL_PUSH = kind == BLIT_COPY || kind == BLIT_FONT ? (uint32_t)((uintptr_t)l->src[i] - SDRAM_BASE) : c[0];
+        BL_PUSH = kind == BLIT_COPY || kind == BLIT_FONT ? (uint32_t)((uintptr_t)l->src[i] - SDRAM_BASE)
+                                                         : c[0];
         BL_PUSH = c[1];
         BL_PUSH = c[2];
         BL_PUSH = c[3];
     }
 }
 
-/* the whole screen fb against the models' picture m, pixel by pixel, into the log (the
-   testbench looks for "track check: ok"); t0 when drawing m began */
+/* Compares the whole screen fb with the picture m of the C models, pixel by pixel, and writes the result to
+   debug.txt. The testbench looks for the text "track check: ok". t0 is the cycle count at which the drawing
+   of m began; it gives the time shown in the message. */
 static void compare_log(volatile uint8_t *fb, volatile uint8_t *m, uint32_t t0)
 {
     uint32_t differ = 0, first = 0;
@@ -319,11 +369,11 @@ static void compare_log(volatile uint8_t *fb, volatile uint8_t *m, uint32_t t0)
     dlog_char('\n');
 }
 
-/* Once per race in the simulation: the frame just drawn against the C models of the setup
-   unit and the rasterizer, drawn into the SDRAM in the same order (the 3D view in clip, the
-   dashboard ds if there is one, the radar's window, the race screen); the whole screen compared
-   pixel by pixel. Not on the Pocket: the CPU's redraw stood the race for a second after the
-   countdown's "three". */
+/* Once per race in the simulation: checks the frame just drawn in fb against the C models of the setup unit
+   and the rasterizer. The models draw the same picture into CHECK_BUF in the same order: the backdrop bk,
+   the 3D view in clip, the dashboard ds (0 if there is none), the radar's window and the race screen bl.
+   Then the whole screens are compared pixel by pixel (compare_log). The check does not run on the Pocket:
+   the CPU's redraw would stop the race for about a second. */
 static void track_check(volatile uint8_t *fb, const struct rs_clip *clip, const struct track_cam *cam,
                         struct track_object *objs, int nobj, const struct blit_list *bk,
                         const struct blit_list *ds, const struct blit_list *bl)
@@ -345,8 +395,10 @@ static void track_check(volatile uint8_t *fb, const struct rs_clip *clip, const 
     compare_log(fb, m, t0);
 }
 
-/* The picture on the screen (st: VID_STATUS) into STILL_MEM for the blitter, darkened times
-   times through the radar's table (efx.h; the game's 0x25cc8 darkens with the same, 0x15cbc) */
+/* Copies the picture on the screen into STILL_MEM, where the blitter can use it as a source. st is
+   VID_STATUS; it tells which buffer is in front. Every pixel is darkened `times` times through the radar's
+   darkening table (efx.h). The original darkens its pictures the same way (original: STARTL.EXE 0x25cc8,
+   0x15cbc). */
 static void still(uint32_t st, int times)
 {
     const volatile uint32_t *fb = (const volatile uint32_t *)FB(st & VID_FRONT);
@@ -365,8 +417,9 @@ static void still(uint32_t st, int times)
         ;
 }
 
-/* The steps of 1/50 s since *last_frame (st: VID_STATUS), the game's 1/100 s counted on in
-   *ticks */
+/* Returns the number of steps of 1/50 s since the video frame *last_frame and sets *last_frame to the
+   current one (st is VID_STATUS). The original counts time in 1/100 s, so *ticks advances by two for every
+   step. */
 static uint32_t still_steps(uint32_t st, uint32_t *last_frame, uint32_t *ticks)
 {
     uint32_t steps = (VID_FRAME(st) - *last_frame) & 0xFFFF;
@@ -375,7 +428,8 @@ static uint32_t still_steps(uint32_t st, uint32_t *last_frame, uint32_t *ticks)
     return steps;
 }
 
-/* the list over the still picture to the blitter, a swap once it is done */
+/* Draws the list l (which sits on top of the still picture) with the blitter and swaps the buffers once the
+   drawing is done. */
 static void still_show(const struct blit_list *l)
 {
     hw_blit(l);
@@ -384,30 +438,36 @@ static void still_show(const struct blit_list *l)
     VID_SWAP = 1;
 }
 
-#define FADE_STEP   437         /* the pause's fade: 0x8000 in 1.5 s of steps (16384 a second of 0x6000) */
-#define FADE_MENU   983         /* a menu screen from black: 1.5 a second (0x20374, 0x2c078, 0x29738) */
-#define FADE_PAGES  393         /* the pages from black: 0.6 a second (0x29ea0) */
-#define FADE_RACE   1311        /* a race in and out: 2 a second (0x21e50, 0x21d8c) */
+/* Fade speeds. A fade level runs from 0 (black) to 0x8000 (the full palette). These are the amounts that a
+   level changes in one step of 1/50 s. The pause fades at the original's rate of 16384 a second on a scale of
+   0x6000. The other speeds are in full fades a second: 1.5 for a menu screen (original: STARTL.EXE 0x20374,
+   0x2c078, 0x29738), 0.6 for the pages (0x29ea0) and 2 for a race in and out (0x21e50, 0x21d8c). */
+#define FADE_STEP   437         /* the pause: 1.5 s from 0x8000 to 0 */
+#define FADE_MENU   983         /* a menu screen from black */
+#define FADE_PAGES  393         /* the pages from black */
+#define FADE_RACE   1311        /* a race in and out */
 
-/* pal at f of 0x8000 into the back buffer's palette: towards black, as the game's 0x27de8 */
+/* Sets the back buffer's palette to pal at the fade level f (0x8000 is the full palette, 0 is black), as
+   the original does (original: STARTL.EXE 0x27de8). */
 static void pal_faded(const uint32_t *pal, int32_t f)
 {
     uint32_t k = f < 0 ? 0 : f > 0x8000 ? 0x8000 : (uint32_t)f;
     for (int i = 0; i < 256; i++) {
         uint32_t c = pal[i];
-        VID_PAL[i] = ((c >> 16 & 255) * k >> 15) << 16 | ((c >> 8 & 255) * k >> 15) << 8 | (c & 255) * k >> 15;
+        VID_PAL[i] = ((c >> 16 & 255) * k >> 15) << 16 | ((c >> 8 & 255) * k >> 15) << 8 |
+                     (c & 255) * k >> 15;
     }
 }
 
-/* The next frame of a loop of the game (the menus, the intro, a race, its pause, PLAY AGAIN?,
-   a fade): the swap before it done, its VID_STATUS */
+/* Starts the next frame of any loop of the game (the menus, the intro, a race, its pause, PLAY AGAIN?, a
+   fade). It waits until the swap of the previous picture is done and returns VID_STATUS. */
 static uint32_t next_frame(void)
 {
     return wait_swap_done();
 }
 
-/* A cut to black: the other buffer swapped in with an all-black palette (a menu screen left:
-   the game's 0x1d220 = 0, the palette black in the frame of the press) */
+/* A cut to black: swaps in the other buffer with an all-black palette. A menu screen is left this way: the
+   original's palette is black in the frame of the key press (original: STARTL.EXE 0x1d220 = 0). */
 static void black(void)
 {
     wait_swap_done();
@@ -415,9 +475,10 @@ static void black(void)
     VID_SWAP = 1;
 }
 
-/* The picture on the screen, shown through pal, to black in half a second (0x21d8c): copied
-   into the other buffer, then each frame one of the two gets the palette and is swapped in;
-   with sound the effects and the music go down with it. The music is kept fed. */
+/* Fades the picture on the screen to black in half a second (original: STARTL.EXE 0x21d8c). pal is the
+   palette of the picture. The picture is copied into the other buffer. Then each frame one of the two buffers
+   gets the faded palette and is swapped in. If sound is set, the effects and the music fade down with the
+   picture. The music is kept fed meanwhile. */
 static void fade_out(const uint32_t *pal, int sound)
 {
     uint32_t st = wait_swap_done(), last_frame = VID_FRAME(st);
@@ -438,8 +499,9 @@ static void fade_out(const uint32_t *pal, int sound)
     }
 }
 
-/* The game's master volumes as CHOICE.DAT keeps them (0x2774d), to the effects and the music:
-   [0] digital (0x1d2b8), [1] CD (0x1d2bc), [2] MIDI (0x1d2c0), the FM music's */
+/* Sets the master volumes of the effects and the music from the values that CHOICE.DAT keeps (original:
+   STARTL.EXE 0x2774d): [0] digital (0x1d2b8) for the effects, [1] CD (0x1d2bc) for the CD music and
+   [2] MIDI (0x1d2c0) for the FM music. */
 static void volumes(void)
 {
     snd_master(choice.volume[0]);
@@ -447,30 +509,41 @@ static void volumes(void)
     music_master_mu(choice.volume[2]);
 }
 
-#define CD_HOLD     25          /* a key held this many steps (0.5 s) repeats every step: the game
-                                   takes each of the keyboard's repeats as a press (0x101b4 clears
-                                   the key), in DOSBox over 30 a second (- held 2 s: 24096 to 0) */
-#define CD_PRESSED  25          /* a button looks pressed for 0.5 s after B (0x218f8) */
-#define CD_VOL_STEP 480         /* a press of - or +: 48000 a second (0x21615) of the frame's time,
-                                   at least 0.01 s, which the CD player's quick frames have in
-                                   DOSBox (one press 480 there) */
+/* Constants of the CD player's controls (pause_race). */
+#define CD_HOLD     25          /* a key held for this many steps (0.5 s) repeats on every step after that */
+#define CD_PRESSED  25          /* a button looks pressed for 0.5 s after B (original: STARTL.EXE 0x218f8) */
+#define CD_VOL_STEP 480         /* the volume change of one press of - or + */
+/* CD_HOLD: the original takes every repeat of the keyboard as a new press (original: STARTL.EXE 0x101b4
+   clears the key). In DOSBox the repeats come over 30 times a second. Holding - for 2 s took the volume
+   from 24096 to 0.
+   CD_VOL_STEP: the original changes the volume by 48000 a second of the frame's time, but by at least
+   0.01 s of it. The CD player's frames are so quick in DOSBox that this minimum applies, and one press
+   changes the volume by 480 there. */
 
-/* The pause: the game's CD player (0x21328, P in a race, 0x211d0) over the picture on the
-   screen darkened twice (hud.h), the race standing. The effects and the music fade out at the
-   game's 16384 a second of its 0x6000, then the music stops (0x26458, a pause). Left and right
-   move the cursor over the seven buttons (0x214e1); B presses the one under it (the game's
-   ENTER, 0x21551): PLAY leaves (with a disc of more than one track), EJECT shows GAME.TXT's
-   PLEASE EJECT DISK until the cursor moves (DOSBox's disc never leaves), previous and next
-   choose the track (the disc's first .. last), - and + turn the volume shown down and up,
-   the third button shows the next of CD, FX, MU (0x1f7c). The volumes are CHOICE.DAT's, heard
-   once the race goes on. START leaves too (the game's ESC). Leaving (0x21982): the volumes back,
-   the chosen track from its start if previous or next changed it (0x2636c, looped), else the
-   song goes on where it stopped (0x26498: the flag that chooses it, ebp+0x4a, is never set, but
-   held a stack address in DOSBox, not 0). The race keeps the chosen track; the next race's
-   start plays its own song again. */
+/*
+ * The pause: the game's CD player (original: STARTL.EXE 0x21328; it is opened by P in a race, 0x211d0). It is
+ * drawn over the picture on the screen, darkened twice (hud.h). The race stands still.
+ *
+ * The effects and the music fade out at the original's rate of 16384 a second on its scale of 0x6000. Then
+ * the music stops (0x26458, a pause). Left and right move the cursor over the seven buttons (0x214e1). B
+ * presses the button under the cursor (the original's ENTER, 0x21551):
+ *     0  PLAY      leaves, if the disc has more than one track
+ *     1  EJECT     shows GAME.TXT's PLEASE EJECT DISK until the cursor moves (DOSBox's disc never leaves)
+ *     2, 3  previous and next: choose the track of the disc, from the first to the last
+ *     4, 5  - and +: turn the volume that is shown down and up
+ *     6     shows the next of the volumes CD, FX and MU (0x1f7c)
+ * The volumes are those of CHOICE.DAT. They are heard once the race goes on. START leaves too (the original's
+ * ESC).
+ *
+ * On leaving (0x21982) the volumes come back. If previous or next has changed the track, the chosen track
+ * plays from its start, looped (0x2636c). Otherwise the song goes on where it stopped (0x26498). The flag
+ * that chooses between the two (ebp+0x4a) is never set in the original, but it held a stack address in
+ * DOSBox, not 0. The race keeps the chosen track; the start of the next race plays its own song again.
+ * st is VID_STATUS of the frame in which the pause begins.
+ */
 static void pause_race(uint32_t st)
 {
-    static const uint8_t vol_of[3] = { 1, 0, 2 };   /* CD, FX, MU: choice.volume's (0x1f7c) */
+    static const uint8_t vol_of[3] = { 1, 0, 2 };   /* CD, FX, MU: their index in choice.volume (0x1f7c) */
     struct cd_player c = { 0 };
     c.track = music_disc(&c.first, &c.last);
     if (c.track < c.first || c.track > c.last) c.track = c.first;     /* 0x21398 */
@@ -483,15 +556,21 @@ static void pause_race(uint32_t st)
         uint32_t keys = in_keys(), press = keys & ~keys_before;
         music_frame();
         uint32_t steps = still_steps(st, &last_frame, &ticks);
+
+        /* A key that stays down for CD_HOLD steps repeats like the keyboard's auto-repeat. */
         held = keys == keys_before ? held + steps : 0;
         if (held >= CD_HOLD) press |= keys & (KEY_LEFT | KEY_RIGHT | KEY_B);
         keys_before = keys;
         if (press & KEY_START) break;
+
+        /* Left and right move the cursor along the buttons; a new button is not pressed. */
         if (press & (KEY_LEFT | KEY_RIGHT)) {
             int b = c.button + ((press & KEY_RIGHT) && c.button < 6) - ((press & KEY_LEFT) && c.button > 0);
             if (b != c.button) c.pressed = c.eject = 0;
             c.button = b;
         }
+
+        /* B presses the button under the cursor. v is the volume that the buttons - and + change. */
         if (press & KEY_B) {
             int32_t *v = &choice.volume[vol_of[c.chan]];
             c.pressed = CD_PRESSED;
@@ -505,12 +584,16 @@ static void pause_race(uint32_t st)
             if (c.button == 5) *v = *v < 0x7FFF - CD_VOL_STEP ? *v + CD_VOL_STEP : 0x7FFF;
             if (c.button == 6) c.chan = (c.chan + 1) % 3;
         }
+
+        /* Draw the player over the still picture. */
         c.blink = (ticks & 0x20) != 0;
         c.vol = choice.volume[vol_of[c.chan]];
         draw_buf = !(st & VID_FRONT);
         hud_cd(&hud, (int)draw_buf, STILL_MEM, &c);
         still_show(&hud);
         c.pressed = c.pressed > (int)steps ? c.pressed - (int)steps : 0;
+
+        /* The sound fades out first; at silence the music is paused. */
         if (fade > 0) {
             fade -= (int32_t)steps * FADE_STEP;
             if (fade <= 0) {
@@ -528,12 +611,15 @@ static void pause_race(uint32_t st)
     else music_resume();
 }
 
-/* PLAY AGAIN? (0x219d0), as the game asks it when a race is left (0x1fe86): the effects stop
-   (0x1f8cc), the music goes on; over the picture on the screen darkened three times (hud.h),
-   which run_track has drawn without the race screen and the end's texts (0x219d0 draws the
-   scene anew, 0x81870, and nothing over it). Up or left YES, down or right NO, each press with
-   the click (SFXSBASE.DTR's row 6, 0x21b0e, 0x21b47), B or START take the answer, A or SELECT
-   are NO (the game's ESC). 1 for YES. */
+/*
+ * The question PLAY AGAIN?, as the original asks it when a race is left (original: STARTL.EXE 0x219d0, called
+ * from 0x1fe86). The effects stop (0x1f8cc); the music goes on. The question is drawn over the picture on the
+ * screen, darkened three times (hud.h). run_track has drawn that picture without the race screen and the
+ * end's texts, because the original draws the scene anew (0x81870) and nothing over it.
+ * Up or left means YES, down or right means NO. Each press plays a click (SFXSBASE.DTR's row 6, 0x21b0e,
+ * 0x21b47). B or START takes the answer, A or SELECT means NO (the original's ESC).
+ * st is VID_STATUS of the frame in which the question starts. Returns 1 for YES.
+ */
 static int play_again(uint32_t st)
 {
     uint32_t keys_before = in_keys(), last_frame = VID_FRAME(st), ticks = 0;
@@ -559,47 +645,71 @@ static int play_again(uint32_t st)
 
 static int dashboard_init(void);
 
-#define OVER_STEPS  250         /* the end screen for 5 s (0x21048), then the replay or PLAY AGAIN? */
-#define REC_MAX     60000       /* the replay's controls: 20 minutes of steps */
+/* The end screen shows for 5 s, then the replay or PLAY AGAIN? follows (original: STARTL.EXE 0x21048). */
+#define OVER_STEPS  250
+#define REC_MAX     60000       /* the most controls the replay can hold: 20 minutes of steps */
 
 enum { RACE_LEAVE, RACE_AGAIN, RACE_REPLAY };   /* how a race ends: NO, YES, its replay next */
 
-/* The race's controls, one a step (car_keys(); the game records its controls each frame,
-   0x22f34): rec_n of them, rec_full once more did not fit (then there is no replay) */
+/* The controls of the race, one record for each step (from car_keys()). The original records its controls in
+   every frame (original: STARTL.EXE 0x22f34). rec_n records are stored. rec_full is set when one more did not
+   fit; such a race has no replay. */
 static struct car_input rec[REC_MAX];
 static uint32_t rec_n;
 static int rec_full;
 #if DEBUG
-static int pocket_race_logged;              /* the race's long status block went to debug.txt once on the Pocket (it fills the 4 KB) */
-static uint32_t bench_frames;           /* the benchmark's race (bench.h): the pictures to count, 0 an ordinary race */
+/* Debug build: the long status block of the race goes to debug.txt once on the Pocket, because it fills
+   the 4 KB. */
+static int pocket_race_logged;
+/* Debug build: set during the benchmark's race (bench.h) to the number of pictures to count. 0 in an
+   ordinary race. */
+static uint32_t bench_frames;
 #else
 #define bench_frames    0u
 #endif
 
-/* The race on track n with the car of CARS.DTR row car until SELECT, or OVER_STEPS after its end
-   once the commentary has said all it queued (0x21048 asks 0x24740; never in the simulation,
-   which stops after the frame it checks); the opponents take the other rows. From its end on
-   the trackside camera (car.h). START pauses it. A finished race then runs again from its keys
-   (RACE_REPLAY; the normal game only, 0x1fe45; time over and SELECT have none, 0x1fe28): with
-   replay set, as the game's replay (0x1fd64, 0x22e74) until its keys run out (0x22dd8) or B,
-   START or SELECT skip it (the game's ENTER and ESC). Then PLAY AGAIN?, over one more picture of the scene alone, the whole screen
-   (ask): RACE_AGAIN for YES, RACE_LEAVE for NO. It fades in from black, the picture and the
-   sound, in half a second (0x21e50 each frame). */
+/*
+ * The race on track n with the car of CARS.DTR row car. The opponents take the other rows. replay is 0 for a
+ * race and 1 for the replay of a finished race. Returns how the race ended: RACE_LEAVE, RACE_AGAIN (YES to
+ * PLAY AGAIN?) or RACE_REPLAY (run the race again from its recorded controls).
+ *
+ * How a race goes on:
+ *   - START pauses it (pause_race). SELECT asks PLAY AGAIN?.
+ *   - When the race has ended, the trackside camera takes over (car.h). OVER_STEPS steps later, and once the
+ *     commentary has said all it queued, the race is over (original: STARTL.EXE 0x21048 asks 0x24740). This
+ *     never happens in the simulation, which stops after the frame it checks.
+ *   - A finished race of the normal game then runs again from its controls (RACE_REPLAY, 0x1fe45). Time over
+ *     and SELECT have no replay (0x1fe28).
+ *   - The replay (replay set) is the game's replay (0x1fd64, 0x22e74). It runs until its controls run out
+ *     (0x22dd8) or B, START or SELECT skip it (the original's ENTER and ESC).
+ *   - Then PLAY AGAIN? is asked, over one more picture of the scene alone, on the whole screen (ask):
+ *     RACE_AGAIN for YES, RACE_LEAVE for NO.
+ * The race fades in from black, picture and sound, in half a second (0x21e50 in each frame).
+ *
+ * Each pass of the loop makes one picture, in six stages that are marked in the code:
+ *   1. input        wait for the previous swap, read the keys, handle the pause, the replay and the end
+ *   2. physics      run the car, the opponents and the scenery for the steps since the last picture
+ *   3. camera       place the camera and collect the objects to draw
+ *   4. scene        draw the backdrop, then the 3D view piece by piece
+ *   5. race screen  the radar, the dashboard and the instruments (for the question: nothing)
+ *   6. frame end    wait for the rasterizer, check or log (debug build), swap
+ */
 static int run_track(int n, int car, int replay)
 {
     const uint32_t *pal = track_palette();
-    int32_t fade = 0;
+    int32_t fade = 0;                           /* fade-in level, 0 to 0x8000 */
     snd_fade(0);
     music_fade(0);
     uint32_t drawn = 0, keys_before = replay ? IN_KEY : 0, last_frame = 0, steps = 0, over = 0;
-    int ask = 0;
-    uint32_t rec_at = 0;
-    uint32_t swallow = 0;                       /* L and R held while A was: no gear change for them (a debug build) */
+    int ask = 0;                                /* the question is due: this pass draws, the next asks */
+    uint32_t rec_at = 0;                        /* the replay's next record */
+    uint32_t swallow = 0;                       /* L and R held while A was held: no gear change (debug) */
     int car_v = CAR_VIEW_START;
 #if DEBUG
+    /* Debug build: state of the frame time overlay, the marks and the free camera (ftime.h, mark.h). */
     uint32_t fps = 0, fps_drawn = 0, fps_frame = 0;
     ft_reset();
-    const uint8_t ov_fg = nearest(pal, 255, 255, 255), ov_bg = nearest(pal, 0, 0, 0);   /* the timing overlay's colours */
+    const uint8_t ov_fg = nearest(pal, 255, 255, 255), ov_bg = nearest(pal, 0, 0, 0);   /* overlay colours */
     int chord_before = 0;                       /* A, L and R were all down in the frame before */
     uint32_t mark_show = 0;                     /* frames left to show the mark's number (mark.h) */
     int mark_no = 0;
@@ -623,37 +733,42 @@ static int run_track(int n, int car, int replay)
     GU_MLB = (uint32_t)((uintptr_t)track_mlb() - SDRAM_BASE);
     GU_INVAL = 1;
 #if DEBUG
-    uint32_t frame_cycles = 0;                  /* the last frame's, from the swap to the next */
+    uint32_t frame_cycles = 0;                  /* debug build: cycles of the last frame, swap to swap */
 #endif
-    /* The simulation's race (tools/sim.sh, SIM_RACE_FRAMES; the keys SIM_KEYS holds): the
-       testbench gives data slot RACE_SLOT, which core/data.json does not have, the size n; the
-       start lights' countdown then runs at once before the first picture, and the n-th frame
-       after the green light is checked and reported instead of the third. 0: as on the Pocket. */
+    /* The simulation's race (tools/sim.sh: SIM_RACE_FRAMES, and the keys in SIM_KEYS). The testbench offers
+       data slot RACE_SLOT with the size n. core/data.json does not have this slot, so on the Pocket sim_race
+       is 0 and the race is an ordinary one. With n set, the countdown of the start lights runs at once before
+       the first picture, and the n-th frame after the green light is checked and reported instead of the
+       third. */
     const uint32_t sim = SYS_FLAGS & FLAG_SIM;
     uint32_t sim_race = sim ? slot_size(RACE_SLOT) : 0;
-    uint32_t check_at = 2 + sim_race;           /* the frame checked against the C models (in the
-                                                   simulation; on the Pocket only logged) */
+    uint32_t check_at = 2 + sim_race;           /* the frame checked against the C models (on the Pocket: only
+                                                   logged) */
     for (;;) {
-        uint32_t st = next_frame(), keys = bench_frames ? KEY_B : IN_KEY, t_frame = rdcycle();    /* the benchmark: the gas held */
-        uint32_t joy = bench_frames ? 0 : IN_JOY, trig = bench_frames ? 0 : IN_TRIG;   /* a docked controller's stick and triggers */
+        /* Stage 1, input: wait for the previous swap, read the keys, keep the music fed. In the benchmark
+           (debug build) the gas is held and no controller is read. */
+        uint32_t st = next_frame(), keys = bench_frames ? KEY_B : IN_KEY, t_frame = rdcycle();
+        uint32_t joy = bench_frames ? 0 : IN_JOY, trig = bench_frames ? 0 : IN_TRIG;  /* stick and triggers */
         tl_begin(t_frame);
-        music_frame();                          /* the ring kept filled (music.h) */
+        music_frame();                          /* the music ring is kept filled (music.h) */
         tl_mark(TL_MUSIC);
         frames_shown = drawn;
-        if (bench_frames && drawn > bench_frames) return RACE_LEAVE;       /* the benchmark has its pictures */
+        if (bench_frames && drawn > bench_frames) return RACE_LEAVE;   /* the benchmark has its pictures */
 #if DEBUG
+        /* Debug build: the stack high-water mark, once, one frame after the checked frame. */
         if (drawn == check_at + 1) {
             dlog_str("stack used ");
             dlog_dec((int32_t)stack_used());
             dlog_str(" bytes\n");
         }
 #endif
+        /* The simulation ends one frame after the checked one. It reports its result, then the camera and the
+           car of the checked frame, which are set against the original's (tools/dosram.py cam). Places are in
+           game units, angles in 1/10000 radian. */
         if (sim && drawn == check_at + 1) {
             SYS_SIM = SIM_DONE | results;
             dlog_str("SYS_SIM=");
             dlog_hex(SIM_DONE | results);
-            /* the checked frame's camera and car, to set against the original's
-               (tools/dosram.py cam): places in units, angles in 1/10000 rad */
             struct track_cam c;
             const struct car_state *s = car_state();
             car_camera(&c);
@@ -666,32 +781,39 @@ static int run_track(int n, int car, int replay)
             }
             dlog_char('\n');
         }
-        uint32_t press = keys & ~keys_before;
+        uint32_t press = keys & ~keys_before;   /* the keys that went down since the last step */
 #if DEBUG
-        /* A, L and R together switch the timing overlay (ftime.h). Nothing else in the race uses A; L and R
-           shift, so while A is held they do not: the chord (A first, then L and R) changes no gear */
+        /* Debug build: the key chords of the frame time overlay, the marks and the free camera (ftime.h,
+           mark.h). A with L and R switches the overlay on or off. Nothing else in the race uses A, but L
+           and R change gears. While A is held they are held back (swallow), so the chord, pressed with A
+           first, changes no gear. */
         const int chord = (keys & (KEY_A | KEY_L | KEY_R)) == (KEY_A | KEY_L | KEY_R);
         if (chord && !chord_before) ft_overlay_toggle();
         chord_before = chord;
-        if (!bench_frames && (keys & KEY_A) && (press & KEY_X)) {      /* A held, X pressed: a mark (mark.h) */
-            mark_no = mark_save(n, free_cam ? 9 : car_v, drawn);
+        if (!bench_frames && (keys & KEY_A) && (press & KEY_X)) {      /* A held, X pressed: write a mark */
+            mark_no = mark_save(n, free_cam ? 9 : car_v, drawn);       /* view 9 stands for the free camera */
             mark_show = 75;
         }
-        if (!bench_frames && (keys & KEY_A) && (press & KEY_Y)) {      /* A held, Y pressed: the free camera */
+        if (!bench_frames && (keys & KEY_A) && (press & KEY_Y)) {      /* A held, Y pressed: free camera */
             free_cam = !free_cam;
-            free_c = last_cam;
+            free_c = last_cam;                  /* it starts where the car's camera is */
         }
-        if (free_cam && (press & KEY_START)) {                         /* START: the car's camera again */
+        if (free_cam && (press & KEY_START)) {  /* START gives the car's camera back; it does not pause */
             free_cam = 0;
             press &= ~KEY_START;
         }
         if (keys & KEY_A) swallow |= keys & (KEY_L | KEY_R);
         swallow &= keys;
 #endif
+        /* The question PLAY AGAIN? was announced in the last pass, which drew its picture. */
         if (ask) return play_again(st);
         if (replay) {
+            /* The replay ends when B, START or SELECT skip it, or when its controls run out. */
             if ((press & (KEY_B | KEY_START | KEY_SELECT)) || rec_at >= rec_n) ask = 1;
         } else {
+            /* START pauses the race, but not before its first picture or after its end. The keys held at the
+               end of the pause do not count as presses, and the time of the pause is not made up by physics
+               steps. The pass ends at once, without a picture. */
             if ((press & KEY_START) && drawn && !car_race()->finished && !car_race()->game_over) {
                 pause_race(st);
                 keys_before = IN_KEY;
@@ -699,65 +821,78 @@ static int run_track(int n, int car, int replay)
                 continue;
             }
             if (press & KEY_SELECT) ask = 1;
+            /* The end screen has been up for OVER_STEPS steps and the commentary has finished. A finished
+               race of the normal game is replayed (original: STARTL.EXE 0x1fe45). A finished race of the
+               championship goes on by itself (0x1fe86). In all other cases the question follows. */
             if (over >= OVER_STEPS && !speech_busy()) {
-                if (car_race()->finished && !rec_full && (car_mode & CAR_NORMAL)) return RACE_REPLAY;  /* 0x1fe45 */
-                if (car_race()->finished && car_mode == CAR_CHAMP) return RACE_LEAVE;    /* 0x1fe86 */
+                if (car_race()->finished && !rec_full && (car_mode & CAR_NORMAL)) return RACE_REPLAY;
+                if (car_race()->finished && car_mode == CAR_CHAMP) return RACE_LEAVE;
                 ask = 1;
             }
         }
-        /* the physics at 50 steps a second: one per video frame since the last picture (none
-           for the question's picture) */
+
+        /* Stage 2, physics. It runs at 50 steps a second: one step for each video frame since the last
+           picture, but none for the picture of the question, one for the first picture, and at most 4 at
+           once. The race stands still while the free camera is on. */
         uint32_t steps_now = ask ? 0 : drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
         last_frame = VID_FRAME(st);
         if (steps_now > 4) steps_now = 4;
-        if (free_cam) steps_now = 0;            /* the race stands still while the camera is free */
-        if (fade < 0x8000) {
+        if (free_cam) steps_now = 0;
+        if (fade < 0x8000) {                    /* the race fades in from black, picture and sound */
             fade += (int32_t)steps_now * FADE_RACE;
             snd_fade(fade);
             music_fade(fade);
         }
 #if DEBUG
-        if ((press & KEY_X) && !(keys & KEY_A)) car_view(++car_v);      /* (A with X: a mark) */
+        if ((press & KEY_X) && !(keys & KEY_A)) car_view(++car_v);      /* A with X writes a mark instead */
 #else
-        if (press & KEY_X) car_view(++car_v);
+        if (press & KEY_X) car_view(++car_v);                           /* X changes the view */
 #endif
-        efx_cyc_objects = efx_cyc_radar = 0;
+        efx_cyc_objects = efx_cyc_radar = 0;    /* efx.c adds its cycles here; the debug log reads them */
 #if DEBUG
+        /* Debug build: the cycles of the physics, for the statistics line. */
         uint32_t t_phys = rdcycle();
 #endif
         for (uint32_t k = 0; k < steps_now && (!replay || rec_at < rec_n); k++) {
-            struct car_input w;                 /* the step's controls: recorded, or from the recording */
+            struct car_input w;                 /* the controls of this step */
             if (replay)
-                w = rec[rec_at++];
+                w = rec[rec_at++];              /* taken from the recording */
             else {
                 w = car_keys(keys & ~swallow, keys_before & ~swallow, joy, trig);
-                if (rec_n < REC_MAX) rec[rec_n++] = w;
+                if (rec_n < REC_MAX) rec[rec_n++] = w;                  /* and recorded for the replay */
                 else rec_full = 1;
             }
             car_step(&w);
             opp_step();
             scenery_step();
             keys_before = keys;
-            if ((sim_race || bench_frames) && !car_race()->on && k == steps_now - 1) steps_now++;    /* the simulation's countdown at once */
-            if (car_race()->finished || car_race()->game_over) over++;
+            /* In the simulation's race and in the benchmark the countdown of the start lights runs at once:
+               one more step is added until the race is on. */
+            if ((sim_race || bench_frames) && !car_race()->on && k == steps_now - 1) steps_now++;
+            if (car_race()->finished || car_race()->game_over) over++;  /* steps since the end of the race */
         }
-        if (free_cam) keys_before = keys;       /* (the physics loop keeps it, and it did not run) */
+        if (free_cam) keys_before = keys;       /* the loop above keeps keys_before, but it did not run */
 #if DEBUG
-        t_phys = rdcycle() - t_phys;
+        t_phys = rdcycle() - t_phys;            /* debug build: end of the physics timing */
 #endif
         tl_mark(TL_PHYS);
         steps += steps_now;
-        track_clock(steps_now);
+        track_clock(steps_now);                 /* the animation clock of the track's textures */
+
+        /* Stage 3, camera: place the camera and collect the objects (cars, shadows, smoke, props) to draw. */
 #if DEBUG
-        const struct car_state *cs = car_state();
+        const struct car_state *cs = car_state();       /* debug build: for the statistics line */
 #endif
         struct track_cam cam;
         static struct track_object objs[MAX_OBJECTS];
         car_camera(&cam);
 #if DEBUG
+        /* Debug build: with the free camera on, the player's controls move that camera. While A is held,
+           X, Y, L and R do not move it, because with A they are the commands for marks, the free camera and
+           the overlay. Every camera is recorded for the marks. */
         last_cam = cam;
         if (free_cam) {
-            free_cam_step(&free_c, (keys & KEY_A) ? keys & ~(KEY_X | KEY_Y | KEY_L | KEY_R) : keys);   /* (A with them: marks etc.) */
+            free_cam_step(&free_c, (keys & KEY_A) ? keys & ~(KEY_X | KEY_Y | KEY_L | KEY_R) : keys);
             cam = free_c;
         }
         if (!bench_frames) mark_push(&cam);
@@ -767,21 +902,24 @@ static int run_track(int n, int car, int replay)
         nobj += ghost_objects(objs + nobj, MAX_OBJECTS - nobj);
         nobj += car_effects(&cam, objs + nobj, MAX_OBJECTS - nobj);
         nobj += scenery_objects(&cam, objs + nobj, MAX_OBJECTS - nobj);
-        /* the 3D view: the whole screen, or in the cockpit its first 132 lines, the eye line
-           85 down (track_view), the dashboard over the rest (without one, or for the
-           question, 0x219d0's 320 x 200, the whole screen) */
+        /* The 3D view is the whole screen. In the cockpit it is the first 132 lines (car_view_lines), with
+           the eye line 85 lines down (track_view), and the dashboard covers the rest. Without a dashboard,
+           and for the question, the view is the whole screen of 320 x 200 (original: STARTL.EXE 0x219d0). */
         int cockpit = dash_ok && car_cockpit() && !ask;
         const struct rs_clip clip = { 0, 0, FB_W, cockpit ? car_view_lines() : FB_H };
         struct su_view view;
         track_view(&clip, &view);
 
-        /* the backdrop (the game's 0x83a68): the blitter copies it while the CPU culls the
-           scene; the first piece for the geometry unit waits until it is done (hw_piece) */
+        /* Stage 4, scene. First the backdrop (original: STARTL.EXE 0x83a68). The blitter copies it while the
+           CPU culls the scene. The first piece for the geometry unit waits until the blitter is done
+           (hw_piece). */
         volatile uint8_t *fb = FB(!(st & VID_FRONT));
         draw_buf = !(st & VID_FRONT);
         blit_start(&back, (int)draw_buf);
         track_backdrop_blit(&back, &clip, &cam);
 #if DEBUG
+        /* Debug build: clear the blitter's clocks and the backdrop's counters, so that hw_piece measures the
+           backdrop alone. */
         BL_CLOCKS = 0;
         back_clocks = back_cycles = 0;
 #endif
@@ -789,10 +927,11 @@ static int run_track(int n, int car, int replay)
         hw_blit(&back);
         pal_faded(pal, fade);
 
-        /* the pieces from the CPU to the geometry unit, its faces to the setup unit, the
-           triangles to the rasterizer */
+        /* Then the pieces: from the CPU to the geometry unit, its faces to the setup unit, and the triangles
+           to the rasterizer. */
         struct track_stats ts;
 #if DEBUG
+        /* Debug build: clear the counters of the units, so that the statistics cover this scene only. */
         uint32_t t0 = rdcycle();
         RS_PIXELS = 0;
         RS_MISSES = 0;
@@ -801,10 +940,11 @@ static int run_track(int n, int car, int replay)
         GU_CLOCKS = 0;
         GU_FACES = 0;
 #endif
-        GU_MODE = draw_buf << 8;
+        GU_MODE = draw_buf << 8;                /* the units draw into the back buffer */
 #if DEBUG
+        /* Debug build: restart the count of the writes' time; note the cycles before the scene (ftime.h). */
         draw_wait = 0;
-        const uint32_t t_pre = rdcycle() - t_frame;     /* before the scene (ftime.h) */
+        const uint32_t t_pre = rdcycle() - t_frame;
 #endif
         tl_mark(TL_PREP);
         RS_CLIP0 = RS_XY(clip.x0, clip.y0);
@@ -814,15 +954,18 @@ static int run_track(int n, int car, int replay)
         track_draw_cam(0, &clip, &cam, objs, nobj, &ts);
         TL_SCENE(0);
         tl_mark(TL_SCENE);
-        /* the radar's darkened window over the scene (efx.h), then the race screen: the
-           blitter draws it once the scene is done. In the cockpit the dashboard comes before
-           the window, which darkens it too: the blitter draws it once the scene is done, the
-           CPU makes the race screen's list meanwhile, then waits for both to clip the window
-           to the whole screen. The replay has no radar (0x2346c). */
+
+        /* Stage 5, race screen. The radar is a darkened window over the scene (efx.h). The replay and the
+           question have none (original: STARTL.EXE 0x2346c). The race screen is a list for the blitter, which
+           draws it once the scene is done.
+           With the cockpit, the dashboard comes before the radar window, which darkens it too. The blitter
+           draws the dashboard once the scene is done, and the CPU makes the race screen's list meanwhile.
+           Then the CPU waits for both and widens the clip to the whole screen, so that the window is clipped
+           to it. */
         struct gu_piece radar;
         int has_radar = !replay && !ask && efx_radar_piece(&view, &radar);
 #if DEBUG
-        BL_CLOCKS = 0;
+        BL_CLOCKS = 0;                          /* debug build: clocks of the race screen's blits only */
 #endif
         tl_mark(TL_CLEAR);
         if (cockpit) {
@@ -835,57 +978,75 @@ static int run_track(int n, int car, int replay)
             if (has_radar) hw_piece(&radar);
         } else {
             if (has_radar) hw_piece(&radar);
-            if (ask) blit_start(&hud, (int)draw_buf);                           /* the question's: nothing */
-            else hud_build(&hud, (int)draw_buf, car_overlay() ? 2 : 0);   /* no dashboard: the instruments */
+            if (ask) blit_start(&hud, (int)draw_buf);                   /* the question has no race screen */
+            else hud_build(&hud, (int)draw_buf, car_overlay() ? 2 : 0); /* no dashboard: the instruments */
         }
         hw_blit(&hud);
         tl_mark(TL_HUD);
+
+        /* Stage 6, frame end. Wait until the rasterizer has drawn everything. */
 #if DEBUG
-        const uint32_t t_wait = rdcycle();
+        const uint32_t t_wait = rdcycle();      /* debug build: where the wait for the rasterizer begins */
 #endif
         while (RS_DRAW & RS_BUSY)
             ;
         tl_mark(TL_WAIT);
 #if DEBUG
+        /* Debug build: read the counters of the units for the statistics line. The CPU cycles count from just
+           before the scene up to the end of the rasterizer's work. The effects' cycles are copied before the
+           check runs, because the check adds to those counters as well. */
         uint32_t blit = BL_CLOCKS;
         uint32_t cycles = rdcycle() - t0, raster = RS_CLOCKS, pixels = RS_PIXELS, misses = RS_MISSES;
         uint32_t setup = SU_CLOCKS, geom = GU_CLOCKS;
         uint32_t r_miss = RS_MISS_CLOCKS, r_edge = RS_EDGE_CLOCKS, r_row = RS_ROW_CLOCKS;
         uint32_t r_drain = RS_DRAIN_CLOCKS, r_starved = RS_STARVED;
         ts.faces = GU_FACES;
-        uint32_t efx_objects = efx_cyc_objects, efx_radar = efx_cyc_radar;    /* (the check adds) */
-        uint32_t t_check = rdcycle();
+        uint32_t efx_objects = efx_cyc_objects, efx_radar = efx_cyc_radar;
+        uint32_t t_check = rdcycle();           /* the check is timed, to take its time off the frame's */
         if (drawn == check_at) {
             if (sim) track_check(fb, &clip, &cam, objs, nobj, &back, cockpit ? &dashboard : 0, &hud);
             else dlog_str("track check: simulation only\n");
         }
         t_check = rdcycle() - t_check;
 
-        /* the frame's work for the statistics and the timing overlay (ftime.h): the overlay shows the frames up to this one; the
-           question's picture is not a frame of the race, the simulation's check is not the frame's work, and the first frame
-           of the simulation's race (the start lights' countdown run at once, 300 steps) is not a frame at all */
+        /* The frame's work goes to the statistics and the timing overlay (ftime.h). The overlay shows the
+           frames up to the previous one. Not counted as frames of the race are the picture of the question
+           and the first picture of the simulation's race and of the benchmark, in which the countdown of the
+           start lights (300 steps) runs at once. The time of the simulation's check is not part of the
+           frame's work. */
         if (!ask && !((sim_race || bench_frames) && drawn == 0)) {
             if (ft_overlay_on()) ft_draw(fb, ov_fg, ov_bg, track_far_scale(), track_lod_scale());
-            if (mark_show) {                    /* the mark's number, or that debug.txt had no room for it */
+            if (mark_show) {                    /* the mark's number, or a note that debug.txt was full */
                 char t[20];
-                if (mark_no) fmt_udec(fmt_str(t, "MARK "), (uint32_t)mark_no); else fmt_str(t, "MARK: LOG FULL");
+                if (mark_no) fmt_udec(fmt_str(t, "MARK "), (uint32_t)mark_no);
+                else fmt_str(t, "MARK: LOG FULL");
                 con_text(fb, 0, 3, t, ov_fg, ov_bg);
                 mark_show--;
             }
             if (free_cam) con_text(fb, 0, 4, "FREE CAMERA - START: BACK", ov_fg, ov_bg);
-            struct ft_frame ff = { rdcycle() - t_frame - t_check, t_pre, ts.cyc_cull, ts.cyc_piece + ts.cyc_out, 0, rdcycle() - t_wait,
+            struct ft_frame ff = { rdcycle() - t_frame - t_check, t_pre, ts.cyc_cull,
+                                   ts.cyc_piece + ts.cyc_out, 0, rdcycle() - t_wait,
                                    ts.faces, ts.pieces, (uint32_t)car_marker() };
             ff.post = t_wait - t_frame - t_pre - ts.cyc_cull - ts.cyc_piece - ts.cyc_out;
             ft_frame(&ff);
         }
 
+        /* Pictures drawn in the last second (VID_HZ video frames). */
         if (((VID_FRAME(st) - fps_frame) & 0xFFFF) >= VID_HZ) {
             fps = drawn - fps_drawn;
             fps_drawn = drawn;
             fps_frame = VID_FRAME(st);
         }
+
+        /* The status block for debug.txt. The 4 KB log has room for one big block only, so it is written at
+           these frames: in the simulation at frame 2, then every 250 frames (not in a simulated race) and at
+           the checked frame; on the Pocket once, at the checked frame; never in the benchmark. The block has
+           three lines and the timeline of the last whole frame (tl_log):
+               track frame   the car, the race, the scene and the busy clocks of the units
+               cycles        CPU cycles of the stages of the frame
+               raster        the clocks the rasterizer spent on each kind of work */
         if (!bench_frames && (sim ? ((drawn % 250 == 2 && !sim_race) || drawn == check_at)
-                                  : (drawn == check_at && !pocket_race_logged++))) {   /* (the 4 KB log has room for one big block) */
+                                  : (drawn == check_at && !pocket_race_logged++))) {
             dlog_str("track frame ");
             dlog_dec((int32_t)drawn);
             dlog_str(": car ");
@@ -937,16 +1098,16 @@ static int run_track(int n, int car, int replay)
             dlog_dec((int32_t)misses);
             dlog_str(", blit ");
             dlog_dec((int32_t)blit);
-            dlog_str(", backdrop ");
+            dlog_str(", backdrop ");                    /* the blitter's clocks, then the CPU's wait */
             dlog_dec((int32_t)back_clocks);
             dlog_str(" (wait ");
             dlog_dec((int32_t)back_cycles);
             dlog_char(')');
             dlog_str(", fps ");
             dlog_dec((int32_t)fps);
-            dlog_str(", frame ");
+            dlog_str(", frame ");                       /* the cycles of the previous frame */
             dlog_dec((int32_t)frame_cycles);
-            if (drawn == check_at) {                /* the log has 4 KB: once */
+            if (drawn == check_at) {                    /* these two are logged once, at the checked frame */
                 dlog_str(", camera ");
                 dlog_dec(ts.cam[0]);
                 dlog_char(' ');
@@ -967,7 +1128,7 @@ static int run_track(int n, int car, int replay)
             }
             dlog_str(", puffs ");
             dlog_dec(car_puffs());
-            dlog_str(", late ");                        /* a mixer pass late since the start */
+            dlog_str(", late ");                        /* mixer passes that were late since the start */
             dlog_dec((int32_t)(AU_STATUS & AU_LATE));
             dlog_str("\n  cycles: cull ");
             dlog_dec((int32_t)ts.cyc_cull);
@@ -979,7 +1140,7 @@ static int run_track(int n, int car, int replay)
             dlog_dec((int32_t)draw_wait);
             dlog_str("), after ");
             dlog_dec((int32_t)(cycles - ts.cyc_cull - ts.cyc_piece - ts.cyc_out));
-            dlog_str(", effects ");                     /* shadows and smoke, radar (efx.h) */
+            dlog_str(", effects ");                     /* cycles: shadows and smoke + radar (efx.h) */
             dlog_dec((int32_t)efx_objects);
             dlog_str(" + ");
             dlog_dec((int32_t)efx_radar);
@@ -1002,16 +1163,18 @@ static int run_track(int n, int car, int replay)
         frame_cycles = rdcycle() - t_frame;
         tl_mark(TL_END);
 #else
-        if (sim && drawn == check_at) track_check(fb, &clip, &cam, objs, nobj, &back, cockpit ? &dashboard : 0, &hud);
+        /* A release has no statistics. It runs only the check of the simulation. */
+        if (sim && drawn == check_at)
+            track_check(fb, &clip, &cam, objs, nobj, &back, cockpit ? &dashboard : 0, &hud);
 #endif
-        VID_SWAP = 1;
+        VID_SWAP = 1;                           /* show the finished picture */
         log_race_head(++drawn);
     }
 }
 
-/* Data slot id's file whole to addr (at most max bytes): its size from the slot table, 0
-   if it has none, is too big or a read failed (*err the APF's result). The reads stay
-   inside the file: its whole words, then the 1-3 bytes after them as the rest of the file. */
+/* Reads the whole file of data slot id to addr, if it is at most max bytes. Returns its size from the slot
+   table, or 0 if the slot has no file, the file is too big or a read failed. *err gets the APF's result. The
+   reads stay inside the file: first its whole words, then the last 1 to 3 bytes as the rest of the file. */
 static uint32_t load_file(uint32_t id, uint32_t addr, uint32_t max, int *err)
 {
     uint32_t size = slot_size(id), body = size & ~3u;
@@ -1022,7 +1185,7 @@ static uint32_t load_file(uint32_t id, uint32_t addr, uint32_t max, int *err)
     return size;
 }
 
-/* name with '#' made track n's number into buf */
+/* Copies name into buf and replaces '#' by the digit of track n. Returns buf. */
 static const char *track_name(const char *name, int n, char buf[16])
 {
     int i = 0;
@@ -1032,19 +1195,24 @@ static const char *track_name(const char *name, int n, char buf[16])
     return buf;
 }
 
-/* The containers of game_files whose bits are in which into the SDRAM, the track's those of
-   track n (data slots: GAME_SLOT + k, MAP2H..MAP6H 9-13, MAP2..MAP6 14-18); 1 if all are there */
+/* Loads the containers of game_files into the SDRAM. Bit k of which selects game_files[k]. The track's
+   containers (0 and 2) are those of track n. The data slots are GAME_SLOT + k, except for tracks 2 to 6:
+   MAP2H to MAP6H are in slots 9 to 13 and MAP2 to MAP6 in slots 14 to 18. Fills in the struct game and
+   writes one line to debug.txt. Returns 1 if all selected containers are there. */
 static int load_containers(int n, uint32_t which)
 {
     const uint8_t **at[5] = { &game.gfx, &game.game, &game.data, &game.gen, &game.local };
-    uint32_t *size[5] = { &game.gfx_size, &game.game_size, &game.data_size, &game.gen_size, &game.local_size };
+    uint32_t *size[5] = { &game.gfx_size, &game.game_size, &game.data_size, &game.gen_size,
+                          &game.local_size };
     uint32_t t0 = rdcycle();
     char name[16];
     dlog_str("game files:");
     for (int k = 0; k < 5; k++) {
         if (!(which >> k & 1)) continue;
         const struct game_file *g = &game_files[k];
-        uint32_t id = n > 1 && k == 0 ? 7u + (uint32_t)n : n > 1 && k == 2 ? 12u + (uint32_t)n : GAME_SLOT + (uint32_t)k;
+        uint32_t id = n > 1 && k == 0 ? 7u + (uint32_t)n
+                    : n > 1 && k == 2 ? 12u + (uint32_t)n
+                    : GAME_SLOT + (uint32_t)k;
         int err;
         *size[k] = load_file(id, g->addr, g->max, &err);
         *at[k] = (const uint8_t *)(uintptr_t)g->addr;
@@ -1069,9 +1237,9 @@ static int load_containers(int n, uint32_t which)
     return 1;
 }
 
-/* Bytes from .. to of data slot id's file (size bytes) to the same offsets from addr: the
-   file's whole words there, then its last 1-3 bytes as the rest of the file if to reaches
-   them. 0 if that worked, else the APF's result. */
+/* Reads the bytes from..to of the file of data slot id (size bytes) to the same offsets from addr. It reads
+   whole words, and the last 1 to 3 bytes of the file as the rest of the file, if to reaches them. Returns 0
+   if that worked, else the APF's result. */
 static int load_range(uint32_t id, uint32_t size, uint32_t from, uint32_t to, uint32_t addr)
 {
     uint32_t body = size & ~3u, a = from & ~3u, b = (to + 3) & ~3u;
@@ -1081,39 +1249,44 @@ static int load_range(uint32_t id, uint32_t size, uint32_t from, uint32_t to, ui
     return err;
 }
 
-/* Of data slot id's container (at most max bytes) its directory and the parts p names, each
-   at its place from addr as if the whole file were there: its size, 0 if the file or a part is
-   missing or a read failed */
+/* Reads parts of the container of data slot id (at most max bytes): its directory and the parts that the
+   list p names. Each is read to its own offset from addr, as if the whole file were there. Of each part at
+   most p->most bytes are read. The list ends with an entry without a name. Returns the file's size, or 0 if
+   the file or a part is missing or a read failed. */
 static uint32_t load_parts(uint32_t id, uint32_t addr, uint32_t max, const struct menu_part *p)
 {
     const uint8_t *f = (const uint8_t *)(uintptr_t)addr;
     uint32_t size = slot_size(id);
     if (size < 8 || size > max || load_range(id, size, size - 4, size, addr)) return 0;
-    const uint8_t *q = f + size - 4;
+    const uint8_t *q = f + size - 4;            /* the last word is the size of the directory before it */
     uint32_t dir = q[0] | (uint32_t)q[1] << 8 | (uint32_t)q[2] << 16 | (uint32_t)q[3] << 24;
     if (dir > size - 4 || load_range(id, size, size - 4 - dir, size - 4, addr)) return 0;
     for (; p->name; p++) {
         struct dat_entry e;
         if (!dat_find(f, size, p->name, &e) || e.offset > size || e.stored > size - e.offset) return 0;
-        if (load_range(id, size, e.offset, e.offset + (e.stored < p->most ? e.stored : p->most), addr)) return 0;
+        if (load_range(id, size, e.offset, e.offset + (e.stored < p->most ? e.stored : p->most), addr))
+            return 0;
     }
     return size;
 }
 
-/* The track and car screens from GFX/MENU.DAT, GFX/GRAF.DAT, DATA/LOCAL.DAT and DATA/GEN.DAT; 1
-   if they are there */
+/* Loads the files of the menu screens (menu.h) and of the intro (intro.h) and sets both up. The needed parts
+   of GFX/MENU.DAT and GFX/GRAF.DAT are read here; DATA/LOCAL.DAT and DATA/GEN.DAT are loaded already.
+   Returns 1 if the menus are there. intro_ok tells whether the intro is there too. */
 static int menus(void)
 {
     uint32_t t0 = rdcycle();
     uint32_t menu_size = load_parts(MENU_SLOT, MENU_FILE, MENU_MAX, menu_dat_parts);
     uint32_t graf_size = load_parts(GRAF_SLOT, GRAF_FILE, MENU_MAX, menu_graf_parts);
     int ok = menu_size && graf_size &&
-             menu_init((const uint8_t *)(uintptr_t)MENU_FILE, menu_size, (const uint8_t *)(uintptr_t)GRAF_FILE,
-                       graf_size, game.local, game.local_size, game.gen, game.gen_size, MENU_MEM, MENU_SIZE,
+             menu_init((const uint8_t *)(uintptr_t)MENU_FILE, menu_size,
+                       (const uint8_t *)(uintptr_t)GRAF_FILE, graf_size, game.local, game.local_size,
+                       game.gen, game.gen_size, MENU_MEM, MENU_SIZE,
                        (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH);
-    intro_ok = ok && intro_init((const uint8_t *)(uintptr_t)GRAF_FILE, graf_size, game.local, game.local_size, INTRO_MEM,
-                                INTRO_SIZE, (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH);
-    while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* the pictures in the SDRAM for the blitter */
+    intro_ok = ok && intro_init((const uint8_t *)(uintptr_t)GRAF_FILE, graf_size, game.local,
+                                game.local_size, INTRO_MEM, INTRO_SIZE, (uint8_t *)BUILD_SCRATCH,
+                                PROG_BASE - BUILD_SCRATCH);
+    while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* wait until the pictures are in the SDRAM for the blitter */
         ;
     if (!intro_ok) dlog_str("intro: LOGOL.SPR, ATTRL.FNT or ATTR.TXT missing (no intro)\n");
     dlog_str("menu: MENU.DAT ");
@@ -1128,9 +1301,10 @@ static int menus(void)
     return ok;
 }
 
-/* The simulation's short cut (tools/simcheck.sh, SIM_IMAGE): the testbench offers the finished
-   image as data slot IMAGE_SLOT, which core/data.json does not have, so on the Pocket its size
-   is 0 and the image is built. The image build itself is checked by tools/check_track_build.sh. */
+/* The simulation's short cut (tools/simcheck.sh, SIM_IMAGE). The testbench offers the finished track image
+   as data slot IMAGE_SLOT. core/data.json does not have this slot, so on the Pocket its size is 0 and the
+   image is built instead. The image build itself is checked by tools/check_track_build.sh. Returns 1 if the
+   image was loaded and opened. */
 static int load_image(void)
 {
     int err;
@@ -1146,11 +1320,13 @@ static int load_image(void)
     return 1;
 }
 
-/* SOUND.DAT (sound.h) whole into the SDRAM, once a boot: its read started before the first
-   track is built, so that the APF writes its 1.9 MB (1.3 s) while the CPU builds; its size once
-   it is there (sounds() reads it itself if it is not) */
+/* SOUND.DAT (sound.h) is read whole into the SDRAM once after the boot. Its read is started before the first
+   track is built, so that the APF writes its 1.9 MB (1.3 s) while the CPU builds the track. sound_size is its
+   size once it is there; sounds() reads it itself if it is not. sound_reading is its size while the read
+   runs. */
 static uint32_t sound_size, sound_reading;
 
+/* Starts the read of SOUND.DAT in the background, unless it is there already or does not fit. */
 static void sound_start(void)
 {
     uint32_t size = slot_size(SOUND_SLOT);
@@ -1159,7 +1335,8 @@ static void sound_start(void)
     sound_reading = size;
 }
 
-/* its end waited for (before any other slot call), then its last 1-3 bytes */
+/* Waits for the end of the read that sound_start began (it must end before any other slot call; the wait is
+   limited to 20 s). Then it reads the last 1 to 3 bytes of the file. sound_size is set if all is there. */
 static void sound_wait(void)
 {
     uint32_t size = sound_reading, body = size & ~3u, t0 = rdcycle();
@@ -1167,11 +1344,13 @@ static void sound_wait(void)
     sound_reading = 0;
     while (slot_busy())
         if (rdcycle() - t0 > 20u * CPU_HZ) return;
-    if (slot_result() == 0 && (size == body || slot_read(SOUND_SLOT, body, SOUND_MEM + body, SLOT_REST) == 0))
+    if (slot_result() == 0 &&
+        (size == body || slot_read(SOUND_SLOT, body, SOUND_MEM + body, SLOT_REST) == 0))
         sound_size = size;
 }
 
-/* Track n's image from them at TEX_FILE, its header opened; 1 if that worked */
+/* Builds the image of track n from the loaded containers at TEX_FILE and opens its header. The read of
+   SOUND.DAT runs during the build (sound_start). Returns 1 if that worked. */
 static int build_track(int n)
 {
     struct track_build_info info;
@@ -1180,7 +1359,7 @@ static int build_track(int n)
     uint32_t size = track_build(&game, n, out, game_files[0].addr - (uint32_t)(uintptr_t)out,
                                 (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH, &info);
     sound_wait();
-    while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* all of it in the SDRAM for the 3D units */
+    while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* wait until all of it is in the SDRAM for the 3D units */
         ;
     dcache_invalidate();                        /* the block check reads the SDRAM */
     if (!size || !track_open(TEX_FILE)) {
@@ -1201,7 +1380,8 @@ static int build_track(int n)
     return 1;
 }
 
-/* Track n's effects through MAPn.SMG (efx.h) from its GFX container */
+/* Sets up the effects of track n (efx.h) from MAPn.SMG, SHADOW.3DX and SMOKE.3DX in its GFX container, and
+   logs which of them are there. */
 static void effects(int n)
 {
     uint32_t t0 = rdcycle();
@@ -1219,8 +1399,9 @@ static void effects(int n)
     dlog_str(" ms\n");
 }
 
-/* Track n's props and moving scenery (scenery.h) from its DATA and GFX containers, and the
-   trackside cameras' places (car.h) from the DATA container */
+/* Sets up the props and the moving scenery of track n (scenery.h) from its DATA and GFX containers. From the
+   DATA container it also takes the places of the trackside cameras (car.h) and the numbers of the race mode
+   (the carnage time and the gates of the slalom). */
 static void scenery(int n)
 {
     uint32_t t0 = rdcycle();
@@ -1238,9 +1419,9 @@ static void scenery(int n)
     dlog_str(" ms\n");
 }
 
-/* The sound effects (sound.h): SOUND.DAT whole into the SDRAM once (while the first track is
-   built, else here), their list from GEN.DAT before each race (the scenery adds the track's own
-   after them) */
+/* Sets up the sound effects (sound.h). SOUND.DAT goes whole into the SDRAM once (normally while the first
+   track is built, else here). Their list from GEN.DAT is read before each race; scenery() adds the track's
+   own sounds after them. */
 static void sounds(void)
 {
     uint32_t t0 = rdcycle();
@@ -1257,8 +1438,8 @@ static void sounds(void)
     dlog_str(" ms\n");
 }
 
-/* The menu's effects (sound.h snd_menu): MENU.DTR's nine samples of SOUND.DAT, each read at its
-   place once (until the whole container follows with the first track) */
+/* Sets up the menu's effects (snd_menu in sound.h): the nine samples of MENU.DTR in SOUND.DAT. Each is read
+   once to its place, until the whole container is loaded with the first track. */
 static void menu_sounds(void)
 {
     static const struct menu_part parts[] = {
@@ -1268,14 +1449,15 @@ static void menu_sounds(void)
     static uint32_t size;
     if (!sound_size && !size) size = load_parts(SOUND_SLOT, SOUND_MEM, SOUND_MAX, parts);
     uint32_t have = sound_size ? sound_size : size;
-    int n = have && game.gen_size ? snd_menu((const uint8_t *)(uintptr_t)SOUND_MEM, have, game.gen, game.gen_size) : 0;
+    int n = have && game.gen_size ?
+            snd_menu((const uint8_t *)(uintptr_t)SOUND_MEM, have, game.gen, game.gen_size) : 0;
     dlog_str("menu sounds: ");
     dlog_dec(n);
     dlog_str(" of MENU.DTR\n");
 }
 
-/* The player's dashboard for the cockpit (hud.h) from the GFX container GAME.DAT and GEN.DAT;
-   1 if it is there */
+/* Sets up the dashboard of the player's car for the cockpit view (hud.h) from the container GAME.DAT and
+   from GEN.DAT. Returns 1 if it is there. */
 static int dashboard_init(void)
 {
     uint32_t t0 = rdcycle();
@@ -1291,21 +1473,26 @@ static int dashboard_init(void)
     return ok;
 }
 
-/* A screen of the menu (menu.h) from choice n on until one is taken: its number (the track, the
-   car's row + 1; the pages: 1 NORMAL GAME), -1 when the track or car screen goes back. The
-   picture by the blitter, the models or the letters' cubes through the geometry unit while it
-   waits (hw_piece), the texts after them. It fades in from black, the models already turning
-   (0x2c078, 0x2bdcc: the palette at 1.5 a second, 0x29738; the pages 0.6, 0x29ea0), and is left
-   with a cut to black; the pages fade out at 2 a second while the camera pulls back (0x293e8).
-   MUSIC changed on the options page stops the menu's song or starts it again at once. In the
-   simulation (SIM_MENU) its third frame is checked against the C models and reported. */
+/*
+ * Runs one screen of the menu (menu.h) until something is chosen. screen is one of the MENU_*_SCREEN values
+ * and n is the choice to start on. Returns the number chosen: the track, the car's row + 1, or for the pages
+ * the item (1 is NORMAL GAME). It returns -1 when the track screen or the car screen goes back.
+ *
+ * In each frame the blitter draws the picture, the geometry unit draws the 3D models (or the letters' cubes)
+ * meanwhile (hw_piece), and the texts follow. The screen fades in from black with the models already
+ * turning. The palette fades at 1.5 full fades a second (original: STARTL.EXE 0x2c078, 0x2bdcc, 0x29738),
+ * the pages at 0.6 (0x29ea0). A screen is left with a cut to black. The pages fade out at 2 a second while
+ * the camera pulls back (0x293e8).
+ * MUSIC changed on the options page stops the menu's song, or starts it again, at once.
+ * In the simulation (SIM_MENU) the third frame is checked against the C models and reported.
+ */
 static int menu_screen(int screen, int n)
 {
     uint32_t drawn = 0, keys_before = in_keys(), last_frame = 0, sim = SYS_FLAGS & FLAG_SIM;
     int32_t fade = 0, rate = screen == MENU_PAGE_SCREEN ? FADE_PAGES : FADE_MENU;
-    int chosen = 0;
+    int chosen = 0;                             /* the pages: set when an item is taken, then they fade out */
     menu_enter(screen, n);
-    while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* the championship's picture in the SDRAM */
+    while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* wait until the championship's picture is in the SDRAM */
         ;
     const uint32_t *pal = menu_palette();
     music_play(0);
@@ -1313,7 +1500,7 @@ static int menu_screen(int screen, int n)
     track_hw_piece = hw_piece;
     GU_MLB = (uint32_t)((uintptr_t)menu_mlb() - SDRAM_BASE);
     GU_INVAL = 1;
-    RS_CTRL = 1;                                /* the texture cache: the cars' are MENU.MLB's */
+    RS_CTRL = 1;                                /* flush the texture cache: the cars' are those of MENU.MLB */
     for (;;) {
         uint32_t st = next_frame(), keys = in_keys(), t_frame = rdcycle();
         music_frame();
@@ -1324,6 +1511,9 @@ static int menu_screen(int screen, int n)
             dlog_dec((int32_t)stack_used());
             dlog_str(" bytes\n");
         }
+
+        /* The menu runs at 50 steps a second, at most 4 steps for a picture. A choice ends the screen, but
+           the pages fade out first. */
         uint32_t steps = drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
         last_frame = VID_FRAME(st);
         if (steps > 4) steps = 4;
@@ -1348,6 +1538,8 @@ static int menu_screen(int screen, int n)
             if (music_on) music_play(0);
             else music_stop();
         }
+
+        /* Draw the picture: the backdrop first, the models while the CPU waits, then the texts. */
         draw_buf = !(st & VID_FRONT);
         blit_start(&back, (int)draw_buf);
         menu_backdrop(&back);
@@ -1367,9 +1559,11 @@ static int menu_screen(int screen, int n)
         hw_blit(&hud);
         while (RS_DRAW & RS_BUSY)
             ;
-        if (drawn % 250 == 2) {
-            dlog_str(screen == MENU_CAR_SCREEN ? "car screen" : screen == MENU_TRACK_SCREEN ? "track screen" :
-                     screen == MENU_CHAMP_SCREEN ? "championship" : screen == MENU_RECORDS_SCREEN ? "records" :
+        if (drawn % 250 == 2) {                 /* every 250 frames a line in the log */
+            dlog_str(screen == MENU_CAR_SCREEN ? "car screen" :
+                     screen == MENU_TRACK_SCREEN ? "track screen" :
+                     screen == MENU_CHAMP_SCREEN ? "championship" :
+                     screen == MENU_RECORDS_SCREEN ? "records" :
                      screen == MENU_NAME_SCREEN ? "name" : "pages");
             dlog_str(" frame ");
             dlog_dec((int32_t)drawn);
@@ -1377,7 +1571,7 @@ static int menu_screen(int screen, int n)
             dlog_dec((int32_t)(rdcycle() - t_frame));
             dlog_str(" cycles\n");
         }
-        if (sim && drawn == 2) {
+        if (sim && drawn == 2) {                /* the simulation's check against the C models */
             volatile uint8_t *m = CHECK_BUF;
             uint32_t t0 = rdcycle();
             blit_model(m, &back);
@@ -1392,9 +1586,9 @@ static int menu_screen(int screen, int n)
     }
 }
 
-/* Track n's loading screen (menu.h, 0x2a264) by the blitter in a swap, at once with its palette;
-   it stays up while the track is set up. Its palette, 0 without the menu's files (the
-   simulation's race): nothing shown. */
+/* Shows the loading screen of track n (menu.h; original: STARTL.EXE 0x2a264). The blitter draws it in one
+   swap together with its palette, and it stays up while the track is set up. Returns its palette, or 0
+   without the menu's files (the simulation's race), in which case nothing is shown. */
 static const uint32_t *loading(int n)
 {
     uint32_t st = wait_swap_done();
@@ -1402,24 +1596,16 @@ static const uint32_t *loading(int n)
     blit_start(&hud, (int)draw_buf);
     const uint32_t *pal = menu_loading(n, &hud);
     if (!pal) return 0;
-    while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* the picture in the SDRAM for the blitter */
+    while (!(MEM_STATUS & MEM_WRITES_IDLE))     /* wait until the picture is in the SDRAM for the blitter */
         ;
     for (int i = 0; i < 256; i++) VID_PAL[i] = pal[i];
     still_show(&hud);
     return pal;
 }
 
-/* Track n from its containers behind its loading screen: the image built at TEX_FILE (or the
-   testbench's) and used only once all its blocks are as written, the effects and scenery, then
-   the race with the car of CARS.DTR row car until it is left, again while PLAY AGAIN? is
-   answered YES (without the loading screen, as the game); 0 if the track could not be set up.
-   A finished race of the normal game or the championship goes into the track's records
-   (choice_record, as 0x2a1a8 and 0x1febf call 0x2e5e4 after each race), its lap to beat from them
-   (0x2a264), PLAY AGAIN's from the race before (0x20eb8).
-   Once all is set up the loading screen fades out, the picture alone (0x128dc(1): 0x21d8c(0));
-   a race left, or to be set up again, fades out with its sound (0x21d8c(1): 0x1feed, 0x128dc(0)). */
-/* Track n's containers loaded (unless they are) and its image built and checked: its
-   placements, 0 if it could not be set up */
+/* Prepares track n: loads its containers (unless they are loaded already), builds its image (or takes the
+   testbench's) and checks the image's blocks by their CRC. The image is used only if all blocks are as
+   written. Returns the number of placements, or 0 if the track could not be set up. */
 static int track_ready(int n)
 {
     int placements = 0;
@@ -1434,7 +1620,7 @@ static int track_ready(int n)
         for (int k = 0; k < track_blocks(); k++)
             bad += !track_block_ok(k);
         dlog_str("track image: CRC of the 256 KB blocks:");
-        for (int k = 0; bad && k < track_blocks(); k++)     /* each, if one is damaged (the log has 4 KB) */
+        for (int k = 0; bad && k < track_blocks(); k++)     /* if one is damaged, list each (4 KB log) */
             dlog_str(track_block_ok(k) ? " ok" : " BAD");
         dlog_str(bad ? " - damaged in the SDRAM, not used (" : " all ok (");
         dlog_dec((int32_t)((rdcycle() - t0) / (CPU_HZ / 1000)));
@@ -1444,9 +1630,21 @@ static int track_ready(int n)
     return placements;
 }
 
+/*
+ * Plays track n with the car of CARS.DTR row car, behind the track's loading screen. Returns 1 when the race
+ * was left, or 0 if the track could not be set up.
+ *   - The track is set up first (track_ready), then the effects and the scenery.
+ *   - Then comes the race (run_track), until it is left. It starts again while PLAY AGAIN? is answered YES,
+ *     without the loading screen, as the game does, and as its replay when run_track asks for it.
+ *   - A finished race of the normal game or of the championship goes into the track's records (choice_record;
+ *     in the original 0x2a1a8 and 0x1febf call 0x2e5e4 after each race). The lap to beat comes from the
+ *     records (0x2a264). After PLAY AGAIN? it comes from the race before (0x20eb8).
+ *   - Once all is set up, the loading screen fades out, the picture alone (0x128dc(1): 0x21d8c(0)). A race
+ *     that is left, or is to be set up again, fades out with its sound (0x21d8c(1): 0x1feed, 0x128dc(0)).
+ */
 static int race(int n, int car)
 {
-    music_stop();                               /* before the loads: none of its reads running; the
+    music_stop();                               /* before the loads, so that no music read is running; the
                                                    menu's song ends as the loading screen goes up */
     const uint32_t *shown = loading(n);
     car_lap_to_beat = choice.lap[(n - 1) % MENU_TRACKS].time[0];
@@ -1464,11 +1662,11 @@ static int race(int n, int car)
     dlog_str(" placements, ");
     dlog_dec((int32_t)track_path_length());
     dlog_str(" path points\n");
-    for (int replay = 0;;) {    /* everything set up as at the start: the replay runs the same */
+    for (int replay = 0;;) {    /* each run is set up as at the start, so the replay runs the same way */
         effects(n);
         sounds();               /* before the scenery, which adds the track's own sounds */
         scenery(n);
-        RS_CTRL = 1;
+        RS_CTRL = 1;            /* flush the texture cache */
         if (shown) fade_out(shown, 0);
         shown = 0;
         music_play(n);
@@ -1481,9 +1679,10 @@ static int race(int n, int car)
         }
         ghost_end();                            /* time attack: a run that counted is kept (0x1fd64) */
         fade_out(track_palette(), 1);
-        AU_STOP = 0xFFFFFFFFu;                  /* the race's sounds end with it, its song too: */
-        music_stop();                           /* after PLAY AGAIN? YES or for the replay the race
-                                                   is set up again (0x128dc), its song from the start */
+        /* The race's sounds end with it, and its song too. After PLAY AGAIN? YES, and for the replay, the
+           race is set up again (0x128dc) and its song starts from the beginning. */
+        AU_STOP = 0xFFFFFFFFu;
+        music_stop();
         snd_fade(0x8000);
         if (end == RACE_LEAVE) return 1;
         replay = end == RACE_REPLAY;
@@ -1491,11 +1690,13 @@ static int race(int n, int car)
 }
 
 #if DEBUG
-/* The benchmark's result on the screen (bench.h), until a button is pressed */
+/* Debug build: shows the result of the benchmark (bench.h) on the screen, one line for each track, until a
+   button is pressed. A new press counts only after 25 pictures. rows holds the summaries and ok[] tells which
+   tracks were raced. */
 static void bench_show(const struct ft_summary *rows, const int *ok)
 {
     static const uint32_t pal[5] = { 0x000000, 0xFFFFFF, 0x40D070, 0xF04848, 0x909090 };
-    enum { BG, FG, GREEN_, RED_, GREY_ };
+    enum { BG, FG, GREEN_, RED_, GREY_ };           /* the colours: black, white, green, red, grey */
     char line[CON_COLS + 1], *p;
     uint32_t drawn = 0, keys_before = IN_KEY;
     for (;;) {
@@ -1524,9 +1725,10 @@ static void bench_show(const struct ft_summary *rows, const int *ok)
     }
 }
 
-/* The benchmark (bench.h): each track raced once for BENCH_FRAMES pictures with the gas held, the first car, the options as
-   they are; the result into debug.txt and onto the screen. The races write little to the log, and the room for the
-   result is kept (dlog_keep) */
+/* Debug build: the benchmark (bench.h), started by "bench = 1" in screamer.cfg. Each track is raced once for
+   BENCH_FRAMES pictures with the gas held and the first car. The options (laps, difficulty) are as set in the
+   menu. The result goes into debug.txt and onto the screen. The races write little to the log, and room for
+   the result is kept free in it (dlog_keep). */
 static void bench_run(void)
 {
     struct ft_summary rows[BENCH_TRACKS];
@@ -1547,19 +1749,22 @@ static void bench_run(void)
         }
         bench_frames = 0;
     }
-    dlog_keep(0);                               /* the result may use the room kept for it and for the marks */
+    dlog_keep(0);                               /* the result may use the room kept for it and the marks */
     bench_log(rows, ok, track_far_scale(), track_lod_scale());
-    dlog_keep(MARK_ROOM);
+    dlog_keep(MARK_ROOM);                       /* afterwards only the marks' room is kept */
     bench_show(rows, ok);
 }
 #endif
 
-/* The intro's race on track n, set up (intro.h): each frame the opponents, the scenery and the
-   intro's camera (0x2780c), the logos and credits over the picture (0x279d4). It fades in from
-   black as a race does (0x21e50), the cars go once it is all there (as the original looks);
-   B, A, START or SELECT (0x211d0: ENTER, ESC, SPACE, the
-   joystick's buttons), or the credits' end, fade picture and sound out in a second (0x27d28),
-   which ends it. */
+/*
+ * Runs the intro's race on track n, which is set up already (intro.h). In each frame the opponents, the
+ * scenery and the intro's camera move (original: STARTL.EXE 0x2780c), and the logos and credits are drawn
+ * over the picture (0x279d4). The intro fades in from black as a race does (0x21e50). The cars start to move
+ * once it is fully faded in, as the original looks.
+ * B, A, START or SELECT end the intro (the original handles ENTER, ESC, SPACE and the joystick's buttons,
+ * 0x211d0), and so does the end of the credits. Picture and sound then fade out in a second (0x27d28).
+ * The function returns after that fade.
+ */
 static void run_intro(int n)
 {
     static struct track_object objs[MAX_OBJECTS];
@@ -1569,7 +1774,7 @@ static void run_intro(int n)
     uint32_t drawn = 0, keys_before = IN_KEY, last_frame = 0;
     snd_fade(0);
     music_fade(0);
-    car_init(choice.car, 0);                    /* the race's state; its car taken away: */
+    car_init(choice.car, 0);                    /* set up the race's state, then take the player's car out */
     opp_init(choice.car);
     car_intro();
     intro_start(game.data, game.data_size, n);
@@ -1583,6 +1788,9 @@ static void run_intro(int n)
         frames_shown = drawn;
         if (keys & ~keys_before & (KEY_A | KEY_B | KEY_START | KEY_SELECT)) intro_leave();
         keys_before = keys;
+
+        /* Steps at 50 a second, at most 4 for a picture. intro_step() returns non-zero once the intro is
+           over. The fade level combines the fade-in with the intro's own level (intro_level()). */
         uint32_t steps = drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
         last_frame = VID_FRAME(st);
         if (steps > 4) steps = 4;
@@ -1600,6 +1808,8 @@ static void run_intro(int n)
         music_fade(level);
         if (over) return;
         track_clock(steps);
+
+        /* Camera and objects, then the picture as in a race: backdrop, scene, texts. */
         struct track_cam cam;
         intro_camera(&cam);
         int nobj = opp_objects(objs, MAX_OBJECTS);
@@ -1624,7 +1834,7 @@ static void run_intro(int n)
         hw_blit(&hud);
         while (RS_DRAW & RS_BUSY)
             ;
-        if (drawn % 500 == 2) {
+        if (drawn % 500 == 2) {                 /* every 500 frames a line in the log */
             dlog_str("intro frame ");
             dlog_dec((int32_t)drawn);
             dlog_str(": ");
@@ -1638,17 +1848,17 @@ static void run_intro(int n)
     }
 }
 
-/* The intro's track: CHOICE.DAT +0x434 + 1 */
+/* The track of the next intro, 1 to 6: CHOICE.DAT +0x434 plus 1. */
 static int intro_track(void)
 {
     return (int)((uint32_t)choice.intro % MENU_TRACKS) + 1;
 }
 
-/* The first picture of a boot, as early as it can be: the intro's track's loading screen as a
-   race has it (loading()), from LOCAL.DAT's LOADING and of GRAF.DAT only its directory,
-   MENUL.SPR, MENUL.FNT and LOADnL.PCX, each at its place; the rest of the menu's files, the
-   intro's track and the sounds load behind it. Its palette, 0 if the files are not there (the
-   screen stays black until the intro, as it did). */
+/* Shows the first picture of a boot, as early as it can be: the loading screen of the intro's track n, as a
+   race has it (loading()). It needs LOADING from LOCAL.DAT and, of GRAF.DAT, only the directory, MENUL.SPR,
+   MENUL.FNT and LOADnL.PCX, each at its place. The rest of the menu's files, the intro's track and the sounds
+   load behind it. Returns its palette, or 0 if the files are not there; the screen then stays black until the
+   intro. */
 static const uint32_t *first_picture(int n)
 {
     char file[16] = "LOAD1L.PCX";
@@ -1656,9 +1866,11 @@ static const uint32_t *first_picture(int n)
     file[4] = (char)('0' + n);
     uint32_t size = load_containers(0, LOCAL_FILES) ? load_parts(GRAF_SLOT, GRAF_FILE, MENU_MAX, parts) : 0;
     const uint32_t *pal = size && menu_loading_init((const uint8_t *)(uintptr_t)GRAF_FILE, size, game.local,
-                                                    game.local_size, MENU_MEM, MENU_SIZE, (uint8_t *)BUILD_SCRATCH,
-                                                    PROG_BASE - BUILD_SCRATCH) ? loading(n) : 0;
-    dlog_str(pal ? "first picture: the loading screen of track " : "first picture: none (GRAF.DAT or LOCAL.DAT missing), track ");
+                                                    game.local_size, MENU_MEM, MENU_SIZE,
+                                                    (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH)
+                          ? loading(n) : 0;
+    dlog_str(pal ? "first picture: the loading screen of track "
+                 : "first picture: none (GRAF.DAT or LOCAL.DAT missing), track ");
     dlog_dec(n);
     dlog_str(", ");
     dlog_dec((int32_t)(rdcycle() / (CPU_HZ / 1000)));
@@ -1666,11 +1878,11 @@ static const uint32_t *first_picture(int n)
     return pal;
 }
 
-/* The intro (intro.h, 0x276a0): its race on track intro_track() set up as race() sets one up,
-   but straight (0x128dc: no loading screen, the screen black meanwhile; at the boot the first
-   picture stays up and fades out as a race's loading screen), difficulty NORMAL (0x2777f), the
-   menu's song; then the track one on (0x27f06) and every page of the menu at its first line
-   (0x27eb4). */
+/* The intro (intro.h; original: STARTL.EXE 0x276a0). Its race on track intro_track() is set up as race() sets
+   one up, but without the loading screen (0x128dc): the screen is black meanwhile. At the boot, shown is the
+   palette of the first picture. That picture stays up and fades out like a race's loading screen. The
+   difficulty is NORMAL (0x2777f) and the menu's song plays. Afterwards the intro's track moves on by one
+   (0x27f06) and every page of the menu goes back to its first line (0x27eb4). */
 static void intro(const uint32_t *shown)
 {
     int n = intro_track();
@@ -1698,12 +1910,18 @@ static void intro(const uint32_t *shown)
     menu_fresh();
 }
 
-/* The championship (champ.h) from NEW or RESUME on (0x28c6b, 0x28c9e) until it goes back to the
-   main menu: the stage's screen; ENTER on a race's text screen opens the car screen (0x291ae;
-   back from it: the stage's screen again), whose choice starts the race on the stage's track,
-   three laps, the league's opponents (0x28ef6: 0x2a264(2, track, league)); its result goes into
-   the standings (0x29acc), shown next (0x293e8(5)). A race finished goes on by itself after the
-   end screen's 5 s; one out of time or left asks PLAY AGAIN? (0x1fe86), YES races it again. */
+/*
+ * The championship (champ.h), from NEW or RESUME (original: STARTL.EXE 0x28c6b, 0x28c9e) until it goes back
+ * to the main menu. resume is 1 for RESUME and 0 for NEW; *car is the row of the car chosen last. The loop
+ * goes stage by stage:
+ *   - The stage's screen is shown. ENTER on a race's text screen opens the car screen (0x291ae). Back from
+ *     the car screen, the stage's screen is shown again.
+ *   - The car chosen starts the race on the stage's track: three laps, the league's opponents
+ *     (0x28ef6: 0x2a264(2, track, league)).
+ *   - The result goes into the standings (0x29acc), which are shown next (0x293e8(5)).
+ *   - A race that is finished goes on by itself after the end screen's 5 s. One that ran out of time, or was
+ *     left, asks PLAY AGAIN? (0x1fe86), and YES races it again.
+ */
 static void championship(int resume, int *car)
 {
     if (resume) champ_resume();
@@ -1729,7 +1947,8 @@ static void championship(int resume, int *car)
         menu_sounds();
         if (!ok) return;
         const struct car_race *r = car_race();
-        champ_result(!r->finished && !r->game_over, !r->finished && r->game_over, opp_player_rank(), r->total);
+        champ_result(!r->finished && !r->game_over, !r->finished && r->game_over, opp_player_rank(),
+                     r->total);
         dlog_str("championship: stage ");
         dlog_dec(choice.stage);
         dlog_str(", place ");
@@ -1738,8 +1957,9 @@ static void championship(int resume, int *car)
     }
 }
 
-/* The list of the game's files (files.c) for ever: the swaps go on, and the simulation gets
-   its result after three frames */
+/* Shows the list of the game's files (files.c) for ever. The swaps go on, and the simulation gets its result
+   after three frames. failed is 0 if a file is missing, and 1 if all needed files are there but loading them
+   failed (the log says why). */
 static void __attribute__((noreturn)) files_loop(int failed)
 {
     uint32_t drawn = 0;
@@ -1760,6 +1980,8 @@ static void __attribute__((noreturn)) files_loop(int failed)
     }
 }
 
+/* The entry point, called by the start code (start_prog.S) with the boot results and the state of the debug
+   log (dlog.h). It never returns: the game runs for ever, or the list of files is shown. */
 void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
 {
     results = boot_results;
@@ -1767,37 +1989,44 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
     dlog_attach(log_pos, log_cur);
     log_head("frames drawn: ", 0);
     dlog_str("program.bin: running in the SDRAM\n");
-    save_load();                    /* first: until then an exit would save the SDRAM as it is */
+    save_load();                    /* first: until it has run, an exit would save the SDRAM as it is */
     menu_options_load();
     volumes();
     config_load();                  /* screamer.cfg: how far the core draws (config.h) */
 #if DEBUG
-    dlog_keep(MARK_ROOM);           /* the rest of the log leaves room for the marks (mark.h) */
+    dlog_keep(MARK_ROOM);           /* debug build: the rest of the log leaves room for the marks (mark.h) */
 #endif
     if (files_missing()) files_loop(0);         /* a file the game needs is missing: the list, for ever */
     int sim = (SYS_FLAGS & FLAG_SIM) != 0;
-    const uint32_t *shown = sim ? 0 : first_picture(intro_track());    /* the simulation's race: none */
+    const uint32_t *shown = sim ? 0 : first_picture(intro_track());    /* the simulation's race has none */
 
-    /* the game's files that stay (data slots 4, 6, 7, deferload) and the menu's; then the main
-       menu, from a game's line on ENTER YOUR NAME (A or SELECT there: the page again; 0x293e8(4)),
-       then the track screen (A or SELECT there: the name again, 0x281c2), the car screen (A or
-       SELECT: the track screen again) and the race on the track chosen with the car chosen and
-       the options page's laps, difficulty and speech, then the main menu again (0x2a114 ->
-       0x29ea0), for ever; the championship after the name (champ.h). A track of VIEW RECORDS'
-       page shows its records, A or SELECT there goes back to the page (0x28a7c). The intro
-       before the main menu at the start and after 30 s there without a key (0x10020: intro, menu,
-       intro ...). The simulation races the testbench's track with the first car at once, or
-       shows the screen MENU_CHECK_SLOT names. */
+    /*
+     * Load the game's files that stay (data slots 4, 6 and 7, which are deferload slots in core/data.json)
+     * and the menu's. Then the screens follow each other for ever. The variable `at` says which one comes
+     * next:
+     *   - AT_PAGES: the main menu. At the start, and after 30 s on it without a key, the intro runs before it
+     *     (original: STARTL.EXE 0x10020: intro, menu, intro, ...). A track of the VIEW RECORDS page shows its
+     *     records; A or SELECT there goes back to the page (0x28a7c).
+     *   - AT_NAME: ENTER YOUR NAME, after a game's line of the main menu. A or SELECT there shows the page
+     *     again (0x293e8(4)). After the name the championship (champ.h) is played, or the game goes on:
+     *   - AT_TRACKS: the track screen. A or SELECT there shows the name again (0x281c2).
+     *   - AT_CARS: the car screen. A or SELECT there shows the track screen again.
+     * Then the race on the track chosen, with the car chosen and the laps, difficulty and speech of the
+     * options page, and the main menu again (0x2a114 -> 0x29ea0).
+     * The simulation races the testbench's track with the first car at once, or shows the screen that
+     * MENU_CHECK_SLOT names.
+     */
     if (load_containers(0, game.local_size ? FIXED_FILES & ~LOCAL_FILES : FIXED_FILES)) {
         music_init(game.gen, game.gen_size);
-        if (!hud_cd_init(game.game, game.game_size, CD_MEM, CD_SIZE, (uint8_t *)BUILD_SCRATCH, PROG_BASE - BUILD_SCRATCH))
+        if (!hud_cd_init(game.game, game.game_size, CD_MEM, CD_SIZE, (uint8_t *)BUILD_SCRATCH,
+                         PROG_BASE - BUILD_SCRATCH))
             dlog_str("pause: CDFRONTL.PKC missing (the darkened picture alone)\n");
         int check = sim ? (int)slot_size(MENU_CHECK_SLOT) : 0;
         int screen = (!sim || check) && menus();
         int n = sim && slot_size(TRACK_SLOT) ? (int)slot_size(TRACK_SLOT) : choice.track % MENU_TRACKS + 1;
         int car = choice.car;                   /* the last track and car, as CHOICE.DAT keeps them */
 #if DEBUG
-        if (config_bench()) bench_run();        /* screamer.cfg: "bench = 1" */
+        if (config_bench()) bench_run();        /* debug build: screamer.cfg has "bench = 1" */
 #endif
         if (screen) menu_sounds();
         enum { AT_PAGES, AT_NAME, AT_TRACKS, AT_CARS };     /* the screen to go on with */
@@ -1807,15 +2036,15 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
                 if (at == AT_PAGES) {
                     if (show_intro) {
                         intro(shown);
-                        menu_sounds();          /* the race had its own (sounds()) */
+                        menu_sounds();          /* the intro's race had its own sounds (sounds()) */
                         show_intro = 0;
                         page = 1;
                     } else if (shown) {
                         fade_out(shown, 0);     /* no intro: the first picture goes as a race's */
                     }
                     shown = 0;
-                    g = menu_screen(MENU_PAGE_SCREEN, page);
-                    page = 0;                   /* back to it: the page as it was */
+                    g = menu_screen(MENU_PAGE_SCREEN, page);    /* g is the item taken on the page */
+                    page = 0;                   /* when back on it, show the page as it was */
                     if (g == MENU_IDLE) {
                         show_intro = 1;
                         continue;
@@ -1853,21 +2082,22 @@ void prog_main(uint32_t boot_results, uint32_t log_pos, uint32_t log_cur)
                     at = first == AT_CARS ? AT_CARS : AT_TRACKS;
                     continue;
                 }
-                at = first;
+                at = first;                     /* after the race the first screen comes again */
                 page = 1;
                 car = choice.car = c - 1;
                 struct menu_options opt;
                 menu_options(&opt);
                 car_laps = opt.laps;
                 car_mode = menu_mode();
-                track_build_difficulty = opt.difficulty == 3 ? 4 : opt.difficulty;  /* AFTERBURNER: E (0x2a131) */
+                /* Difficulty 3 (AFTERBURNER) uses the files of difficulty E, 4 (original: 0x2a131). */
+                track_build_difficulty = opt.difficulty == 3 ? 4 : opt.difficulty;
                 opp_bullet = track_build_difficulty > 2;
                 speech_on = opt.speech;
             }
-            if (!race(n, car) && !screen) break;
-            if (screen) menu_sounds();          /* the race had its own (sounds()) */
+            if (!race(n, car) && !screen) break;    /* without menus, a track that fails ends the loop */
+            if (screen) menu_sounds();          /* the race had its own sounds (sounds()) */
         }
     }
-    /* the game's files are all there, but loading them failed (the log says why) */
+    /* The game's files are all there, but loading them failed (the log says why). */
     files_loop(1);
 }

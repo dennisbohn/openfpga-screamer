@@ -1,31 +1,35 @@
 /*
- * screamer.cfg: how far the core draws (data slot 26 of core/data.json, an optional file in
- * Assets/screamer/common/). Two numbers, each a factor on the original's distances (track.h):
- *     far = 1.5      the far plane, the reach, the cell window; 1.0 is the original's picture
- *     lod = 1.5      where a block takes the next lower level of detail; 0 (or "off"): none
- *     bench = 1      the benchmark (bench.h): the core races every track once at the start, with the gas held, and
- *                    writes avg, worst frame, late frames, faces and pieces of each to debug.txt and to the screen
- * One line each, "name = number" (a comma works as the decimal point, a trailing x is ignored), # or ; starts a
- * comment. Without the file, or for a line that is not understood, the constants of track.h stay. The numbers are
- * kept within far 0.5 .. 4.0 and lod 0, 0.5 .. 4.0; what is above 2.0 has not been measured.
+ * screamer.cfg: an optional text file that sets how far the core draws. It is data slot 26 of core/data.json
+ * and lies in Assets/screamer/common/. Each setting is a factor on the original's distances (track.h):
+ *     far = 1.5      the far plane, the reach and the cell window; 1.0 is the original's picture
+ *     lod = 1.5      where a block takes the next lower level of detail; 0 or "off" means none
+ *     bench = 1      debug build only: the benchmark (bench.h). At the start the core races every track
+ *                    once with the gas held. It writes the mean and worst frame time, the late frames, the
+ *                    faces and the pieces of each track to debug.txt and to the screen.
+ * Each setting is one line, "name = number". A comma works as the decimal point and a trailing x is ignored.
+ * A # or ; starts a comment. Without the file, or for a line that is not understood, the constants of track.h
+ * stay. The numbers are kept within 0.5 to 4.0 for far, and 0 or 0.5 to 4.0 for lod. Values above 2.0 are
+ * accepted but have not been measured.
  */
 #pragma once
 #include <stdint.h>
 
 #define CONFIG_SLOT     26
-#define CONFIG_MAX      1024        /* the file is ignored above this (data.json: size_maximum) */
+#define CONFIG_MAX      1024        /* a larger file is ignored (data.json: size_maximum) */
 
-/* what config_parse found */
+/* What config_parse found. */
 #define CFG_FAR         1u          /* far was set */
 #define CFG_LOD         2u          /* lod was set */
-#define CFG_CLAMPED     4u          /* a number was outside its range and kept to it */
-#define CFG_BAD         8u          /* a line was not understood (an unknown name, no number) and left out */
+#define CFG_CLAMPED     4u          /* a number was outside its range and was moved into it */
+#define CFG_BAD         8u          /* a line was not understood (unknown name, no number) and was left out */
 #define CFG_BENCH       32u         /* bench was set */
 
-/* The text s of n bytes: the values it gives replace *far_scale and *lod_scale, the others stay. Returns CFG_* */
+/* Parses the text s of n bytes. The values it finds replace *far_scale and *lod_scale, or set *bench; the
+   others stay as they are. Returns a mask of CFG_* bits. */
 unsigned config_parse(const char *s, uint32_t n, float *far_scale, float *lod_scale, int *bench);
 
-/* Read the file, if there is one, set the factors (track_set_scales) and write what happened to debug.txt */
+/* Reads the file, if there is one, sets the factors (track_set_scales) and writes what happened to
+   debug.txt. */
 void config_load(void);
-/* "bench = 1" was read */
+/* Returns 1 if "bench = 1" was read. A release always returns 0. */
 int config_bench(void);

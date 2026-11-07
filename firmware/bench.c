@@ -1,11 +1,12 @@
 /*
- * The benchmark's result lines (bench.h).
+ * The benchmark's result lines (bench.h): the lines for debug.txt and for the screen.
  */
 #include "bench.h"
 #include "console.h"
 #include "dlog.h"
 #include "ftime.h"
 
+/* Writes cycles as milliseconds to debug.txt. */
 static void log_ms(uint32_t cycles)
 {
     char b[16];
@@ -40,7 +41,8 @@ void bench_log_row(int track, const struct ft_summary *s, float far_scale, float
     dlog_str("\n");
 }
 
-/* v right-aligned in width w at p (a longer one is written whole) */
+/* Writes v right-aligned in a field of width w at p. A longer number is written whole. Returns a pointer to
+   the end. */
 static char *pad_udec(char *p, uint32_t v, int w)
 {
     char b[12];
@@ -51,6 +53,7 @@ static char *pad_udec(char *p, uint32_t v, int w)
     return p;
 }
 
+/* The same for a time: cycles as milliseconds with one decimal (ft_ms), right-aligned in width w. */
 static char *pad_ms(char *p, uint32_t cycles, int w)
 {
     char b[16];

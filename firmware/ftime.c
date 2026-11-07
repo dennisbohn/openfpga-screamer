@@ -1,22 +1,24 @@
 /*
- * The race's frame times (ftime.h).
+ * The race's frame times (ftime.h): the statistics of a run of frames, and the figures for the overlay.
  */
 #include "hw.h"
 #include "console.h"
 #include "ftime.h"
 
-#define RING    50                  /* the overlay's mean is over the last second (50 pictures) */
+#define RING    50                  /* the overlay's mean covers the last second (50 pictures) */
 
 static struct {
-    uint64_t sum;                   /* since ft_reset: all the frames' work */
+    /* Since ft_reset, over all frames of the run. */
+    uint64_t sum;                   /* the work of all frames */
     uint64_t sum_faces, sum_pieces;
-    uint32_t n, max, late;
-    struct ft_frame worst;          /* the longest of them */
-    int on;                         /* the overlay */
-    uint32_t o_max, o_late;         /* since it was switched on */
-    uint32_t o_last, o_faces, o_pieces;
-    uint32_t ring[RING], ring_at, ring_n;
-    uint64_t ring_sum;
+    uint32_t n, max, late;          /* frames, the largest work, frames over FT_LATE */
+    struct ft_frame worst;          /* the longest frame */
+    /* The overlay. */
+    int on;
+    uint32_t o_max, o_late;         /* since the overlay was switched on */
+    uint32_t o_last, o_faces, o_pieces;     /* the last frame */
+    uint32_t ring[RING], ring_at, ring_n;   /* the work of the last frames; where the next goes; how many */
+    uint64_t ring_sum;              /* the sum of the work in the ring */
 } ft;
 
 void ft_reset(void)
@@ -28,7 +30,7 @@ void ft_reset(void)
 
 void ft_summary(struct ft_summary *s)
 {
-    uint32_t n = ft.n ? ft.n : 1;
+    uint32_t n = ft.n ? ft.n : 1;   /* no division by zero for an empty run */
     s->frames = ft.n;
     s->avg = (uint32_t)(ft.sum / n);
     s->max = ft.max;
@@ -66,14 +68,16 @@ void ft_frame(const struct ft_frame *f)
     ft.o_last = f->work;
     ft.o_faces = f->faces;
     ft.o_pieces = f->npieces;
-    ft.ring_sum += f->work;                     /* (two steps: the difference of two uint32_t is not negative) */
+    /* The ring replaces its oldest value by the new one. The sum is updated in two steps, because the
+       difference of two uint32_t values would wrap around instead of becoming negative. */
+    ft.ring_sum += f->work;
     ft.ring_sum -= ft.ring[ft.ring_at];
     ft.ring[ft.ring_at] = f->work;
     if (++ft.ring_at == RING) ft.ring_at = 0;
     if (ft.ring_n < RING) ft.ring_n++;
 }
 
-/* cycles as milliseconds with one decimal ("12.3"), rounded */
+/* Writes cycles as milliseconds with one decimal ("12.3"), rounded, at p. Returns a pointer to the end. */
 char *ft_ms(char *p, uint32_t cycles)
 {
     uint32_t tenths = (cycles + CPU_HZ / 20000) / (CPU_HZ / 10000);
@@ -104,15 +108,18 @@ void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg, float far_scale, floa
 {
     char line[CON_COLS + 1], *p;
     if (!ft.ring_n) return;
+    /* Line 0: the last frame, the mean of the last second, the maximum and the late frames. */
     p = ft_ms(line, ft.o_last);
     p = ft_ms(fmt_str(p, " ms  avg "), (uint32_t)(ft.ring_sum / ft.ring_n));
     p = ft_ms(fmt_str(p, "  max "), ft.o_max);
     fmt_udec(fmt_str(p, "  late "), ft.o_late);
     con_text(fb, 0, 0, line, fg, bg);
+    /* Line 1: the faces and pieces of the last frame. */
     p = fmt_udec(fmt_str(line, "faces "), ft.o_faces);
     fmt_udec(fmt_str(p, "  pieces "), ft.o_pieces);
     con_text(fb, 0, 1, line, fg, bg);
-    p = fmt_scale(fmt_str(line, "F "), far_scale);          /* ("F 2.00  L 2.50") */
+    /* Line 2: the settings in force, for example "F 2.00  L 2.50". */
+    p = fmt_scale(fmt_str(line, "F "), far_scale);
     fmt_scale(fmt_str(p, "  L "), lod_scale);
     con_text(fb, 0, 2, line, fg, bg);
 }
