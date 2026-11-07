@@ -1,9 +1,16 @@
 /*
- * DEBUG: 1 in a build for development (tools/fw.sh DEBUG=1, make DEBUG=1), 0 in a release (the default). A release runs none
- * of the measuring and diagnostic code: no timeline marks and counters read from the units every frame, no line of
- * statistics rewritten in debug.txt every frame, no race status block, no frame time display or benchmark, no marks or free
- * camera. What stays is what a player or a bug report needs: the boot log, the files, the settings read from screamer.cfg
- * and the simulation's own hooks (they run only in the simulation).
+ * DEBUG selects the development code. It is 1 in a build for development (tools/fw.sh DEBUG=1, or make
+ * DEBUG=1) and 0 in a release, which is the default.
+ *
+ * A release leaves out the measuring and diagnostic code:
+ *   - the timeline marks and the counters that are read from the units every frame
+ *   - the line of statistics that is rewritten in debug.txt every frame
+ *   - the race status block
+ *   - the frame time display and the benchmark
+ *   - the marks and the free camera
+ * A release keeps what a player or a bug report needs: the boot log, the loading of the files and their
+ * list, the settings read from screamer.cfg, and the simulation's own hooks, which run only in the
+ * simulation.
  */
 #pragma once
 
