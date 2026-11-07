@@ -1323,7 +1323,6 @@ static void draw(volatile uint8_t *fb, const struct rs_clip *clip, const struct 
         vis[nv++] = (KEY(d2) + 800 + ob->key) * 65536 + npieces + k;
         st->objects++;
     }
-    st->nearest = 0xFFFFFFFFu;                  /* not measured: it costs a compare for every placement */
     /* Step 2, sorting by key, far first.
        1. vis is in the order of i, the low half of an entry. The low halves are all different, so
           the entries are all different.

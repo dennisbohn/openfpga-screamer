@@ -212,7 +212,7 @@ syntax: `far = 2.0`, `lod = 2.5`, `lod = off`) replaces the defaults at the star
 - Values above 2.0 have not been measured. With 2.0 for both, 0 pixels differ from the C models on all six
   tracks, and a race's frames are 0.1 to 0.9 ms longer than at 1.5.
 
-**Benchmark.** `bench = 1` (`firmware/bench.c`, `bench_run` in `main.c`) races track 1 .. 6 in turn with the
+**Benchmark.** `bench = 1` (`firmware/bench.c`, `bench_run` in `racedebug.c`) races track 1 .. 6 in turn with the
 first car, the options as set, and the gas held (`bench_frames`: the simulation's race on the Pocket, the
 start lights' countdown at once, no keys read). 250 pictures are counted for a track (the first is not).
 

@@ -79,8 +79,9 @@ void race_debug_init(void);
 
 /* The race on track begins. sim is set in the simulation, sim_race is the number of pictures after the green
    light that the simulation's race runs (0 for an ordinary one), and picture check_at is the one that is
-   checked against the C models. fg and bg are the colours of the overlay's text. */
-void race_debug_start(int track, int sim, uint32_t sim_race, uint32_t check_at, uint8_t fg, uint8_t bg);
+   checked against the C models. The overlay's text takes the colours of palette (the track's) nearest to white
+   and to black. */
+void race_debug_start(int track, int sim, uint32_t sim_race, uint32_t check_at, const uint32_t *palette);
 
 /* A picture begins, number drawn, at cycle count t_frame (after the swap of the picture before). Starts its
    timeline. One picture after the checked one it also writes the stack use to debug.txt. */
@@ -166,7 +167,7 @@ static const struct race_debug race_dbg = { 0, 0, 0 };
 
 #define tl_mark(tag)                                    ((void)0)
 #define race_debug_init()                               ((void)0)
-#define race_debug_start(track, sim, sim_race, check_at, fg, bg)    ((void)0)
+#define race_debug_start(track, sim, sim_race, check_at, palette)    ((void)0)
 #define race_debug_frame(t_frame, drawn)                ((void)(t_frame))   /* t_frame has no other use */
 #define race_debug_keys(keys, press, view)              (press)
 #define race_debug_physics_begin()                      ((void)0)

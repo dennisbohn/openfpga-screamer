@@ -46,6 +46,7 @@ This section answers which source file does what.
 | `start_prog.S`, `link_prog.ld`, `prog_crc.py` | program: header, start, its own trap entry; the build writes the CRC-32 into the header |
 | `main.c` | program flow: loading, menus, race loop, pause, replay, restart |
 | `hw.h` | addresses and registers from `docs/soc.md`, `rdcycle`, `fixmul` (CFU), cache instructions |
+| `bytes.h` | reading and writing 16 and 32-bit values in the game's little-endian data, byte by byte or through an aligned pointer |
 | `slot.c`, `dat.c`, `crc32.c` | data slots (deferred load), the game's `.DAT` containers, CRC-32 |
 | `setup.c`, `geom.c`, `raster.c`, `blit.c` | C models of the hardware units and their drivers: setup, geometry, rasterizer, blitter. Each model is bit-exact with its Verilog. |
 | `mixer.c` | C model of the audio mixer (`audio.v`) |
@@ -59,7 +60,7 @@ This section answers which source file does what.
 | `fm.c` | the FM music: HMI's song player and OPL2 driver, queueing the chip's register writes with their times |
 | `files.c` | the list of the game's files with [OK] or [MISSING], shown when one is missing |
 | `config.c` | `screamer.cfg`: far and lod (and bench in a debug build), read at the start |
-| `ftime.c`, `mark.c`, `bench.c` | the debug build only (`debug.h`, `tools/fw.sh DEBUG=1`): `ftime.c` shows the race's frame times with the timing overlay and writes the statistics on `debug.txt`'s first line; `mark.c` has the marks (hold A, press X: the camera's place and the three before it to `debug.txt`) and the free camera (hold A, press Y); `bench.c` writes the benchmark's result lines (`bench = 1`: every track raced once, the frame times in `debug.txt` and on the screen) |
+| `racedebug.c`, `ftime.c`, `mark.c`, `bench.c` | the debug build only (`debug.h`, `tools/fw.sh DEBUG=1`): `racedebug.c` is what the race loop of `main.c` calls for all of it (the timeline, the statistics, the log block, the debug keys, the benchmark) and does nothing in a release; `ftime.c` shows the race's frame times with the timing overlay and writes the statistics on `debug.txt`'s first line; `mark.c` has the marks (hold A, press X: the camera's place and the three before it to `debug.txt`) and the free camera (hold A, press Y); `bench.c` writes the benchmark's result lines (`bench = 1`: every track raced once, the frame times in `debug.txt` and on the screen) |
 | `console.c`, `screen.c`, `dlog.c`, `selftest.c`, `memtest.c`, `trap.c` | text drawing, the test band, the debug log, self-tests, the memory test, the trap handler |
 | `font8x8_basic.h` | font from [dhepper/font8x8](https://github.com/dhepper/font8x8) (public domain), unchanged |
 

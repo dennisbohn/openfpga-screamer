@@ -162,7 +162,6 @@ struct track_stats {
        space. */
     uint32_t faces, triangles, see_through, vertices;
     int32_t cam[3];                             /* camera X, Y, height */
-    uint32_t nearest;                           /* not measured: always 0xFFFFFFFF */
     /* CPU cycles (0 on the PC): picking the pieces in view and sorting them, each piece's place
        in view space, and handing the pieces on (the hook or the C models). */
     uint32_t cyc_cull, cyc_piece, cyc_out;

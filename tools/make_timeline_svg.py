@@ -2,7 +2,7 @@
 
 Usage: python -I tools/make_timeline_svg.py [log] [out.svg]      (run from the repository root)
   log      a simulation log (default build/sim/check.log) or the Pocket's debug.txt. The last
-           "timeline" block in it is drawn (main.c tl_log: the last whole frame before the logged one).
+           "timeline" block in it is drawn (racedebug.c, written by tl_log: the last whole frame before the logged one).
   out.svg  the picture (default docs/frame_timeline.svg)
 
 Each mark holds the cycles since the frame began and the counters as they stood (the block's first
@@ -226,7 +226,7 @@ def main():
         text(1060, yy2, f"{round(100 * c / BUDGET)} %", "v", "end")
     y = max(yy, yy2) + 34
     text(40, y, "Percent: share of the 20 ms of a frame. Measured with the firmware's time marks "
-                "(main.c, tl_mark) and the units' clock counters; drawn by "
+                "(racedebug.c, tl_mark) and the units' clock counters; drawn by "
                 "tools/make_timeline_svg.py.", "m")
     height = y + 24
 

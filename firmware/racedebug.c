@@ -90,12 +90,28 @@ void race_debug_init(void)
     dlog_keep(MARK_ROOM);
 }
 
-void race_debug_start(int track, int sim, uint32_t sim_race, uint32_t check_at, uint8_t fg, uint8_t bg)
+/* The index of the entry of the 256-colour palette that is nearest to the colour (r, g, b), by the squared
+   distance in RGB. */
+static uint8_t nearest(const uint32_t *palette, int r, int g, int b)
+{
+    uint32_t best = ~0u;
+    uint8_t n = 0;
+    for (int i = 0; i < 256; i++) {
+        int dr = (int)(palette[i] >> 16 & 255) - r, dg = (int)(palette[i] >> 8 & 255) - g,
+            db = (int)(palette[i] & 255) - b;
+        uint32_t d = (uint32_t)(dr * dr + dg * dg + db * db);
+        if (d < best) { best = d; n = (uint8_t)i; }
+    }
+    return n;
+}
+
+void race_debug_start(int track, int sim, uint32_t sim_race, uint32_t check_at, const uint32_t *palette)
 {
     ft_reset();
     mark_reset();
     race_dbg = (struct race_debug){ .bench_frames = race_dbg.bench_frames, .track = track, .sim = sim,
-                                    .sim_race = sim_race, .check_at = check_at, .fg = fg, .bg = bg };
+                                    .sim_race = sim_race, .check_at = check_at,
+                                    .fg = nearest(palette, 255, 255, 255), .bg = nearest(palette, 0, 0, 0) };
 }
 
 void race_debug_frame(uint32_t t_frame, uint32_t drawn)
@@ -295,15 +311,13 @@ static void log_track_frame(const struct track_stats *ts, uint32_t steps_now)
     dlog_dec((int32_t)d->fps);
     dlog_str(", frame ");                       /* the cycles of the previous frame */
     dlog_dec((int32_t)d->frame_cycles);
-    if (d->drawn == d->check_at) {              /* these two are logged once, at the checked frame */
+    if (d->drawn == d->check_at) {              /* the camera is logged once, at the checked frame */
         dlog_str(", camera ");
         dlog_dec(ts->cam[0]);
         dlog_char(' ');
         dlog_dec(ts->cam[1]);
         dlog_char(' ');
         dlog_dec(ts->cam[2]);
-        dlog_str(", nearest ");
-        dlog_dec((int32_t)ts->nearest);
     }
     float shx, shy, shh;
     if (car_shadow_at(&shx, &shy, &shh)) {

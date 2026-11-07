@@ -276,5 +276,5 @@
 <text x="940.0" y="612.0" class="v" text-anchor="end">28,853</text>
 <text x="1010.0" y="612.0" class="v" text-anchor="end">0.4 ms</text>
 <text x="1060.0" y="612.0" class="v" text-anchor="end">2 %</text>
-<text x="40.0" y="726.0" class="m">Percent: share of the 20 ms of a frame. Measured with the firmware&#x27;s time marks (main.c, tl_mark) and the units&#x27; clock counters; drawn by tools/make_timeline_svg.py.</text>
+<text x="40.0" y="726.0" class="m">Percent: share of the 20 ms of a frame. Measured with the firmware&#x27;s time marks (racedebug.c, tl_mark) and the units&#x27; clock counters; drawn by tools/make_timeline_svg.py.</text>
 </svg>

@@ -62,7 +62,6 @@ uint32_t frames_shown;            /* frames swapped in so far; trap.c prints it 
 #define INLINE_STEP static inline __attribute__((always_inline))
 
 static uint32_t results;        /* SYS_SIM bits 20..0, from the boot loader */
-static uint8_t col_bg = COL_BG, col_text = COL_TEXT, col_dim = COL_DIM, col_alert = COL_ALERT;
 
 #define TEX_FILE    ((const volatile uint8_t *)(SDRAM_BASE + 0x2100000))  /* the track image, up to 7 MB */
 
@@ -203,21 +202,6 @@ static void hw_piece(const struct gu_piece *g)
               (g->phase & 0x3FFF) << 16;
     GU_PUSH = g->refl;                                              /* phase and offsets of the reflection */
     piece_time_end();
-}
-
-/* Returns the index of the entry of the 256-colour palette pal that is nearest to the colour (r, g, b), by
-   the squared distance in RGB. Used to find colours for text on the track's palette. */
-static uint8_t nearest(const volatile uint32_t *pal, int r, int g, int b)
-{
-    uint32_t best = ~0u;
-    uint8_t n = 0;
-    for (int i = 0; i < 256; i++) {
-        int dr = (int)(pal[i] >> 16 & 255) - r, dg = (int)(pal[i] >> 8 & 255) - g,
-            db = (int)(pal[i] & 255) - b;
-        uint32_t d = (uint32_t)(dr * dr + dg * dg + db * db);
-        if (d < best) { best = d; n = (uint8_t)i; }
-    }
-    return n;
 }
 
 /* The lists of blitter commands that the frame in progress draws from. They are also used for the check
@@ -782,7 +766,7 @@ static int run_track(int n, int car, int replay)
     f.sim = SYS_FLAGS & FLAG_SIM;
     f.sim_race = f.sim ? slot_size(RACE_SLOT) : 0;
     f.check_at = 2 + f.sim_race;
-    race_debug_start(n, f.sim != 0, f.sim_race, f.check_at, col_text, col_bg);
+    race_debug_start(n, f.sim != 0, f.sim_race, f.check_at, f.pal);
     for (;;) {
         uint32_t st = race_input(&f, drawn);
         if (race_dbg.bench_frames && drawn > race_dbg.bench_frames)
@@ -1382,11 +1366,6 @@ static int race(int n, int car)
     car_lap_to_beat = choice.lap[(n - 1) % MENU_TRACKS].time[0];
     int placements = track_ready(n);
     if (!placements) return 0;
-    const volatile uint32_t *pal = (const volatile uint32_t *)track_palette();
-    col_bg = nearest(pal, 0, 0, 0);
-    col_text = nearest(pal, 255, 255, 255);
-    col_dim = nearest(pal, 120, 200, 120);
-    col_alert = nearest(pal, 230, 25, 178);
     dlog_str("track ");
     dlog_dec(n);
     dlog_str(": ");
