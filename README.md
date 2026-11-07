@@ -92,6 +92,8 @@ The defaults can be changed in the Pocket menu under *Core Controls*.
 | Pause | Start |
 | Quit race | Select |
 | Frame time display (in a race) | hold A, then press L and R |
+| Mark the camera's place in `debug.txt` (in a race) | hold A, then press X |
+| Free camera (in a race) | hold A, then press Y. D-pad: move and turn, L / R: down / up, Y / X: tilt, B: fast, Start: back |
 
 ## Building
 

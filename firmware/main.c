@@ -38,6 +38,7 @@
 #include "ftime.h"
 #include "config.h"
 #include "bench.h"
+#include "mark.h"
 
 uint32_t frames_shown;            /* read by the trap handler */
 
@@ -571,6 +572,11 @@ static int run_track(int n, int car, int replay)
     uint32_t swallow = 0;                       /* L and R held while A was: no gear change for them */
     int chord_before = 0;                       /* A, L and R were all down in the frame before */
     int car_v = CAR_VIEW_START;
+    uint32_t mark_show = 0;                     /* frames left to show the mark's number (mark.h) */
+    int mark_no = 0;
+    int free_cam = 0;                           /* the free camera (mark.h) */
+    struct track_cam free_c = { 0 }, last_cam = { 0 };
+    mark_reset();
     if (!replay) {
         rec_n = 0;
         rec_full = 0;
@@ -630,6 +636,18 @@ static int run_track(int n, int car, int replay)
         const int chord = (keys & (KEY_A | KEY_L | KEY_R)) == (KEY_A | KEY_L | KEY_R);
         if (chord && !chord_before) ft_overlay_toggle();
         chord_before = chord;
+        if (!bench_frames && (keys & KEY_A) && (press & KEY_X)) {      /* A held, X pressed: a mark (mark.h) */
+            mark_no = mark_save(n, free_cam ? 9 : car_v, drawn);
+            mark_show = 75;
+        }
+        if (!bench_frames && (keys & KEY_A) && (press & KEY_Y)) {      /* A held, Y pressed: the free camera */
+            free_cam = !free_cam;
+            free_c = last_cam;
+        }
+        if (free_cam && (press & KEY_START)) {                         /* START: the car's camera again */
+            free_cam = 0;
+            press &= ~KEY_START;
+        }
         if (keys & KEY_A) swallow |= keys & (KEY_L | KEY_R);
         swallow &= keys;
         if (ask) return play_again(st);
@@ -654,12 +672,13 @@ static int run_track(int n, int car, int replay)
         uint32_t steps_now = ask ? 0 : drawn ? (VID_FRAME(st) - last_frame) & 0xFFFF : 1;
         last_frame = VID_FRAME(st);
         if (steps_now > 4) steps_now = 4;
+        if (free_cam) steps_now = 0;            /* the race stands still while the camera is free */
         if (fade < 0x8000) {
             fade += (int32_t)steps_now * FADE_RACE;
             snd_fade(fade);
             music_fade(fade);
         }
-        if (press & KEY_X) car_view(++car_v);
+        if ((press & KEY_X) && !(keys & KEY_A)) car_view(++car_v);
         efx_cyc_objects = efx_cyc_radar = 0;
         uint32_t t_phys = rdcycle();
         for (uint32_t k = 0; k < steps_now && (!replay || rec_at < rec_n); k++) {
@@ -678,6 +697,7 @@ static int run_track(int n, int car, int replay)
             if ((sim_race || bench_frames) && !car_race()->on && k == steps_now - 1) steps_now++;    /* the simulation's countdown at once */
             if (car_race()->finished || car_race()->game_over) over++;
         }
+        if (free_cam) keys_before = keys;       /* (the physics loop keeps it, and it did not run) */
         t_phys = rdcycle() - t_phys;
         tl_mark(TL_PHYS);
         steps += steps_now;
@@ -686,6 +706,12 @@ static int run_track(int n, int car, int replay)
         struct track_cam cam;
         static struct track_object objs[MAX_OBJECTS];
         car_camera(&cam);
+        last_cam = cam;
+        if (free_cam) {
+            free_cam_step(&free_c, (keys & KEY_A) ? keys & ~(KEY_X | KEY_Y | KEY_L | KEY_R) : keys);   /* (A with them: marks etc.) */
+            cam = free_c;
+        }
+        if (!bench_frames) mark_push(&cam);
         int nobj = car_object(&cam, &objs[0]);
         nobj += opp_objects(objs + nobj, MAX_OBJECTS - nobj);
         nobj += ghost_objects(objs + nobj, MAX_OBJECTS - nobj);
@@ -779,6 +805,13 @@ static int run_track(int n, int car, int replay)
            of the simulation's race (the start lights' countdown run at once, 300 steps) is not a frame at all */
         if (!ask && !((sim_race || bench_frames) && drawn == 0)) {
             if (ft_overlay_on()) ft_draw(fb, ov_fg, ov_bg, track_far_scale(), track_lod_scale());
+            if (mark_show) {                    /* the mark's number, or that debug.txt had no room for it */
+                char t[20];
+                if (mark_no) fmt_udec(fmt_str(t, "MARK "), (uint32_t)mark_no); else fmt_str(t, "MARK: LOG FULL");
+                con_text(fb, 0, 3, t, ov_fg, ov_bg);
+                mark_show--;
+            }
+            if (free_cam) con_text(fb, 0, 4, "FREE CAMERA - START: BACK", ov_fg, ov_bg);
             struct ft_frame ff = { rdcycle() - t_frame - t_check, t_pre, ts.cyc_cull, ts.cyc_piece + ts.cyc_out, 0, rdcycle() - t_wait,
                                    ts.faces, ts.pieces, (uint32_t)car_marker() };
             ff.post = t_wait - t_frame - t_pre - ts.cyc_cull - ts.cyc_piece - ts.cyc_out;

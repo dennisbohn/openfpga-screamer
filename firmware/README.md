@@ -50,6 +50,7 @@ and package versions pinned); the script builds the image on first use. The resu
 | `files.c` | the list of the game's files with [OK] or [MISSING], shown when one is missing |
 | `ftime.c` | the race's frame times: the timing overlay and the statistics on `debug.txt`'s first line |
 | `config.c` | `screamer.cfg`: far, lod and bench, read at the start |
+| `mark.c` | marks (hold A, press X: the camera's place and the three before it to `debug.txt`) and the free camera (hold A, press Y) |
 | `bench.c` | the benchmark's result lines (`bench = 1`: every track raced once, the frame times in `debug.txt` and on the screen) |
 | `console.c`, `screen.c`, `dlog.c`, `selftest.c`, `memtest.c`, `trap.c` | text drawing, the test band, the debug log, self-tests, the memory test, the trap handler |
 | `font8x8_basic.h` | font from [dhepper/font8x8](https://github.com/dhepper/font8x8) (public domain), unchanged |
