@@ -128,17 +128,15 @@ syntax: `far = 2.0`, `lod = 2.5`, `lod = off`) replaces them at the start (`trac
 0.5 .. 3.0 and lod 0, 0.5 .. 4.0; its line goes to `debug.txt` ("config: screamer.cfg: far 2.00 lod 2.50"), the
 numbers in force are on the frame time display's second line, and values above 2.0 have not been measured (2.0 for
 both: 0 pixels differ from the C models on all six tracks, a race's frames 0.1 to 0.9 ms longer than at 1.5).
-`tiny = 1` (pixels across, 0 .. 8, default 0 = the original's picture) leaves out the placements whose sphere is projected
-smaller than that (`track_set_tiny`: one multiplication per placement in view, `rad < depth * tiny / 256`; counted in
-`track_stats.tiny`, shown on the display's third line). `bench = 1` (`firmware/bench.c`, `bench_run` in `main.c`) races track 1 .. 6 in turn with the first car, the options as set, the
+`bench = 1` (`firmware/bench.c`, `bench_run` in `main.c`) races track 1 .. 6 in turn with the first car, the options as set, the
 gas held (`bench_frames`: the simulation's race on the Pocket, the start lights' countdown at once, no keys read), 250
 pictures counted a track (the first is not), and writes one line a track to `debug.txt` (`bench track 3: far 2.00 lod
-2.00 tiny 1.00, 250 frames avg 15.0 max 19.2 late 0 faces 1724 / 1961 pieces 324 / 377 tiny 12`: faces and pieces as the
+2.00, 250 frames avg 15.0 max 19.2 late 0 faces 1724 / 1961 pieces 324 / 377`: faces and pieces as the
 mean a frame and as the longest frame had them) and to a screen that waits for a button. `dlog_keep` holds 1200 bytes of the
 log back for it, and the races write no timeline lines meanwhile. `tools/perf/bench_test.c` checks the lines on a known summary.
 `tools/perf/config_test.c` runs the parser on texts a player might write (a comma as the decimal point, a
 trailing x, comments, out-of-range numbers, unknown names), `tools/perf/ftime_test.c` the display's mean and its
-second line; both compile with the host's gcc and stub out the rest. For a test of one value without a file,
+third line; both compile with the host's gcc and stub out the rest. For a test of one value without a file,
 `-DFAR_SCALE=1.25f` on the compiler's line overrides the defaults, e.g. `DEFS="-DFAR_SCALE=1.0f -DLOD_SCALE=0"
 tools/render.sh ...`. For the PC tools `FARSCALE` and `LODSCALE` in the environment do the same without compiling
 again. `tools/perf/study_sweeps.sh` runs the study's matrix (every combination of the far plane's factor 1.0 /

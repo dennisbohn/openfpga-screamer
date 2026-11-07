@@ -13,13 +13,13 @@
 #define BENCH_LOG_BYTES 1200        /* kept free in debug.txt for the result (dlog_keep) */
 
 /* one track's line for debug.txt, with the settings in force:
-   "bench track 1: far 2.00 lod 2.00 tiny 1.00, 250 frames avg 16.6 max 21.6 late 2 faces 1730 / 1961 pieces 340 / 377 tiny 12" */
-void bench_log_row(int track, const struct ft_summary *s, float far_scale, float lod_scale, float tiny_px);
+   "bench track 1: far 2.00 lod 2.00, 250 frames avg 16.6 max 21.6 late 2 faces 1730 / 1961 pieces 340 / 377" */
+void bench_log_row(int track, const struct ft_summary *s, float far_scale, float lod_scale);
 
-/* the screen's line for one track (40 columns): " 1  16.6  21.6   2  1730  340   12", a track that could not be
+/* the screen's line for one track (40 columns): " 1  16.6  21.6   2   1730    340", a track that could not be
    set up as " 1  -" */
 void bench_screen_row(char *line, int track, const struct ft_summary *s);
-#define BENCH_SCREEN_HEAD   "T   avg   max late  faces pieces tiny"
+#define BENCH_SCREEN_HEAD   "T   avg   max late  faces pieces"
 
 /* the log's whole result: a line for each track that ran, after the header with the settings */
-void bench_log(const struct ft_summary *rows, const int *ok, float far_scale, float lod_scale, float tiny_px);
+void bench_log(const struct ft_summary *rows, const int *ok, float far_scale, float lod_scale);

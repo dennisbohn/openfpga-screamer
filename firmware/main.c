@@ -778,9 +778,9 @@ static int run_track(int n, int car, int replay)
            question's picture is not a frame of the race, the simulation's check is not the frame's work, and the first frame
            of the simulation's race (the start lights' countdown run at once, 300 steps) is not a frame at all */
         if (!ask && !((sim_race || bench_frames) && drawn == 0)) {
-            if (ft_overlay_on()) ft_draw(fb, ov_fg, ov_bg, track_far_scale(), track_lod_scale(), track_tiny());
+            if (ft_overlay_on()) ft_draw(fb, ov_fg, ov_bg, track_far_scale(), track_lod_scale());
             struct ft_frame ff = { rdcycle() - t_frame - t_check, t_pre, ts.cyc_cull, ts.cyc_piece + ts.cyc_out, 0, rdcycle() - t_wait,
-                                   ts.faces, ts.pieces, (uint32_t)car_marker(), ts.tiny };
+                                   ts.faces, ts.pieces, (uint32_t)car_marker() };
             ff.post = t_wait - t_frame - t_pre - ts.cyc_cull - ts.cyc_piece - ts.cyc_out;
             ft_frame(&ff);
         }
@@ -1407,8 +1407,7 @@ static void bench_show(const struct ft_summary *rows, const int *ok)
         fb_fill(fb, 0, 0, FB_W, 8, FG);
         con_text(fb, 1, 0, "SCREAMER - BENCHMARK", BG, FG);
         p = ft_scale(fmt_str(line, "far "), track_far_scale());
-        p = ft_scale(fmt_str(p, "  lod "), track_lod_scale());
-        ft_scale(fmt_str(p, "  tiny "), track_tiny());
+        ft_scale(fmt_str(p, "  lod "), track_lod_scale());
         con_text(fb, 1, 2, line, GREEN_, BG);
         con_text(fb, 1, 4, BENCH_SCREEN_HEAD, GREY_, BG);
         for (int t = 0; t < BENCH_TRACKS; t++) {
@@ -1416,7 +1415,7 @@ static void bench_show(const struct ft_summary *rows, const int *ok)
             con_text(fb, 1, 5 + t, line, ok[t] && rows[t].late ? RED_ : FG, BG);
         }
         con_text(fb, 1, 12, "avg, max: ms a frame; late: over 20 ms", GREY_, BG);
-        con_text(fb, 1, 13, "faces, pieces, tiny: mean a frame", GREY_, BG);
+        con_text(fb, 1, 13, "faces, pieces: mean a frame", GREY_, BG);
         con_text(fb, 1, 15, "More in debug.txt (Saves folder).", GREY_, BG);
         con_text(fb, 1, 17, "Press a button to go on.", FG, BG);
         VID_SWAP = 1;
@@ -1450,7 +1449,7 @@ static void bench_run(void)
         bench_frames = 0;
     }
     dlog_keep(0);
-    bench_log(rows, ok, track_far_scale(), track_lod_scale(), track_tiny());
+    bench_log(rows, ok, track_far_scale(), track_lod_scale());
     bench_show(rows, ok);
 }
 

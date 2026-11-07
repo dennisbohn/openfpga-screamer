@@ -30,12 +30,12 @@ static void same(const char *what, const char *got, const char *want)
 
 int main(void)
 {
-    struct ft_summary s = { 250, 1232550, 1603800, 2, 1730, 1961, 340, 377, 12 };
+    struct ft_summary s = { 250, 1232550, 1603800, 2, 1730, 1961, 340, 377 };
     char line[64];
-    bench_log_row(1, &s, 2.0f, 2.0f, 1.0f);
-    same("log row", logbuf, "bench track 1: far 2.00 lod 2.00 tiny 1.00, 250 frames avg 16.6 max 21.6 late 2 faces 1730 / 1961 pieces 340 / 377 tiny 12\n");
+    bench_log_row(1, &s, 2.0f, 2.0f);
+    same("log row", logbuf, "bench track 1: far 2.00 lod 2.00, 250 frames avg 16.6 max 21.6 late 2 faces 1730 / 1961 pieces 340 / 377\n");
     bench_screen_row(line, 1, &s);
-    same("screen row", line, "1  16.6  21.6    2   1730    340   12");
+    same("screen row", line, "1  16.6  21.6    2   1730    340");
     same("header and row have the same width", strlen(line) == strlen(BENCH_SCREEN_HEAD) ? "same" : "differ", "same");
     bench_screen_row(line, 4, 0);
     same("a track that did not run", line, "4  -");
@@ -43,7 +43,7 @@ int main(void)
     int ok[BENCH_TRACKS] = { 1, 1, 0, 1, 1, 1 };
     for (int i = 0; i < BENCH_TRACKS; i++) rows[i] = s;
     logbuf[0] = 0;
-    bench_log(rows, ok, 1.5f, 0.0f, 0.0f);
+    bench_log(rows, ok, 1.5f, 0.0f);
     int lines = 0;
     for (const char *p = logbuf; *p; p++) lines += *p == '\n';
     same("the whole log has a header and a line per track", lines == 1 + BENCH_TRACKS ? "7 lines" : "other", "7 lines");
@@ -57,13 +57,12 @@ int main(void)
         f.work = 742500 + 74250 * (uint32_t)i;   /* 10.0 .. 10.9 ms */
         f.faces = 1000 + 10 * (uint32_t)i;
         f.npieces = 200;
-        f.tiny = 5;
         ft_frame(&f);
     }
     ft_summary(&s);
-    printf("summary: %u frames avg %u max %u late %u faces %u / %u pieces %u / %u tiny %u\n", s.frames, s.avg, s.max, s.late,
-           s.faces_avg, s.faces_worst, s.pieces_avg, s.pieces_worst, s.tiny_avg);
+    printf("summary: %u frames avg %u max %u late %u faces %u / %u pieces %u / %u\n", s.frames, s.avg, s.max, s.late,
+           s.faces_avg, s.faces_worst, s.pieces_avg, s.pieces_worst);
     fails += !(s.frames == 10 && s.avg == 742500 + 74250 * 9 / 2 + 0 && s.max == 742500 + 74250 * 9 && s.late == 0 &&
-               s.faces_avg == 1045 && s.faces_worst == 1090 && s.pieces_avg == 200 && s.tiny_avg == 5);
+               s.faces_avg == 1045 && s.faces_worst == 1090 && s.pieces_avg == 200);
     return fails ? 1 : 0;
 }

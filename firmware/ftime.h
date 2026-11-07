@@ -23,14 +23,13 @@ struct ft_frame {
     uint32_t wait;                  /* waiting for the rasterizer (w) */
     uint32_t faces, npieces;        /* faces looked at, pieces handed on */
     uint32_t where;                 /* where on the track: the marker the car reached */
-    uint32_t tiny;                  /* placements left out for being tiny (track_set_tiny) */
 };
 
 /* what a run of frames (since ft_reset) came to: the benchmark's result for a track. Cycles for avg and max, counts
-   for the rest; faces and pieces as the mean per frame and as the longest frame had them, tiny the mean left out */
+   for the rest; faces and pieces as the mean per frame and as the longest frame had them */
 struct ft_summary {
     uint32_t frames, avg, max, late;
-    uint32_t faces_avg, faces_worst, pieces_avg, pieces_worst, tiny_avg;
+    uint32_t faces_avg, faces_worst, pieces_avg, pieces_worst;
 };
 void ft_summary(struct ft_summary *s);
 /* cycles as milliseconds with one decimal ("12.3") and a factor with two ("1.50", "off" for 0), written at p; the end */
@@ -44,5 +43,5 @@ void ft_frame(const struct ft_frame *f);
 /* the race so far as debug.txt's first line carries it, after p: " avg 11.2 max 17.9 late 0 | a1.3 c1.4 s7.1 h0.3 w0.0 f873 p219 m5" */
 char *ft_head(char *p);
 /* the overlay (three lines, top left) into the framebuffer fb, in colours fg on bg; the numbers are the frames up to the last;
-   the third line gives the settings in force (screamer.cfg: far, lod, tiny) and how many placements the last frame left out */
-void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg, float far_scale, float lod_scale, float tiny_px);
+   the third line gives the settings in force (screamer.cfg: far and lod) */
+void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg, float far_scale, float lod_scale);

@@ -9,12 +9,12 @@
 
 static struct {
     uint64_t sum;                   /* since ft_reset: all the frames' work */
-    uint64_t sum_faces, sum_pieces, sum_tiny;
+    uint64_t sum_faces, sum_pieces;
     uint32_t n, max, late;
     struct ft_frame worst;          /* the longest of them */
     int on;                         /* the overlay */
     uint32_t o_max, o_late;         /* since it was switched on */
-    uint32_t o_last, o_faces, o_pieces, o_tiny;
+    uint32_t o_last, o_faces, o_pieces;
     uint32_t ring[RING], ring_at, ring_n;
     uint64_t ring_sum;
 } ft;
@@ -22,7 +22,7 @@ static struct {
 void ft_reset(void)
 {
     ft.sum = ft.n = ft.max = ft.late = 0;
-    ft.sum_faces = ft.sum_pieces = ft.sum_tiny = 0;
+    ft.sum_faces = ft.sum_pieces = 0;
     ft.worst = (struct ft_frame){ 0 };
 }
 
@@ -37,7 +37,6 @@ void ft_summary(struct ft_summary *s)
     s->faces_worst = ft.worst.faces;
     s->pieces_avg = (uint32_t)(ft.sum_pieces / n);
     s->pieces_worst = ft.worst.npieces;
-    s->tiny_avg = (uint32_t)(ft.sum_tiny / n);
 }
 
 void ft_overlay_toggle(void)
@@ -58,7 +57,6 @@ void ft_frame(const struct ft_frame *f)
     ft.late += f->work > FT_LATE;
     ft.sum_faces += f->faces;
     ft.sum_pieces += f->npieces;
-    ft.sum_tiny += f->tiny;
     if (f->work > ft.max) {
         ft.max = f->work;
         ft.worst = *f;
@@ -68,7 +66,6 @@ void ft_frame(const struct ft_frame *f)
     ft.o_last = f->work;
     ft.o_faces = f->faces;
     ft.o_pieces = f->npieces;
-    ft.o_tiny = f->tiny;
     ft.ring_sum += f->work;                     /* (two steps: the difference of two uint32_t is not negative) */
     ft.ring_sum -= ft.ring[ft.ring_at];
     ft.ring[ft.ring_at] = f->work;
@@ -116,7 +113,7 @@ char *ft_scale(char *p, float v)
     return p;
 }
 
-void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg, float far_scale, float lod_scale, float tiny_px)
+void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg, float far_scale, float lod_scale)
 {
     char line[CON_COLS + 1], *p;
     if (!ft.ring_n) return;
@@ -128,9 +125,7 @@ void ft_draw(volatile uint8_t *fb, uint8_t fg, uint8_t bg, float far_scale, floa
     p = fmt_udec(fmt_str(line, "faces "), ft.o_faces);
     fmt_udec(fmt_str(p, "  pieces "), ft.o_pieces);
     con_text(fb, 0, 1, line, fg, bg);
-    p = ft_scale(fmt_str(line, "F "), far_scale);          /* (40 columns: "F 2.00  L 2.50  tiny 1.00: 137 out") */
-    p = ft_scale(fmt_str(p, "  L "), lod_scale);
-    p = ft_scale(fmt_str(p, "  tiny "), tiny_px);
-    if (tiny_px > 0.0f) fmt_udec(fmt_str(p, ": "), ft.o_tiny);
+    p = ft_scale(fmt_str(line, "F "), far_scale);          /* ("F 2.00  L 2.50") */
+    ft_scale(fmt_str(p, "  L "), lod_scale);
     con_text(fb, 0, 2, line, fg, bg);
 }
