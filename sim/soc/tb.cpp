@@ -1,43 +1,81 @@
-// soc testbench: the CPU system with its firmware and a model of the SDRAM, loaded the way
-// the Pocket loads it, checked the way docs/soc.md and docs/memory.md describe.
+// SoC testbench: the CPU system with its firmware (soc.v, the framebuffer and video_out, wired as in
+// core_top, plus the I2S output) on a model of the SDRAM. It loads the core the way the Pocket does
+// and checks the result the way docs/soc.md and docs/memory.md describe.
 //
 // Usage: Vsoc_system <firmware.bin> <out prefix> [timeout in frames, default 80]
 //                    [expected SYS_SIM in hex, default 80001FFF]
-// Writes <prefix>.rgb (raw 320x200 RGB of the checked frame) and <prefix>_log.txt
-// (the debug log as the APF would save it as debug.txt); <prefix>_reset.* the same for
-// the run after the resets.
+//   Started by tools/sim.sh soc ...; tools/simcheck.sh runs it with the game's files and
+//   tools/simsum.py summarises its log.
+// Output: <prefix>.rgb (raw 320x200 RGB of the checked frame) and <prefix>_log.txt (the debug log as
+//   the APF would save it as debug.txt); <prefix>_reset.* the same for the run after the resets.
+//   The last line is PASS or FAIL. The exit status is 0 (pass), 1 (fail) or 2 (usage or file error).
 //
-// Loading like the APF: the core held in reset, a bridge word at most every 88 clocks
-// (io_bridge_peripheral.v), firmware.bin to bridge address 0, the debug log slot filled
-// with 0xFF (debug.txt does not exist yet; the core must ignore it), the slot table (per
-// slot of core/data.json its id and file size, deferload slots too), then the wait for the
-// acknowledge core_top gives a slot write once the SDRAM is ready. Then reset is released.
-// program.bin (next to firmware.bin) is deferload: the boot loader asks for it after the
-// SDRAM tests (ds_read, core_bridge_cmd's target command 0x0180) and the testbench answers
-// like the APF: done low, the words over the bridge, done high with the result (2 for a
-// slot without a file). The boot loader checks program.bin and starts it. SIM_GAME names
-// a folder with the game's original files: the testbench serves them as the slots
-// core/data.json gives their names, and the program builds the track from them and drives
-// the race instead of the list of missing files. The CD image SCREAM.gog (383 MB) is not read whole:
-// the part asked for is read from the file and sent at the APF's measured rate while the
-// simulation goes on, as the music streams it (firmware/music.c).
+// Loading, as the APF does it
+//   1. The core is held in reset. The testbench writes at most one bridge word every 88 clocks, the
+//      APF's worst case (io_bridge_peripheral.v).
+//   2. firmware.bin goes to bridge address 0. The debug log slot is filled with 0xFF: debug.txt does
+//      not exist yet, and the core must ignore the load.
+//   3. The slot table follows: for each slot of core/data.json its id and the size of its file,
+//      the deferload slots too.
+//   4. The testbench waits until the SDRAM is ready (the point where core_top acknowledges a slot
+//      write) and releases reset.
+//   program.bin (next to firmware.bin) is a deferload slot. The boot loader asks for it after the SDRAM
+//   tests (ds_read, core_bridge_cmd's target command 0x0180). The testbench answers like the APF:
+//   done low, the words over the bridge, done high with the result (2 for a slot without a file).
+//   The boot loader checks program.bin and starts it.
 //
-// Run until the firmware reports through SYS_SIM, then capture two more frames and check:
-// SYS_SIM, the model error counts and the longest refresh gap, the debug log's slot size
-// and header line, and print the log. A normal run also checks the test band of the last
-// frame and that program.bin passed its check. Then two resets as when the firmware is reloaded
-// from the menu (only firmware.bin is loaded again): one while buffer 1 is in front (the
-// swap request, the buffer in front and SYS_SIM must be 0 in reset), one in the middle of
-// the memory test's SDRAM traffic. The last run must pass like the first with the
-// program.bin of the first load and swap nothing the CPU did not ask for. For
-// an expected trap (0xC0000000 | mcause, a fault test firmware) instead of the test band
-// the trap handler's report: its box on screen and its TRAP line in the log. Any other
-// expected value is a negative test (a fault built into a memory model, SIM_DEFINES in
-// tools/sim.sh): SYS_SIM must show exactly those tests failed, the log must report a
-// failure, and the resets are left out.
+// The game's files (SIM_GAME)
+//   SIM_GAME names a folder with the game's original files. The testbench serves them as the data
+//   slots whose file names core/data.json gives. The program then builds the track from them and
+//   drives the race, instead of printing the list of missing files. The CD image SCREAM.gog (383 MB)
+//   is not read whole: the part the core asks for is read from the file and sent at the rate the
+//   APF was measured to send (one word per 220 clocks) while the simulation goes on, as the music
+//   streams it (firmware/music.c).
 //
-// SIM_WAV=<file> writes the I2S output of the whole run (decoded from LRCK, the bit clock and the
-// data, 48 kHz stereo) to that WAV file (tools/simcheck.sh: build/sim/audio.wav).
+// Run and checks
+//   The testbench runs until the firmware reports through SYS_SIM (bit 31 = done, bit 30 = trap,
+//   see docs/soc.md), captures two more frames and checks:
+//   - SYS_SIM has the expected value;
+//   - the SDRAM model counted no errors, and its longest gap between two refreshes is at most 580
+//     clocks (7.8 us);
+//   - the last whole frame: the test band, the title bar of the list of files, or the trap box;
+//   - the debug log slot's size in the slot table, and the log itself, read over the bridge: it is
+//     printed, must start with its header line and must contain the lines the mode expects;
+//   - with the game's files, the size and the first words of CHOICE.DAT in the SDRAM.
+//   A normal run also checks that program.bin passed its check.
+//
+// Modes, by the expected SYS_SIM
+//   0x80001FFF (default): a normal run. Two resets follow, as when the firmware is reloaded from
+//     the menu (only firmware.bin is loaded again): one while buffer 1 is in front (the swap
+//     request, the buffer in front and SYS_SIM must be 0 in reset), one in the middle of the
+//     memory test's SDRAM traffic. The last run must pass like the first, with the program.bin of
+//     the first load, and must swap nothing the CPU did not ask for.
+//   0xC0000000 | mcause: an expected trap (a fault test firmware). Instead of the test band the trap
+//     handler's report is checked: its box on the screen and its TRAP line in the log.
+//   Any other value: a negative test (a fault built into a memory model, SIM_DEFINES in
+//     tools/sim.sh). SYS_SIM must show exactly the tests that fail, the log must report a failure,
+//     and the resets are left out.
+//
+// Environment variables (all optional)
+//   SIM_GAME=<folder>     the game's original files, see above
+//   SIM_CFG=<file>        this screamer.cfg instead of the one in SIM_GAME, so that runs side by side
+//                         can differ
+//   SIM_QUICK=1           one run without the two resets, about half the time (tools/simcheck.sh)
+//   SIM_WAV=<file>        the I2S output of the whole run, decoded from LRCK, the bit clock and the data,
+//                         as a 48 kHz stereo WAV file (tools/simcheck.sh: build/sim/audio.wav)
+//   SIM_KEYS=<hex>        the buttons (cont1_key, bit names in firmware/hw.h) held from the program's
+//                         first read of a game file on
+//   The next four reach the firmware through extra entries of the slot table, which core/data.json does
+//   not have (slots 27 to 30):
+//   SIM_IMAGE=<file>      the finished track image as slot 30; the firmware takes it instead of
+//                         building the image (tools/simcheck.sh)
+//   SIM_RACE_FRAMES=<n>   slot 29 with the size n: the firmware runs the start lights' countdown at
+//                         once and checks and reports the n-th frame after the green light, not the
+//                         third (firmware/main.c)
+//   SIM_TRACK=<n>         slot 28 with the size n: the track the firmware races (none: track 1; the
+//                         simulation has no track screen)
+//   SIM_MENU=<1|2>        slot 27 with that size: the track screen (1) or the car screen (2) instead
+//                         of the race, its third frame checked against the C models
 
 #include <algorithm>
 #include <cstdio>
@@ -50,8 +88,9 @@
 #include "Vsoc_system.h"
 
 static const int W = 320, H = 200;
-static const uint64_t HALF_74 = 6734, HALF_VID = 40690;    // ps
-static const uint64_t FRAME_PS = 480ull * 512 * 2 * HALF_VID;   // 50 Hz
+// Half periods in ps: clk_74a is 74.25 MHz, clk_vid is 12.288 MHz.
+static const uint64_t HALF_74 = 6734, HALF_VID = 40690;
+static const uint64_t FRAME_PS = 480ull * 512 * 2 * HALF_VID;   // one video frame, 50 Hz
 static const int BRIDGE_GAP = 88;                           // clocks per bridge word, APF worst case
 
 static bool read_file(const std::string &path, std::vector<uint8_t> &out) {
@@ -83,8 +122,9 @@ static uint64_t file_size(const std::string &path) {
     return n > 0 ? uint64_t(n) : 0;
 }
 
-// core/data.json's slots in its order (the order of the APF's slot table): id, file name,
-// nonvolatile (the saves: no file in SIM_GAME, as on a Pocket that has none yet)
+// The slots of core/data.json in its order, which is the order of the APF's slot table: id, file
+// name, and whether the slot is nonvolatile. Nonvolatile slots are the saves; they get no file
+// from SIM_GAME, as on a Pocket that has none yet. This is a plain text search, not a JSON parser.
 struct Slot { uint32_t id; std::string name; bool save; };
 static std::vector<Slot> data_slots(const char *path) {
     std::vector<uint8_t> raw;
@@ -97,7 +137,8 @@ static std::vector<Slot> data_slots(const char *path) {
         std::string o = s.substr(p, e - p);
         Slot slot{0, "", o.find("\"nonvolatile\"") != std::string::npos};
         size_t k = o.find("\"id\"");
-        if (k != std::string::npos) slot.id = uint32_t(strtoul(o.c_str() + o.find(':', k) + 1, nullptr, 0));
+        if (k != std::string::npos)
+            slot.id = uint32_t(strtoul(o.c_str() + o.find(':', k) + 1, nullptr, 0));
         k = o.find("\"filename\"");
         if (k != std::string::npos) {
             size_t q = o.find('"', o.find(':', k)) + 1;
@@ -109,8 +150,11 @@ static std::vector<Slot> data_slots(const char *path) {
     return out;
 }
 
-// The I2S output as a WAV file: a bit on each rising edge of the bit clock, a half's 16 bits
-// after its first (the one LRCK changed before), the left half while LRCK is low
+// The I2S output as a WAV file (16 bit stereo, 48 kHz). clock() is called at every rising edge of
+// clk_74a and takes a data bit at each rising edge of the bit clock. The left half of a frame is
+// sent while LRCK is low. The bit at the edge where LRCK changes is skipped (I2S sends the data one
+// bit clock later); the next 16 bits, most significant first, are the sample. The WAV header is
+// written when the object is destroyed at the end of the run, when the frame count is known.
 struct Wav {
     FILE *f = nullptr;
     uint32_t frames = 0, word = 0;
@@ -154,11 +198,13 @@ struct Wav {
 };
 static Wav wav;
 
+// The simulated core and the APF's side of its interfaces: the clocks, the bridge and the data slots.
 struct Sim {
     Vsoc_system top;
-    uint64_t now = 0, next_74 = HALF_74, next_vid = HALF_VID;
+    uint64_t now = 0, next_74 = HALF_74, next_vid = HALF_VID;      // time in ps
 
-    // one clock edge, whichever is next; returns 1 for a rising clk_74a edge, 2 for a rising clk_vid edge
+    // One clock edge, whichever is next. Returns 1 for a rising clk_74a edge, 2 for a rising
+    // clk_vid edge, else 0. The I2S decoder is fed at every rising clk_74a edge.
     int step() {
         if (next_74 <= next_vid) {
             now = next_74; next_74 += HALF_74;
@@ -174,15 +220,17 @@ struct Sim {
     }
     void rise_74(int n = 1) { while (n > 0) if (step() == 1) n--; }
 
+    // One bridge write, waiting gap - 1 clocks first, so that writes come at most every gap clocks.
     void bridge_write(uint32_t addr, uint32_t data, int gap = BRIDGE_GAP) {
         rise_74(gap - 1);
         top.bridge_addr = addr; top.bridge_wr_data = data; top.bridge_wr = 1; top.eval();
         rise_74();
         top.bridge_wr = 0; top.eval();
     }
-    // one read transaction as io_bridge_peripheral.v does it, at most every BRIDGE_GAP clocks:
-    // the address, 4 clocks, the answer is sampled, then the bridge_rd pulse. The answer
-    // belongs to the previous read (from the SDRAM it may take most of the gap).
+    // One read transaction as io_bridge_peripheral.v does it, at most every BRIDGE_GAP clocks: the
+    // address, 4 clocks, the answer is sampled, then the bridge_rd pulse. The answer belongs to
+    // the previous read (from the SDRAM it may take most of the gap), so the first read of a series
+    // returns nothing useful.
     uint32_t bridge_read(uint32_t addr) {
         rise_74(BRIDGE_GAP - 7);
         top.bridge_addr = addr; top.eval();
@@ -194,35 +242,34 @@ struct Sim {
         rise_74(2);
         return answer;
     }
-    // a file to a bridge address as the APF sends it: big-endian words, the first file byte
-    // in bits 31:24
+    // A file to a bridge address as the APF sends it: big-endian words, the first file byte in
+    // bits 31:24. The size must be a multiple of 4.
     void load(uint32_t base, const std::vector<uint8_t> &f, int gap = BRIDGE_GAP) {
         for (size_t a = 0; a < f.size(); a += 4)
             bridge_write(base + a, uint32_t(f[a]) << 24 | f[a + 1] << 16 | f[a + 2] << 8 | f[a + 3], gap);
     }
 
-    // the APF's side of a data slot read the core asked for: the file of slot id, program.bin
-    // (slot 2) or one of the game's files (sent faster than the APF would, 2 MB take long).
-    // Result 2 (error or out of range) for a slot without a file and for a read past the
-    // file's end, the strict reading of the APF's docs; length 0xFFFFFFFF is the rest of the
-    // file, its last word filled up with zeros. The clocks it takes do not count as frames
-    // of run().
-    std::map<uint32_t, std::vector<uint8_t>> files;     // by slot id
+    std::map<uint32_t, std::vector<uint8_t>> files;     // the files to serve, by slot id
     bool race = false;                                  // every game file is there
-    int slot_reads = 0;
+    int slot_reads = 0;                                 // data slot reads the core has made
     uint32_t keys = 0;                                  // SIM_KEYS, held from the program's first read
 
-    // The CD image: read from the file where asked, its words over the bridge at the APF's
-    // measured rate (1.3 MB/s: one every 220 clocks) while run() goes on (cd_tick); done goes
-    // high after the last. A read still running when run() ends is finished at once (cd_finish).
+    // The CD image is not loaded whole. The part the core asks for is read from the file and its
+    // words go over the bridge at the APF's measured rate (1.3 MB/s: one word every 220 clocks)
+    // while run() goes on (cd_tick). Done goes high after the last word. A read still running
+    // when run() ends is finished at once (cd_finish).
     static const int CD_GAP = 220;
     std::string cd_path;
-    uint32_t cd_id = 0, cd_addr = 0;
+    uint32_t cd_id = 0, cd_addr = 0;                    // the slot of the image, the target address
     uint64_t cd_size = 0;
-    std::vector<uint8_t> cd_part;
-    size_t cd_k = 0;
-    int cd_wait = 0, cd_state = 0;                      // 0 none, 1 sending, 2 sent, 3 done: until ds_read falls
+    std::vector<uint8_t> cd_part;                       // the bytes of the read in progress
+    size_t cd_k = 0;                                    // the next byte to send
+    int cd_wait = 0, cd_state = 0;                      // clocks to the next step; the state:
+                                                        // 0 none, 1 sending, 2 sent, 3 done
+                                                        // (until ds_read falls)
     bool cd_wr = false;                                 // a word is on the bridge for the next edge
+
+    // One clk_74a edge of a CD image read in progress (called by run() while cd_state is not 0).
     void cd_tick() {
         if (cd_wr) { top.bridge_wr = 0; top.eval(); cd_wr = false; }
         if (cd_state == 1 && --cd_wait <= 0) {
@@ -241,14 +288,23 @@ struct Sim {
             cd_state = 0;
         }
     }
+    // Ends a CD image read at once: sends the rest of the words fast, then reports done.
     void cd_finish() {
         if (cd_wr) { rise_74(); top.bridge_wr = 0; top.eval(); cd_wr = false; }
-        if (cd_state == 1) load(cd_addr + uint32_t(cd_k), std::vector<uint8_t>(cd_part.begin() + cd_k, cd_part.end()), 12);
+        if (cd_state == 1)
+            load(cd_addr + uint32_t(cd_k), std::vector<uint8_t>(cd_part.begin() + cd_k, cd_part.end()), 12);
         if (cd_state == 1 || cd_state == 2) { rise_74(8); top.ds_err = 0; top.ds_done = 1; top.eval(); }
         if (cd_state) while (top.ds_read) rise_74();
         cd_state = 0;
     }
 
+    // The APF's side of a data slot read the core has asked for (ds_read). The slot id says which
+    // file: program.bin (slot 2) or one of the game's files. The CD image is started and then sent
+    // by cd_tick. Other files are sent at once and faster than the APF would (2 MB take long).
+    // The result is 2 (error or out of range) for a slot without a file and for a read past the
+    // end of the file, the strict reading of the APF's docs. The length 0xFFFFFFFF means the rest
+    // of the file; the last word is filled up with zeros. The clocks this takes do not count as
+    // frames of run().
     void serve_read() {
         top.ds_done = 0; top.eval();
         rise_74(8);
@@ -258,7 +314,8 @@ struct Sim {
             uint64_t end = len == 0xFFFFFFFFu ? cd_size : uint64_t(off) + len;
             if (off < cd_size && end <= cd_size && read_part(cd_path, off, end - off, cd_part)) {
                 while (cd_part.size() % 4) cd_part.push_back(0);
-                printf("data slot read %u: %u bytes from %u to 0x%08x, sent while the simulation runs\n", id, len, off, addr);
+                printf("data slot read %u: %u bytes from %u to 0x%08x, sent while the simulation runs\n",
+                       id, len, off, addr);
                 slot_reads++;
                 cd_addr = addr;
                 cd_k = 0;
@@ -285,11 +342,13 @@ struct Sim {
         while (top.ds_read) rise_74();
     }
 
-    // Run until SYS_SIM says done, then two more frames; returns the frames run and leaves
-    // the last whole frame in last. done = false at the timeout. unasked: the buffer in
-    // front changed before the CPU's swap request changed (since the call). max_clocks
-    // stops the run early (for a reset in the middle).
-    int run(int timeout_frames, std::vector<uint8_t> &last, bool &done, bool &unasked, uint64_t max_clocks = 0) {
+    // Runs until SYS_SIM says done, then for two more frames. Returns the number of video frames
+    // run and leaves the last whole frame (raw RGB) in last. done is false if the timeout came
+    // first. unasked becomes true if the buffer in front changed before the CPU's swap request had
+    // changed since the call began, i.e. a swap the CPU did not ask for. max_clocks, if not 0,
+    // ends the run early after that many clk_74a clocks (for a reset in the middle).
+    int run(int timeout_frames, std::vector<uint8_t> &last, bool &done, bool &unasked,
+            uint64_t max_clocks = 0) {
         std::vector<uint8_t> frame;
         int frames = 0, done_at = -1, prev_vs = top.vid_vs, prev_front = top.front, req0 = top.swap_req;
         bool asked = false;
@@ -324,14 +383,19 @@ struct Sim {
     }
 };
 
+// The colour of palette entry i in the test band, as the firmware sets the palette up
+// (docs/soc.md, "Test strip").
 static uint32_t pal_formula(int i) {
     return uint32_t(i) << 16 | uint32_t(255 - i) << 8 | uint32_t((i * 3) & 255);
 }
 
-// The checks after a run: SYS_SIM, the models, the test band or the trap box, the slot
-// size, the log. Writes <prefix>.rgb and <prefix>_log.txt; returns the number of failures.
-static int check_run(Sim &s, const std::string &prefix, int frames, bool done, const std::vector<uint8_t> &last,
-                     uint32_t expect, int timeout_frames, const char *slot_line) {
+// The checks after one run: SYS_SIM, the SDRAM model, the last frame, the slot sizes and the log.
+// frames, done and last come from Sim::run, expect is the expected SYS_SIM, slot_line is a line the
+// log must contain (nullptr: none). Writes <prefix>.rgb and <prefix>_log.txt, prints a line for
+// each failure and returns the number of failed checks.
+static int check_run(Sim &s, const std::string &prefix, int frames, bool done,
+                     const std::vector<uint8_t> &last, uint32_t expect, int timeout_frames,
+                     const char *slot_line) {
     Vsoc_system &top = s.top;
     bool expect_trap = (expect & 0xC0000000u) == 0xC0000000u;
     bool negative = !expect_trap && expect != 0x80001FFFu;
@@ -340,20 +404,30 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
     printf("SYS_SIM = 0x%08x after %d frames, expected 0x%08x\n", st, frames, expect);
     if (!done) { printf("FAIL: the firmware never reported (timeout %d frames)\n", timeout_frames); fails++; }
     else if (st == expect) printf(expect_trap ? "trap as expected, mcause %u\n"
-                                  : negative ? "exactly the expected tests fail\n" : "all tests pass\n", st & 0x3FFFFFFFu);
+                                  : negative ? "exactly the expected tests fail\n" : "all tests pass\n",
+                                  st & 0x3FFFFFFFu);
     else if (st & 0x40000000u) { printf("FAIL: trap, mcause %u\n", st & 0x3FFFFFFFu); fails++; }
     else if (expect_trap) { printf("FAIL: no trap\n"); fails++; }
-    else { printf("FAIL: failed test bits 0x%08x (see docs/soc.md)\n", ~st & expect & 0x3FFFFFFFu); fails++; }
+    else {
+        printf("FAIL: failed test bits 0x%08x (see docs/soc.md)\n", ~st & expect & 0x3FFFFFFFu);
+        fails++;
+    }
 
     printf("model errors: SDRAM %u; longest SDRAM refresh gap %u clocks\n",
            top.sdram_errors, top.sdram_max_refresh);
     if (top.sdram_errors) { printf("FAIL: the memory model reported errors\n"); fails++; }
     if (top.sdram_max_refresh > 580) { printf("FAIL: refresh gap above 7.8 us (580 clocks)\n"); fails++; }
 
-    // the last whole frame: the test band (the boot loader's screen), the white title bar of the
-    // list of the game's files (the program's screen without them, firmware/files.c: its right
-    // end, where there is no text), or the trap handler's box (rows 18..24 in COL_ALERT; text
-    // row 22 is empty); the race (the game's files) draws no band
+    // The last whole frame shows one of three things. The lambda compares a strip of 8 pixel rows,
+    // from row y0 and column x0 up to x1, with the palette formula (band) or one fixed colour.
+    // - The test band, the boot loader's screen: rows 0..7, column x in the colour of palette
+    //   entry x, for x < 256.
+    // - The white title bar of the list of the game's files, which is the program's screen when
+    //   the files are missing (firmware/files.c): rows 0..7, columns 256 to 319, where the bar has
+    //   no text. If it is there, the band is not compared.
+    // - The trap handler's box: rows 18..24 of text in COL_ALERT (colour index 230). Text row 22
+    //   is empty, so its 8 pixel rows are all in that colour.
+    // The race (the game's files) draws no band, so nothing is checked.
     if (last.size() == size_t(W * H * 3)) {
         bool race = s.race && !expect_trap;
         auto wrong = [&](int y0, int x0, int x1, bool band, uint32_t fixed) {
@@ -363,7 +437,10 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
                     uint32_t want = band ? pal_formula(x) : fixed;
                     const uint8_t *p = &last[(y * W + x) * 3];
                     uint32_t got = uint32_t(p[0]) << 16 | p[1] << 8 | p[2];
-                    if (got != want) { if (bad < 5) printf("pixel %d,%d: %06x, expected %06x\n", x, y, got, want); bad++; }
+                    if (got != want) {
+                        if (bad < 5) printf("pixel %d,%d: %06x, expected %06x\n", x, y, got, want);
+                        bad++;
+                    }
                 }
             return bad;
         };
@@ -389,12 +466,12 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
         fclose(f);
     } else { printf("FAIL: no whole frame captured\n"); fails++; }
 
-    // the slot table entry and the log, read through the bridge as the APF does on exit
+    // The size the slot table holds for the debug log, then the log itself.
     printf("debug log slot size in the slot table: %u\n", top.log_slot_size);
     if (top.log_slot_size != 4096) { printf("FAIL: expected 4096\n"); fails++; }
-    // CHOICE.DAT (the game's files there: the program wrote the game's defaults at boot), as
-    // the APF saves it from the SDRAM: its size in the slot table, its first words (car 0,
-    // track 0, the name GRA)
+    // CHOICE.DAT, as the APF saves it from the SDRAM. In a race the program has written the game's
+    // defaults at boot. Checked: its size in the slot table and its first words, read through the
+    // bridge (car 0, track 0, the name GRA).
     if (s.race && !expect_trap) {
         printf("CHOICE.DAT slot size in the slot table: %u\n", top.choice_slot_size);
         if (top.choice_slot_size != 1120) { printf("FAIL: expected 1120\n"); fails++; }
@@ -403,12 +480,16 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
         int bad = 0;
         for (uint32_t k = 0; k < 3; k++) {
             uint32_t w = s.bridge_read(0x13F00004 + 4 * k);
-            if (w != want[k]) { printf("CHOICE.DAT word %u through the bridge: %08x, expected %08x\n", k, w, want[k]); bad++; }
+            if (w != want[k]) {
+                printf("CHOICE.DAT word %u through the bridge: %08x, expected %08x\n", k, w, want[k]);
+                bad++;
+            }
         }
         printf("CHOICE.DAT through the bridge from the SDRAM: %s\n", bad ? "FAIL" : "as written");
         fails += bad != 0;
     }
-    // like the APF saving the slot: one read more than words, the first answer dropped
+    // The log is read like the APF saves the slot: one read more than there are words, the first
+    // answer dropped.
     std::string log;
     s.bridge_read(0x00100000);
     for (uint32_t a = 4; a <= 4096; a += 4) {
@@ -424,32 +505,53 @@ static int check_run(Sim &s, const std::string &prefix, int frames, bool done, c
     size_t end = log.find('\0');
     std::string text = log.substr(0, end);
     printf("---- debug.txt (%zu bytes of text) ----\n%s\n---- end ----\n", text.size(), text.c_str());
-    if (end == 0 || end == std::string::npos) { printf("FAIL: the log is empty or not terminated\n"); fails++; }
-    else if (log.compare(0, 16, "Screamer Pocket ") != 0) { printf("FAIL: the log does not start with its header line\n"); fails++; }
+    if (end == 0 || end == std::string::npos) {
+        printf("FAIL: the log is empty or not terminated\n");
+        fails++;
+    } else if (log.compare(0, 16, "Screamer Pocket ") != 0) {
+        printf("FAIL: the log does not start with its header line\n");
+        fails++;
+    }
     if (expect_trap) {
         char line[32];
         snprintf(line, sizeof line, "TRAP mcause=%08x", expect & 0x3FFFFFFFu);
         if (text.find(line) == std::string::npos) { printf("FAIL: no \"%s\" in the log\n", line); fails++; }
     } else {
         bool reported = text.find(": FAIL") != std::string::npos;
-        if (reported != negative) { printf(negative ? "FAIL: the log reports no failed test\n" : "FAIL: the log reports a failed test\n"); fails++; }
-        if (slot_line && text.find(slot_line) == std::string::npos) { printf("FAIL: no \"%s\" in the log\n", slot_line); fails++; }
-        if (text.find("windows of 2048 bytes") == std::string::npos) { printf("FAIL: the log does not name the simulation windows\n"); fails++; }
-        // the race (the game's files) checks its whole picture, without them the program says
-        // which files it misses
+        if (reported != negative) {
+            printf(negative ? "FAIL: the log reports no failed test\n"
+                            : "FAIL: the log reports a failed test\n");
+            fails++;
+        }
+        if (slot_line && text.find(slot_line) == std::string::npos) {
+            printf("FAIL: no \"%s\" in the log\n", slot_line);
+            fails++;
+        }
+        if (text.find("windows of 2048 bytes") == std::string::npos) {
+            printf("FAIL: the log does not name the simulation windows\n");
+            fails++;
+        }
+        // With the game's files the program checks its whole picture and logs the result.
+        // Without them it logs which files it misses.
         const char *check = s.race ? "track check: ok" : "game files: ";
-        if (!negative && text.find(check) == std::string::npos) { printf("FAIL: no \"%s\" in the log\n", check); fails++; }
+        if (!negative && text.find(check) == std::string::npos) {
+            printf("FAIL: no \"%s\" in the log\n", check);
+            fails++;
+        }
     }
     return fails;
 }
 
 int main(int argc, char **argv) {
-    if (argc < 3) { fprintf(stderr, "usage: %s firmware.bin outprefix [timeout frames] [expected SYS_SIM]\n", argv[0]); return 2; }
+    if (argc < 3) {
+        fprintf(stderr, "usage: %s firmware.bin outprefix [timeout frames] [expected SYS_SIM]\n", argv[0]);
+        return 2;
+    }
     int timeout_frames = argc > 3 ? atoi(argv[3]) : 80;
     uint32_t expect = argc > 4 ? uint32_t(strtoul(argv[4], nullptr, 16)) : 0x80001FFFu;
     bool expect_trap = (expect & 0xC0000000u) == 0xC0000000u;
     bool negative = !expect_trap && expect != 0x80001FFFu;
-    // SIM_QUICK (tools/simcheck.sh): one run, without the two resets, about half the time
+    // SIM_QUICK: one run, without the two resets
     const char *q = getenv("SIM_QUICK");
     bool quick = q && *q && *q != '0';
 
@@ -462,7 +564,10 @@ int main(int argc, char **argv) {
         while ((n = fread(buf, 1, sizeof buf, f)) > 0) fw.insert(fw.end(), buf, buf + n);
         fclose(f);
     }
-    if (fw.empty() || fw.size() > 32768) { fprintf(stderr, "firmware size %zu is not 1..32768\n", fw.size()); return 2; }
+    if (fw.empty() || fw.size() > 32768) {
+        fprintf(stderr, "firmware size %zu is not 1..32768\n", fw.size());
+        return 2;
+    }
     while (fw.size() % 4) fw.push_back(0);
 
     // program.bin next to firmware.bin (tools/fw.sh builds both)
@@ -476,7 +581,8 @@ int main(int argc, char **argv) {
         while (prog.size() % 4) prog.push_back(0);
         printf("%s: %zu bytes\n", path.c_str(), prog.size());
     }
-    // the game's files from SIM_GAME by the names core/data.json gives the slots above 2
+    // The game's files from SIM_GAME, by the names core/data.json gives the slots above 2. The
+    // race runs only if every file is there.
     std::vector<Slot> slots = data_slots("core/data.json");
     if (slots.empty()) { fprintf(stderr, "cannot read the slots of core/data.json\n"); return 2; }
     if (const char *game = getenv("SIM_GAME")) {
@@ -484,12 +590,15 @@ int main(int argc, char **argv) {
         for (const Slot &slot : slots) {
             if (slot.id <= 2 || slot.save) continue;
             std::string path = std::string(game) + "/" + slot.name;
-            if (slot.name == "screamer.cfg") {          // not a game file: the player's settings, loaded if there, not counted
+            if (slot.name == "screamer.cfg") {
+                // Not a game file but the player's settings: loaded if it is there, not counted.
+                // SIM_CFG=<file> names another one, so that runs side by side can differ.
                 std::vector<uint8_t> f;
-                const char *own = getenv("SIM_CFG");    // SIM_CFG=<file>: this one, so that runs side by side can differ
+                const char *own = getenv("SIM_CFG");
                 if (read_file(own && *own ? std::string(own) : path, f) && !f.empty()) {
                     s.files[slot.id] = f;
-                    printf("%s: %zu bytes (slot %u, optional)\n", own && *own ? own : path.c_str(), f.size(), slot.id);
+                    printf("%s: %zu bytes (slot %u, optional)\n", own && *own ? own : path.c_str(),
+                           f.size(), slot.id);
                 }
                 continue;
             }
@@ -514,8 +623,8 @@ int main(int argc, char **argv) {
         }
         s.race = wanted > 0 && found == wanted;
     }
-    // SIM_IMAGE (tools/simcheck.sh): the finished track image as data slot 30, which
-    // core/data.json does not have; the firmware takes it instead of building the image
+    // SIM_IMAGE: the finished track image as data slot 30. The firmware takes it instead of
+    // building the image.
     if (const char *img = getenv("SIM_IMAGE")) {
         std::vector<uint8_t> f;
         if (*img && read_file(img, f) && !f.empty()) {
@@ -524,25 +633,27 @@ int main(int argc, char **argv) {
         }
     }
 
-    // SIM_KEYS (tools/sim.sh): these buttons (hex, cont1_key's bits as firmware/hw.h names
-    // them) held from the program's first read of a game file on (the boot loader reads the
-    // buttons at its start: Select there asks for the full memory test); none without it
+    // SIM_KEYS: these buttons (hex) are held from the program's first read of a game file on.
+    // The boot loader reads the buttons at its start (Select there asks for the full memory
+    // test), so they are held only afterwards. No buttons without SIM_KEYS.
     if (const char *k = getenv("SIM_KEYS")) s.keys = uint32_t(strtoul(k, nullptr, 16));
     if (s.keys) printf("buttons held: 0x%04x, from the program's first game file read\n", s.keys);
     if (const char *w = getenv("SIM_WAV")) if (*w) wav.open(w);
 
     Vsoc_system &top = s.top;
-    top.clk_74a = 0; top.clk_vid = 0; top.reset_n = 0; top.bridge_wr = 0; top.bridge_rd = 0; top.cont1_key = 0;
+    top.clk_74a = 0; top.clk_vid = 0; top.reset_n = 0; top.bridge_wr = 0; top.bridge_rd = 0;
+    top.cont1_key = 0;
     top.ds_done = 0; top.ds_err = 0;
     top.eval();
 
-    // as the APF does it: slot 0 (firmware), slot 1 (no debug.txt yet: 0xFF), then it waits
-    // for the acknowledge (the SDRAM is ready); slots 2 and 3 only when the core asks
+    // As the APF does it: slot 0 (the firmware) and slot 1 (the debug log, no debug.txt yet: 0xFF),
+    // then the wait for the acknowledge, which comes when the SDRAM is ready. Slots 2 and 3 follow
+    // only when the core asks for them.
     int fails = 0;
     s.load(0, fw);
     s.load(0x00100000, std::vector<uint8_t>(4096, 0xFF));
-    // the slot table as the APF writes it when it loads the core: per slot of core/data.json
-    // its id and its file's size (none for the debug log: no debug.txt yet)
+    // The slot table as the APF writes it when it loads the core: for each slot of core/data.json
+    // its id and the size of its file (0 for the debug log: no debug.txt yet).
     for (size_t k = 0; k < slots.size() && k < 32; k++) {
         uint32_t id = slots[k].id;
         auto it = s.files.find(id);
@@ -551,15 +662,14 @@ int main(int argc, char **argv) {
         s.bridge_write(0xF8002000u + 8 * uint32_t(k), id);
         s.bridge_write(0xF8002004u + 8 * uint32_t(k), size);
     }
+    // The extra slots follow the table of core/data.json (see the header).
     size_t extra = slots.size();
     if (s.files.count(30) && extra < 32) {
         s.bridge_write(0xF8002000u + 8 * uint32_t(extra), 30);
         s.bridge_write(0xF8002004u + 8 * uint32_t(extra), uint32_t(s.files[30].size()));
         extra++;
     }
-    // SIM_RACE_FRAMES=n (tools/sim.sh): slot 29, which core/data.json does not have either, with
-    // the size n: the firmware runs the start lights' countdown at once and checks and reports
-    // the n-th frame after the green light instead of the third (firmware/main.c)
+    // SIM_RACE_FRAMES=n: slot 29 with the size n
     if (const char *r = getenv("SIM_RACE_FRAMES")) {
         uint32_t n = uint32_t(strtoul(r, nullptr, 10));
         if (n && extra < 32) {
@@ -569,8 +679,7 @@ int main(int argc, char **argv) {
             extra++;
         }
     }
-    // SIM_TRACK=n (tools/sim.sh): slot 28 with the size n, the track the firmware races (none:
-    // track 1; the simulation has no track screen)
+    // SIM_TRACK=n: slot 28 with the size n
     if (const char *t = getenv("SIM_TRACK")) {
         uint32_t n = uint32_t(strtoul(t, nullptr, 10));
         if (n && extra < 32) {
@@ -580,8 +689,7 @@ int main(int argc, char **argv) {
             extra++;
         }
     }
-    // SIM_MENU=1 or 2 (tools/sim.sh): slot 27 with that size, the track screen (1) or the car
-    // screen (2) instead of the race, its third frame checked against the C models
+    // SIM_MENU=1 or 2: slot 27 with that size
     if (const char *m = getenv("SIM_MENU")) {
         uint32_t n = uint32_t(strtoul(m, nullptr, 10));
         if (n && extra < 32) {
@@ -591,7 +699,8 @@ int main(int argc, char **argv) {
         }
     }
     {
-        // the core ignores the debug log's load (docs/soc.md), so it still holds what it held
+        // The core must ignore the load of the debug log slot (docs/soc.md). The load wrote
+        // 0xFF everywhere, so none of the first 16 words of the log may read as 0xFFFFFFFF.
         int loaded = 0;
         s.bridge_read(0x00100000);
         for (uint32_t a = 4; a <= 64; a += 4) loaded += s.bridge_read(0x00100000 + a) == 0xFFFFFFFFu;
@@ -616,21 +725,26 @@ int main(int argc, char **argv) {
     }
 
     if (!expect_trap && !negative && !quick) {
-        // a reset as when the firmware is reloaded from the menu (Reset Enter, the slot
-        // load, Reset Exit), while buffer 1 is in front
+        // A reset as when the firmware is reloaded from the menu (Reset Enter, the slot load,
+        // Reset Exit), while buffer 1 is in front.
         printf("==== reset while buffer 1 is in front, firmware loaded again ====\n");
         uint64_t limit = s.now + 4 * FRAME_PS;
         while (!(top.swap_req && top.front) && s.now < limit) s.step();
-        if (!(top.swap_req && top.front)) { printf("FAIL: buffer 1 never in front with no swap pending\n"); fails++; }
+        if (!(top.swap_req && top.front)) {
+            printf("FAIL: buffer 1 never in front with no swap pending\n");
+            fails++;
+        }
         top.reset_n = 0; top.cont1_key = 0; top.eval();
         s.rise_74(16);
-        printf("in reset: swap request %d, buffer in front %d, SYS_SIM 0x%08x\n", top.swap_req, top.front, top.sim_status);
+        printf("in reset: swap request %d, buffer in front %d, SYS_SIM 0x%08x\n",
+               top.swap_req, top.front, top.sim_status);
         if (top.swap_req || top.front || top.sim_status) { printf("FAIL: all three should be 0\n"); fails++; }
         s.load(0, fw);
         s.rise_74(16);
         top.reset_n = 1; top.eval();
 
-        // and one in the middle of the memory test's SDRAM traffic
+        // And one reset in the middle of the memory test's SDRAM traffic, 1500000 clocks into the
+        // run. The run that follows must complete like the first.
         s.run(timeout_frames, last, done, unasked, 1500000);
         printf("==== reset in the middle of the memory test, firmware loaded again ====\n");
         top.reset_n = 0; top.cont1_key = 0; top.eval();
@@ -645,11 +759,14 @@ int main(int argc, char **argv) {
     }
 
     if (fails) { printf("FAIL\n"); return 1; }
+    // The verdict has one wording for each mode: trap test, negative test, quick run, full run.
     printf(expect_trap ? "PASS: the trap was taken and reported on screen and in the log, slot size set\n"
            : negative ? "PASS: the memory test reports the built-in fault: exactly the expected tests fail\n"
-           : quick ? "PASS (quick, no resets): firmware and memory test pass, test band matches, log readable "
-                     "over the bridge, the SDRAM model without errors\n"
-                      : "PASS: firmware and memory test pass, test band matches, log readable over the bridge, "
-                        "the SDRAM model without errors; the same after two resets, which swapped nothing by themselves\n");
+           : quick ?
+        "PASS (quick, no resets): firmware and memory test pass, test band matches, log readable "
+        "over the bridge, the SDRAM model without errors\n"
+        :
+        "PASS: firmware and memory test pass, test band matches, log readable over the bridge, "
+        "the SDRAM model without errors; the same after two resets, which swapped nothing by themselves\n");
     return 0;
 }

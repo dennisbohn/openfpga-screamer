@@ -1,8 +1,9 @@
 //
-// Test writer for sim/display in place of the CPU: two pictures from the bridge into the
-// two framebuffers, and button A swaps them. Its swap request resets like soc.v's.
+// Test writer for sim/display, in place of the CPU. It copies two pictures from the bridge into the
+// two framebuffers and their palettes, and a rising edge of the button asks video_out for a swap.
+// Its swap request is cleared by reset, as soc.v's is.
 //
-// Bridge window (each file is screen.bin's layout, see tools/make_screen.py):
+// Bridge window (each picture has the layout of screen.bin, see tools/make_screen.py):
 //   0x0000_0000  buffer 0: palette 0x000-0x3FF (R,G,B,0 words), pixels from 0x400
 //   0x0010_0000  buffer 1: the same
 // A rising edge on swap_button asks video_out for a swap, unless one is still pending.
@@ -33,9 +34,13 @@ module fb_bridge (
 
     localparam  FB_WORDS = 320 * 200 / 4;
 
+    // bridge_addr[20] selects the buffer; the words of its picture are bridge_addr[15:2]. The
+    // pixels start at byte 0x400, which is word 256, so fb_word is the pixel word's index.
     wire        in_window = bridge_addr[31:21] == 0 && bridge_addr[19:16] == 0;
     wire [13:0] fb_word = bridge_addr[15:2] - 14'd256;
 
+// A bridge write into the window becomes a palette write (bytes 0x000-0x3FF; the word is R, G, B,
+// 0, so the entry is bits 31:8) or a framebuffer write (one word of four pixels).
 always @(posedge clk_74a) begin
     fb_wr_en <= 0;
     pal_wr <= 0;
@@ -54,9 +59,11 @@ always @(posedge clk_74a) begin
     end
 end
 
+    // The swap request is a toggle. A new request is made only when video_out has acknowledged the
+    // last one, that is when the request toggle equals the synchronised acknowledge toggle.
     reg [1:0]   ack_s = 0;
     reg         button_d = 0;
-    reg         reset = 1;                  // as soc.v's cpu_reset
+    reg         reset = 1;                  // reset_n registered and inverted, as soc.v's cpu_reset
 
 always @(posedge clk_74a) begin
     ack_s <= {ack_s[0], swap_ack_toggle};

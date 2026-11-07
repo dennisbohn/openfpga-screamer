@@ -1,7 +1,9 @@
 //
-// Simulation top for the SDRAM random test: sdram_port + sdram + the SDRAM model, with
-// the CPU-side ports, the bridge and the job and pin signals brought out for the
-// testbench's bus models and checks (docs/memory.md)
+// Simulation top for the SDRAM random test (sim/sdram/tb.cpp): sdram_port.v (the front end),
+// sdram.v (the controller) and the SDRAM model. The iBus, dBus and bridge ports are brought out
+// for the testbench's bus models. The jobs that the front end hands to the controller and the
+// SDRAM command pins are brought out as well, for the testbench's checks (docs/memory.md). The
+// rasterizer's port of the front end is not driven.
 //
 
 module sdram_system (
@@ -38,7 +40,7 @@ module sdram_system (
     output  wire            cpu_writes_idle,
     output  wire            sdram_ready,
 
-    // jobs as the controller takes them, and the SDRAM pins
+    // the jobs as the controller takes them (job_take is a job handshake), and the SDRAM pins
     output  wire            job_take,
     output  wire            job_write,
     output  wire            job_line,

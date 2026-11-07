@@ -1,9 +1,12 @@
 //
-// Simulation top: soc + framebuffer + video_out wired as in core_top (and the I2S output with
-// the bit clock, which is no pin there), a model of the
-// SDRAM, the SDRAM clock's phase stepper with a PLL that is always
-// done, and a model of the core side of the APF data slot table (the table
-// core_bridge_cmd keeps)
+// Simulation top for the SoC testbench (sim/soc/tb.cpp). It wires the parts as core_top does:
+//   - soc.v (CPU, 3D units, audio), the framebuffer and video_out; the I2S output comes out with
+//     its bit clock audio_sclk, which is no pin of the core;
+//   - the SDRAM model (sim/models/sdram_model.v);
+//   - pll_dps, the stepper for the phase of the SDRAM clock, without a PLL behind it;
+//   - a model of the core's side of the APF data slot table, the table core_bridge_cmd keeps.
+// The testbench drives the clocks, the reset, the bridge, the buttons and the answers to the data
+// slot reads (ds_*), and reads the status outputs.
 //
 
 module soc_system (
@@ -28,16 +31,16 @@ module soc_system (
     output  wire            audio_lrck,
     output  wire            audio_dac,
 
-    output  wire    [31:0]  sim_status,
+    output  wire    [31:0]  sim_status,         // SYS_SIM, the firmware's report (docs/soc.md)
     output  wire    [31:0]  log_slot_size,      // size word of the debug log's slot table entry (entry 1)
-    output  wire    [31:0]  choice_slot_size,   // the same of CHOICE.DAT's (entry 23)
+    output  wire    [31:0]  choice_slot_size,   // the same for CHOICE.DAT (entry 23)
     output  wire            swap_req,           // soc's swap request toggle
     output  wire            front,              // video_out: the buffer in front
     output  wire            sdram_ready,        // what core_top acknowledges data slot writes with
     output  wire    [31:0]  sdram_errors,       // model error count
     output  wire    [31:0]  sdram_max_refresh,  // longest gap between AUTO REFRESH, clocks
 
-    // the core's data slot reads (deferload), answered by the testbench like the APF
+    // the core's data slot reads (deferload); the testbench answers them like the APF
     output  wire            ds_read,
     output  wire    [15:0]  ds_id,
     output  wire    [31:0]  ds_offset,
@@ -136,7 +139,8 @@ soc soc (
     .opt_music          ( )
 );
 
-// no PLL in the simulation: every phase step ends by pll_dps's timeout
+// There is no PLL in the simulation. phase_done stays high, so pll_dps ends every phase step by
+// its timeout.
 pll_dps pll_sd_dps (
     .clk                ( clk_74a ),
     .step               ( phase_step ),
@@ -204,9 +208,9 @@ video_out vo (
     .vid_vs             ( vid_vs )
 );
 
-    // the slot table as core_bridge_cmd keeps it: the APF writes it over the bridge
-    // (0xF8002000, per slot its id, then its file's size; the testbench does that as the
-    // APF does when it loads the core), the soc reads and writes it on its own port
+    // The slot table as core_bridge_cmd keeps it. The APF writes it over the bridge at 0xF8002000,
+    // for each slot its id and then the size of its file; the testbench does that as the APF does
+    // when it loads the core. The soc reads and writes the table on its own port (dt_*).
     reg     [31:0]  dt [0:255];
     reg     [31:0]  dt_r;
     integer i;

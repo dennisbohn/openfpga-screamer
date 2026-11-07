@@ -1,7 +1,7 @@
 //
-// Simulation top: fb_bridge + framebuffer + video_out wired as in core_top, plus a
-// testbench override of the framebuffer's drawing port (tb_sys = 1) to check reads
-// and byte-enable writes
+// Simulation top for the display testbench (sim/display/tb.cpp): fb_bridge, framebuffer and
+// video_out wired as in core_top. With tb_sys = 1 the testbench takes over the framebuffer's
+// drawing port (tb_*), to check reads and writes with byte enables.
 //
 
 module display (
