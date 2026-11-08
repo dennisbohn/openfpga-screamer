@@ -549,11 +549,13 @@ notes S2-5b, valid for both games).
 - On track 1 the `H` set has such a mesh at the start, `V220`: the plinth with the video wall (block 0, one
   fixed image) and the helmet on it (block 1, 80 images). The other tracks have more, for example the
   windmills of track 3.
-- The firmware splits such a part into one job per block, the farthest centre first (original: STARTL.EXE
-  `0x8ac58`). The centre counts at the block's first image, not turned: in the original the sails of track
-  3's windmills stay in front of the tower from every side and at every turn (measured in DOSBox, tower and
-  sails are two blocks, the sails have 180 images). With the turned centre the sails pass the tower in the
-  order twice a turn and go behind it.
+- The firmware splits such a part into one job per block, the farthest first (original: STARTL.EXE `0x8ac58`).
+  The key of a block is the half of the distance of its centre, turned by the image, rounded; a block whose
+  name starts with a capital Z gets 0x2000 more (16384 units nearer). The sails of track 3's windmills are
+  `Z1vela`, so they stay in front of the tower at every turn, while the gondolas of track 4's wheel
+  (`z1ruot`, lower case) pass in front of and behind its frame as they go round. Measured in DOSBox by reading
+  the original's table of keys while it draws (the tower's key is exactly half its distance, the sails' key is
+  8192 above half the distance of the turned centre).
 - The images turn z-up into y-up, which is a mirroring. The game takes the other side as the back face for
   such blocks (`0x8acf0`: `jge` instead of `jl`), and so does the geometry unit (bit 3 in word 18 of a job,
   `docs/soc.md`).

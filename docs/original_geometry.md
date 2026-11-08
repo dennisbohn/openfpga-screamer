@@ -370,15 +370,16 @@ void mul(L, R, D) {            /* 0x82018: L first, then R */
 Each chain step rounds once per entry. A track piece with heading 0 has W[0] = 16380, not 16384: vertices
 appear shrunk by about 0.03 % (1 unit at 4000), which is part of the original.
 
-The key of a block (0x8af24) reads as the distance of its middle through F, that is, turned by the image. The
-original's picture does not show that. Measured in DOSBox on track 3 (the windmill's tower, block 0, and its
-sails, block 1 with 180 images and a middle off the axis of the turn): in pictures from two sides, over seven
-phases of the clock, the sails are always drawn after the tower. A key from the turned middle would draw them
-before it in about half of the phases. The firmware takes the middle at image 0 for the key, which gives the
-measured order everywhere on the road. The rule changes the order of the blocks of every turning part with
-several blocks, not only the windmills' (on the PC along the road: the helmet of track 1 in 12 % of the places
-and phases, the windmills of track 3 in 56 %, the parts of tracks 4 to 6 in 15 to 94 %). Only the windmills
-are measured in the original. Which step of the original makes it so is not found.
+The key of a block (0x8af24) is the distance of its middle through F, that is, turned by the image, halved and
+rounded (the matrix chain keeps its translation in half units). Measured by reading the original's table of keys
+(ds:0x7a434, the high words, the block's number in the low words) while it draws, in DOSBox on track 3 with the
+car set by memory: the tower's key is -15948 and -22124 for the two windmills, which is exactly half of their
+distances; the sails' key is higher by 8192 at every clock value (for example -11038 where the turned middle is
+at 38461, half of it being 19230). So a block whose name starts with a capital Z gets 0x2000 more in its key.
+The sails are Z1vela and the tower aMV_a1mu, so the sails always lie nearer than the tower, the turn of their
+middle (6000 units) being much less than 16384. No other multi-block part on the six tracks has a capital Z
+(the wheel's blocks are z1ruot and so on), so the windmills are the only parts the bonus changes. The disassembly
+above shows no such bonus in the name test; where the original adds it is not found.
 
 ### 4.4 Block key and level of detail
 
