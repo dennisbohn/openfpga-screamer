@@ -546,10 +546,14 @@ notes S2-5b, valid for both games).
   has images (+0x10), rotated per image.
 - 12 words per image are its whole matrix (the stored corner as a row times matrix, 16383 = 1, then the
   offset). The image is images x clock >> 16, and one turn of the animation clock takes 3.33 s.
-- On track 1 only the `H` set has such a mesh, `V220` at the start: the plinth with the video wall (block 0,
-  one fixed image) and the helmet on it (block 1, 80 images).
+- On track 1 the `H` set has such a mesh at the start, `V220`: the plinth with the video wall (block 0, one
+  fixed image) and the helmet on it (block 1, 80 images). The other tracks have more, for example the
+  windmills of track 3.
 - The firmware splits such a part into one job per block, the farthest centre first (original: STARTL.EXE
-  `0x8ac58`).
+  `0x8ac58`). The centre counts at the block's first image, not turned: in the original the sails of track
+  3's windmills stay in front of the tower from every side and at every turn (measured in DOSBox, tower and
+  sails are two blocks, the sails have 180 images). With the turned centre the sails pass the tower in the
+  order twice a turn and go behind it.
 - The images turn z-up into y-up, which is a mirroring. The game takes the other side as the back face for
   such blocks (`0x8acf0`: `jge` instead of `jl`), and so does the geometry unit (bit 3 in word 18 of a job,
   `docs/soc.md`).

@@ -370,6 +370,16 @@ void mul(L, R, D) {            /* 0x82018: L first, then R */
 Each chain step rounds once per entry. A track piece with heading 0 has W[0] = 16380, not 16384: vertices
 appear shrunk by about 0.03 % (1 unit at 4000), which is part of the original.
 
+The key of a block (0x8af24) reads as the distance of its middle through F, that is, turned by the image. The
+original's picture does not show that. Measured in DOSBox on track 3 (the windmill's tower, block 0, and its
+sails, block 1 with 180 images and a middle off the axis of the turn): in pictures from two sides, over seven
+phases of the clock, the sails are always drawn after the tower. A key from the turned middle would draw them
+before it in about half of the phases. The firmware takes the middle at image 0 for the key, which gives the
+measured order everywhere on the road. The rule changes the order of the blocks of every turning part with
+several blocks, not only the windmills' (on the PC along the road: the helmet of track 1 in 12 % of the places
+and phases, the windmills of track 3 in 56 %, the parts of tracks 4 to 6 in 15 to 94 %). Only the windmills
+are measured in the original. Which step of the original makes it so is not found.
+
 ### 4.4 Block key and level of detail
 
 This section answers how the original picks the level of detail of a block and the order of the blocks.
