@@ -85,7 +85,7 @@
 
 #define MAX_PIECES  2560        /* placements (H set): track 1 has 1164, track 5 the most, 2359 */
 #define MAX_OBJ     512         /* meshes; up to 360 on a track */
-#define MAX_BLOCKS  8           /* blocks of a mesh drawn (track 1: two, the football helmet's) */
+#define MAX_BLOCKS  12          /* blocks of a mesh drawn (the most: track 4's wheel, ten; track 1's helmet has two) */
 
 /* How far the game draws (openscreamer docs/NOTES.md, DETAIL). It has two limits:
    1. The reach. A piece is looked at only while its position is within 52000 units of the camera
